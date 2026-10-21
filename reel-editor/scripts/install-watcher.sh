@@ -3,12 +3,15 @@
 #   install-watcher.sh             write the agent and load it
 #   install-watcher.sh --dry-run   print the agent plist and validate it, change nothing
 #   install-watcher.sh --uninstall unload and remove it
+# REEL_WATCH_RAW / REEL_WATCH_DONE pick the folders; they are written into the agent so the
+# script scans the same folder launchd watches.
 set -euo pipefail
 
 LABEL="com.pingel.reel-watch"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RAW="${REEL_WATCH_RAW:-$HOME/Reels/raw}"
+DONE="${REEL_WATCH_DONE:-$HOME/Reels/done}"
 LOG="${REEL_WATCH_ROOT:-$HOME/Reels}/watch-launchd.log"
 
 if [ "${1:-}" = "--uninstall" ]; then
@@ -30,6 +33,11 @@ render() {
     <string>/bin/bash</string>
     <string>$HERE/watch-folder.sh</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>REEL_WATCH_RAW</key><string>$RAW</string>
+    <key>REEL_WATCH_DONE</key><string>$DONE</string>
+  </dict>
   <key>WatchPaths</key>
   <array><string>$RAW</string></array>
   <key>RunAtLoad</key><true/>
@@ -55,4 +63,4 @@ mkdir -p "$RAW" "$(dirname "$PLIST")"
 mv "$tmp" "$PLIST"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
-echo "installed $LABEL: drop clips in $RAW, finished reels go to ${REEL_WATCH_DONE:-$HOME/Reels/done}"
+echo "installed $LABEL: drop clips in $RAW, finished reels go to $DONE"
