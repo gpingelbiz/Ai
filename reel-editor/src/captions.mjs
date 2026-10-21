@@ -69,11 +69,47 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
  * Mark highlight words per line: dictionary terms first (multi-word terms highlight every word),
  * then numbers / dollar amounts / power words. At most maxPerLine highlights unless a term is longer.
  */
-export function markKeywords(groups, dict = {}, { maxPerLine = 1 } = {}) {
-  const terms = (dict.terms || []).map((t) => t.toLowerCase().split(/\s+/).map(norm)).filter((t) => t.length && t[0]).sort((a, b) => b.length - a.length);
+
+// Fallback keyword picker for lines with no dictionary term, number or power word. Real speech rarely
+// says a framework name, so without this most reels get no gold at all.
+const NUM_WORDS = new Set("one two three four five six seven eight nine ten eleven twelve twenty thirty forty fifty sixty hundred thousand million billion half double triple first second third last".split(" "));
+const UNIT_WORDS = new Set("second seconds minute minutes hour hours day days week weeks month months year years times percent dollars bucks calls clients leads deals".split(" "));
+const STOP_WORDS = new Set(("a an the and or but so because if then than that this these those there here what when where which who whom whose why how " +
+  "i i'm i've i'll i'd me my mine you you're you've you'll your yours he she it it's its we we're our they they're their them us " +
+  "is are was were be been being am do does did done don't doesn't didn't have has had having can can't could would should will won't shall may might must " +
+  "to of in on at for with from by about into over under up down out off again just really very also too only even still like oh hey man yeah okay ok um uh " +
+  "going gonna wanna gotta get got go goes went thing things something anything everything nothing someone anyone everyone stuff kind sort " +
+  "know think mean said say says saying tell told want wanted need let let's make made take took come came look see feel " +
+  "actually basically literally probably maybe right well now then much many more most some any all every each other another same").split(" "));
+
+/** Best automatic pick in one line: a number + unit pair ("three minutes"), a number word, or a strong 6+ letter word. */
+export function autoKeyword(words) {
+  const toks = words.map((w) => norm(w.text));
+  let best = null;
+  const consider = (i, len, score) => { if (!best || score > best.score) best = { i, len, score }; };
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (!t) continue;
+    if (NUM_WORDS.has(t) && UNIT_WORDS.has(toks[i + 1] || "")) consider(i, 2, 5);
+    else if (NUM_WORDS.has(t)) consider(i, 1, 3);
+    else if (!STOP_WORDS.has(t) && t.replace(/'/g, "").length >= 6) consider(i, 1, 2 + Math.min(t.length, 10) / 100);
+  }
+  return best;
+}
+
+/** Gold keywords: dictionary terms first, then numbers and power words, then (auto) the autoKeyword pick.
+ *  Auto picks skip a line right after another auto pick and a word already auto-picked earlier in the clip,
+ *  except number + unit pairs, so the gold stays rare enough to mean something. */
+export function markKeywords(groups, dict = {}, { maxPerLine = 1, auto = false } = {}) {
+  // phrases highlight like terms but are not sent to Whisper as spelling hints (a hint can change what it hears).
+  const terms = [...(dict.terms || []), ...(dict.phrases || [])].map((t) => t.toLowerCase().split(/\s+/).map(norm)).filter((t) => t.length && t[0]).sort((a, b) => b.length - a.length);
   const power = new Set((dict.powerWords || []).map(norm));
+  const usedAuto = new Set();
+  let prevAuto = false;
   for (const g of groups) {
     if (maxPerLine <= 0) continue;
+    const wasAuto = prevAuto;
+    prevAuto = false;
     const toks = g.words.map((w) => norm(w.text));
     let marked = 0;
     for (let i = 0; i < toks.length && marked < maxPerLine; i++) {
@@ -94,9 +130,18 @@ export function markKeywords(groups, dict = {}, { maxPerLine = 1 } = {}) {
       const t = toks[i];
       if (/^\$?\d/.test(t) || /\$/.test(g.words[i].text) || power.has(t)) {
         g.words[i].key = true;
+        marked++;
         break;
       }
     }
+    if (marked || !auto) continue;
+    const pick = autoKeyword(g.words);
+    if (!pick || pick.score < 2) continue;
+    const word = toks.slice(pick.i, pick.i + pick.len).join(" ");
+    if (pick.score < 5 && (wasAuto || usedAuto.has(word))) continue;
+    for (let j = pick.i; j < pick.i + pick.len; j++) g.words[j].key = true;
+    usedAuto.add(word);
+    prevAuto = true;
   }
   return groups;
 }

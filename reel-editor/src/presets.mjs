@@ -36,6 +36,8 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noHook) p.hook.enabled = false;
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;
+  if (o.hookPosition) p.hook.position = parseFloat(o.hookPosition);
+  if (o.noAutoKeywords) p.captions.autoKeywords = false;
   if (o.cta) { p.cta.enabled = true; p.cta.text = o.cta; }
   if (o.ctaLast) p.cta.last = parseFloat(o.ctaLast);
   if (o.ctaAt) p.cta.start = parseFloat(o.ctaAt);

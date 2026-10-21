@@ -7,11 +7,15 @@
     "scale", "system", "systems", "accountability", "faith", "God", "blue-collar",
     "GoHighLevel", "Instagram", "DMs"
   ],
+  "phrases": [
+    "show up"
+  ],
   "powerWords": [
     "never", "stop", "truth", "lie", "lying", "broke", "rich", "free", "fast", "now", "wrong", "right",
     "dead", "kill", "hate", "love", "win", "lose", "losing", "fear", "proof", "secret", "mistake",
     "problem", "fix", "why", "price", "expensive", "cheap", "worth", "value", "excuse", "excuses",
-    "discipline", "quit", "hard", "real", "fake", "nobody", "everybody", "million", "thousand"
+    "discipline", "quit", "hard", "real", "fake", "nobody", "everybody", "million", "thousand",
+    "late", "early", "respect"
   ],
   "corrections": [
     { "from": "ghost p and l", "to": "Ghost P&L" },

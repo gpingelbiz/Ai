@@ -26,7 +26,8 @@
     "activeWord": false,
     "maxKeywordsPerLine": 1,
     "shrinkAfterChars": 24,
-    "emojis": false
+    "emojis": false,
+    "autoKeywords": false
   },
   "hook": {
     "enabled": true,

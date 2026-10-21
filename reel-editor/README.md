@@ -73,11 +73,14 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 ### Dictionary
 
-`dictionary.json` has three lists:
+`dictionary.json` has four lists:
 
 - `terms`: phrases that always get the gold highlight (framework names, money words). Also fed to Whisper as the initial prompt so it spells them right.
+- `phrases`: extra phrases that always get the gold highlight but are NOT sent to Whisper. Use this for everyday phrases (`show up`): a hint can change what Whisper hears, and it once dropped a clipped opening "Don't".
 - `corrections`: fixes for how Whisper hears a term (`"ghost p and l"` becomes `Ghost P&L`).
 - `powerWords`: single words that get highlighted when no term is in the line.
+
+With `autoKeywords` on (the brand preset), lines with none of the above get an automatic pick: a number with its unit (`three minutes`), a number word, or a strong 6+ letter word. A word gets automatic gold only once per clip and never on two automatic lines in a row. `--no-auto-keywords` turns it off; `--hook-position 0.40` drops the hook to chest height for wide shots.
 
 ## Hook title and CTA
 
