@@ -1,0 +1,6 @@
+node_modules/
+videos/
+renders/
+.hyperframes/
+*.log
+.DS_Store

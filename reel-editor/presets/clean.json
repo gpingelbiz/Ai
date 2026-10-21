@@ -1,0 +1,9 @@
+{
+  "name": "clean",
+  "colors": { "text": "#FFFFFF", "accent": "#FFFFFF", "stroke": "#000000" },
+  "captions": { "enabled": true, "wordsPerLine": 4, "position": 0.8, "fontSizeFrac": 0.034, "uppercase": false, "strokeWidthFrac": 0.003, "maxKeywordsPerLine": 0 },
+  "hook": { "enabled": false },
+  "zooms": { "enabled": false },
+  "cuts": { "silence": "slow", "badTakes": false, "fillers": false },
+  "audio": { "cleanAudio": false }
+}

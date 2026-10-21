@@ -1,0 +1,16 @@
+{
+  "name": "@pingel/reel-editor",
+  "version": "0.1.0",
+  "description": "Self-hosted reel editor: Whisper transcript -> silence and bad-take cuts -> brand captions, hook title, magic zooms -> HyperFrames render. ElevenLabs for SFX, voiceover and Scribe transcription.",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "reel": "bin/reel.mjs" },
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "doctor": "node bin/reel.mjs doctor"
+  },
+  "dependencies": {
+    "hyperframes": "^0.8.181"
+  }
+}

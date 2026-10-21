@@ -1,0 +1,30 @@
+{
+  "terms": [
+    "Ghost P&L", "Five Rooms", "The Swap", "Closer Line", "Wrong Scoreboard",
+    "high-ticket", "high ticket", "offer owner", "offer owners", "objection", "objections",
+    "close", "closer", "closers", "setter", "setters", "pipeline", "funnel",
+    "revenue", "profit", "cash", "money", "sales", "clients", "leads", "calls",
+    "scale", "system", "systems", "accountability", "faith", "God", "blue-collar",
+    "GoHighLevel", "Instagram", "DMs"
+  ],
+  "powerWords": [
+    "never", "stop", "truth", "lie", "lying", "broke", "rich", "free", "fast", "now", "wrong", "right",
+    "dead", "kill", "hate", "love", "win", "lose", "losing", "fear", "proof", "secret", "mistake",
+    "problem", "fix", "why", "price", "expensive", "cheap", "worth", "value", "excuse", "excuses",
+    "discipline", "quit", "hard", "real", "fake", "nobody", "everybody", "million", "thousand"
+  ],
+  "corrections": [
+    { "from": "ghost p and l", "to": "Ghost P&L" },
+    { "from": "ghost p l", "to": "Ghost P&L" },
+    { "from": "ghost pnl", "to": "Ghost P&L" },
+    { "from": "ghost pl", "to": "Ghost P&L" },
+    { "from": "ghost p&l", "to": "Ghost P&L" },
+    { "from": "closer line", "to": "Closer Line" },
+    { "from": "wrong scoreboard", "to": "Wrong Scoreboard" },
+    { "from": "five rooms", "to": "Five Rooms" },
+    { "from": "the swap", "to": "The Swap" },
+    { "from": "go high level", "to": "GoHighLevel" },
+    { "from": "gohighlevel", "to": "GoHighLevel" },
+    { "from": "high ticket", "to": "high-ticket" }
+  ]
+}

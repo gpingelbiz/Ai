@@ -1,0 +1,82 @@
+{
+  "name": "default",
+  "canvas": "auto",
+  "transcribe": {
+    "engine": "faster-whisper",
+    "model": "small",
+    "language": "en"
+  },
+  "colors": {
+    "text": "#FFFFFF",
+    "accent": "#FFD600",
+    "stroke": "#000000",
+    "bg": "#0B0B0D"
+  },
+  "captions": {
+    "enabled": true,
+    "wordsPerLine": 3,
+    "maxGap": 0.7,
+    "position": 0.72,
+    "sideMarginFrac": 0.05,
+    "fontSizeFrac": 0.04,
+    "uppercase": true,
+    "strokeWidthFrac": 0.0055,
+    "shadow": "0 0.06em 0 #000, 0 0.12em 0.35em rgba(0,0,0,0.7)",
+    "animation": "pop",
+    "activeWord": false,
+    "maxKeywordsPerLine": 1,
+    "shrinkAfterChars": 24,
+    "emojis": false
+  },
+  "hook": {
+    "enabled": true,
+    "duration": 3,
+    "position": 0.22,
+    "fontSizeFrac": 0.052,
+    "maxWords": 8,
+    "style": "gold"
+  },
+  "zooms": {
+    "enabled": true,
+    "interval": 5,
+    "scales": [
+      1.14,
+      1.22
+    ],
+    "origin": "50% 38%",
+    "snap": 0.12
+  },
+  "cuts": {
+    "silence": "medium",
+    "badTakes": true,
+    "fillers": true,
+    "pad": 0.12
+  },
+  "audio": {
+    "music": null,
+    "musicVolume": 0.12,
+    "cleanAudio": true,
+    "sfx": false,
+    "sfxVolume": 0.45,
+    "voiceId": null,
+    "sfxPrompts": {
+      "zoom": "short fast cinematic whoosh swoosh transition, clean, no music",
+      "hook": "short punchy pop hit, subtle, clean, no music"
+    }
+  },
+  "render": {
+    "quality": "looks",
+    "fps": 30
+  },
+  "cta": {
+    "enabled": false,
+    "text": null,
+    "last": 3,
+    "start": null,
+    "duration": null,
+    "position": 0.62,
+    "style": "pill",
+    "fontSizeFrac": 0.036,
+    "uppercase": true
+  }
+}
