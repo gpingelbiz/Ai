@@ -20,7 +20,7 @@ Usage
 
 Options (edit / batch)
   --out <dir>              work dir (default videos/<name>)
-  --preset <name|path>     default pingel-brand
+  --preset <name|path>     default: $REEL_PRESET (set by install.sh), else pingel-brand
   --transcript <file>      skip ASR and use this words json / srt
   --engine <e>             auto (default: ElevenLabs Scribe when ELEVENLABS_API_KEY is set, else Whisper) | faster-whisper | elevenlabs | hyperframes
   --model <m>              whisper model: large-v3-turbo (default), small (fast, mis-hears more), large-v3
@@ -57,7 +57,7 @@ Environment
 
 const EDIT_OPTIONS = {
   out: { type: "string" },
-  preset: { type: "string", default: "pingel-brand" },
+  preset: { type: "string" }, // no default here: loadPreset falls back to REEL_PRESET, then pingel-brand
   transcript: { type: "string" },
   engine: { type: "string" },
   "no-verify": { type: "boolean" },
