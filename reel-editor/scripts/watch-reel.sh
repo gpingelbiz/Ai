@@ -26,7 +26,7 @@ export PRODUCER_BROWSER_GPU_MODE="${PRODUCER_BROWSER_GPU_MODE:-hardware}"
 
 REELS="${REEL_WATCH_ROOT:-$HOME/Reels}"
 DONE="${REEL_WATCH_DONE:-$REELS/done}"
-CTA="${REEL_WATCH_CTA:-Comment GHOST}"
+CTA="${REEL_WATCH_CTA-Comment GHOST}"   # unset: default; set but empty: no CTA
 EXTRA_ARGS="${REEL_WATCH_ARGS:-}"
 mkdir -p "$DONE" "$REELS/videos"
 
