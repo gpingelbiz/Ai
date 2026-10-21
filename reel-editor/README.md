@@ -14,6 +14,8 @@ Optional through ElevenLabs: whoosh/pop sound effects, a narration track, and Sc
 
 It does what the Submagic "Magic" pipeline did (captions, zooms, hook, bad-take and silence removal) on your own machine, with every intermediate step as a file you can edit.
 
+**Setting this up on another Mac?** Follow [SETUP.md](SETUP.md): requirements, a one-paste Claude Code prompt, the hand install, your own brand preset, and troubleshooting.
+
 ## Install (Mac Mini)
 
 ```bash
