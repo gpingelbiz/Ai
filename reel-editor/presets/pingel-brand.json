@@ -1,7 +1,12 @@
 {
   "name": "pingel-brand",
   "canvas": "auto",
-  "colors": { "text": "#F5F1E8", "accent": "#C8A24B", "stroke": "#000000" },
+  "colors": {
+    "text": "#F5F1E8",
+    "accent": "#C8A24B",
+    "stroke": "#000000",
+    "bg": "#0B0B0D"
+  },
   "captions": {
     "enabled": true,
     "wordsPerLine": 3,
@@ -12,8 +17,40 @@
     "activeWord": false,
     "emojis": false
   },
-  "hook": { "enabled": true, "duration": 3, "position": 0.22, "fontSizeFrac": 0.052, "maxWords": 8 },
-  "zooms": { "enabled": true, "interval": 5, "scales": [1.14, 1.22], "origin": "50% 38%", "snap": 0.12 },
-  "cuts": { "silence": "fast", "badTakes": true, "fillers": true, "pad": 0.12 },
-  "audio": { "music": null, "cleanAudio": true, "sfx": false }
+  "hook": {
+    "enabled": true,
+    "duration": 3,
+    "position": 0.22,
+    "fontSizeFrac": 0.052,
+    "maxWords": 8,
+    "style": "gold"
+  },
+  "zooms": {
+    "enabled": true,
+    "interval": 5,
+    "scales": [
+      1.14,
+      1.22
+    ],
+    "origin": "50% 38%",
+    "snap": 0.12
+  },
+  "cuts": {
+    "silence": "fast",
+    "badTakes": true,
+    "fillers": true,
+    "pad": 0.12
+  },
+  "audio": {
+    "music": null,
+    "cleanAudio": true,
+    "sfx": false
+  },
+  "cta": {
+    "enabled": false,
+    "last": 3,
+    "position": 0.62,
+    "style": "pill",
+    "fontSizeFrac": 0.036
+  }
 }

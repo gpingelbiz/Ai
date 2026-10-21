@@ -26,6 +26,10 @@ Options (edit / batch)
   --model <m>              whisper model: small (default), medium, large-v3
   --language <code>        default en
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
+  --title-style <s>        gold (default) | outline (Bone text, black outline) | box (Bone on Obsidian backing)
+  --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)
+  --cta-last <s>           show the CTA for the last N seconds (default 3)   --cta-at <s> --cta-duration <s>
+  --cta-style <s>          pill (default) | box | text          --cta-position <0-1>  default 0.62
   --silence <pace>         off | slow | medium | fast (preset default)
   --no-bad-takes           keep restarted phrases          --no-fillers    keep um/uh
   --no-cuts                keep every frame                --no-zooms      no magic zooms
@@ -55,6 +59,13 @@ const EDIT_OPTIONS = {
   language: { type: "string" },
   hook: { type: "string" },
   "no-hook": { type: "boolean" },
+  "title-style": { type: "string" },
+  cta: { type: "string" },
+  "cta-last": { type: "string" },
+  "cta-at": { type: "string" },
+  "cta-duration": { type: "string" },
+  "cta-style": { type: "string" },
+  "cta-position": { type: "string" },
   silence: { type: "string" },
   "no-bad-takes": { type: "boolean" },
   "no-fillers": { type: "boolean" },

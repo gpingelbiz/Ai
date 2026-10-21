@@ -35,6 +35,13 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noCaptions) p.captions.enabled = false;
   if (o.noHook) p.hook.enabled = false;
   if (o.activeWord) p.captions.activeWord = true;
+  if (o.titleStyle) p.hook.style = o.titleStyle;
+  if (o.cta) { p.cta.enabled = true; p.cta.text = o.cta; }
+  if (o.ctaLast) p.cta.last = parseFloat(o.ctaLast);
+  if (o.ctaAt) p.cta.start = parseFloat(o.ctaAt);
+  if (o.ctaDuration) p.cta.duration = parseFloat(o.ctaDuration);
+  if (o.ctaStyle) p.cta.style = o.ctaStyle;
+  if (o.ctaPosition) p.cta.position = parseFloat(o.ctaPosition);
   if (o.wordsPerLine) p.captions.wordsPerLine = parseInt(o.wordsPerLine, 10);
   if (o.canvas) p.canvas = o.canvas;
   if (o.music) p.audio.music = o.music;

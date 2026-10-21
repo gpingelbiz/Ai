@@ -38,6 +38,8 @@ export ELEVENLABS_VOICE_ID=...    # default voice for --voiceover
 ```bash
 reel edit raw.mov
 reel edit raw.mov --hook "You don't have a sales problem"
+reel edit raw.mov --hook "..." --cta "Comment GHOST"                 # gold pill at chest level, last 3s
+reel edit raw.mov --title-style box --cta "Comment FREEDOM" --cta-last 4
 reel edit raw.mov --music beds/drive.mp3 --sfx
 reel edit raw.mov --silence medium --no-bad-takes          # lighter touch
 reel edit raw.mov --preset clean --canvas landscape          # plain subtitles, no hook, no zooms
@@ -76,6 +78,12 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 - `terms`: phrases that always get the gold highlight (framework names, money words). Also fed to Whisper as the initial prompt so it spells them right.
 - `corrections`: fixes for how Whisper hears a term (`"ghost p and l"` becomes `Ghost P&L`).
 - `powerWords`: single words that get highlighted when no term is in the line.
+
+## Hook title and CTA
+
+`--title-style` picks the hook look: `gold` (Signet Gold, default), `outline` (Bone with the black outline), `box` (Bone on an Obsidian backing, for busy or bright footage).
+
+`--cta "Comment GHOST"` adds the pop-up call to action for the last 3 seconds (`--cta-last 4`, or `--cta-at 10 --cta-duration 3` for a fixed window). It sits at chest level (`--cta-position 0.62`). Styles: `pill` (Obsidian text on a Signet Gold pill, default), `box` (Bone on Obsidian with a gold border), `text` (plain gold text with the caption stroke). One keyword per reel: GHOST for operator pieces, FREEDOM only on its own post.
 
 ## Hook titles
 

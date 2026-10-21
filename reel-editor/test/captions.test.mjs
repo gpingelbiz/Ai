@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { groupWords, markKeywords, cleanText } from "../src/captions.mjs";
 import { applyCorrections } from "../src/transcribe.mjs";
-import { pickHook } from "../src/hook.mjs";
+import { pickHook, pickCta } from "../src/hook.mjs";
 import { planZooms } from "../src/zooms.mjs";
 import { renderHTML } from "../src/compose.mjs";
 
@@ -68,4 +68,26 @@ test("renderHTML produces a standalone composition with one timeline and local f
   assert.match(html, /data-has-audio="true"/);
   assert.doesNotMatch(html, /crossorigin/);
   assert.equal((html.match(/class="cap"/g) || []).length, groups.length);
+});
+
+test("pickCta sits in the last seconds by default and is clamped to the clip", () => {
+  const c = pickCta(14.6, { text: "Comment GHOST", last: 3 });
+  assert.deepEqual(c, { text: "COMMENT GHOST", start: 11.6, duration: 3, style: "pill", position: 0.62 });
+  const d = pickCta(14.6, { text: "Comment GHOST", start: 13.5, duration: 4 });
+  assert.equal(d.start + d.duration, 14.6);
+  assert.equal(pickCta(10, {}), null);
+});
+
+test("renderHTML renders the CTA pill and hook styles", () => {
+  const style = JSON.parse(readFileSync(new URL("../presets/_defaults.json", import.meta.url)));
+  const base = { name: "t", canvas: { width: 1080, height: 1920 }, video: { src: "/x/clean.mp4", duration: 14.6, hasAudio: true }, captions: [], zooms: [], audio: { tracks: [] } };
+  const html = renderHTML({ ...base, style, hook: pickHook(sample), cta: pickCta(14.6, { text: "Comment GHOST" }) }, "assets/footage.mp4");
+  assert.match(html, /id="cta" class="clip" data-start="11.6" data-duration="3"/);
+  assert.match(html, /COMMENT GHOST/);
+  assert.match(html, /border-radius: 10em/);
+  const outline = renderHTML({ ...base, style: { ...style, hook: { ...style.hook, style: "outline" } }, hook: pickHook(sample), cta: null }, "assets/footage.mp4");
+  assert.match(outline, /color: #FFFFFF; text-align: center;/);
+  assert.doesNotMatch(outline, /id="cta"/);
+  const box = renderHTML({ ...base, style: { ...style, hook: { ...style.hook, style: "box" } }, hook: pickHook(sample), cta: null }, "assets/footage.mp4");
+  assert.match(box, /background: rgba\(11, 11, 13, 0.86\)/);
 });

@@ -19,3 +19,12 @@ export function pickHook(words, { text, maxWords = 8, duration = 3, start = 0 } 
   const t = cleanHook(picked.join(" "));
   return t ? { text: t, start, duration, auto: true } : null;
 }
+
+/** Pop-up call to action. Defaults to the last `last` seconds; `start`/`duration` override. */
+export function pickCta(duration, { text, last = 3, start = null, duration: dur = null, style = "pill", position = 0.62, uppercase = true } = {}) {
+  if (!text) return null;
+  const d = Math.min(dur ?? last, duration);
+  const s = start != null ? Math.max(0, Math.min(start, duration - 0.3)) : Math.max(0, duration - d);
+  const clean = cleanHook(text);
+  return { text: uppercase ? clean.toUpperCase() : clean, start: Math.round(s * 1000) / 1000, duration: Math.round(Math.min(d, duration - s) * 1000) / 1000, style, position };
+}

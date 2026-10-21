@@ -26,6 +26,8 @@ Run everything with the `reel` CLI in this folder (`node bin/reel.mjs` if it is 
 ## Flags you will actually use
 
 - `--silence slow|medium|fast` (default fast), `--no-bad-takes`, `--no-fillers`, `--no-cuts`
+- `--cta "Comment GHOST"` for the keyword pop-up in the last 3 seconds (GHOST on operator content; FREEDOM only on its own post; never two keywords on one reel). `--cta-last`, `--cta-at`, `--cta-style pill|box|text`.
+- `--title-style gold|outline|box` (box when the opening frames are bright or busy)
 - `--no-zooms`, `--no-hook`, `--words-per-line 4`, `--active-word`
 - `--music <file>` (`--music-volume 0.12`), `--sfx` (ElevenLabs whoosh/pop, needs `ELEVENLABS_API_KEY`)
 - `--voiceover script.txt --voice <id> [--replace-audio]` for narrated or faceless cuts

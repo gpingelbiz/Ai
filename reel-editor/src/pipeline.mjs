@@ -4,7 +4,7 @@ import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
 import { planCuts, applyCuts, remapWords } from "./cuts.mjs";
 import { groupWords, markKeywords } from "./captions.mjs";
-import { pickHook } from "./hook.mjs";
+import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms } from "./zooms.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
@@ -81,9 +81,11 @@ export async function runEdit(input, opts = {}) {
   const groups = preset.captions.enabled ? markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine }) : [];
   const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: Math.min(preset.hook.duration, duration) }) : null;
   const zooms = preset.zooms.enabled ? planZooms(groups.length ? groups : cleanWords, duration, preset.zooms) : [];
+  const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
   log(`captions: ${groups.length} lines, ${groups.filter((g) => g.words.some((w) => w.key)).length} with a highlight`);
   log(`hook: ${hook ? `"${hook.text}"${hook.auto ? " (auto, pass --hook for a written one)" : ""}` : "none"}`);
   log(`zooms: ${zooms.length}`);
+  if (cta) log(`cta: "${cta.text}" at ${cta.start}s for ${cta.duration}s (${cta.style})`);
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
@@ -98,6 +100,7 @@ export async function runEdit(input, opts = {}) {
     canvas: canvasFor(preset.canvas, cleanMeta),
     style: preset,
     hook,
+    cta,
     captions: groups,
     zooms,
     audio,
