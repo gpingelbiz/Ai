@@ -5,11 +5,14 @@
 # Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9,
 # "#low" drops the hook to chest height (wide shots where the default sits on your head),
 # "#top" lifts it above the head (close-up selfies where your face fills the middle).
+# After the reel lands, write-caption.mjs adds "<name> - caption.txt" (Sandcastles-backed post copy) when the
+# Claude Code CLI is installed; REEL_WATCH_CAPTION=0 turns that off.
 # The finished MP4 in the done folder is named after the hook when there is one.
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
 set -euo pipefail
 
 FILE="${1:-}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
 
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
@@ -79,6 +82,13 @@ if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EX
   if [ -s "$work/review.txt" ]; then cp -f "$work/review.txt" "$note"; else rm -f "$note"; fi
   echo "$(date '+%F %T') done  $dest" >> "$log"
   if [ -s "$work/review.txt" ]; then notify "Reel ready: check a few words" "$(basename "$dest" .mp4). See the note next to it."; else notify "Reel ready" "$(basename "$dest" .mp4)"; fi
+  # Post copy (caption, hashtags, hook options) from Sandcastles via headless Claude. Never holds up the reel.
+  if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
+    caption="${dest%.mp4} - caption.txt"
+    if node "$HERE/write-caption.mjs" "$work" "$caption" >> "$log" 2>&1 && [ -s "$caption" ]; then
+      notify "Caption ready" "$(basename "$caption" .txt)"
+    fi
+  fi
   printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"
 else
   echo "$(date '+%F %T') FAIL  $base (see above)" >> "$log"
