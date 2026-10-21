@@ -82,6 +82,14 @@ const STOP_WORDS = new Set(("a an the and or but so because if then than that th
   "know think mean said say says saying tell told want wanted need let let's make made take took come came look see feel " +
   "actually basically literally probably maybe right well now then much many more most some any all every each other another same").split(" "));
 
+// Long words that carry no weight on their own: soft adverbs and everyday -ing verbs. Any word ending in -ly
+// is treated the same way unless the dictionary lists it as a power word.
+const WEAK_WORDS = new Set(("almost always already usually sometimes often enough little pretty rather quite somehow anyway anyways " +
+  "looking getting trying doing having making taking coming saying thinking talking working putting giving " +
+  "sitting standing walking telling asking showing turning keeping letting starting moving playing " +
+  "people person somebody whatever whenever wherever another around through without within between before behind " +
+  "should've could've would've").split(" "));
+
 /** Best automatic pick in one line: a number + unit pair ("three minutes"), a number word, or a strong 6+ letter word. */
 export function autoKeyword(words) {
   const toks = words.map((w) => norm(w.text));
@@ -92,7 +100,7 @@ export function autoKeyword(words) {
     if (!t) continue;
     if (NUM_WORDS.has(t) && UNIT_WORDS.has(toks[i + 1] || "")) consider(i, 2, 5);
     else if (NUM_WORDS.has(t)) consider(i, 1, 3);
-    else if (!STOP_WORDS.has(t) && t.replace(/'/g, "").length >= 6) consider(i, 1, 2 + Math.min(t.length, 10) / 100);
+    else if (!STOP_WORDS.has(t) && !WEAK_WORDS.has(t) && !/ly$/.test(t) && t.replace(/'/g, "").length >= 6) consider(i, 1, 2 + Math.min(t.length, 10) / 100);
   }
   return best;
 }

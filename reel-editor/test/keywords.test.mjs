@@ -97,3 +97,14 @@ test("headline hook renders words, scrim and rule, and the brand preset uses it"
   const boxed = renderHTML({ name: "t", canvas: { width: 1080, height: 1920 }, style: mergeOverrides(style, { titleStyle: "box" }), video: { src: "/x.mp4", duration: 8, hasAudio: true }, captions: [], hook, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
   assert.match(boxed, /id="hook-text"/, "older styles still work");
 });
+
+test("automatic gold skips weak words like almost, looking and -ly adverbs", () => {
+  const w = (s) => s.split(" ").map((text) => ({ text }));
+  assert.equal(autoKeyword(w("I spent almost")), null);
+  assert.equal(autoKeyword(w("start looking for")), null);
+  assert.equal(autoKeyword(w("it's honestly fine")), null, "-ly adverbs are weak");
+  assert.equal(autoKeyword(w("went sideways fast")).i, 1, "strong words still win");
+  const g = [{ words: w("we're never really") }];
+  markKeywords(g, dict, { auto: true });
+  assert.deepEqual(g[0].words.map((x) => !!x.key), [false, true, false], "power words are unaffected");
+});
