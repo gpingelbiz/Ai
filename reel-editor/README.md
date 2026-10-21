@@ -41,6 +41,8 @@ export ELEVENLABS_API_KEY=...     # https://elevenlabs.io/app/developers/api-key
 export ELEVENLABS_VOICE_ID=...    # default voice for --voiceover
 ```
 
+Or run `npx -y @elevenlabs/cli@latest onboard init` in this folder: it signs you in through the browser and writes the key to `.env.local` (gitignored), which `reel` loads on start. A key already set in the shell wins.
+
 ## Use
 
 ```bash
