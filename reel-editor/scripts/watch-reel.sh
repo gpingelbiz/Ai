@@ -40,6 +40,9 @@ for _ in $(seq 1 120); do
   sleep 2
 done
 
+# Mac notification (shows on the Mini; harmless when there is no GUI session).
+notify() { local t m; t=$(printf '%s' "$1" | tr '"' "'"); m=$(printf '%s' "$2" | tr '"' "'"); osascript -e "display notification \"$m\" with title \"$t\"" >/dev/null 2>&1 || true; }
+
 base=$(basename "$FILE")
 stem="${base%.*}"
 hook=""
@@ -60,10 +63,13 @@ log="$REELS/watch.log"
 echo "$(date '+%F %T') start $base -> $work ${flags[*]:-}" >> "$log"
 cd "$REELS"
 # shellcheck disable=SC2086
-if reel edit "$FILE" --out "$work" --title "$name" "${flags[@]}" $EXTRA_ARGS >> "$log" 2>&1; then
+# ${flags[@]+...}: macOS bash 3.2 treats an empty array as unbound under set -u (a plain drop has no flags).
+if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
   out="$work/renders/$name.mp4"
   # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
-  pretty=$(printf '%s' "$hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
+  used_hook="$hook"
+  [ -n "$used_hook" ] || used_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
+  pretty=$(printf '%s' "$used_hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
   dest="$DONE/${pretty:-$name}.mp4"
   # Never overwrite a finished reel (macOS also refuses it for background jobs on the Desktop): add (2), (3), ...
   if [ -e "$dest" ]; then n=2; while [ -e "$DONE/${pretty:-$name} ($n).mp4" ]; do n=$((n + 1)); done; dest="$DONE/${pretty:-$name} ($n).mp4"; fi
@@ -72,9 +78,11 @@ if reel edit "$FILE" --out "$work" --title "$name" "${flags[@]}" $EXTRA_ARGS >> 
   note="${dest%.mp4} - check these words.txt"
   if [ -s "$work/review.txt" ]; then cp -f "$work/review.txt" "$note"; else rm -f "$note"; fi
   echo "$(date '+%F %T') done  $dest" >> "$log"
+  if [ -s "$work/review.txt" ]; then notify "Reel ready: check a few words" "$(basename "$dest" .mp4). See the note next to it."; else notify "Reel ready" "$(basename "$dest" .mp4)"; fi
   printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"
 else
   echo "$(date '+%F %T') FAIL  $base (see above)" >> "$log"
+  notify "Reel failed" "$base. Rename it to retry; details in ~/Reels/watch.log"
   printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
   exit 1
 fi
