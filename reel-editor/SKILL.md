@@ -39,6 +39,16 @@ Run everything with the `reel` CLI in this folder (`node bin/reel.mjs` if it is 
 - `--canvas landscape` for YouTube, `--quality delivery` for the final export
 - `--preset clean` for plain subtitles with none of the brand styling
 
+## Post copy
+
+After the render, write the caption, hashtags and hook options from Sandcastles:
+
+```bash
+node scripts/write-caption.mjs videos/<name> "<where the reel is> - caption.txt"
+```
+
+It runs Claude Code headless with only the Sandcastles hook and format lookups allowed, in the voice from `voice/greg.md`. No CTA unless `REEL_WATCH_CTA` is set. The drop folder does this on its own after every reel.
+
 ## Deliver
 
 Give Greg the render path, the before/after duration, and anything that looked off (a mis-heard word, a caption on the face, a weak auto hook). Offer thumbnail-agent as the optional next step.

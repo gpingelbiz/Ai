@@ -94,7 +94,7 @@ The filename is the brief:
 | `clip #landscape.mov` | 16:9 for YouTube |
 | `clip #low.mov` or `clip #top.mov` | Force the hook low or high |
 
-When a reel has doubtful words, a `check these words.txt` note lands beside it. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
+When a reel has doubtful words, a `check these words.txt` note lands beside it. If you use [Claude Code](https://claude.com/claude-code) and have the Sandcastles connector on claude.ai, a `caption.txt` lands beside it too: a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
 
 ## Troubleshooting
 
