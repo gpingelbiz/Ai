@@ -1,0 +1,19 @@
+{
+  "name": "pingel-brand",
+  "canvas": "auto",
+  "colors": { "text": "#F5F1E8", "accent": "#C8A24B", "stroke": "#000000" },
+  "captions": {
+    "enabled": true,
+    "wordsPerLine": 3,
+    "position": 0.72,
+    "fontSizeFrac": 0.04,
+    "uppercase": true,
+    "animation": "pop",
+    "activeWord": false,
+    "emojis": false
+  },
+  "hook": { "enabled": true, "duration": 3, "position": 0.22, "fontSizeFrac": 0.052, "maxWords": 8 },
+  "zooms": { "enabled": true, "interval": 5, "scales": [1.14, 1.22], "origin": "50% 38%", "snap": 0.12 },
+  "cuts": { "silence": "fast", "badTakes": true, "fillers": true, "pad": 0.12 },
+  "audio": { "music": null, "cleanAudio": true, "sfx": false }
+}
