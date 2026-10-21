@@ -48,7 +48,15 @@ n8n is not installed on the Mini, and a Docker n8n can't see `~/Reels` or run `r
 ~/Ai/reel-editor/scripts/install-watcher.sh --uninstall # turn it off
 ```
 
-The agent runs `scripts/watch-folder.sh` whenever `~/Reels/raw` changes. That script edits each new clip once through `watch-reel.sh`, leaves a `.done` or `.failed` marker in `~/Reels/videos/.seen`, and keeps scanning until nothing new is left. Rename a failed clip to retry it. Its own output goes to `~/Reels/watch-launchd.log`; each edit still logs to `~/Reels/watch.log`.
+The agent runs `scripts/watch-folder.sh` whenever `~/Reels/raw` changes.
+
+**Keep the drop folder out of the Desktop, Documents and Downloads.** macOS privacy protection stops background jobs from listing those folders: the watcher fires, sees an empty folder, and exits cleanly, so nothing happens and nothing errors. To drop from the Desktop, make a shortcut to the real folder:
+
+```bash
+ln -s ~/Reels/raw ~/Desktop/Reels/Raw
+```
+
+Writing finished reels to the Desktop (`REEL_WATCH_DONE=~/Desktop/Reels`) works fine. Granting /bin/bash Full Disk Access would also work, but it opens far more than this needs. That script edits each new clip once through `watch-reel.sh`, leaves a `.done` or `.failed` marker in `~/Reels/videos/.seen`, and keeps scanning until nothing new is left. Rename a failed clip to retry it. Its own output goes to `~/Reels/watch-launchd.log`; each edit still logs to `~/Reels/watch.log`.
 
 To keep n8n in the loop instead, run n8n natively on the Mac (`npx n8n`), or replace the "reel edit" node with an SSH node to the Mac running the same `watch-reel.sh` command and mount `~/Reels/raw` into the container for the trigger.
 
