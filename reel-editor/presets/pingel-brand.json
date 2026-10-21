@@ -15,7 +15,8 @@
     "uppercase": true,
     "animation": "pop",
     "activeWord": false,
-    "emojis": false
+    "emojis": false,
+    "autoKeywords": true
   },
   "hook": {
     "enabled": true,

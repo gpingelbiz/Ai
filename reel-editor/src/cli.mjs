@@ -27,6 +27,8 @@ Options (edit / batch)
   --language <code>        default en
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
   --title-style <s>        gold (default) | outline (Bone text, black outline) | box (Bone on Obsidian backing)
+  --hook-position <0-1>    hook height from the top (default 0.22); 0.40 clears the head on wide shots
+  --no-auto-keywords       gold only on dictionary terms, numbers and power words (no automatic picks)
   --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)
   --cta-last <s>           show the CTA for the last N seconds (default 3)   --cta-at <s> --cta-duration <s>
   --cta-style <s>          pill (default) | box | text          --cta-position <0-1>  default 0.62
@@ -60,6 +62,8 @@ const EDIT_OPTIONS = {
   hook: { type: "string" },
   "no-hook": { type: "boolean" },
   "title-style": { type: "string" },
+  "hook-position": { type: "string" },
+  "no-auto-keywords": { type: "boolean" },
   cta: { type: "string" },
   "cta-last": { type: "string" },
   "cta-at": { type: "string" },

@@ -23,6 +23,7 @@ The watcher reads the filename so you can steer an edit from your phone without 
 | `clip #nocta.mov` | no CTA |
 | `clip #nozoom.mov` | no magic zooms |
 | `clip #landscape.mov` | 16:9 canvas for YouTube |
+| `clip #low.mov` | hook at chest height instead of 22% from the top (wide shots) |
 
 Tags combine: `objections__Stop explaining the price #nocta.mov`.
 
@@ -31,34 +32,25 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `REEL_WATCH_ROOT` | `~/Reels` | work folder (renders in `videos/<name>/`) |
-| `REEL_WATCH_DONE` | `~/Reels/done` | where finished MP4s are copied |
+| `REEL_WATCH_DONE` | `~/Reels/done` | where finished MP4s are copied (named after the hook when there is one); on the Mini this is `~/Desktop/Reels` |
 | `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set empty to disable |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 
 The script also pulls `REEL_*`, `ELEVENLABS_*` and `PRODUCER_*` exports from `~/.zshrc`, so the key you set for Terminal works here too.
 
-## If n8n runs in Docker
+## Without n8n (the Mini today)
 
-A Docker n8n can't see `~/Reels` or run `reel` on the Mac. Two fixes:
+n8n is not installed on the Mini, and a Docker n8n can't see `~/Reels` or run `reel` on the Mac anyway. A launchd agent does the same job with no n8n:
 
-- **Easiest:** run the watcher without n8n. `launchd` can call the same script on folder changes:
-  ```bash
-  cat > ~/Library/LaunchAgents/com.pingel.reel-watch.plist <<'PLIST'
-  <?xml version="1.0" encoding="UTF-8"?>
-  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-  <plist version="1.0"><dict>
-    <key>Label</key><string>com.pingel.reel-watch</string>
-    <key>ProgramArguments</key><array>
-      <string>/bin/bash</string><string>-c</string>
-      <string>for f in "$HOME"/Reels/raw/*.{mov,mp4,m4v,MOV,MP4}; do [ -f "$f" ] || continue; [ -e "$HOME/Reels/videos/.seen/$(basename "$f")" ] && continue; mkdir -p "$HOME/Reels/videos/.seen"; "$HOME/Ai/reel-editor/scripts/watch-reel.sh" "$f" && touch "$HOME/Reels/videos/.seen/$(basename "$f")"; done</string>
-    </array>
-    <key>WatchPaths</key><array><string>/Users/gregpingel/Reels/raw</string></array>
-    <key>RunAtLoad</key><true/>
-  </dict></plist>
-  PLIST
-  launchctl load ~/Library/LaunchAgents/com.pingel.reel-watch.plist
-  ```
-- **Keep n8n in the loop:** replace the "reel edit" node with an SSH node to the Mac (`ssh gregpingel@localhost`) running the same `watch-reel.sh` command, and mount `~/Reels/raw` into the container for the trigger.
+```bash
+~/Ai/reel-editor/scripts/install-watcher.sh             # turn it on
+~/Ai/reel-editor/scripts/install-watcher.sh --dry-run   # show and validate the agent, change nothing
+~/Ai/reel-editor/scripts/install-watcher.sh --uninstall # turn it off
+```
+
+The agent runs `scripts/watch-folder.sh` whenever `~/Reels/raw` changes. That script edits each new clip once through `watch-reel.sh`, leaves a `.done` or `.failed` marker in `~/Reels/videos/.seen`, and keeps scanning until nothing new is left. Rename a failed clip to retry it. Its own output goes to `~/Reels/watch-launchd.log`; each edit still logs to `~/Reels/watch.log`.
+
+To keep n8n in the loop instead, run n8n natively on the Mac (`npx n8n`), or replace the "reel edit" node with an SSH node to the Mac running the same `watch-reel.sh` command and mount `~/Reels/raw` into the container for the trigger.
 
 ## From Google Drive instead of a local folder
 

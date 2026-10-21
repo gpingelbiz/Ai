@@ -91,7 +91,7 @@ export async function runEdit(input, opts = {}) {
   const cleanWords = remapWords(cuts.words, cuts.segments).filter((w) => w.start < duration);
 
   // 4. Captions, hook, zooms
-  const groups = preset.captions.enabled ? markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine }) : [];
+  const groups = preset.captions.enabled ? markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords }) : [];
   const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: Math.min(preset.hook.duration, duration) }) : null;
   const zooms = preset.zooms.enabled ? planZooms(groups.length ? groups : cleanWords, duration, preset.zooms) : [];
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;

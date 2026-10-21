@@ -2,7 +2,9 @@
 # One drop-folder job: wait for the file to finish copying, run `reel edit`, copy the render to the done folder.
 # Usage: watch-reel.sh /path/to/clip.mov
 # Hook from the filename: "clip__You don't have a sales problem.mov" -> --hook "You don't have a sales problem"
-# Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9.
+# Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9,
+# "#low" drops the hook to chest height (wide shots where the default sits on your head).
+# The finished MP4 in the done folder is named after the hook when there is one.
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
 set -euo pipefail
 
@@ -11,7 +13,14 @@ FILE="${1:-}"
 
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-[ -f "$HOME/.zshrc" ] && eval "$(grep -E '^export (REEL_|ELEVENLABS_|PRODUCER_|PATH=)' "$HOME/.zshrc" 2>/dev/null || true)"
+# Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
+if [ -f "$HOME/.zshrc" ]; then
+  while IFS= read -r line; do
+    var="${line#export }"; var="${var%%=*}"
+    [ "$var" != "PATH" ] && [ -n "${!var+x}" ] && continue
+    eval "$line"
+  done < <(grep -E '^export (REEL_|ELEVENLABS_|PRODUCER_|PATH=)' "$HOME/.zshrc" 2>/dev/null || true)
+fi
 export PRODUCER_BROWSER_GPU_MODE="${PRODUCER_BROWSER_GPU_MODE:-hardware}"
 
 REELS="${REEL_WATCH_ROOT:-$HOME/Reels}"
@@ -40,6 +49,7 @@ flags=()
 case "$base" in *"#nocta"*) ;; *) [ -n "$CTA" ] && flags+=(--cta "$CTA");; esac
 case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
+case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 name=$(echo "$stem" | sed -E 's/#[a-z]+//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 
@@ -50,9 +60,12 @@ cd "$REELS"
 # shellcheck disable=SC2086
 if reel edit "$FILE" --out "$work" --title "$name" "${flags[@]}" $EXTRA_ARGS >> "$log" 2>&1; then
   out="$work/renders/$name.mp4"
-  cp -f "$out" "$DONE/$name.mp4"
-  echo "$(date '+%F %T') done  $DONE/$name.mp4" >> "$log"
-  printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$DONE/$name.mp4" "$name" "$hook"
+  # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
+  pretty=$(printf '%s' "$hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
+  dest="$DONE/${pretty:-$name}.mp4"
+  cp -f "$out" "$dest"
+  echo "$(date '+%F %T') done  $dest" >> "$log"
+  printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"
 else
   echo "$(date '+%F %T') FAIL  $base (see above)" >> "$log"
   printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
