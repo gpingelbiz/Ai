@@ -13,7 +13,7 @@ Usage
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
-  reel transcribe <video> [-o words.json] [--engine faster-whisper|elevenlabs|hyperframes] [--model small]
+  reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
   reel batch <folder> [options]     edit every video in a folder that has no render yet
   reel presets                      list presets
   reel doctor                       check ffmpeg, whisper, hyperframes, chrome, keys
@@ -22,8 +22,9 @@ Options (edit / batch)
   --out <dir>              work dir (default videos/<name>)
   --preset <name|path>     default pingel-brand
   --transcript <file>      skip ASR and use this words json / srt
-  --engine <e>             faster-whisper (default) | elevenlabs | hyperframes
-  --model <m>              whisper model: small (default), medium, large-v3
+  --engine <e>             auto (default: ElevenLabs Scribe when ELEVENLABS_API_KEY is set, else Whisper) | faster-whisper | elevenlabs | hyperframes
+  --model <m>              whisper model: large-v3-turbo (default), small (fast, mis-hears more), large-v3
+  --no-verify              skip the second-opinion transcript and review.txt
   --language <code>        default en
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
   --title-style <s>        headline (brand default: words rise on a soft scrim, one gold phrase, gold rule) |
@@ -59,6 +60,7 @@ const EDIT_OPTIONS = {
   preset: { type: "string", default: "pingel-brand" },
   transcript: { type: "string" },
   engine: { type: "string" },
+  "no-verify": { type: "boolean" },
   model: { type: "string" },
   language: { type: "string" },
   hook: { type: "string" },

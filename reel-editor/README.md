@@ -2,8 +2,8 @@
 
 Self-hosted reel editor for talking-head videos. Drop in a raw clip, get back a finished vertical reel:
 
-1. **Transcribe** with Whisper on the Mac Mini (word timestamps, framework names from `dictionary.json`).
-2. **Cut** dead air, `um`/`uh`, stutters, and false starts (the first take of a restarted phrase).
+1. **Transcribe** with ElevenLabs Scribe when `ELEVENLABS_API_KEY` is set (most accurate, about 2 s per minute of video), otherwise Whisper large-v3-turbo on the Mac Mini. The brand preset also gets a **second opinion** from the other engine: every phrase the two hear differently, or either is unsure of, goes into `review.txt` with its time in the finished reel (the drop folder puts it next to the reel as `<name> - check these words.txt`). If Scribe is unreachable, Whisper takes over.
+2. **Cut** dead air, `um`/`uh`, stutters, and false starts (the first take of a restarted phrase). Every silence cut is checked against the real audio level, so a word the transcript timed wrong is never clipped, and a word repeated across a sentence break ("look at you. You can") is not a stutter.
 3. **Clean audio**: high-pass, noise reduction, loudness normalized to -16 LUFS.
 4. **Captions**: 3 words per line, Anton, all caps, Bone text, Signet Gold keyword, heavy stroke, lower third at 72%, pop-in.
 5. **Hook title**: Anton in Signet Gold at 22% from the top for the first 3 seconds.

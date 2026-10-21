@@ -17,7 +17,12 @@ export function normalizeWords(obj) {
   if (!arr) throw new Error("unrecognized transcript shape (want [{text,start,end}] or {words:[...]})");
   return arr
     .filter((w) => (w.type ? w.type === "word" : true))
-    .map((w) => ({ text: String(w.text ?? w.word ?? "").trim(), start: +w.start, end: +w.end }))
+    .map((w) => {
+      const out = { text: String(w.text ?? w.word ?? "").trim(), start: +w.start, end: +w.end };
+      const p = w.prob ?? w.probability ?? (w.logprob != null ? Math.exp(+w.logprob) : null);
+      if (p != null && Number.isFinite(+p)) out.prob = Math.round(+p * 1000) / 1000;
+      return out;
+    })
     .filter((w) => w.text && Number.isFinite(w.start) && Number.isFinite(w.end) && w.end >= w.start);
 }
 
@@ -88,7 +93,18 @@ export function applyCorrections(words, corrections = []) {
  * Transcribe to word timestamps.
  * engine: faster-whisper (local python, default) | elevenlabs (Scribe API) | hyperframes (whisper.cpp via the CLI)
  */
-export async function transcribe(input, { engine = "faster-whisper", model = "small", language = "en", prompt = "", out, hyperframesBin } = {}) {
+export async function transcribe(input, { engine = "auto", model = "large-v3-turbo", language = "en", prompt = "", out, hyperframesBin } = {}) {
+  const { resolveEngine } = await import("./review.mjs");
+  const wanted = engine;
+  engine = resolveEngine(engine);
+  if (wanted === "auto" && engine === "elevenlabs") {
+    try {
+      return await transcribe(input, { engine: "elevenlabs", model, language, prompt, out, hyperframesBin });
+    } catch (e) {
+      console.warn(`[reel] warning: ElevenLabs Scribe failed (${String(e.message).split("\n")[0]}); using local Whisper`);
+      engine = "faster-whisper";
+    }
+  }
   let words;
   if (engine === "faster-whisper") {
     const python = process.env.REEL_PYTHON || "python3";

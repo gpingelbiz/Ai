@@ -20,6 +20,7 @@ Run everything with the `reel` CLI in this folder (`node bin/reel.mjs` if it is 
    reel edit "<video>" --out videos/<name> --hook "<your hook>"
    ```
    `words.json` from step 2 is reused automatically.
+   Transcription is ElevenLabs Scribe (key in ~/.zshrc) with a Whisper second opinion. If the summary says `review: N spots to check`, read `videos/<name>/review.txt` and tell Greg each spot; fix the caption in `plan.json` when it is clearly wrong.
 4. Read the summary lines: cuts removed, caption count, zooms. Then look at the render (`videos/<name>/renders/<name>.mp4`). Extract 3 or 4 frames with ffmpeg and check: hook readable, captions not covering the face, keyword highlights on the right words.
 5. If something is off, edit `videos/<name>/plan.json` (caption text, `key` flags, hook text, zoom list) and run `reel build videos/<name>`. Do not hand-edit `project/index.html`; it is regenerated.
 

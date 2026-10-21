@@ -65,7 +65,12 @@ if reel edit "$FILE" --out "$work" --title "$name" "${flags[@]}" $EXTRA_ARGS >> 
   # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
   pretty=$(printf '%s' "$hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
   dest="$DONE/${pretty:-$name}.mp4"
-  cp -f "$out" "$dest"
+  # Never overwrite a finished reel (macOS also refuses it for background jobs on the Desktop): add (2), (3), ...
+  if [ -e "$dest" ]; then n=2; while [ -e "$DONE/${pretty:-$name} ($n).mp4" ]; do n=$((n + 1)); done; dest="$DONE/${pretty:-$name} ($n).mp4"; fi
+  cp "$out" "$dest"
+  # Words the two transcription engines disagreed on, or were unsure of, go next to the reel.
+  note="${dest%.mp4} - check these words.txt"
+  if [ -s "$work/review.txt" ]; then cp -f "$work/review.txt" "$note"; else rm -f "$note"; fi
   echo "$(date '+%F %T') done  $dest" >> "$log"
   printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"
 else

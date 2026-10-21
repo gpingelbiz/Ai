@@ -2,9 +2,12 @@
   "name": "default",
   "canvas": "auto",
   "transcribe": {
-    "engine": "faster-whisper",
-    "model": "small",
-    "language": "en"
+    "engine": "auto",
+    "model": "large-v3-turbo",
+    "verifyModel": "large-v3-turbo",
+    "language": "en",
+    "verify": false,
+    "minProb": 0.5
   },
   "colors": {
     "text": "#FFFFFF",
