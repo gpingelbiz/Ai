@@ -40,6 +40,8 @@ export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5,
   }
   for (let m = 0; m + 1 < toks.length; m++) {
     if (drop[m] || drop[m + 1]) continue;
+    // "...look at you. You can..." ends one sentence and starts the next: not a stutter.
+    if (endsClause(words[m].text)) continue;
     if (toks[m] === toks[m + 1] && STUTTER_WORDS.has(toks[m]) && words[m + 1].start - words[m].end < 0.6) drop[m] = "stutter";
   }
   return drop;
@@ -191,4 +193,105 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
   ];
   await run("ffmpeg", args);
   return output;
+}
+
+/** Audio level every `step` seconds, in dBFS, from the first audio track (one ffmpeg pass, mono 16 kHz). */
+export async function audioEnvelope(input, { step = 0.02 } = {}) {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const tmp = path.join(os.tmpdir(), `reel-env-${process.pid}-${Date.now()}.raw`);
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-i", input, "-map", "0:a:0", "-ac", "1", "-ar", "16000", "-f", "s16le", tmp]);
+  try {
+    const buf = fs.readFileSync(tmp);
+    const n = Math.floor(16000 * step);
+    const db = [];
+    for (let off = 0; off + n * 2 <= buf.length; off += n * 2) {
+      let sum = 0;
+      for (let k = 0; k < n; k++) { const v = buf.readInt16LE(off + k * 2); sum += v * v; }
+      const rms = Math.sqrt(sum / n) / 32768;
+      db.push(rms > 0 ? 20 * Math.log10(rms) : -120);
+    }
+    return { step, db };
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+}
+
+/**
+ * Never cut a sound. Transcript timings can be off by a few hundred ms (Whisper starts words early, Scribe has been
+ * seen ending one early), so every silence gap is checked against the real audio level. Loud frames inside a gap are
+ * kept: the cut shrinks to the longest quiet run, or is dropped when no run is long enough. Gaps that also remove a
+ * filler, stutter or bad take are left alone (those cuts are meant to remove sound). The first and last gaps are
+ * checked too, so a clipped opening word is not trimmed away.
+ * Returns { cuts, restored } with segments, removed and keptDuration rebuilt.
+ */
+export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 0.04 } = {}) {
+  const { step, db } = env;
+  if (!db.length) return { cuts, restored: 0 };
+  const sorted = [...db].sort((a, b) => a - b);
+  const floor = sorted[Math.floor(sorted.length * 0.1)];
+  const loudDb = Math.min(-30, Math.max(-48, floor + 12)); // a little above this recording's room noise
+  const loud = (t0, t1) => {
+    const out = [];
+    for (let i = Math.max(0, Math.floor(t0 / step)); i < Math.min(db.length, Math.ceil(t1 / step)); i++) if (db[i] > loudDb) out.push(i);
+    return out;
+  };
+  const intentional = cuts.removed.filter((r) => r.reason !== "silence");
+  const touchesIntentional = (a, b) => intentional.some((r) => r.start < b && r.end > a);
+  const segs = cuts.segments.map((s) => ({ ...s }));
+  let restored = 0;
+
+  // Leading and trailing silence: pull the first/last segment out to cover any sound.
+  if (segs.length && segs[0].start > 0 && !touchesIntentional(0, segs[0].start)) {
+    const hits = loud(0, segs[0].start);
+    if (hits.length) { segs[0].start = r3(Math.max(0, hits[0] * step - margin)); restored++; }
+  }
+  const last = segs[segs.length - 1];
+  if (last && last.end < duration && !touchesIntentional(last.end, duration)) {
+    const hits = loud(last.end, duration);
+    if (hits.length) { last.end = r3(Math.min(duration, (hits[hits.length - 1] + 1) * step + margin)); restored++; }
+  }
+
+  // Gaps between segments.
+  const out = [segs[0]];
+  for (let k = 1; k < segs.length; k++) {
+    const prev = out[out.length - 1];
+    const cur = segs[k];
+    const g0 = prev.end, g1 = cur.start;
+    const hits = g1 > g0 && !touchesIntentional(g0, g1) ? loud(g0, g1) : [];
+    if (!hits.length) { out.push(cur); continue; }
+    restored++;
+    // Longest quiet run inside the gap.
+    let best = null, runStart = null;
+    const i0 = Math.floor(g0 / step), i1 = Math.ceil(g1 / step);
+    for (let i = i0; i <= i1; i++) {
+      const quiet = i < i1 && !(db[i] > loudDb);
+      if (quiet && runStart == null) runStart = i;
+      if (!quiet && runStart != null) {
+        if (!best || i - runStart > best[1] - best[0]) best = [runStart, i];
+        runStart = null;
+      }
+    }
+    if (best && (best[1] - best[0]) * step - 2 * margin >= minLen) {
+      prev.end = r3(Math.max(g0, best[0] * step + margin));
+      cur.start = r3(Math.min(g1, best[1] * step - margin));
+      out.push(cur);
+    } else {
+      prev.end = cur.end; // nothing quiet enough to cut: keep the whole gap
+    }
+  }
+
+  const silences = [];
+  let t = 0;
+  for (const s of out) {
+    if (s.start - t > 0.001) silences.push({ start: r3(t), end: s.start, reason: "silence" });
+    t = s.end;
+  }
+  if (duration - t > 0.001) silences.push({ start: r3(t), end: r3(duration), reason: "silence" });
+  const kept = out.reduce((acc, s) => acc + (s.end - s.start), 0);
+  return {
+    cuts: { ...cuts, segments: out, removed: [...intentional, ...silences].sort((a, b) => a.start - b.start), keptDuration: r3(kept) },
+    restored,
+  };
 }

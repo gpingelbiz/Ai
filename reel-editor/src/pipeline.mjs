@@ -2,8 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
-import { planCuts, applyCuts, remapWords } from "./cuts.mjs";
+import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts } from "./cuts.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
+import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms } from "./zooms.mjs";
@@ -31,15 +32,19 @@ export async function runEdit(input, opts = {}) {
   // 1. Words
   const wordsPath = path.join(workDir, "words.json");
   let words;
+  let primaryEngine = null;
   if (opts.transcript) {
     words = importTranscript(path.resolve(opts.transcript));
     log(`imported ${words.length} words from ${opts.transcript}`);
   } else if (fs.existsSync(wordsPath) && !opts.force) {
-    words = readJSON(wordsPath).words;
+    const saved = readJSON(wordsPath);
+    words = saved.words;
+    primaryEngine = saved.engine || null;
     log(`reusing ${wordsPath} (${words.length} words); pass --force to re-transcribe`);
   } else {
     if (!meta.hasAudio) throw new Error("source has no audio track, nothing to transcribe (pass --transcript to supply words)");
-    log(`transcribing with ${preset.transcribe.engine} (${preset.transcribe.model})…`);
+    const eng = resolveEngine(preset.transcribe.engine);
+    log(`transcribing with ${eng === "elevenlabs" ? "ElevenLabs Scribe" : `faster-whisper (${preset.transcribe.model})`}…`);
     words = await transcribe(input, {
       engine: preset.transcribe.engine,
       model: preset.transcribe.model,
@@ -48,17 +53,49 @@ export async function runEdit(input, opts = {}) {
       out: wordsPath,
       hyperframesBin: hyperframesBin(),
     });
+    primaryEngine = readJSON(wordsPath).engine || resolveEngine(preset.transcribe.engine);
     log(`${words.length} words`);
   }
   words = applyCorrections(words, dict.corrections);
-  writeJSON(wordsPath, { source: input, words });
+  writeJSON(wordsPath, { source: input, engine: primaryEngine, words });
+
+  // 1b. Second opinion: a different engine hears the same audio; disagreements go into review.txt.
+  let review = null;
+  if (preset.transcribe.verify && !opts.transcript && !opts.noVerify && words.length) {
+    const other = secondEngine(primaryEngine || "faster-whisper");
+    const secondPath = path.join(workDir, "words-second.json");
+    let second = null;
+    if (fs.existsSync(secondPath) && !opts.force) second = readJSON(secondPath).words;
+    else if (other) {
+      log(`second opinion from ${other === "elevenlabs" ? "ElevenLabs Scribe" : `faster-whisper (${preset.transcribe.verifyModel || preset.transcribe.model})`}…`);
+      try {
+        second = await transcribe(input, {
+          engine: other,
+          model: preset.transcribe.verifyModel || preset.transcribe.model,
+          language: preset.transcribe.language,
+          prompt: (dict.terms || []).slice(0, 40).join(", "),
+          out: secondPath,
+          hyperframesBin: hyperframesBin(),
+        });
+      } catch (e) {
+        warn(`second opinion failed: ${String(e.message).split("\n")[0]}`);
+      }
+    }
+    if (second) second = applyCorrections(second, dict.corrections);
+    review = { items: compareTranscripts(words, second, { minProb: preset.transcribe.minProb ?? 0.5 }), primaryEngine, secondEngineName: second ? other || "saved" : null };
+  }
   if (!words.length) warn("transcript is empty: no captions, no cuts");
 
   // 2. Cut plan
   const cutsOn = !opts.noCuts && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers);
-  const cuts = cutsOn
+  let cuts = cutsOn
     ? planCuts(words, meta.duration, preset.cuts)
     : { segments: [{ start: 0, end: r3(meta.duration) }], removed: [], originalDuration: r3(meta.duration), keptDuration: r3(meta.duration), words };
+  if (cutsOn && meta.hasAudio && preset.cuts.audioGuard !== false) {
+    const guarded = guardSilenceCuts(cuts, await audioEnvelope(input), meta.duration);
+    cuts = guarded.cuts;
+    if (guarded.restored) log(`audio check: kept sound in ${guarded.restored} cut${guarded.restored === 1 ? "" : "s"} the transcript timing would have clipped`);
+  }
   writeJSON(path.join(workDir, "cuts.json"), cuts);
   const byReason = {};
   for (const r of cuts.removed) byReason[r.reason] = (byReason[r.reason] || 0) + 1;
@@ -100,6 +137,10 @@ export async function runEdit(input, opts = {}) {
   log(`hook: ${hook ? `"${hook.text}"${hook.auto ? " (auto, pass --hook for a written one)" : ""}` : "none"}`);
   log(`zooms: ${zooms.length}`);
   if (cta) log(`cta: "${cta.text}" at ${cta.start}s for ${cta.duration}s (${cta.style})`);
+  if (review) {
+    const spots = writeReview(workDir, { ...review, segments: cuts.segments, title: hook?.text || name });
+    log(spots.length ? `review: ${spots.length} spot${spots.length === 1 ? "" : "s"} to check, see ${path.join(workDir, "review.txt")}` : `review: both engines agree, nothing to check`);
+  }
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
