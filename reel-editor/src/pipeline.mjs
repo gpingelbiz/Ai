@@ -4,7 +4,7 @@ import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
 import { planCuts, applyCuts, remapWords } from "./cuts.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
-import { groupWords, markKeywords } from "./captions.mjs";
+import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms } from "./zooms.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
@@ -93,6 +93,7 @@ export async function runEdit(input, opts = {}) {
   // 4. Captions, hook, zooms
   const groups = preset.captions.enabled ? markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords }) : [];
   const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: Math.min(preset.hook.duration, duration) }) : null;
+  if (hook) Object.assign(hook, hookWords(hook.text, dict));
   const zooms = preset.zooms.enabled ? planZooms(groups.length ? groups : cleanWords, duration, preset.zooms) : [];
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
   log(`captions: ${groups.length} lines, ${groups.filter((g) => g.words.some((w) => w.key)).length} with a highlight`);

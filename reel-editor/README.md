@@ -84,7 +84,7 @@ With `autoKeywords` on (the brand preset), lines with none of the above get an a
 
 ## Hook title and CTA
 
-`--title-style` picks the hook look: `gold` (Signet Gold, default), `outline` (Bone with the black outline), `box` (Bone on an Obsidian backing, for busy or bright footage).
+`--title-style` picks the hook look. `headline` is the brand default: the words rise in one by one on a soft dark glow (no box), one phrase in Signet Gold and slightly larger, and a short gold rule draws in under it. The gold phrase is picked like a caption keyword (a dictionary term, a number with its unit, or the strongest word); mark it yourself with asterisks: `--hook "The *10 minutes* after a bad number"`. The older looks are `gold` (all Signet Gold), `outline` (Bone with the black outline) and `box` (Bone on an Obsidian backing). `--hook-position` sets the height (0.22 default; 0.40 for wide shots; 0.08 above the head on close-ups).
 
 `--cta "Comment GHOST"` adds the pop-up call to action for the last 3 seconds (`--cta-last 4`, or `--cta-at 10 --cta-duration 3` for a fixed window). It sits at chest level (`--cta-position 0.62`). Styles: `pill` (Obsidian text on a Signet Gold pill, default), `box` (Bone on Obsidian with a gold border), `text` (plain gold text with the caption stroke). One keyword per reel: GHOST for operator pieces, FREEDOM only on its own post.
 

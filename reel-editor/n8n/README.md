@@ -24,6 +24,8 @@ The watcher reads the filename so you can steer an edit from your phone without 
 | `clip #nozoom.mov` | no magic zooms |
 | `clip #landscape.mov` | 16:9 canvas for YouTube |
 | `clip #low.mov` | hook at chest height instead of 22% from the top (wide shots) |
+| `clip #top.mov` | hook above your head (close-up selfies) |
+| `clip__The *10 minutes* after a bad number.mov` | asterisks pick the gold phrase in the hook |
 
 Tags combine: `objections__Stop explaining the price #nocta.mov`.
 
@@ -33,7 +35,7 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | --- | --- | --- |
 | `REEL_WATCH_ROOT` | `~/Reels` | work folder (renders in `videos/<name>/`) |
 | `REEL_WATCH_DONE` | `~/Reels/done` | where finished MP4s are copied (named after the hook when there is one); on the Mini this is `~/Desktop/Reels` |
-| `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set empty to disable |
+| `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set it to an empty string (`export REEL_WATCH_CTA=""`) for no CTA |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 
 The script also pulls `REEL_*`, `ELEVENLABS_*` and `PRODUCER_*` exports from `~/.zshrc`, so the key you set for Terminal works here too.

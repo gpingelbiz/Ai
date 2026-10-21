@@ -3,7 +3,8 @@
 # Usage: watch-reel.sh /path/to/clip.mov
 # Hook from the filename: "clip__You don't have a sales problem.mov" -> --hook "You don't have a sales problem"
 # Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9,
-# "#low" drops the hook to chest height (wide shots where the default sits on your head).
+# "#low" drops the hook to chest height (wide shots where the default sits on your head),
+# "#top" lifts it above the head (close-up selfies where your face fills the middle).
 # The finished MP4 in the done folder is named after the hook when there is one.
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
 set -euo pipefail
@@ -25,7 +26,7 @@ export PRODUCER_BROWSER_GPU_MODE="${PRODUCER_BROWSER_GPU_MODE:-hardware}"
 
 REELS="${REEL_WATCH_ROOT:-$HOME/Reels}"
 DONE="${REEL_WATCH_DONE:-$REELS/done}"
-CTA="${REEL_WATCH_CTA:-Comment GHOST}"
+CTA="${REEL_WATCH_CTA-Comment GHOST}"   # unset: default; set but empty: no CTA
 EXTRA_ARGS="${REEL_WATCH_ARGS:-}"
 mkdir -p "$DONE" "$REELS/videos"
 
@@ -50,6 +51,7 @@ case "$base" in *"#nocta"*) ;; *) [ -n "$CTA" ] && flags+=(--cta "$CTA");; esac
 case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
+case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
 name=$(echo "$stem" | sed -E 's/#[a-z]+//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 

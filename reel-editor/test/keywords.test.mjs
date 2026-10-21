@@ -71,3 +71,29 @@ test("everyday phrases highlight but stay out of the Whisper hints", () => {
   markKeywords(g, dict);
   assert.deepEqual(g[0].words.map((w) => !!w.key), [false, true, true]);
 });
+
+test("hookWords picks one gold phrase, or takes it from *asterisks*", async () => {
+  const { hookWords } = await import("../src/captions.mjs");
+  const auto = hookWords("The 10 minutes after a bad number", dict);
+  assert.deepEqual(auto.words.filter((w) => w.key).map((w) => w.text), ["10", "minutes"]);
+  const late = hookWords("Running late? Stay out of the meeting", dict);
+  assert.deepEqual(late.words.filter((w) => w.key).map((w) => w.text), ["late?"]);
+  const hand = hookWords("The 10 minutes after a *bad number*", dict);
+  assert.equal(hand.text, "The 10 minutes after a bad number");
+  assert.deepEqual(hand.words.filter((w) => w.key).map((w) => w.text), ["bad", "number"]);
+});
+
+test("headline hook renders words, scrim and rule, and the brand preset uses it", async () => {
+  const { renderHTML } = await import("../src/compose.mjs");
+  const { hookWords } = await import("../src/captions.mjs");
+  const style = loadPreset("pingel-brand");
+  assert.equal(style.hook.style, "headline");
+  const hook = { start: 0, duration: 3, ...hookWords("The 10 minutes after a bad number", dict) };
+  const html = renderHTML({ name: "t", canvas: { width: 1080, height: 1920 }, style, video: { src: "/x.mp4", duration: 8, hasAudio: true }, captions: [], hook, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
+  assert.match(html, /id="hook-scrim"/);
+  assert.match(html, /id="hook-bar"/);
+  assert.equal((html.match(/class="hw k"/g) || []).length, 2, "10 and minutes are gold");
+  assert.doesNotMatch(html, /id="hook-text"/, "no boxed span in headline mode");
+  const boxed = renderHTML({ name: "t", canvas: { width: 1080, height: 1920 }, style: mergeOverrides(style, { titleStyle: "box" }), video: { src: "/x.mp4", duration: 8, hasAudio: true }, captions: [], hook, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
+  assert.match(boxed, /id="hook-text"/, "older styles still work");
+});

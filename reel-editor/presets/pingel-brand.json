@@ -24,7 +24,7 @@
     "position": 0.22,
     "fontSizeFrac": 0.052,
     "maxWords": 8,
-    "style": "gold"
+    "style": "headline"
   },
   "zooms": {
     "enabled": true,
