@@ -1,3 +1,4 @@
+import { SDR_FILTER, SDR_TAGS } from "./hdr.mjs";
 import { run, r3 } from "./util.mjs";
 
 export const PACE = { off: Infinity, slow: 1.0, medium: 0.6, fast: 0.35 };
@@ -153,8 +154,9 @@ export function remapWords(words, segments) {
   return out;
 }
 
-/** One ffmpeg pass: trim+concat the kept segments, optional audio clean-up, constant frame rate. */
-export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30 } = {}) {
+/** One ffmpeg pass: trim+concat the kept segments, optional audio clean-up, constant frame rate.
+ *  hdr: convert BT.2020/HLG video to tagged BT.709 SDR (captions disappear in HyperFrames otherwise; see hdr.mjs). */
+export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false } = {}) {
   const parts = [];
   const maps = [];
   segments.forEach((s, i) => {
@@ -166,7 +168,9 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
     }
     maps.push(hasAudio ? `[v${i}][a${i}]` : `[v${i}]`);
   });
-  let fc = `${parts.join(";")};${maps.join("")}concat=n=${segments.length}:v=1:a=${hasAudio ? 1 : 0}[v]${hasAudio ? "[a]" : ""}`;
+  let fc = `${parts.join(";")};${maps.join("")}concat=n=${segments.length}:v=1:a=${hasAudio ? 1 : 0}[vcat]${hasAudio ? "[a]" : ""}`;
+  // HDR (HLG/PQ, BT.2020) sources become tagged BT.709 SDR so the renderer composites captions normally.
+  fc += hdr ? `;[vcat]${SDR_FILTER}[v]` : ";[vcat]null[v]";
   let audioOut = "[a]";
   if (hasAudio && cleanAudio) {
     fc += ";[a]highpass=f=80,afftdn=nr=10:nf=-40,loudnorm=I=-16:TP=-1.5:LRA=11[ao]";
@@ -180,6 +184,7 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
     ...(hasAudio ? ["-map", audioOut] : ["-an"]),
     "-fps_mode", "cfr", "-r", String(fps),
     "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+    ...(hdr ? SDR_TAGS : []),
     ...(hasAudio ? ["-c:a", "aac", "-b:a", "192k", "-ar", "48000"] : []),
     "-movflags", "+faststart",
     output,

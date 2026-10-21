@@ -1,13 +1,15 @@
 import { run } from "./util.mjs";
+import { hdrKind, rotationCw } from "./hdr.mjs";
 
-/** ffprobe → { duration, width, height, fps, hasAudio, rotation } with rotation applied to width/height. */
+/** ffprobe → { duration, width, height, fps, hasAudio, rotation, rotationCw, hdr, hdrKind } with rotation applied to
+ *  width/height. hdrKind is "hlg" | "pq" | "bt2020" | null; see hdr.mjs for why HDR sources are converted to SDR. */
 export async function probe(file) {
   const { out } = await run(
     "ffprobe",
     [
       "-v", "error",
       "-show_entries",
-      "stream=index,codec_type,codec_name,width,height,r_frame_rate:stream_tags=rotate:stream_side_data=rotation:format=duration",
+      "stream=index,codec_type,codec_name,width,height,r_frame_rate,pix_fmt,color_transfer,color_primaries,color_space:stream_tags=rotate:stream_side_data=rotation:format=duration",
       "-of", "json",
       file,
     ],
@@ -34,5 +36,11 @@ export async function probe(file) {
     codec: v.codec_name,
     hasAudio: !!a,
     rotation,
+    pixFmt: v.pix_fmt || "",
+    colorTransfer: v.color_transfer || "",
+    colorPrimaries: v.color_primaries || "",
+    rotationCw: rotationCw(v),
+    hdrKind: hdrKind(v),
+    hdr: hdrKind(v) !== null,
   };
 }

@@ -89,6 +89,15 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 Without `--hook`, the first phrase of the clip is used. For a real hook, have Claude read `words.json` and write one, then pass it with `--hook`. The `SKILL.md` in this folder tells Claude how to run the whole thing.
 
+## HDR footage (iPhone, HDR10)
+
+iPhone clips are HLG (Dolby Vision) and some cameras record PQ (HDR10). HyperFrames draws HDR video on a native layer above the page, which hides every caption, so the cut pass always converts HDR sources to BT.709 SDR first:
+
+- HLG: ffmpeg's `colorspace` filter. Matches what the phone shows.
+- PQ: a VideoToolbox tone-map pass on macOS (`source-sdr.mov` in the work dir), rotation applied in software. On other machines it falls back to `colorspace` with a warning, and colors may look flat.
+
+The log line `encoding clean.mp4 (... + hlg → BT.709 SDR)` confirms it ran.
+
 ## Automate with n8n
 
 Watch the drop folder (Local File Trigger or a Google Drive trigger that downloads the file), then an Execute Command node:

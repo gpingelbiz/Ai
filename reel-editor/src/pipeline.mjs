@@ -3,6 +3,7 @@ import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
 import { planCuts, applyCuts, remapWords } from "./cuts.mjs";
+import { toneMapToSdr } from "./hdr.mjs";
 import { groupWords, markKeywords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms } from "./zooms.mjs";
@@ -65,12 +66,24 @@ export async function runEdit(input, opts = {}) {
 
   // 3. Clean footage
   const cleanPath = path.join(workDir, "clean.mp4");
-  const needsPass = (cutsOn && cuts.removed.length > 0) || (preset.audio.cleanAudio && meta.hasAudio) || meta.rotation !== 0;
+  const needsPass = (cutsOn && cuts.removed.length > 0) || (preset.audio.cleanAudio && meta.hasAudio) || meta.rotation !== 0 || meta.hdr;
   let videoSrc = input;
   let cleanMeta = meta;
+  let cutInput = input;
+  let cutHdr = meta.hdr;
+  if (meta.hdrKind === "pq") {
+    const sdrPath = path.join(workDir, "source-sdr.mov");
+    log("tone-mapping PQ HDR source to BT.709 with VideoToolbox…");
+    if (await toneMapToSdr(input, sdrPath, meta)) {
+      cutInput = sdrPath;
+      cutHdr = false;
+    } else {
+      warn("VideoToolbox tone mapping unavailable: converting PQ with the colorspace filter, colors may look flat");
+    }
+  }
   if (needsPass) {
-    log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? " + clean audio" : "") + ")…");
-    await applyCuts(input, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30 });
+    log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? " + clean audio" : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + ")…");
+    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr });
     videoSrc = cleanPath;
     cleanMeta = await probe(cleanPath);
   }
