@@ -6,6 +6,8 @@ const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9&$']/g, "");
 export function cleanText(t, { emojis = false } = {}) {
   let s = String(t);
   if (!emojis) s = s.replace(/[\p{Extended_Pictographic}️‍]/gu, "");
+  // Quotation marks (Scribe quotes reported speech) read as stray marks on a 3-word caption line.
+  s = s.replace(/["“”„«»]/g, "");
   return s.trim().replace(/[,.;:]+$/, "").trim();
 }
 
