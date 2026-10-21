@@ -77,11 +77,16 @@ if ! command -v brew >/dev/null 2>&1; then
   [ -x /opt/homebrew/bin/brew ] || { note "Installing Homebrew (it will ask for your Mac password)…"; /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" < /dev/tty; }
   eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
 fi
-for f in ffmpeg node python git; do
-  if brew list --formula "$f" >/dev/null 2>&1; then ok "$f"; else note "installing $f…"; brew install "$f" >/dev/null; ok "$f"; fi
+# Only install what is missing, judged by the command itself: `brew list python` misses python@3.14, and
+# installing a second Python re-points python3 for every script on the Mac. No Homebrew auto-update either.
+export HOMEBREW_NO_AUTO_UPDATE=1
+for pair in ffmpeg:ffmpeg node:node python3:python git:git; do
+  cmd="${pair%%:*}"; formula="${pair#*:}"
+  if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd (already installed)"; else note "installing $formula…"; brew install "$formula" >/dev/null; ok "$cmd"; fi
 done
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || die "python3 is older than 3.10. Install a newer one (brew install python), then run this again."
 node_major=$(node -p 'process.versions.node.split(".")[0]')
-[ "$node_major" -ge 22 ] || { brew upgrade node >/dev/null; ok "node upgraded"; }
+[ "$node_major" -ge 22 ] || die "Node $(node -v) is too old; Reel Editor needs 22 or newer. Run: brew upgrade node"
 
 # ---------------------------------------------------------------- 3. Code
 bold "3/7  Reel Editor code"
