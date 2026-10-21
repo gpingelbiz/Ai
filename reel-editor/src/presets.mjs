@@ -11,7 +11,8 @@ export function listPresets() {
     .map((f) => f.replace(/\.json$/, ""));
 }
 
-export function loadPreset(nameOrPath = "pingel-brand") {
+/** Default preset: REEL_PRESET (a name in presets/ or a path to a .json, set by install.sh), else pingel-brand. */
+export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand") {
   const file = fs.existsSync(nameOrPath) && nameOrPath.endsWith(".json") ? nameOrPath : path.join(PRESET_DIR, `${nameOrPath}.json`);
   if (!fs.existsSync(file)) throw new Error(`preset not found: ${nameOrPath} (have: ${listPresets().join(", ")})`);
   const base = readJSON(path.join(PRESET_DIR, "_defaults.json"));
