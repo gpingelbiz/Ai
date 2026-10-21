@@ -14,6 +14,23 @@ import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, r3, slug, run, VIDEO_EXTS } from "./util.mjs";
 
+/** A saved transcript is reused only for the same source file (same path, size and modified time). A work folder
+ *  name can repeat for a different clip (IMG_0287 edited in chat, then dropped again), and reusing its words
+ *  would caption the new video with the old transcript. Transcripts saved before this check carry only a path. */
+function sameSource(saved, input) {
+  if (!saved?.source || path.resolve(saved.source) !== input) {
+    if (saved?.source) log(`saved transcript is for ${saved.source}; transcribing this file fresh`);
+    return false;
+  }
+  if (!saved.sourceStat) return true;
+  try {
+    const st = fs.statSync(input);
+    return st.size === saved.sourceStat.size && Math.round(st.mtimeMs) === saved.sourceStat.mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
 export async function runEdit(input, opts = {}) {
   input = path.resolve(input);
   if (!fs.existsSync(input)) throw new Error(`no such file: ${input}`);
@@ -33,13 +50,15 @@ export async function runEdit(input, opts = {}) {
   const wordsPath = path.join(workDir, "words.json");
   let words;
   let primaryEngine = null;
+  let reusedWords = false;
   if (opts.transcript) {
     words = importTranscript(path.resolve(opts.transcript));
     log(`imported ${words.length} words from ${opts.transcript}`);
-  } else if (fs.existsSync(wordsPath) && !opts.force) {
+  } else if (fs.existsSync(wordsPath) && !opts.force && sameSource(readJSON(wordsPath), input)) {
     const saved = readJSON(wordsPath);
     words = saved.words;
     primaryEngine = saved.engine || null;
+    reusedWords = true;
     log(`reusing ${wordsPath} (${words.length} words); pass --force to re-transcribe`);
   } else {
     if (!meta.hasAudio) throw new Error("source has no audio track, nothing to transcribe (pass --transcript to supply words)");
@@ -57,7 +76,9 @@ export async function runEdit(input, opts = {}) {
     log(`${words.length} words`);
   }
   words = applyCorrections(words, dict.corrections);
-  writeJSON(wordsPath, { source: input, engine: primaryEngine, words });
+  let sourceStat = null;
+  try { const st = fs.statSync(input); sourceStat = { size: st.size, mtimeMs: Math.round(st.mtimeMs) }; } catch {}
+  writeJSON(wordsPath, { source: input, sourceStat, engine: primaryEngine, words });
 
   // 1b. Second opinion: a different engine hears the same audio; disagreements go into review.txt.
   let review = null;
@@ -65,7 +86,7 @@ export async function runEdit(input, opts = {}) {
     const other = secondEngine(primaryEngine || "faster-whisper");
     const secondPath = path.join(workDir, "words-second.json");
     let second = null;
-    if (fs.existsSync(secondPath) && !opts.force) second = readJSON(secondPath).words;
+    if (fs.existsSync(secondPath) && !opts.force && reusedWords) second = readJSON(secondPath).words;
     else if (other) {
       log(`second opinion from ${other === "elevenlabs" ? "ElevenLabs Scribe" : `faster-whisper (${preset.transcribe.verifyModel || preset.transcribe.model})`}…`);
       try {
