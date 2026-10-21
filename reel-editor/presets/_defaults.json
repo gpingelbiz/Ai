@@ -38,6 +38,7 @@
     "position": 0.22,
     "fontSizeFrac": 0.052,
     "maxWords": 8,
+    "autoPlace": false,
     "style": "gold"
   },
   "zooms": {

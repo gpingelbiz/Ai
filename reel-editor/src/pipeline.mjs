@@ -5,6 +5,7 @@ import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs
 import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts } from "./cuts.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
+import { detectFaces, headExtent, placeHook, zoomDuring, captionsRepeatingHook } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms } from "./zooms.mjs";
@@ -154,6 +155,33 @@ export async function runEdit(input, opts = {}) {
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
   const zooms = preset.zooms.enabled ? planZooms(groups.length ? groups : cleanWords, duration, preset.zooms) : [];
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
+
+  // Hook: never repeat it in the captions, and keep it off the speaker's head.
+  let shownGroups = groups;
+  if (hook) {
+    const hide = captionsRepeatingHook(groups, hook);
+    if (hide.size) {
+      shownGroups = groups.filter((_, i) => !hide.has(i));
+      log(`captions: ${hide.size} line${hide.size === 1 ? "" : "s"} hidden while the hook shows the same words`);
+    }
+    const canvas0 = canvasFor(preset.canvas, cleanMeta);
+    const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
+    if (preset.hook.autoPlace && opts.hookPosition == null && sameShape) {
+      const t0 = hook.start, t1 = hook.start + hook.duration;
+      const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
+      const head = headExtent(await detectFaces(videoSrc, times), { zoom: zoomDuring(zooms, t0, t1) });
+      const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
+      const spot = placeHook(head, { words: hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), W: canvas0.width, H: canvas0.height, fontPx, captionTop: preset.captions.position - 0.04, defaultPosition: preset.hook.position });
+      if (head) {
+        preset.hook.position = spot.position;
+        preset.hook.fontSizeFrac = r3(preset.hook.fontSizeFrac * spot.fontScale);
+        const where = { above: "above the head", below: "between the chin and the captions", fallback: "in the biggest gap (tight frame)" }[spot.zone];
+        log(`hook placement: ${where} at ${Math.round(spot.position * 100)}%${spot.fontScale < 1 ? `, text at ${Math.round(spot.fontScale * 100)}%` : ""} (head spans ${Math.round(head.top * 100)}-${Math.round(head.bottom * 100)}%)`);
+      } else {
+        log(`hook placement: no face found, keeping ${Math.round(preset.hook.position * 100)}% from the top`);
+      }
+    }
+  }
   log(`captions: ${groups.length} lines, ${groups.filter((g) => g.words.some((w) => w.key)).length} with a highlight`);
   log(`hook: ${hook ? `"${hook.text}"${hook.auto ? " (auto, pass --hook for a written one)" : ""}` : "none"}`);
   log(`zooms: ${zooms.length}`);
@@ -177,7 +205,7 @@ export async function runEdit(input, opts = {}) {
     style: preset,
     hook,
     cta,
-    captions: groups,
+    captions: shownGroups,
     zooms,
     audio,
     words: cleanWords,
