@@ -4,3 +4,5 @@ renders/
 .hyperframes/
 *.log
 .DS_Store
+# Local secrets written by `elevenlabs onboard`
+/.env.local
