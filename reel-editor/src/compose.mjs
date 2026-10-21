@@ -65,6 +65,7 @@ export function renderHTML(plan, footage) {
   const captions = plan.captions || [];
   const hookStyle = hk.style || "gold";
   const hookColor = hookStyle === "gold" ? c.accent : c.text;
+  const headline = hookStyle === "headline";
   const hookBox = hookStyle === "box" ? `background: ${hexA(c.bg || "#0B0B0D", 0.86)}; padding: 0.18em 0.45em; border-radius: 0.14em; box-decoration-break: clone; -webkit-box-decoration-break: clone;` : "";
   const ct = s.cta || {};
   const ctaFont = Math.round((ct.fontSizeFrac || 0.036) * H);
@@ -85,8 +86,13 @@ export function renderHTML(plan, footage) {
     })
     .join("\n");
 
+  // headline: words on a soft scrim (no box), one gold emphasis, a gold rule drawn under it.
+  const hookWordList = plan.hook ? plan.hook.words || plan.hook.text.split(/\s+/).map((t) => ({ text: t })) : [];
+  const hookInner = headline
+    ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `<span class="hw${w.key ? " k" : ""}">${esc(w.text)}</span>`).join(" ")}</div><div id="hook-bar"></div></div>`
+    : `<span id="hook-text">${esc(plan.hook?.text || "")}</span>`;
   const hookHTML = plan.hook
-    ? `      <div id="hook" class="clip" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow><span id="hook-text">${esc(plan.hook.text)}</span></div>`
+    ? `      <div id="hook" class="clip" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
     : "";
 
   const ctaHTML = plan.cta
@@ -109,7 +115,7 @@ export function renderHTML(plan, footage) {
 
   const runtimePlan = {
     duration: D,
-    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration } : null,
+    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont } : null,
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
@@ -151,6 +157,12 @@ export function renderHTML(plan, footage) {
         text-transform: uppercase; color: ${hookColor}; text-align: center;
         -webkit-text-stroke: ${hookStroke}px ${c.stroke}; paint-order: stroke fill; text-shadow: ${hk.shadow || cap.shadow};
       }
+      #hook-block { position: absolute; left: 4%; right: 4%; top: ${Math.round(hk.position * H)}px; text-align: center; }
+      #hook-scrim { position: absolute; inset: -38% -8%; background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.66) 0%, rgba(0,0,0,0.44) 46%, rgba(0,0,0,0) 74%); }
+      #hook-lines { position: relative; font-size: 1.08em; line-height: 1.0; text-wrap: balance; -webkit-text-stroke: ${r3(hookStroke * 0.45)}px ${c.stroke}; text-shadow: 0 0.035em 0 rgba(0,0,0,0.55), 0 0.08em 0.45em rgba(0,0,0,0.6); color: ${c.text}; }
+      #hook-lines .hw { display: inline-block; margin: 0 0.04em; }
+      #hook-lines .hw.k { color: ${c.accent}; font-size: 1.14em; }
+      #hook-bar { position: relative; margin: 0.28em auto 0; width: 22%; height: ${Math.max(8, Math.round(hookFont * 0.1))}px; background: ${c.accent}; border-radius: ${Math.max(3, Math.round(hookFont * 0.035))}px; box-shadow: 0 0.1em 0.4em rgba(0,0,0,0.5); transform-origin: 50% 50%; }
       #hook-text { display: inline-flex; align-items: center; justify-content: center; min-height: 2.4em; max-width: 100%; transform-origin: 50% 50%; ${hookBox} }
       #cta {
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
@@ -177,7 +189,18 @@ ${audioHTML}
       const PLAN = ${JSON.stringify(runtimePlan)};
       (function () {
         const tl = gsap.timeline({ paused: true });
-        if (PLAN.hook) {
+        if (PLAN.hook && PLAN.hook.style === "headline") {
+          const h = PLAN.hook;
+          const words = document.querySelectorAll("#hook-lines .hw");
+          const step = 0.06;
+          const t0 = h.start + 0.04;
+          const done = t0 + step * words.length + 0.2;
+          tl.fromTo("#hook-scrim", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power1.out" }, h.start);
+          tl.fromTo(words, { opacity: 0, y: h.font * 0.42 }, { opacity: 1, y: 0, duration: 0.34, ease: "power3.out", stagger: step }, t0);
+          tl.fromTo("#hook-lines .hw.k", { scale: 1 }, { scale: 1.09, duration: 0.13, ease: "power2.out", yoyo: true, repeat: 1 }, done - 0.05);
+          tl.fromTo("#hook-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.36, ease: "power3.inOut" }, done - 0.12);
+          tl.to("#hook-block", { opacity: 0, y: -h.font * 0.3, duration: 0.24, ease: "power2.in" }, h.start + h.duration - 0.28);
+        } else if (PLAN.hook) {
           const h = PLAN.hook;
           tl.fromTo("#hook-text", { opacity: 0, scale: 0.7, y: 30 }, { opacity: 1, scale: 1, y: 0, duration: 0.35, ease: "back.out(1.7)" }, h.start + 0.04);
           tl.to("#hook-text", { opacity: 0, scale: 0.96, duration: 0.2, ease: "power2.in" }, h.start + h.duration - 0.24);

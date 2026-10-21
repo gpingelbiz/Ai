@@ -130,6 +130,7 @@ export function markKeywords(groups, dict = {}, { maxPerLine = 1, auto = false }
       const t = toks[i];
       if (/^\$?\d/.test(t) || /\$/.test(g.words[i].text) || power.has(t)) {
         g.words[i].key = true;
+        if (/^\$?\d/.test(t) && UNIT_WORDS.has(toks[i + 1] || "")) g.words[i + 1].key = true; // "10 minutes"
         marked++;
         break;
       }
@@ -145,3 +146,25 @@ export function markKeywords(groups, dict = {}, { maxPerLine = 1, auto = false }
   }
   return groups;
 }
+
+/** Hook words with the gold emphasis. "*10 minutes*" in the hook text marks it by hand; otherwise the
+ *  caption picker chooses (dictionary term, then number + unit or power word, then the automatic pick). */
+export function hookWords(text, dict = {}) {
+  const raw = String(text).split(/\s+/).filter(Boolean);
+  if (raw.some((t) => t.includes("*"))) {
+    let on = false;
+    const words = raw.map((t) => {
+      const start = t.startsWith("*");
+      const end = t.replace(/[?!.,]+$/, "").endsWith("*");
+      if (start) on = true;
+      const w = { text: t.replace(/\*/g, ""), key: on };
+      if (end) on = false;
+      return w;
+    });
+    return { text: words.map((w) => w.text).join(" "), words };
+  }
+  const g = [{ words: raw.map((t) => ({ text: t })) }];
+  markKeywords(g, dict, { auto: true });
+  return { text: raw.join(" "), words: g[0].words.map((w) => ({ text: w.text, key: !!w.key })) };
+}
+

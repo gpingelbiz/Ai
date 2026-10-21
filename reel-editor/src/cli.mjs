@@ -26,7 +26,9 @@ Options (edit / batch)
   --model <m>              whisper model: small (default), medium, large-v3
   --language <code>        default en
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
-  --title-style <s>        gold (default) | outline (Bone text, black outline) | box (Bone on Obsidian backing)
+  --title-style <s>        headline (brand default: words rise on a soft scrim, one gold phrase, gold rule) |
+                           gold | outline (Bone text, black outline) | box (Bone on Obsidian backing)
+                           Mark the gold phrase by hand with asterisks: --hook "The *10 minutes* after a bad number"
   --hook-position <0-1>    hook height from the top (default 0.22); 0.40 clears the head on wide shots
   --no-auto-keywords       gold only on dictionary terms, numbers and power words (no automatic picks)
   --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)

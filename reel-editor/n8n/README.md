@@ -24,6 +24,8 @@ The watcher reads the filename so you can steer an edit from your phone without 
 | `clip #nozoom.mov` | no magic zooms |
 | `clip #landscape.mov` | 16:9 canvas for YouTube |
 | `clip #low.mov` | hook at chest height instead of 22% from the top (wide shots) |
+| `clip #top.mov` | hook above your head (close-up selfies) |
+| `clip__The *10 minutes* after a bad number.mov` | asterisks pick the gold phrase in the hook |
 
 Tags combine: `objections__Stop explaining the price #nocta.mov`.
 
