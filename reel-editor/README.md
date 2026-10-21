@@ -100,13 +100,7 @@ The log line `encoding clean.mp4 (... + hlg → BT.709 SDR)` confirms it ran.
 
 ## Automate with n8n
 
-Watch the drop folder (Local File Trigger or a Google Drive trigger that downloads the file), then an Execute Command node:
-
-```bash
-cd /path/to/reel-editor && node bin/reel.mjs edit "{{ $json.path }}" --out "/path/to/videos/{{ $json.name }}"
-```
-
-Read the last line of stdout for the rendered path and push it wherever it goes next (Drive, Slack, GoHighLevel).
+`n8n/reel-watch-folder.json` is an importable workflow: new file in `~/Reels/raw` → `scripts/watch-reel.sh` → finished MP4 in `~/Reels/done` plus a Mac notification (and a #pingel-hq post when you enable the Slack node). The filename carries the brief: `clip__Hook text here #nocta.mov`. Setup, filename tags, the Docker caveat and a launchd alternative are in `n8n/README.md`.
 
 ## Environment variables
 
