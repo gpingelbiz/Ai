@@ -2,123 +2,46 @@
 
 Last checked on a clean setup: 21 Oct 2026.
 
-Reel Editor turns a raw talking-head clip into a finished vertical reel on your own Mac: captions, cuts, a hook title placed around your face, and a check on every word. Setup takes about 30 minutes; a 1-minute clip then takes about 3 minutes.
+Reel Editor turns a raw talking-head clip into a finished vertical reel on your own Mac: captions, cuts, a hook title placed around your face, and a check on every word. Setup is one command and about 10 minutes; a 1-minute clip then takes about 3 minutes.
 
 ## What you need
 
-A Mac with Apple Silicon and about 4 GB of free disk is the only hard requirement; everything else is free to install.
+A Mac with Apple Silicon, about 4 GB of free disk, and an internet connection. The installer adds everything else.
 
 | Item | Why | Notes |
 | --- | --- | --- |
 | Mac with Apple Silicon (M1 or newer) | Renders on the Mac's graphics chip; finds faces with Apple Vision | An M4 Pro renders a 1-minute reel in about 70 s |
-| macOS command line tools | Swift (face finding) and git | `xcode-select --install`, one time |
-| Homebrew | Installs ffmpeg, Node and Python | [brew.sh](https://brew.sh) |
-| About 4 GB free disk | Whisper large-v3-turbo model 1.5 GB, render browser 0.85 GB, the rest for your reels | Downloaded once on first use |
-| ElevenLabs account and API key | Scribe, the main transcription engine; optional sound effects | Without a key it uses Whisper alone, still accurate, with no second opinion. Key permissions: Speech to Text, Sound Effects, Text to Speech |
-| Claude Code (optional) | Can run this whole setup for you, and edit reels by chat | [claude.com/claude-code](https://claude.com/claude-code) |
+| About 4 GB free disk | Whisper model 1.5 GB, render browser 0.85 GB, the rest for your reels | Downloaded once |
+| ElevenLabs API key (optional) | Scribe, the most accurate transcription, plus a second opinion from Whisper | From elevenlabs.io, Developers, API Keys. Permissions: Speech to Text, Sound Effects, Text to Speech. Without it, Whisper alone |
 
-## Fastest way: let Claude Code do it
+## Install: one command
 
-Open Claude Code in your home folder, paste the prompt below, and approve the steps it asks about. It installs everything, proves it with a test reel, and tells you what is left. The only thing it cannot do for you is paste your ElevenLabs key; it will ask.
+Open Terminal, paste this line, and answer three questions. It takes about 10 minutes and ends by playing a test reel.
 
 ```
-Set up the reel editor on this Mac from https://github.com/gpingelbiz/Ai (folder reel-editor).
-1. Install Homebrew packages: ffmpeg, node, python. Run xcode-select --install if Swift is missing.
-2. Clone the repo into ~/Ai. In ~/Ai/reel-editor run npm install, then npm link.
-3. Make a Python venv at ~/.reel-venv and install: faster-whisper "av<17"
-   (av 19 breaks faster-whisper 1.2.1 with "unexpected keyword argument metadata_errors").
-4. Run npx hyperframes browser ensure in ~/Ai/reel-editor.
-5. Add to ~/.zshrc:
-   export REEL_PYTHON="$HOME/.reel-venv/bin/python"
-   export PRODUCER_BROWSER_GPU_MODE=hardware
-   Then ask me for my ElevenLabs API key and add export ELEVENLABS_API_KEY="..." without printing it.
-6. Run reel doctor and fix anything it flags.
-7. Prove it: make a 24 s test clip with ffmpeg testsrc2 at 1080x1920 with a sine audio track, run
-   reel edit test.mov --transcript ~/Ai/reel-editor/examples/sample-words.json --hook "It works"
-   and show me two frames of the render.
-Read reel-editor/SKILL.md and README.md before starting.
+curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash
 ```
 
-After that, start Claude Code in `~/Ai` and say: "Read reel-editor/SKILL.md and README.md. You are the reel editor from now on." Then drop a clip in the chat and ask for a reel.
+The three questions:
 
-## Install by hand
+1. **Your look:** Greg Pingel's brand, plain white captions, or your own colors (two hex codes).
+2. **Your ElevenLabs key:** paste it, or press Return to skip. It is typed hidden and saved only on your Mac.
+3. **Drop folder:** yes to get a Reels folder on your Desktop that edits any clip you drop in.
 
-Eight steps in Terminal, about 30 minutes with downloads.
+If an Apple installer window pops up first, click Install, wait for it, and paste the line again. If Homebrew is missing, the installer adds it and asks for your Mac password once.
 
-1. Install Apple's command line tools (skip if already there):
+Run the same line again any time to update. It keeps your settings and only installs what is missing.
 
-   ```
-   xcode-select --install
-   ```
-
-2. Install the tools from Homebrew:
-
-   ```
-   brew install ffmpeg node python
-   ```
-
-3. Get the code and link the `reel` command:
-
-   ```
-   git clone https://github.com/gpingelbiz/Ai.git ~/Ai
-   cd ~/Ai/reel-editor && npm install && npm link
-   ```
-
-4. Install Whisper in its own Python environment. Keep the `av<17` pin: the newest PyAV breaks transcription with "unexpected keyword argument metadata_errors".
-
-   ```
-   python3 -m venv ~/.reel-venv
-   ~/.reel-venv/bin/pip install faster-whisper "av<17"
-   ```
-
-5. Download the browser that renders the reels:
-
-   ```
-   cd ~/Ai/reel-editor && npx hyperframes browser ensure
-   ```
-
-6. Add these lines to `~/.zshrc` (open it with `open -e ~/.zshrc`), with your own ElevenLabs key:
-
-   ```
-   export REEL_PYTHON="$HOME/.reel-venv/bin/python"
-   export PRODUCER_BROWSER_GPU_MODE=hardware
-   export ELEVENLABS_API_KEY="your-key-here"
-   ```
-
-7. Open a new Terminal window and check everything. Every line should say ok or set:
-
-   ```
-   cd ~/Ai/reel-editor && reel doctor
-   ```
-
-8. Make a test reel from a generated clip (no camera needed):
-
-   ```
-   mkdir -p ~/Reels && cd ~/Reels
-   ffmpeg -f lavfi -i testsrc2=size=1080x1920:rate=30 -f lavfi -i sine=frequency=440 -t 24 -pix_fmt yuv420p -shortest test.mov
-   reel edit test.mov --transcript ~/Ai/reel-editor/examples/sample-words.json --hook "It works"
-   ```
-
-   The last line printed is the path to the finished MP4. Your first real clip downloads the Whisper model once, about 1.5 GB, so it takes a few extra minutes.
+Run it in Terminal, not inside Claude Code: the questions need a keyboard, and without one it quietly takes the defaults (Greg's look, no key, drop folder on). For a scripted install, pass the answers as options: `curl -fsSL <the URL above> | bash -s -- --yes --look custom --accent "#00AAFF" --text "#FFFFFF" --no-watch`.
 
 ## Make it yours
 
-Out of the box every reel uses Greg Pingel's brand, so give yours its own preset before you post anything. It takes about 10 minutes.
+The installer sets your look. Two things are still yours to fill in.
 
-1. Copy the brand preset and name it after yourself:
+1. **Your words.** Open `~/.reel/dictionary.json` and add your program and framework names to `terms`: they are always highlighted and Whisper spells them right. Add fixes for words it keeps mishearing to `corrections`, such as `{"from": "ghost p and l", "to": "Ghost P&L"}`. Everyday phrases to highlight go in `phrases`.
+2. **A call-to-action, if you want one.** `--cta "Comment YOURWORD"` adds a pop-up for the last 3 seconds of a reel. For drop-folder reels, put the same text in `REEL_WATCH_CTA` in `~/.zshrc`.
 
-   ```
-   cd ~/Ai/reel-editor && cp presets/pingel-brand.json presets/my-brand.json
-   ```
-
-2. In `presets/my-brand.json`, set `colors` to your brand: `text` (caption words), `accent` (the gold keyword and hook phrase), `stroke` (outline around words) and `bg` (dark backing), all as hex codes.
-3. Open `dictionary.json` and replace Greg's words with yours:
-   - `terms`: your program and framework names, always highlighted and spelled right by Whisper
-   - `phrases`: everyday phrases you want highlighted (these are not sent to Whisper)
-   - `powerWords`: single words worth highlighting when a line has nothing else
-   - `corrections`: fixes for words Whisper keeps mishearing, such as `{"from": "ghost p and l", "to": "Ghost P&L"}`
-4. Use your preset on every edit with `--preset my-brand`. For plain white subtitles with no brand styling, use `--preset clean`.
-5. The call-to-action pop-up is off unless you ask for it: `--cta "Comment YOURWORD"` adds it for the last 3 seconds.
+To change your look later, run the install line again and pick another option, or open `~/.reel/my-brand.json` and edit the `colors` hex codes.
 
 ## Your first reel
 
@@ -126,7 +49,7 @@ One command edits a clip start to finish. Write the hook yourself (4 to 8 words)
 
 ```
 cd ~/Reels
-reel edit my-clip.mov --preset my-brand --hook "The *10 minutes* after a bad number"
+reel edit my-clip.mov --hook "The *10 minutes* after a bad number"
 ```
 
 The words in `*asterisks*` become the gold phrase. Leave them out and it picks one for you.
@@ -152,23 +75,13 @@ To fix a caption, edit its `text` in `videos/my-clip/plan.json` and run `reel bu
 | `--no-zooms` | No punch-in zooms |
 | `--silence slow` | Cut fewer pauses (`medium`, `fast` default) |
 | `--canvas landscape` | 16:9 for YouTube |
+| `--preset clean` | Plain white captions for this one reel |
 
 ## Drop folder (optional)
 
-Turn this on and you never type a command: drop a clip into a folder, and a finished reel shows up next to it with a Mac notification.
+If you said yes to the drop folder, it is already on: drop a clip into **Desktop/Reels/Raw**, and the finished reel appears in **Desktop/Reels** with a Mac notification. A 1-minute clip takes about 3 minutes.
 
-1. Turn it on, with finished reels going to a Reels folder on your Desktop:
-
-   ```
-   mkdir -p ~/Desktop/Reels ~/Reels/raw
-   ln -s ~/Reels/raw ~/Desktop/Reels/Raw
-   REEL_WATCH_RAW=~/Reels/raw REEL_WATCH_DONE=~/Desktop/Reels ~/Ai/reel-editor/scripts/install-watcher.sh
-   ```
-
-2. Add two lines to `~/.zshrc`, or the drop folder uses Greg's brand and adds his "Comment GHOST": `export REEL_WATCH_ARGS="--preset my-brand"` and `export REEL_WATCH_CTA=""` (or `"Comment YOURWORD"` for a call-to-action).
-3. Drop a clip into Desktop/Reels/Raw. A 1-minute clip comes out in about 3 minutes.
-
-Keep the real drop folder in `~/Reels/raw` and use the Raw shortcut on the Desktop. macOS stops background jobs from reading Desktop folders, so a real folder there fires but looks empty.
+Raw is a shortcut to `~/Reels/raw`. macOS stops background jobs from reading Desktop folders, so leave it as a shortcut.
 
 The filename is the brief:
 
@@ -189,13 +102,13 @@ Run `reel doctor` first; most problems show up there.
 
 | What you see | Why | Fix |
 | --- | --- | --- |
-| `TypeError: open() got an unexpected keyword argument 'metadata_errors'` | PyAV 19 is installed; faster-whisper 1.2.1 needs an older one | `~/.reel-venv/bin/pip install "av<17"` |
-| doctor says `faster-whisper MISSING` | `REEL_PYTHON` is not set in this Terminal window | Check step 6, then open a new Terminal window |
-| Hook shows but no captions (iPhone video) | An old copy of the code; HDR video hid the captions | `cd ~/Ai && git pull` |
+| The installer stops after an Apple window opens | Apple's command line tools were missing | Click Install, wait for it to finish, paste the install line again |
+| `reel: command not found` | The Terminal window was open before the install | Open a new Terminal window |
+| doctor says `faster-whisper MISSING`, or `unexpected keyword argument 'metadata_errors'` | The Whisper setup is missing or was upgraded past what it supports | Run the install line again |
 | `ElevenLabs Scribe failed ... using local Whisper` | Key missing, wrong, or out of credits | Check the key in `~/.zshrc` and your ElevenLabs balance; the reel still finishes with Whisper |
-| Drop folder does nothing, no notification | The real drop folder is on the Desktop | Use `~/Reels/raw` plus the Desktop shortcut (Drop folder, step 1) |
+| Drop folder does nothing, no notification | The drop folder was moved onto the Desktop as a real folder | Move your clips out, delete that Raw folder, then run the install line again to make the shortcut |
 | "Reel failed" notification | Something broke mid-edit | Read the end of `~/Reels/watch.log`, then rename the clip to retry |
 | Hook sits on your face | No face found (turned away, very dark) | Add `--hook-position 0.08` (top) or `0.4` (chest), or `#top` / `#low` in the filename |
-| A caption word is wrong | Both engines misheard it the same way | Fix the `text` in `plan.json`, run `reel build`, and add the word to `corrections` in `dictionary.json` |
+| A caption word is wrong | Both engines misheard it the same way | Fix the `text` in `plan.json`, run `reel build`, and add the word to `corrections` in `~/.reel/dictionary.json` |
 
-To update later: `cd ~/Ai && git pull`, then `reel doctor`.
+To update later, paste the install line again.
