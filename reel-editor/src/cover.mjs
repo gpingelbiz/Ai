@@ -1,74 +1,261 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { esc } from "./text.mjs";
+import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
-import { log, run, ensureDir, PKG_ROOT } from "./util.mjs";
+import { log, warn, run, ensureDir, readJSON, writeJSON, PKG_ROOT } from "./util.mjs";
+import { createRequire } from "node:module";
+
+// Real Anton metrics (fontkit ships with the renderer): cap height and the width of a string in em.
+let anton = null;
+function antonFont() {
+  if (anton) return anton;
+  try {
+    const fk = createRequire(import.meta.url)("fontkit");
+    const f = fk.openSync(path.join(PKG_ROOT, "assets", "fonts", "Anton-Regular.ttf"));
+    anton = { cap: f.capHeight / f.unitsPerEm, width: (s) => f.layout(String(s)).advanceWidth / f.unitsPerEm };
+  } catch {
+    anton = { cap: 0.72, width: (s) => String(s).length * 0.45 };
+  }
+  return anton;
+}
+/** Width of a line in px at cap height T (letter-spacing 0.012 em added); the gold word is 1.18x. */
+export function lineWidthPx(line, T) {
+  const { cap, width } = antonFont();
+  const fontPx = T / cap;
+  return line.split(" ").reduce((acc, w, i) => {
+    const k = w.includes("*") ? 1.18 : 1;
+    const text = w.replace(/\*/g, "");
+    return acc + (width(text) + 0.012 * text.length) * fontPx * k + (i ? width(" ") * fontPx : 0);
+  }, 0);
+}
 
 /**
- * Cover image for the reel: a frame of the footage from the hook window, a soft dark base and the hook as a
- * headline at chest height, all inside Instagram's 3:4 grid crop (y 12.5-87.5%) and the 4:5 feed crop, under 30%
- * text. 1080x1920 PNG, written to <workDir>/cover.png. Instagram otherwise uses frame 0, where the hook sits near
- * the top and the grid crops it.
+ * Covers, the thumbnail-system way: the speaker's real frame (scored for expression, light, sharpness and angle,
+ * then cut out with Apple Vision person segmentation; no image model ever sees or draws a person), on a designed
+ * background, with a 2-4 word title typeset in Anton, ALL CAPS, one gold power word, block bottom at y=1400 and no
+ * glyph below y=1440 (Instagram's grid crop), a dual stroke and a shadow, grain over everything. Three variants:
+ * the top titles across the brand palette, navy+gold and black+red.
  */
-export function coverHTML({ W = 1080, H = 1920, frame, hook, colors, handle = "" }) {
-  const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
-  const words = hook.words || String(hook.text || "").split(/\s+/).map((t) => ({ text: t }));
-  const len = words.map((w) => w.text).join(" ").length;
-  const size = len <= 18 ? 150 : len <= 30 ? 128 : len <= 44 ? 110 : 96;
+
+export const PALETTES = {
+  brand: { name: "black+gold", bg: "#0B0B0D", bg2: "#000000", accent: "#C8A24B", accent2: "#E9C96A" },
+  navy: { name: "navy+gold", bg: "#0B1B33", bg2: "#060F1F", accent: "#F7B500", accent2: "#FFCE45" },
+  red: { name: "black+red", bg: "#0D0D0F", bg2: "#000000", accent: "#E5322D", accent2: "#FF5A3C" },
+};
+
+const POWER = ["broke", "kills", "costs", "cost", "quit", "lies", "lie", "wrong", "nobody", "expensive", "losing", "lose", "weak", "rich", "pay", "beg", "every", "never", "stop", "fire", "fired", "blame", "own", "truth", "late", "dead", "fail", "failed"];
+const BANNED = ["success", "mindset", "journey", "tips", "hacks", "grind", "10x", "crushing"];
+
+export function titlePrompt({ transcript, hook, voice = "" }) {
+  return [
+    "You write the cover title for one talking-head Instagram reel. Reply with JSON only; use no tools.",
+    "Write 10 candidate titles from THIS transcript, then score each 0-10 on specificity, emotional charge, brevity (2 words = 10, 3 = 8, 4 = 6, 5 = 3) and curiosity/stakes, and return the top 3 by total.",
+    "Rules: 2-4 words, hard max 5, at most 2 lines. ONE power word per title (BROKE, KILLS, COSTS, QUIT, LIES, WRONG, NOBODY, EXPENSIVE, LOSING, WEAK, RICH, PAY, BEG, EVERY...), marked with *asterisks*. A mid-title period is two punches. Read-aloud test: if a blunt sales coach would not say it to a room, rewrite.",
+    "Banned: SUCCESS, MINDSET, JOURNEY, TIPS, HACKS, GRIND, 10X, CRUSHING, emojis, exclamation marks, questions that are just the hook again.",
+    "Optional teaser: one short line (max 6 words) below the title that extends the SAME claim, never a second hook. Empty when nothing adds.",
+    voice ? `\nVoice:\n${voice.trim()}` : "",
+    "",
+    `Hook already on the reel: ${hook || "(none)"}`,
+    "Transcript:",
+    transcript,
+    "",
+    'Reply: {"titles":[{"title":"OWN IT *FIRST*","teaser":"or your reps copy the blame","score":34}]}',
+  ].join("\n");
+}
+
+const clean = (s) => String(s || "").replace(/\s+/g, " ").replace(/[!]+/g, "").trim();
+
+/** Keep titles that pass the rules: 2-5 words, one starred power word (added when missing), nothing banned. */
+export function normalizeTitles(raw, { hook = "" } = {}) {
+  const out = [];
+  for (const t of raw || []) {
+    let title = clean(t.title).toUpperCase();
+    if (!title) continue;
+    const words = title.replace(/\*/g, "").split(" ").filter(Boolean);
+    if (words.length < 2 || words.length > 5) continue;
+    if (words.some((w) => BANNED.includes(w.toLowerCase().replace(/[^a-z0-9]/g, "")))) continue;
+    if (!/\*[^*]+\*/.test(title)) {
+      const i = words.findIndex((w) => POWER.includes(w.toLowerCase().replace(/[^a-z]/g, "")));
+      const k = i >= 0 ? i : words.length - 1;
+      words[k] = `*${words[k]}*`;
+      title = words.join(" ");
+    }
+    const teaser = clean(t.teaser).toUpperCase().split(" ").slice(0, 6).join(" ");
+    if (out.some((o) => o.title === title)) continue;
+    out.push({ title, teaser, score: Number(t.score) || 0 });
+  }
+  if (!out.length && hook) {
+    const words = clean(hook).toUpperCase().replace(/\*/g, "").split(" ").slice(0, 4);
+    words[words.length - 1] = `*${words[words.length - 1]}*`;
+    out.push({ title: words.join(" "), teaser: "", score: 0 });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 8);
+}
+
+/** A title fits when it sets at a cap height of 150 px or more (overflow means a shorter title, never cramming). */
+export const titleFits = (t) => layoutTitle(t.title, { teaser: "", chinY: 820 }).T >= 150;
+
+/**
+ * Title block: cap height T from the longest line so the block fits 82-94% of the width (two lines max), then
+ * shrunk (to 170 at the least) and the teaser dropped if needed, so the block's top clears the chin by 30 px with
+ * its bottom anchored at y=1400. Returns the lines, T, the font size and the block height.
+ */
+export function layoutTitle(title, { teaser = "", chinY = 0 } = {}) {
+  const words = title.split(" ");
+  const plain = (w) => w.replace(/\*/g, "");
+  let lines;
+  if (words.length <= 2) lines = [words];
+  else if (words.length === 3) lines = plain(words[0]).length + plain(words[1]).length + 1 <= 11 ? [[words[0], words[1]], [words[2]]] : [[words[0]], [words[1], words[2]]];
+  else lines = [words.slice(0, Math.ceil(words.length / 2)), words.slice(Math.ceil(words.length / 2))];
+  // Measured with the real font, so a line fits 92% of the width and never wraps or runs off the frame.
+  const widest = Math.max(...lines.map((l) => lineWidthPx(l.join(" "), 100)));
+  let T = Math.max(120, Math.min(230, Math.floor((1080 * 0.92) / (widest / 100))));
+  let withTeaser = !!teaser;
+  // The teaser is one line: its cap height is 0.42T, or smaller so it fits the width; dropped below 0.28T.
+  const teaserCap = (t) => Math.min(0.42 * t, (1080 * 0.9) / Math.max(1, lineWidthPx(teaser, 100) / 100));
+  if (withTeaser && teaserCap(T) < 0.28 * T) withTeaser = false;
+  const height = (t, tz) => lines.length * 1.18 * t + (tz ? 0.45 * t + teaserCap(t) * 1.18 : 0);
+  const top = () => 1400 - height(T, withTeaser);
+  while (chinY && top() < chinY + 30 && T > 170) T -= 10;
+  if (chinY && top() < chinY + 30 && withTeaser) withTeaser = false;
+  while (chinY && top() < chinY + 30 && T > 150) T -= 10;
+  return { lines: lines.map((l) => l.join(" ")), T, fontPx: Math.round(T / antonFont().cap), teaser: withTeaser ? teaser : "", teaserCap: withTeaser ? teaserCap(T) : 0, blockH: height(T, withTeaser), blockTop: Math.round(1400 - height(T, withTeaser)) };
+}
+
+/** Where the person goes: scaled so the face (hairline to chin) is about 560 px tall, chin at y=820, centred. */
+export function placePerson({ W = 1080, H = 1920, face, personBox }) {
+  const faceH = (face?.h || 0.28) * H;
+  const scale = Math.max(0.8, Math.min(1.8, 560 / faceH));
+  const chinFrac = face ? face.y + face.h : (personBox ? personBox.y + 0.3 : 0.55);
+  const ty = Math.round(820 - chinFrac * H * scale);
+  const faceCx = face ? face.x + face.w / 2 : 0.5;
+  const tx = Math.round(W / 2 - faceCx * W * scale);
+  return { scale, tx, ty, chinY: 820 };
+}
+
+export function coverHTML({ W = 1080, H = 1920, person, personBox, face, title, teaser = "", palette, variant = 0 }) {
+  const p = palette;
+  const pos = placePerson({ W, H, face, personBox });
+  const lay = layoutTitle(title, { teaser, chinY: pos.chinY });
+  const { lines, T, fontPx, blockTop } = lay;
+  teaser = lay.teaser;
+  const teaserPx = Math.round(lay.teaserCap / antonFont().cap);
+  const lineH = 1.18 * T;
+  const { scale, tx, ty } = pos;
+  const mark = (s) => esc(s).replace(/\*([^*]+)\*/g, '<span class="k">$1</span>');
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${W}, height=${H}" /><title>cover</title>
 <script src="assets/vendor/gsap.min.js"></script>
 <style>
   @font-face { font-family: "Anton"; src: url("assets/fonts/Anton-Regular.ttf") format("truetype"); font-display: block; }
   @font-face { font-family: "Inter"; src: url("assets/fonts/Inter.ttf") format("truetype"); font-weight: 100 900; font-display: block; }
-  html, body { margin: 0; background: ${c.bg}; }
-  #root { position: relative; width: ${W}px; height: ${H}px; overflow: hidden; background: ${c.bg}; }
-  #frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  #shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 48%, rgba(0,0,0,0.55) 72%, rgba(0,0,0,0.82) 100%); }
-  #title { position: absolute; left: 6%; right: 6%; top: 69%; text-align: center; font-family: "Anton", sans-serif; font-size: ${size}px; line-height: 1.0; letter-spacing: 0.005em; text-transform: uppercase; color: ${c.text}; text-wrap: balance; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.5em rgba(0,0,0,0.6); }
-  #title .k { color: ${c.accent}; }
-  #rule { position: absolute; left: 50%; top: 66.5%; width: 140px; height: 12px; margin-left: -70px; border-radius: 6px; background: ${c.accent}; box-shadow: 0 0.1em 0.4em rgba(0,0,0,0.5); }
-  #handle { position: absolute; left: 0; right: 0; top: 84.5%; text-align: center; font-family: "Inter", sans-serif; font-size: 30px; font-weight: 600; letter-spacing: 0.04em; color: ${c.text}; opacity: 0.75; }
+  html, body { margin: 0; background: ${p.bg}; }
+  #root { position: relative; width: ${W}px; height: ${H}px; overflow: hidden; background: ${p.bg}; }
+  #bg { position: absolute; inset: 0; background: radial-gradient(ellipse 80% 55% at 50% 30%, ${p.accent}2e 0%, ${p.accent}00 60%), linear-gradient(180deg, ${p.bg} 0%, ${p.bg2} 100%); }
+  #rays { position: absolute; inset: 0; background: conic-gradient(from 200deg at 50% 24%, transparent 0deg, ${p.accent}10 8deg, transparent 16deg, transparent 40deg, ${p.accent}0c 48deg, transparent 56deg, transparent 300deg, ${p.accent}0e 310deg, transparent 320deg); }
+  #person { position: absolute; left: ${tx}px; top: ${ty}px; width: ${Math.round(W * scale)}px; height: ${Math.round(H * scale)}px; filter: contrast(1.06) brightness(1.04) saturate(1.02) drop-shadow(0 30px 60px rgba(0,0,0,0.6)); }
+  #floor { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; background: linear-gradient(180deg, ${p.bg}00 0%, ${p.bg}d9 48%, ${p.bg2} 100%); }
+  #block { position: absolute; left: 3%; right: 3%; top: ${Math.round(blockTop)}px; text-align: center; }
+  .line { white-space: nowrap; font-family: "Anton", sans-serif; font-size: ${fontPx}px; line-height: ${lineH}px; letter-spacing: 0.012em; text-transform: uppercase; color: #fff;
+    background: linear-gradient(180deg, #ffffff 0%, #e6e6e6 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 ${Math.round(0.06 * T)}px ${Math.round(0.06 * T)}px rgba(0,0,0,0.75)) drop-shadow(0 0 ${Math.round(0.08 * T)}px ${p.accent}66); paint-order: stroke fill; -webkit-text-stroke: ${Math.round(0.05 * T)}px #000; }
+  .line .k { background: linear-gradient(180deg, ${p.accent2} 0%, ${p.accent} 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.18em; }
+  #teaser { white-space: nowrap; margin-top: ${Math.round(0.45 * T)}px; font-family: "Anton", sans-serif; font-size: ${teaserPx}px; line-height: ${Math.round(lay.teaserCap * 1.18)}px; letter-spacing: 0.04em; text-transform: uppercase; color: #fff; -webkit-text-stroke: ${Math.max(4, Math.round(0.05 * 0.42 * T))}px #000; paint-order: stroke fill; text-shadow: 0 6px 12px rgba(0,0,0,0.7); opacity: 0.95; }
+  #mark { position: absolute; left: 480px; top: 1470px; width: 120px; height: 6px; border-radius: 3px; background: ${p.accent}; opacity: 0.9; }
+  #grain { position: absolute; inset: 0; opacity: 0.06; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='300' height='300' filter='url(%23n)'/></svg>"); background-size: 300px 300px; }
+  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.5) 100%); }
 </style></head>
 <body><div id="root" data-composition-id="cover" data-start="0" data-width="${W}" data-height="${H}" data-duration="1" data-fps="30">
-  <img id="frame" src="${esc(frame)}" alt="" />
-  <div id="shade"></div>
-  <div id="rule"></div>
-  <h1 id="title" class="clip" data-start="0" data-duration="1">${words.map((w) => `<span${w.key ? ' class="k"' : ""}>${esc(w.text)}</span>`).join(" ")}</h1>
-  ${handle ? `<div id="handle">${esc(handle)}</div>` : ""}
+  <div id="bg"></div><div id="rays"></div>
+  <img id="person" src="${esc(person)}" alt="" />
+  <div id="floor"></div>
+  <div id="block" class="clip" data-start="0" data-duration="1">${lines.map((l) => `<div class="line">${mark(l)}</div>`).join("")}${teaser ? `<div id="teaser">${esc(teaser)}</div>` : ""}</div>
+  <div id="mark"></div>
+  <div id="vig"></div><div id="grain"></div>
 </div>
 <script>window.__timelines = window.__timelines || {}; window.__timelines["cover"] = gsap.timeline({ paused: true });</script>
 </body></html>
 `;
 }
 
-/** The moment to freeze: a little into the hook window, when the speaker is settled and looking up. */
-export function coverTime(plan) {
-  const h = plan.hook;
-  const t = h ? h.start + Math.min(0.8, h.duration / 3) : 0.5;
-  return Math.max(0.05, Math.min(t, (plan.video?.duration || 1) - 0.1));
+export function personBinary() {
+  const bin = path.join(os.homedir(), ".cache", "reel-editor", "person");
+  const src = path.join(PKG_ROOT, "scripts", "person.swift");
+  try {
+    if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(src).mtimeMs) {
+      ensureDir(path.dirname(bin));
+      return run("swiftc", ["-O", "-o", bin, src], { capture: true }).then(() => bin).catch(() => null);
+    }
+    return Promise.resolve(bin);
+  } catch { return Promise.resolve(null); }
 }
 
-export async function makeCover(workDir, plan, { handle = "" } = {}) {
+/** Frames to score: every second through the first 20 s, then every 3 s (a between-sentence face is likelier later). */
+export function coverTimes(duration) {
+  const out = [];
+  for (let t = 0.5; t < Math.min(duration, 20); t += 1) out.push(+t.toFixed(2));
+  for (let t = 21; t < duration - 0.5; t += 3) out.push(+t.toFixed(2));
+  return out.length ? out : [Math.max(0.05, duration / 2)];
+}
+
+/**
+ * Make the covers for a reel: <workDir>/covers/Cover 1.png, 2, 3 (and cover.png = the first). Returns the paths.
+ * Titles come from headless Claude (falls back to the hook); the frame comes from the person tool.
+ */
+export async function makeCover(workDir, plan, { handle = "", variants = 3, voice = "" } = {}) {
   workDir = path.resolve(workDir);
-  if (!plan.hook) return null;
-  const dir = ensureDir(path.join(workDir, "cover"));
-  ensureDir(path.join(dir, "assets", "fonts"));
-  ensureDir(path.join(dir, "assets", "vendor"));
+  const dir = ensureDir(path.join(workDir, "covers"));
+  const bin = await personBinary();
+  if (!bin) { warn("cover: the person tool did not compile (Xcode command line tools?)"); return []; }
+  const personPng = path.join(dir, "person.png");
+  const framePng = path.join(dir, "frame.png");
+  const times = coverTimes(plan.video.duration);
+  const { out } = await run(bin, [plan.video.src, ...times.map(String), "--out", personPng, "--frame", framePng], { capture: true });
+  const pick = JSON.parse(out.slice(out.indexOf("{")));
+  log(`cover: best frame at ${pick.best.t}s (score ${pick.best.score.toFixed(1)}: expression ${pick.best.parts.expression.toFixed(2)}, light ${pick.best.parts.light.toFixed(2)}, sharp ${pick.best.parts.sharp.toFixed(2)})`);
+
+  // Titles.
+  const transcript = (plan.captions || []).map((g) => g.text).join(" ");
+  let titles = [];
+  const titlesPath = path.join(dir, "titles.json");
+  if (fs.existsSync(titlesPath)) titles = readJSON(titlesPath).titles;
+  if (titles.filter(titleFits).length < 3 && hasClaude() && transcript) {
+    try {
+      const reply = await claudeText(titlePrompt({ transcript, hook: plan.hook?.text, voice }), { timeoutMs: 120000 });
+      titles = normalizeTitles(firstJSON(reply).titles, { hook: plan.hook?.text });
+    } catch (e) { warn(`cover titles: ${String(e.message).split("\n")[0]}; using the hook`); }
+  }
+  if (!titles.length) titles = normalizeTitles([], { hook: plan.hook?.text || plan.name });
+  writeJSON(titlesPath, { titles });
+  const fitting = titles.filter(titleFits);
+  titles = fitting.length ? fitting : titles;
+
+  // Compose and snapshot each variant.
+  ensureDir(path.join(dir, "assets", "fonts")); ensureDir(path.join(dir, "assets", "vendor"));
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(dir, "assets", "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(dir, "assets", "vendor", "gsap.min.js"));
-  const t = coverTime(plan);
-  const framePng = path.join(dir, "assets", "frame.png");
-  await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(t), "-i", plan.video.src, "-frames:v", "1", "-vf", `scale=${plan.canvas.width}:${plan.canvas.height}:force_original_aspect_ratio=increase,crop=${plan.canvas.width}:${plan.canvas.height}`, framePng]);
-  fs.writeFileSync(path.join(dir, "index.html"), coverHTML({ W: plan.canvas.width, H: plan.canvas.height, frame: "assets/frame.png", hook: plan.hook, colors: plan.style?.colors, handle }));
-  const shots = ensureDir(path.join(dir, "shots"));
-  for (const f of fs.readdirSync(shots)) fs.rmSync(path.join(shots, f), { force: true });
-  const bin = hyperframesBin();
-  await run(bin[0], [...bin.slice(1), "snapshot", dir, "--at", "0.5", "--no-end", "--keep", "-o", shots, "--describe", "false"], { capture: true, env: renderEnv() });
-  const src = path.join(shots, "at-0.5s.png");
-  if (!fs.existsSync(src)) throw new Error("the cover snapshot was not written");
-  const out = path.join(workDir, "cover.png");
-  fs.copyFileSync(src, out);
-  log(`cover: ${out} (frame at ${t.toFixed(1)}s)`);
-  return out;
+  fs.copyFileSync(personPng, path.join(dir, "assets", "person.png"));
+  const pals = [PALETTES.brand, PALETTES.navy, PALETTES.red];
+  const outs = [];
+  const bin2 = hyperframesBin();
+  for (let v = 0; v < Math.min(variants, 3); v++) {
+    const t = titles[v % titles.length];
+    const pdir = ensureDir(path.join(dir, `variant-${v + 1}`));
+    fs.rmSync(path.join(pdir, "assets"), { recursive: true, force: true });
+    fs.symlinkSync(path.join(dir, "assets"), path.join(pdir, "assets"));
+    fs.writeFileSync(path.join(pdir, "index.html"), coverHTML({ person: "assets/person.png", personBox: pick.best.person, face: pick.best.face, title: t.title, teaser: t.teaser, palette: pals[v], variant: v }));
+    const shots = ensureDir(path.join(pdir, "shots"));
+    for (const f of fs.readdirSync(shots)) fs.rmSync(path.join(shots, f), { force: true });
+    await run(bin2[0], [...bin2.slice(1), "snapshot", pdir, "--at", "0.5", "--no-end", "--keep", "-o", shots, "--describe", "false"], { capture: true, env: renderEnv() });
+    const src = path.join(shots, "at-0.5s.png");
+    if (!fs.existsSync(src)) { warn(`cover ${v + 1}: snapshot missing`); continue; }
+    const outPath = path.join(dir, `Cover ${v + 1}.png`);
+    fs.copyFileSync(src, outPath);
+    outs.push(outPath);
+    log(`cover ${v + 1}: "${t.title.replace(/\*/g, "")}"${t.teaser ? ` / ${t.teaser}` : ""} on ${pals[v].name}`);
+  }
+  if (outs[0]) fs.copyFileSync(outs[0], path.join(workDir, "cover.png"));
+  return outs;
 }

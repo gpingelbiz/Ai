@@ -111,7 +111,9 @@ Punch-ins fire only on lines that carry a gold word (the claims), at least 10 s 
 
 Caption lines keep phrases whole: a line can't be made only of glue words ("or a") or end on one; the glue moves to the next line, which may grow one word past `wordsPerLine`.
 
-Every reel with a hook gets `cover.png` (the drop folders copy it to `Cover.png`): a frame from the hook window, a soft dark base and the hook as a headline at chest height, inside Instagram's 3:4 grid crop and under 30% text. Upload it as the cover when posting; `reel cover <workdir>` remakes it. `cover.enabled: false` in a preset skips it.
+Every reel gets three covers (`<workdir>/covers/Cover 1-3.png`, copied into the reel folder), made the thumbnail-system way with no image model: `scripts/person.swift` scores frames across the reel (expression x3: a mouth not mid-word; light x2; sharpness x2; angle; face size), cuts the speaker out of the best one with Apple Vision person segmentation, and the composer puts that real cut-out on a designed background with the face about 560 px tall and the chin at y=820. Headless Claude writes 10 title candidates from the transcript and scores them (specificity, charge, brevity, stakes); the top 3 become the variants: 2-4 words, ALL CAPS Anton, one gold power word, an optional one-line teaser that extends the same claim, block bottom at y=1400 and nothing below 1440 (the grid crop), a black stroke, a glow and a drop shadow, grain over everything. Palettes: black+gold (brand), navy+gold, black+red. No username on the cover (the tile already shows it). Upload Cover 1 when posting; `reel cover <workdir>` remakes them. `cover.enabled: false` in a preset skips it.
+
+Research (Oct 2026): covers get a marginal share of views (most come from recommendations) but custom covers lift profile-grid taps; the norm in the coaching niche is one face, a 3-4 word label in a heavy sans with a dark base, one accent colour, the same template on every tile; the grid crops to 3:4.
 
 B-roll remembers the last 24 scenes it drew (`~/.cache/reel-editor/broll-recent.json`) and asks Codex for something different each time.
 

@@ -55,7 +55,7 @@ The drop folders split the looks: `Raw - Reel` is the classic look (`--no-graphi
 
 ## Cover
 
-Every reel gets `cover.png` in its work dir (the drop folder copies it as `Cover.png`); tell Greg to upload it as the Instagram cover. `reel cover <workdir>` remakes it.
+Every reel gets `covers/Cover 1-3.png` in its work dir (the drop folder copies them into the reel folder), made per the thumbnail-system v10 rules without an image model (real frame scored and cut out with Vision, title typeset in Anton, block bottom y=1400, one gold power word, three palettes). Tell Greg to upload Cover 1. `reel cover <workdir>` remakes them.
 
 ## Long recordings and hook tests
 

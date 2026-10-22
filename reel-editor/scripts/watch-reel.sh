@@ -189,7 +189,8 @@ else
     printf 'No b-roll this time: Codex was busy or rate-limited, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$folder/No b-roll this time.txt"
   fi
   [ -s "$work/review.txt" ] && cp -f "$work/review.txt" "$folder/check these words.txt"
-  [ -s "$work/cover.png" ] && cp -f "$work/cover.png" "$folder/Cover.png"
+  # Covers: three variants (titles x palettes), the thumbnail-system way; Cover 1 is the pick.
+  for c in "$work"/covers/Cover\ *.png; do [ -f "$c" ] && cp -f "$c" "$folder/$(basename "$c")"; done
   [ -s "$work/music.txt" ] && cp -f "$work/music.txt" "$folder/music.txt"
   echo "$(date '+%F %T') done  $dest" >> "$log"
   if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder."; else notify "$label ready" "$title"; fi
