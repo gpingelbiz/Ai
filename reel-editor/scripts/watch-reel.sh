@@ -126,7 +126,7 @@ fi
 case "$MODE" in
   broll|long) flags+=(--broll --graphics --caption-style reveal);;
   runway) flags+=(--preset pingel-runway --broll --graphics --caption-style reveal);;
-  reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate);;
+  reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate --no-behind);;
 esac
 # A carousel needs the transcript and plan, not a render.
 [ "$MODE" = carousel ] && flags+=(--no-render)
@@ -288,11 +288,18 @@ else
     fi
   fi
   [ -s "$work/review.txt" ] && cp -f "$work/review.txt" "$folder/check these words.txt"
+  # Preflight: the editor's own checks on the finished file (sound, the open, dead air, layout). Only a report
+  # with something in it reaches the folder.
+  pf_note=""
+  if [ -s "$work/preflight.txt" ] && ! head -1 "$work/preflight.txt" | grep -q "Preflight: OK"; then
+    cp -f "$work/preflight.txt" "$folder/check this reel.txt"
+    pf_note=" Preflight flagged something, see the note."
+  fi
   # Cover: the reel's first frame (Cover.png); the designed set only when the preset asks for it.
   for c in "$work"/covers/Cover*.png; do [ -f "$c" ] && cp -f "$c" "$folder/$(basename "$c")"; done
   [ -s "$work/music.txt" ] && cp -f "$work/music.txt" "$folder/music.txt"
   echo "$(date '+%F %T') done  $dest" >> "$log"
-  if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder."; else notify "$label ready" "$title"; fi
+  if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder.$pf_note"; else notify "$label ready" "$title.$pf_note"; fi
 fi
 
 # Post copy (caption, hashtags, the hook options) from Sandcastles via headless Claude. Written in the first pass

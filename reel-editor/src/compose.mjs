@@ -56,6 +56,11 @@ export function composeProject(plan, projectDir) {
     b.video = /\.(mp4|mov|webm|m4v)$/i.test(b.file || "");
     copyOrLink(b.file, path.join(projectDir, b.src));
   });
+  // Text behind you: the person cutout (VP9 with alpha) for the hook window.
+  if (plan.behind?.file && fs.existsSync(plan.behind.file)) {
+    plan.behind.src = "assets/cutout.webm";
+    copyOrLink(plan.behind.file, path.join(projectDir, plan.behind.src));
+  } else if (plan.behind) plan.behind.src = null;
   // The cold open is a still: the first b-roll image, or a generated clip's own still frame.
   if (plan.coldOpen && plan.broll?.[0]) {
     const b = plan.broll[0];
@@ -126,6 +131,13 @@ export function renderHTML(plan, footage) {
 
   const ctaHTML = plan.cta
     ? `      <div id="cta" class="clip" data-start="${plan.cta.start}" data-duration="${plan.cta.duration}" data-track-index="4" data-layout-allow-overflow><span id="cta-text">${esc(plan.cta.text)}</span></div>`
+    : "";
+
+  // Text behind you: the person cut out of the same frames (VP9 with alpha) plays over the hook, in a wrap that
+  // mirrors every move of the footage wrap, so the headline runs behind the head and shoulders.
+  const behind = plan.behind && plan.behind.src ? plan.behind : null;
+  const cutoutHTML = behind
+    ? `      <div id="cutout-wrap" data-layout-allow-overflow><video id="cutout" class="clip" src="${esc(behind.src)}" data-start="${behind.start}" data-duration="${behind.duration}" data-track-index="4" muted playsinline></video></div>`
     : "";
 
   // B-roll stills: full-frame cutaways over the footage, under the captions. The voice keeps playing underneath.
@@ -210,6 +222,7 @@ export function renderHTML(plan, footage) {
     fps: s.render?.fps || 30,
     base: plan.framing?.scale || 1,
     baseShift: Math.round((plan.framing?.shift || 0) * H),
+    behind: behind ? { start: behind.start, duration: behind.duration } : null,
   };
   const framing = plan.framing || { scale: 1, side: "right", face: null };
   const origin = framing.scale > 1 && framing.origin ? framing.origin : s.zooms.origin || "50% 40%";
@@ -236,6 +249,8 @@ export function renderHTML(plan, footage) {
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
       #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
+      #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }
+      #cutout { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       #root { ${sideVars} }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       /* Creator punch-in: the frame edges defocus for a beat while the camera moves (the centre stays sharp). */
@@ -312,10 +327,11 @@ ${brollHTML}
 ${lowerHTML}
 ${gfxHTML}
 ${slamHTML}
+${hookHTML}
+${cutoutHTML}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
 ${capsHTML}
       </div>
-${hookHTML}
 ${ctaHTML}
 ${audioHTML}
     </div>
@@ -323,6 +339,9 @@ ${audioHTML}
       const PLAN = ${JSON.stringify(runtimePlan)};
       (function () {
         const tl = gsap.timeline({ paused: true });
+        // Every move of the footage is mirrored on the person cutout (text behind you), so the two stay registered.
+        const WRAP = PLAN.behind ? ["#video-wrap", "#cutout-wrap"] : "#video-wrap";
+        const FOOT = PLAN.behind ? ["#footage", "#cutout"] : "#footage";
         if (PLAN.hook && PLAN.hook.style === "headline") {
           const h = PLAN.hook;
           const words = document.querySelectorAll("#hook-lines .hw");
@@ -381,36 +400,36 @@ ${audioHTML}
         // Face-tracking reframe: slide the crop window across a wide source as the speaker moves.
         if (PLAN.reframe.length) {
           const first = PLAN.reframe[0];
-          tl.set("#footage", { objectPosition: first.x + "% 50%" }, 0);
+          tl.set(FOOT, { objectPosition: first.x + "% 50%" }, 0);
           for (let i = 1; i < PLAN.reframe.length; i++) {
             const p = PLAN.reframe[i], q = PLAN.reframe[i - 1];
-            tl.to("#footage", { objectPosition: p.x + "% 50%", duration: Math.max(0.2, p.t - q.t), ease: "power1.inOut" }, q.t);
+            tl.to(FOOT, { objectPosition: p.x + "% 50%", duration: Math.max(0.2, p.t - q.t), ease: "power1.inOut" }, q.t);
           }
         }
         // Base framing (long form): a tighter default frame on a wide shot; every punch-in is relative to it.
         const BASE = PLAN.base || 1;
-        if (BASE !== 1 || PLAN.baseShift) tl.set("#video-wrap", { scale: BASE, y: PLAN.baseShift || 0 }, 0);
+        if (BASE !== 1 || PLAN.baseShift) tl.set(WRAP, { scale: BASE, y: PLAN.baseShift || 0 }, 0);
         // Motion from the first frame: a slow push-in under the hook (a static face in frame 1 reads as a still).
-        if (PLAN.hook) tl.fromTo("#video-wrap", { scale: BASE }, { scale: BASE * 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
+        if (PLAN.hook) tl.fromTo(WRAP, { scale: BASE }, { scale: BASE * 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
         // Punch-ins. "camera": the creator move (push with a slight tilt and lift, the edges defocus for a beat, a slow
         // return); "snap": the hard cut-in zoom.
         // Cut cadence: an instant change of framing (a jump cut) between the punch-ins.
-        const jump = (z) => tl.set("#video-wrap", { scale: z.scale * BASE, xPercent: z.xPercent || 0, yPercent: z.scale > 1 ? -0.6 : 0, rotationX: 0, rotationY: 0 }, z.t);
+        const jump = (z) => tl.set(WRAP, { scale: z.scale * BASE, xPercent: z.xPercent || 0, yPercent: z.scale > 1 ? -0.6 : 0, rotationX: 0, rotationY: 0 }, z.t);
         if (PLAN.zoomStyle === "camera") {
-          gsap.set("#video-wrap", { transformPerspective: 1200 });
+          gsap.set(WRAP, { transformPerspective: 1200 });
           let n = 0;
           PLAN.zooms.forEach((z) => {
             if (z.cut) jump(z);
             else if (z.scale > 1) {
               const dir = n++ % 2 ? 1 : -1;
-              tl.to("#video-wrap", { scale: z.scale * BASE, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
+              tl.to(WRAP, { scale: z.scale * BASE, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
               tl.to("#defocus", { opacity: 1, duration: 0.3, ease: "power2.out" }, z.t);
               tl.to("#defocus", { opacity: 0, duration: 0.45, ease: "power2.in" }, z.t + 0.3);
             } else {
-              tl.to("#video-wrap", { scale: BASE, xPercent: 0, yPercent: 0, rotationX: 0, rotationY: 0, duration: 0.9, ease: "power2.inOut" }, z.t);
+              tl.to(WRAP, { scale: BASE, xPercent: 0, yPercent: 0, rotationX: 0, rotationY: 0, duration: 0.9, ease: "power2.inOut" }, z.t);
             }
           });
-        } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to("#video-wrap", { scale: z.scale * BASE, xPercent: 0, duration: z.snap, ease: "power3.out" }, z.t)));
+        } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to(WRAP, { scale: z.scale * BASE, xPercent: 0, duration: z.snap, ease: "power3.out" }, z.t)));
         // Cold open: the still holds under the hook with a slow push, the flash hits on the cut to the speaker.
         if (PLAN.coldOpen) {
           const d = PLAN.coldOpen.duration;

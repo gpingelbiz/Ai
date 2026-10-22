@@ -97,7 +97,7 @@ A source wider than the canvas (a landscape or wide clip into 9:16) is reframed:
 
 ## Voice and speed
 
-The clean pass sums the phone's stereo to mono, then high-pass, spectral denoise, de-ess, gentle compression, a limiter and -16 LUFS, encoded with the Apple hardware encoder at the canvas size (never upscaled; a wider source keeps its width for the reframe). The two transcripts and the level scan run side by side, the final render uses GPU encoding, and the lint/layout check is opt-in (`--check`). A 1-minute phone clip now edits in about 1.5 minutes with cards and music. `REEL_SW_ENCODE=1` / `REEL_SW_RENDER=1` force software; `REEL_DEEPFILTER=<path>` is reserved for a DeepFilterNet denoiser.
+The clean pass sums the phone's stereo to mono, then denoises, de-esses, levels, compresses gently, limits and lands at -16 LUFS, encoded with the Apple hardware encoder at the canvas size (never upscaled; a wider source keeps its width for the reframe). With the DeepFilterNet binary installed that is the studio sound pass (below); without it the spectral denoiser (afftdn) does the job. The two transcripts and the level scan run side by side, the final render uses GPU encoding, and the lint/layout check is opt-in (`--check`). A 1-minute phone clip now edits in about 1.5 minutes with cards and music. `REEL_SW_ENCODE=1` / `REEL_SW_RENDER=1` force software.
 
 Sign-offs ("thanks for watching", "see you in the next one", "link in bio"...) inside the last 10 s are cut, so a reel ends on its last point.
 
@@ -133,6 +133,20 @@ Research (Oct 2026): covers get a marginal share of views (most come from recomm
 
 B-roll remembers the last 24 scenes it drew (`~/.cache/reel-editor/broll-recent.json`) and asks Codex for something different each time.
 
+## Studio sound, the caption word fix, preflight and text behind you
+
+Four stages added after the Oct 2026 GitHub research (`src/studio.mjs`, `src/correct.mjs` + `src/align.mjs`, `src/preflight.mjs`, `src/behind.mjs` + `scripts/matte.swift`), all on by default where their tool exists.
+
+**Studio sound** (`audio.studio`, `--no-studio`): the voice is denoised by DeepFilterNet3 (`deep-filter`, one Rust binary from the official release, MIT/Apache; `scripts/install-deepfilter.sh` puts it in `~/.cache/reel-editor/bin`, `REEL_DEEPFILTER=<path>` overrides, `reel doctor` shows it) on the source timeline with delay compensation, then the mix chain takes that WAV instead of the source audio: high-pass, de-click, de-ess, a phrase leveler (`speechnorm`, quiet lines come up toward the loud ones, nothing under -34 dBFS is touched so breaths and room stay down), gentle compression, a limiter and -16 LUFS. On a phone clip in a room the noise floor dropped from -59 to -68 dB and 20 s took 0.7 s. The log line says what happened; without the binary it says so once and the spectral denoiser runs.
+
+**Caption word fix** (`transcribe.fix`, `--no-fix-words`): after the dictionary corrections, headless Claude reads the numbered transcript against the dictionary's `terms`, `phrases` and `names` and the review's disagreements and low-confidence words, and returns only edits (`{i, n, to}`): a brand term or name heard as other words, a wrong number, a homophone that makes no sense. No rephrasing, no filler removal; an edit list that would change more than 8% of the words is refused as a rewrite. Cached in `words-fixed.json`. The log names each change with its time ("ghost pianel" → "Ghost P&L" at 0:12).
+
+**Word timing** (`transcribe.align`: `auto` | `always` | `false`, `--align` / `--no-align`): the words are re-timed against the audio by ElevenLabs forced alignment (`POST /v1/forced-alignment`, audio + text in, a start and end per word out) when the fix changed anything or the transcript came from faster-whisper, whose timings run late on short words; a Scribe transcript with no edits already lines up (tested: 215 words, 0 moved) and is left alone. The aligner's words are matched to ours by a longest common subsequence on normalized tokens, so a tokenization difference costs one word; under 80% matched or a typical shift over a second is rejected and the engine's timings stay. Cached in `words-aligned.json`; the final words go back into `words.json`.
+
+**Preflight** (`preflight.enabled`, `preflight.strict`, `--no-preflight`): the finished file is checked before it leaves: integrated loudness -14 ±1.5 LUFS and true peak at or under -1 dBTP (ebur128 summary), loudness range, a black or static first second (blackdetect; mean frame difference over the first 2 s), silence at the start and dead air anywhere, the length against the plan, and the layout from the plan: captions over the chin, the hook over the face (not when it runs behind you), captions or CTA inside the strip Instagram covers with its caption and buttons (bottom 16.7%, right 11%). Thresholds follow the reel-qc project (MIT). `preflight.txt` and `preflight.json` sit next to `plan.json`; the watcher copies a report with anything in it into the reel folder as `check this reel.txt`. `strict: true` keeps a failing file as `<name>.failed.mp4` and stops the run; off by default so a reel always arrives.
+
+**Text behind you** (`hook.behind`, on in the pingel-brand and pingel-runway presets, `--behind` / `--no-behind`): Apple Vision's person segmentation (`scripts/matte.swift`, accurate quality, a 35% share of the previous frame blended in so the edge does not flicker) cuts you out of every frame of the hook window; the frames become a VP9 clip with alpha (`cutout.webm`) that the composer layers over the hook in a wrap mirroring every move of the footage wrap (push-in, punch-ins, jump cuts, reframe). The hook is then placed so its lower 40% (`hook.behindOverlap`) runs behind the top of the head, 12% larger (`hook.behindScale`), and the captions stay on top of the cutout. No face in the hook frames, a mask under 4% or over 80% of the frame, or no Swift: the hook goes back to its normal placement and the log says why. About 12 s for a 3-second hook at 1080x1920.
+
 ## Layout and safe zones
 
 Captions are placed from the face: just under the chin, with the block never lower than 0.76 (where the caption overlay starts to cover it) and never higher than 0.56 (Meta's safe box ends at 65%: the username, caption and audio bar cover the bottom 35%). A close-up selfie gets them under the chin at about 0.75; a wide shot gets them at the safe line. `--caption-position` overrides; without a face the preset's 0.60 is used. A 7% left and 12% right margin keeps them off the action buttons on the right. The hook goes above the head or under the chin and the cards keep to the top 54%. The CTA pill sits at 0.48. The hook is on screen at full strength from frame 0 with a slow push-in on the footage (reels that spread show text by frame 4 and motion in the first half second).
@@ -146,6 +160,7 @@ Captions are placed from the face: just under the chin, with the block never low
 - `corrections`: fixes for how Whisper hears a term (`"ghost p and l"` becomes `Ghost P&L`).
 - `candidates`: everyday business words (close, sales, pipeline, money...) that get gold at most once per clip and never on two lines in a row, so gold keeps meaning something.
 - `powerWords`: single words that get highlighted when no term is in the line.
+- `names`: people and companies spelled exactly (`Greg Pingel`); the caption word fix uses them with `terms` and `phrases` to correct what the engine mis-heard. No highlight, not sent to Whisper.
 
 With `autoKeywords` on (the brand preset), lines with none of the above get an automatic pick: a number with its unit (`three minutes`), a number word, or a strong 6+ letter word. A word gets automatic gold only once per clip and never on two automatic lines in a row. `--no-auto-keywords` turns it off; `--hook-position 0.40` drops the hook to chest height for wide shots.
 
@@ -220,7 +235,8 @@ The log line `encoding clean.mp4 (... + hlg → BT.709 SDR)` confirms it ran.
 
 | Variable | Purpose |
 | --- | --- |
-| `ELEVENLABS_API_KEY` | `--sfx`, `--voiceover`, `--engine elevenlabs` |
+| `ELEVENLABS_API_KEY` | `--sfx`, `--voiceover`, `--engine elevenlabs`, forced alignment (word timing) |
+| `REEL_DEEPFILTER` | path to the `deep-filter` binary for studio sound (default `~/.cache/reel-editor/bin/deep-filter`, then PATH) |
 | `ELEVENLABS_VOICE_ID` | default voice for `--voiceover` |
 | `REEL_PYTHON` | python that has `faster_whisper` (default `python3`) |
 | `REEL_WHISPER_DEVICE` / `REEL_WHISPER_COMPUTE` | `cpu`/`int8` by default; `cuda`/`float16` on a GPU box |

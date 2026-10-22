@@ -7,7 +7,13 @@
     "verifyModel": "large-v3-turbo",
     "language": "en",
     "verify": false,
-    "minProb": 0.5
+    "minProb": 0.5,
+    "fix": true,
+    "align": "auto"
+  },
+  "preflight": {
+    "enabled": true,
+    "strict": false
   },
   "colors": {
     "text": "#FFFFFF",
@@ -43,7 +49,10 @@
     "fontSizeFrac": 0.052,
     "maxWords": 8,
     "autoPlace": false,
-    "style": "gold"
+    "style": "gold",
+    "behind": false,
+    "behindOverlap": 0.4,
+    "behindScale": 1.12
   },
   "zooms": {
     "enabled": true,
@@ -85,7 +94,8 @@
     },
     "sounds": false,
     "soundsVolume": 0.3,
-    "soundMarkers": false
+    "soundMarkers": false,
+    "studio": true
   },
   "render": {
     "quality": "looks",

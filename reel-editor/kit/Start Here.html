@@ -69,7 +69,7 @@
   <table>
     <tr><th>Drop into</th><th>You get</th></tr>
     <tr><td>Raw - Reel</td><td><code>2026-10-21 Reel 1</code>: the edited reel in the classic look (bold outlined captions), named after its hook</td></tr>
-    <tr><td>Raw - Reel with B-roll</td><td><code>2026-10-21 Reel 2 with B-roll</code>: the full look: graphic cards that show what you say, captions that light up word by word with a hand-drawn marker on the key word, big climax words that stamp in as you say them, and generated pictures cut in for a couple of seconds each, plus those pictures. Cards need Claude Code; pictures need Codex (below).</td></tr>
+    <tr><td>Raw - Reel with B-roll</td><td><code>2026-10-21 Reel 2 with B-roll</code>: the full look: graphic cards that show what you say, captions that light up word by word with a hand-drawn marker on the key word, big climax words that stamp in as you say them, the hook running behind your head and shoulders, and generated pictures cut in for a couple of seconds each, plus those pictures. Cards need Claude Code; pictures need Codex (below).</td></tr>
     <tr><td>Raw - Full YouTube Edit</td><td><code>2026-10-22 YouTube 1</code>: the whole long video edited for YouTube: chapters with title cards, re-hooks, sparse cards and pictures, punch-ins, a clean last 20 seconds for the end screen, plus the description with chapters, three titles, the captions file, three thumbnail frames and the end-screen plan. Captions are off by default; put <code>#captions</code> in the file name to burn them in.</td></tr>
     <tr><td>Raw - Reel with Runway B-roll</td><td><code>2026-10-22 Reel 3 with Runway</code>: the full look with short generated video clips as the b-roll instead of pictures. Needs a Runway API key with credits (about 30 cents a clip); the folder gets a note with what the reel cost.</td></tr>
     <tr><td>Raw - Clips from Long Video</td><td><code>2026-10-22 Clips 1</code>: a podcast, a live or a training cut into up to 5 reels, each with the full look. Wide footage follows whoever is talking and splits the screen when two people trade lines. Each clip comes with its cover, caption and the words to check; <code>clips.txt</code> lists the moments.</td></tr>
@@ -78,7 +78,8 @@
   <p>To get two of them from one clip, drop it into both folders. For background music, put licensed tracks (mp3, m4a or wav, such as Epidemic Sound downloads) in <b>Desktop/Reels/Music</b>: the editor picks one that fits what you say (name files <code>Mood - Title - Artist.mp3</code>), low under your voice, and <code>music.txt</code> names it. Every folder also gets:</p>
   <table>
     <tr><th>File</th><th>What it is</th></tr>
-    <tr><td>check these words.txt</td><td>Only when the two transcription engines disagreed on a word, with its time in the reel. Check those spots before posting.</td></tr>
+    <tr><td>check these words.txt</td><td>Only when the two transcription engines disagreed on a word, with its time in the reel. Check those spots before posting. Brand terms and names from your dictionary are corrected and re-timed before this list is made.</td></tr>
+    <tr><td>check this reel.txt</td><td>Only when the editor's own check on the finished file found something: sound level off, a black or still first second, a long silence, captions over your chin, text where Instagram puts its caption and buttons. The reel is still there; the note says what to look at. Every reel is also run through a studio-sound pass (room noise and hiss out, every phrase at the same level) before this check.</td></tr>
     <tr><td>caption.txt</td><td>A caption, 3 hashtags and 3 hook ideas based on what is working for that topic right now. Needs Claude Code and the Sandcastles connector; otherwise it is skipped.</td></tr>
     <tr><td>Cover 1-3.png</td><td>Three cover images to pick from when you post: your best frame with a short bold title (outlined, on a dark bar, or with one word boxed), placed so the profile grid does not crop it.</td></tr>
     <tr><td>The hook</td><td>If you did not write one in the file name, the editor writes three (strongest first, from what wins on Sandcastles) and puts the first on the finished reel; all three are in caption.txt. To use another, drop the clip again named <code>clip__Your hook here.mov</code>.</td></tr>
@@ -99,7 +100,7 @@
 
   <h2>3. Make it yours</h2>
   <ul>
-    <li><b>Your words:</b> open <code>~/.reel/dictionary.json</code> and add your program and framework names under <code>terms</code>. They get highlighted and spelled right.</li>
+    <li><b>Your words:</b> open <code>~/.reel/dictionary.json</code> and add your program and framework names under <code>terms</code>. They get highlighted and spelled right. People and company names go under <code>names</code>: spelled right, not highlighted.</li>
     <li><b>Your caption voice:</b> edit <code>~/.reel/voice.md</code> with who you talk to, words you use, and words you never use.</li>
     <li><b>A call-to-action:</b> add <code>export REEL_WATCH_CTA="Comment YOURWORD"</code> inside the reel-editor block in <code>~/.zshrc</code>.</li>
     <li><b>Change your look:</b> double-click the installer again and pick another option.</li>

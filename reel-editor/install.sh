@@ -106,6 +106,11 @@ bold "4/7  Whisper and the render browser"
 # av<17: PyAV 19 removed an argument faster-whisper 1.2.1 passes ("unexpected keyword argument metadata_errors").
 "$VENV/bin/pip" install -q --disable-pip-version-check --upgrade faster-whisper "av<17" && ok "Whisper (faster-whisper) installed"
 ( cd "$APP" && npx --yes hyperframes browser ensure >/dev/null 2>&1 ) && ok "render browser ready"
+# Studio sound: the DeepFilterNet denoiser is one binary from its official GitHub release (no Python). Optional:
+# without it the spectral denoiser runs and the log says so.
+if [ -x "$HOME/.cache/reel-editor/bin/deep-filter" ]; then ok "studio sound denoiser present"
+elif bash "$APP/scripts/install-deepfilter.sh" >/dev/null 2>&1; then ok "studio sound denoiser installed (DeepFilterNet)"
+else note "DeepFilterNet could not be fetched; reels use the built-in denoiser. Later: $APP/scripts/install-deepfilter.sh"; fi
 
 # ---------------------------------------------------------------- 5. Your look and words
 bold "5/7  Your look"
