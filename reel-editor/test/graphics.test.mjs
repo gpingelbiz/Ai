@@ -52,7 +52,8 @@ test("cards: escaped text, gold and highlight markup, strike lines, step links",
   assert.match(list, /g-strike-line/);
   assert.match(list, /class="g-tag">do</);
   assert.equal((sceneHTML({ type: "steps", eyebrow: "", items: [{ text: "a" }, { text: "b" }, { text: "c" }] }).match(/g-link/g) || []).length, 2);
-  assert.match(sceneHTML({ type: "stat", eyebrow: "", value: "Almost 8 years", value2: "", sub: "" }), /calc\(var\(--u\) \* 107\)/);
+  assert.match(sceneHTML({ type: "stat", eyebrow: "", value: "Almost 8 years", value2: "", sub: "" }), /calc\(var\(--u\) \* 89\)/);
+  assert.match(sceneHTML({ type: "stat", eyebrow: "", value: "$10K", value2: "", sub: "" }), /calc\(var\(--u\) \* 170\)/);
 });
 
 test("the prompt keeps qualifiers, bans invented numbers and lists only allowed lines", () => {
