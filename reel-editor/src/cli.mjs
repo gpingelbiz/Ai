@@ -53,6 +53,8 @@ Options (edit / batch)
   --broll                  Codex b-roll: 1-3 generated stills cut in after the hook, slow push-in, voice and captions
                            keep going (needs the Codex CLI signed in). --no-broll turns a preset's b-roll off,
                            --new-broll draws fresh stills instead of reusing the saved ones
+  --both                   with --broll, also render the reel without b-roll (renders/<name>-no-broll.mp4),
+                           while Codex draws the stills
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -102,6 +104,7 @@ const EDIT_OPTIONS = {
   broll: { type: "boolean" },
   "no-broll": { type: "boolean" },
   "new-broll": { type: "boolean" },
+  both: { type: "boolean" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   force: { type: "boolean" },

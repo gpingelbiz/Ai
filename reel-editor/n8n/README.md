@@ -36,7 +36,7 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `REEL_WATCH_ROOT` | `~/Reels` | work folder (renders in `videos/<name>/`) |
-| `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per reel (`<date> Reel <n>`, with the MP4, `caption.txt`, `B-roll/`, `Carousel/` and `check these words.txt`); on the Mini this is `~/Desktop/Reels` |
+| `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per reel (`<date> Reel <n>`, with `Reel with B-roll/`, `Reel with no B-roll/`, `Carousel/`, `caption.txt` and `check these words.txt`); on the Mini this is `~/Desktop/Reels` |
 | `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set it to an empty string (`export REEL_WATCH_CTA=""`) for no CTA |
 | `REEL_WATCH_BROLL` | `1` | `0` turns off the Codex b-roll for every drop |
 | `REEL_WATCH_CAROUSEL` | `1` | `0` turns off the carousel for every drop |

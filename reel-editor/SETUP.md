@@ -82,7 +82,17 @@ To fix a caption, edit its `text` in `videos/my-clip/plan.json` and run `reel bu
 
 If you said yes to the drop folder, it is already on: drop a clip into **Desktop/Reels/Raw**, and a Mac notification tells you when it is done. A 1-minute clip takes about 3 minutes.
 
-Each reel gets its own folder in Desktop/Reels, named by date and number: `2026-10-21 Reel 1`, `2026-10-21 Reel 2`, and so on, starting again at Reel 1 each day. Inside are the reel (named after its hook), `caption.txt`, a `Carousel` folder (slides for an Instagram carousel), a `B-roll` folder (the generated stills cut into the reel), and `check these words.txt` when there is something to check.
+Each reel gets its own folder in Desktop/Reels, named by date and number: `2026-10-21 Reel 1`, `2026-10-21 Reel 2`, and so on, starting again at Reel 1 each day. Inside are three folders and the post copy:
+
+| In each reel folder | What it is |
+| --- | --- |
+| `Reel with B-roll` | The reel with generated b-roll cut in, plus the b-roll pictures on their own |
+| `Reel with no B-roll` | The same reel without the b-roll |
+| `Carousel` | Slides for an Instagram carousel made from the video, plus the slide text |
+| `caption.txt` | A caption, 3 hashtags and 3 hook ideas |
+| `check these words.txt` | Only when there is something to check |
+
+The reels are named after their hook.
 
 Raw is a shortcut to `~/Reels/raw`. macOS stops background jobs from reading Desktop folders, so leave it as a shortcut.
 

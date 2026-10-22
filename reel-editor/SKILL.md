@@ -55,7 +55,7 @@ It runs Claude Code headless with only the Sandcastles hook and format lookups a
 
 ## Deliver
 
-Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> Reel <n>`, numbered through the day (the drop folder keeps the count in `~/Reels/videos/reel-count-<date>`; bump it when you add one by hand). Inside: the MP4 named after its hook, `caption.txt`, `B-roll/` and `Carousel/` when made, and `check these words.txt` when review.txt has spots.
+Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> Reel <n>`, numbered through the day (the drop folder keeps the count in `~/Reels/videos/reel-count-<date>`; bump it when you add one by hand). Inside: `Reel with B-roll/` (the b-roll render, named after its hook, plus `B-roll 1.png`...), `Reel with no B-roll/` (the plain render, `renders/<name>-no-broll.mp4` when made with `--broll --both`), `Carousel/`, `caption.txt`, and `check these words.txt` when review.txt has spots.
 
 
 Give Greg the render path, the before/after duration, and anything that looked off (a mis-heard word, a caption on the face, a weak auto hook). Offer thumbnail-agent as the optional next step.

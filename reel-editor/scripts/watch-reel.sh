@@ -81,7 +81,7 @@ broll=1; carousel=1
 { [ "${REEL_WATCH_CAROUSEL:-1}" = 0 ] || ! command -v codex >/dev/null 2>&1; } && carousel=0
 case "$base" in *"#nobroll"*) broll=0;; esac
 case "$base" in *"#nocarousel"*) carousel=0;; esac
-[ "$broll" = 1 ] && flags+=(--broll)
+[ "$broll" = 1 ] && flags+=(--broll --both)
 name=$(echo "$stem" | sed -E 's/#[a-z]+//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 
@@ -97,20 +97,39 @@ if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EX
   used_hook="$hook"
   [ -n "$used_hook" ] || used_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
   pretty=$(printf '%s' "$used_hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
-  # Each reel gets its own folder: "<YYYY-MM-DD> Reel <n>", numbered through the day. Inside: the reel (named after its hook), caption.txt, and
-  # "check these words.txt" when the engines disagreed. A new folder also means a reel is never overwritten.
+  # Each reel gets its own folder: "<YYYY-MM-DD> Reel <n>", numbered through the day. A new folder also means a
+  # reel is never overwritten. Inside:
+  #   Reel with B-roll/     the reel with the Codex cutaways, plus the stills on their own
+  #   Reel with no B-roll/  the same reel without them
+  #   Carousel/             the IG slides made from the video, plus their text
+  #   caption.txt, and "check these words.txt" when the engines disagreed
   mkdir -p "$DONE"
   folder="$(create_reel_folder "$DONE" "$REELS/videos")"
   reel_label="$(basename "$folder")"
-  dest="$folder/${pretty:-$name}.mp4"
-  cp "$out" "$dest"
+  file="${pretty:-$name}.mp4"
+  plain="$out"
+  [ "$broll" = 1 ] && [ -f "$work/renders/$name-no-broll.mp4" ] && plain="$work/renders/$name-no-broll.mp4"
+  mkdir "$folder/Reel with no B-roll"
+  dest="$folder/Reel with no B-roll/$file"
+  cp "$plain" "$dest"
+  if [ "$broll" = 1 ]; then
+    mkdir "$folder/Reel with B-roll"
+    # The stills this reel used, from its plan (one path per line).
+    stills=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const b of p.broll||[])if(b.file)console.log(b.file)}catch(e){}' "$work/plan.json" 2>/dev/null || true)
+    if [ -n "$stills" ]; then
+      dest="$folder/Reel with B-roll/$file"
+      cp "$out" "$dest"
+      i=1
+      while IFS= read -r still; do
+        [ -f "$still" ] && cp "$still" "$folder/Reel with B-roll/B-roll $i.png" && i=$((i + 1))
+      done <<< "$stills"
+    else
+      printf 'No b-roll this time: Codex was busy or rate-limited, so this reel has only the version without b-roll.\nTo get it, rename the clip in Raw (any new name) and drop it again in 20 minutes.\n' > "$folder/Reel with B-roll/No b-roll this time.txt"
+    fi
+  fi
   if [ -s "$work/review.txt" ]; then cp -f "$work/review.txt" "$folder/check these words.txt"; fi
   echo "$(date '+%F %T') done  $dest" >> "$log"
   if [ -s "$work/review.txt" ]; then notify "$reel_label ready: check a few words" "$(basename "$dest" .mp4). See the note in its folder."; else notify "$reel_label ready" "$(basename "$dest" .mp4)"; fi
-  # The b-roll stills, for reuse in posts and stories.
-  if [ -f "$work/broll/broll.json" ] && ls "$work"/broll/broll-*.png >/dev/null 2>&1; then
-    mkdir "$folder/B-roll" 2>/dev/null && cp "$work"/broll/broll-*.png "$folder/B-roll/" || true
-  fi
   # The carousel (Codex) runs alongside the post copy (Claude + Sandcastles). Neither holds up the reel.
   if [ "$carousel" = 1 ]; then
     (

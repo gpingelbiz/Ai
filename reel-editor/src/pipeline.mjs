@@ -192,11 +192,6 @@ export async function runEdit(input, opts = {}) {
     log(spots.length ? `review: ${spots.length} spot${spots.length === 1 ? "" : "s"} to check, see ${path.join(workDir, "review.txt")}` : `review: both engines agree, nothing to check`);
   }
 
-  // 4b. B-roll: Codex picks the moments and draws the stills; any failure leaves the reel without it.
-  const broll = preset.broll?.enabled && shownGroups.length
-    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll })
-    : [];
-
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
   const audio = await prepareAudio({ projectDir, preset, opts, duration, hook, zooms });
@@ -213,16 +208,40 @@ export async function runEdit(input, opts = {}) {
     cta,
     captions: shownGroups,
     zooms,
-    broll,
+    broll: [],
     audio,
     words: cleanWords,
   };
   writeJSON(path.join(workDir, "plan.json"), plan);
   composeProject(plan, projectDir);
+
+  // 6. B-roll: Codex picks the moments and draws the stills; any failure leaves the reel without it. With --both,
+  // the version without b-roll renders while Codex draws (renders/<name>-no-broll.mp4).
+  const wantBroll = !!(preset.broll?.enabled && shownGroups.length);
+  const brollJob = wantBroll
+    ? makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll })
+    : Promise.resolve([]);
+  let plainOutput = null;
+  if (wantBroll && opts.both && !opts.noRender) {
+    plainOutput = await renderProject(workDir, { ...opts, output: path.join(workDir, "renders", `${name}-no-broll.mp4`) });
+  }
+  plan.broll = await brollJob;
+  if (plan.broll.length) {
+    writeJSON(path.join(workDir, "plan.json"), plan);
+    composeProject(plan, projectDir);
+  }
   log(`project: ${projectDir} (edit ${path.join(workDir, "plan.json")} and run: reel build ${workDir})`);
   if (opts.noRender) return { workDir, plan };
-  const output = await renderProject(workDir, opts);
-  return { workDir, plan, output };
+  let output;
+  if (plainOutput && !plan.broll.length) {
+    // No b-roll came back: the plain render is the reel, no second render needed.
+    output = path.resolve(opts.output || path.join(workDir, "renders", `${name}.mp4`));
+    fs.copyFileSync(plainOutput, output);
+    log(`no b-roll this time: ${output} is the same as the version without b-roll`);
+  } else {
+    output = await renderProject(workDir, opts);
+  }
+  return { workDir, plan, output, plainOutput };
 }
 
 async function prepareAudio({ projectDir, preset, opts, duration, hook, zooms }) {
