@@ -4,7 +4,7 @@ import { normalizeSlides, markGold, titleSize, carouselHTML, carouselText, slide
 
 const stills = [{ scene: "a laptop with a falling chart" }, { scene: "a fist on a desk" }];
 
-test("slides: stills used once, close has no image, missing scenes filled", () => {
+test("slides: stills used once, close has no image, no scene means a text card", () => {
   const s = normalizeSlides(
     [
       { title: "The *10 minutes* after a bad number", body: "", reuse: 1, scene: "" },
@@ -17,9 +17,8 @@ test("slides: stills used once, close has no image, missing scenes filled", () =
   );
   assert.equal(s.length, 5);
   assert.equal(s[0].reuse, 1);
-  assert.equal(s[1].reuse, 0);
-  assert.match(s[1].scene, /Own it first/);
-  assert.match(s[2].scene, /Ask what happened/);
+  assert.deepEqual([s[1].reuse, s[1].scene], [0, ""]);
+  assert.deepEqual([s[2].reuse, s[2].scene], [0, ""]);
   assert.equal(s[3].reuse, 2);
   assert.deepEqual([s[4].reuse, s[4].scene], [0, ""]);
 });
@@ -50,8 +49,10 @@ test("html: one 1-second scene per slide, counters, handle, no image on the clos
 });
 
 test("prompt: no CTA unless given; text file lists every slide", () => {
-  const p = slidesPrompt({ transcript: "t", hook: "h", voice: "v", count: 6, cta: "", stills });
+  const p = slidesPrompt({ transcript: "t", hook: "h", voice: "v", count: 6, cta: "", stills, maxNew: 2 });
   assert.match(p, /No call to action anywhere/);
+  assert.match(p, /at most 2 new images/);
+  assert.match(p, /slide-<slide number>\.png/);
   assert.match(p, /^1: a laptop with a falling chart$/m);
   assert.match(slidesPrompt({ transcript: "t", hook: "h", voice: "v", count: 6, cta: "Comment GHOST", stills: [] }), /word for word: Comment GHOST/);
   const txt = carouselText([{ title: "A *b*", body: "c" }, { title: "D", body: "" }], { hook: "" });

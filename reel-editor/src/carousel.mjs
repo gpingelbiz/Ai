@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { codexExec, codexImage, pool, hasCodex, codexPausedUntil } from "./codex.mjs";
+import { codexExec, hasCodex, codexPausedUntil, imageInstructions, savedImage } from "./codex.mjs";
 import { loadPreset } from "./presets.mjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
@@ -23,8 +23,8 @@ export const SLIDES_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        properties: { title: { type: "string" }, body: { type: "string" }, reuse: { type: "integer" }, scene: { type: "string" } },
-        required: ["title", "body", "reuse", "scene"],
+        properties: { title: { type: "string" }, body: { type: "string" }, reuse: { type: "integer" }, scene: { type: "string" }, file: { type: "string" } },
+        required: ["title", "body", "reuse", "scene", "file"],
         additionalProperties: false,
       },
     },
@@ -33,7 +33,7 @@ export const SLIDES_SCHEMA = {
   additionalProperties: false,
 };
 
-export function slidesPrompt({ transcript, hook, voice, count, cta, stills }) {
+export function slidesPrompt({ transcript, hook, voice, count, cta, stills, maxNew = 2, style = "" }) {
   return [
     "You turn one talking-head Instagram reel into an Instagram carousel. Do not create or edit any files.",
     `Write exactly ${count} slides.`,
@@ -45,8 +45,10 @@ export function slidesPrompt({ transcript, hook, voice, count, cta, stills }) {
     "- When the speaker quotes someone else or acts out a message or line, never present those words as the speaker's own.",
     cta ? `- End the closing slide's body with this call to action, word for word: ${cta}` : "- No call to action anywhere (no comment, DM, follow, share, save or swipe asks).",
     "",
-    "Images: every slide except the last gets one. For each, either reuse one of the reel's existing stills by its number (when it truly fits that slide), or describe a new scene in one or two sentences. Use each still at most once; set reuse to 0 and write a scene when making a new one, set scene to \"\" when reusing. The last slide: reuse 0 and scene \"\".",
-    "Scene rules: a concrete, literal, cinematic photo of what the slide says (an object, a place, a moment); no faces, nobody who could read as the speaker, no readable text, numbers, logos or brands, no clip-art metaphors (lightbulbs, chess pieces, rockets, puzzle pieces, mountains, arrows).",
+    `Images: a slide can reuse one of the reel's stills by its number (only when it truly fits; each still once), get a new image (at most ${maxNew} new images in the whole carousel, the cover first), or have none (it is set as a bold text card, which looks good). The last slide has none.`,
+    "For a reused still: reuse = its number, scene = \"\", file = \"\". For a new image: reuse = 0, scene = one or two sentences describing it, file = slide-<slide number>.png. For none: reuse = 0, scene = \"\", file = \"\".",
+    "New scenes: a concrete, literal, cinematic photo of what the slide says (an object, a place, a moment); no clip-art metaphors (lightbulbs, chess pieces, rockets, puzzle pieces, mountains, arrows).",
+    `First write the slides, then make the new images. ${imageInstructions({ aspect: "9:16", style })}`,
     stills.length ? ["", "The reel's stills:", ...stills.map((s, k) => `${k + 1}: ${s.scene}`)].join("\n") : "\nThe reel has no stills yet: describe a scene for every slide but the last.",
     "",
     "Voice:",
@@ -57,7 +59,7 @@ export function slidesPrompt({ transcript, hook, voice, count, cta, stills }) {
     "Transcript:",
     transcript,
     "",
-    'Reply with JSON: {"slides":[{"title":"...","body":"...","reuse":0,"scene":"..."}]}',
+    'When the images are saved, reply with JSON: {"slides":[{"title":"...","body":"...","reuse":0,"scene":"...","file":"..."}]}',
   ].join("\n");
 }
 
@@ -65,7 +67,7 @@ const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
 
 /**
  * Check and tidy Codex's slides: count, one use per still, no image on the close, a cover that exists, and at
- * most `maxNew` freshly drawn images (the cover first); other slides without a still are set as text cards.
+ * most `maxNew` new images (the first ones); any other slide without a still is set as a text card.
  */
 export function normalizeSlides(raw, { count, stills = [], hook = "", maxNew = 2 }) {
   let slides = (raw || []).map((s) => ({ title: clean(s.title), body: clean(s.body), reuse: Number.isInteger(s.reuse) ? s.reuse : 0, scene: clean(s.scene) }));
@@ -78,10 +80,7 @@ export function normalizeSlides(raw, { count, stills = [], hook = "", maxNew = 2
     const last = k === slides.length - 1;
     if (last) { s.reuse = 0; s.scene = ""; return; }
     if (s.reuse >= 1 && s.reuse <= stills.length && !used.has(s.reuse)) { used.add(s.reuse); s.scene = ""; }
-    else {
-      s.reuse = 0;
-      if (!s.scene) s.scene = `${s.title.replace(/\*/g, "")}, shown as a quiet cinematic still life`;
-    }
+    else s.reuse = 0;
   });
   let budget = maxNew;
   for (const s of slides) if (!s.reuse && s.scene) { if (budget > 0) budget--; else s.scene = ""; }
@@ -229,29 +228,24 @@ export async function makeCarousel(workDir, { out, force = false, slides: count 
   const stills = fs.existsSync(brollPath) ? (readJSON(brollPath).shots || []).filter((s) => s.file && fs.existsSync(s.file)) : [];
 
   const slidesPath = path.join(dir, "slides.json");
+  // One Codex session writes the slides and draws the new images into images/ (files slide-<n>.png).
+  const imgDir = ensureDir(path.join(dir, "images"));
+  const maxNew = settings.newImages ?? 2;
   let slides;
   if (!force && fs.existsSync(slidesPath) && readJSON(slidesPath).transcript === transcript) {
     slides = readJSON(slidesPath).slides;
-    log(`carousel: reusing the slide copy in ${slidesPath}`);
+    log(`carousel: reusing the slides in ${slidesPath}`);
   } else {
-    log(`carousel: Codex is writing ${count} slides…`);
-    const cta = process.env.REEL_WATCH_CTA || "";
-    const reply = await codexExec(slidesPrompt({ transcript, hook, voice: fs.readFileSync(voiceFile(plan), "utf8"), count, cta, stills }), { cwd: dir, schema: SLIDES_SCHEMA, timeoutMs: 240000 });
-    slides = normalizeSlides(JSON.parse(reply).slides, { count, stills, hook, maxNew: settings.newImages ?? 2 });
-    writeJSON(slidesPath, { transcript, slides });
-  }
-
-  // Images: reuse the reel's stills, draw the rest in parallel. A slide whose image fails goes text-only.
-  const imgDir = ensureDir(path.join(dir, "images"));
-  const jobs = slides.map((s, k) => ({ s, k })).filter(({ s }) => !s.reuse && s.scene);
-  const fresh = jobs.filter(({ k }) => force || !fs.existsSync(path.join(imgDir, `slide-${k + 1}.png`)));
-  if (fresh.length && codexPausedUntil()) warn("carousel: Codex is paused after a rate limit; slides without a saved image are set as text cards");
-  else if (fresh.length) {
+    if (codexPausedUntil()) throw new Error(`Codex is paused after a rate limit until ${new Date(codexPausedUntil()).toLocaleTimeString()}`);
+    for (const f of fs.readdirSync(imgDir)) fs.rmSync(path.join(imgDir, f), { force: true });
     const t0 = Date.now();
-    log(`carousel: drawing ${fresh.length} image${fresh.length === 1 ? "" : "s"} with Codex…`);
-    const made = await pool(fresh, settings.parallel ?? 1, ({ s, k }) => codexImage(s.scene, path.join(imgDir, `slide-${k + 1}.png`), { aspect: "9:16", style: settings.style || "" }));
-    made.forEach((r, j) => { if (r instanceof Error) warn(`carousel slide ${fresh[j].k + 1} image: ${String(r.message).split("\n")[0]}`); });
-    log(`carousel: images done in ${Math.round((Date.now() - t0) / 1000)}s`);
+    log(`carousel: Codex is writing ${count} slides and drawing up to ${maxNew} new image${maxNew === 1 ? "" : "s"}…`);
+    const cta = process.env.REEL_WATCH_CTA || "";
+    const prompt = slidesPrompt({ transcript, hook, voice: fs.readFileSync(voiceFile(plan), "utf8"), count, cta, stills, maxNew, style: settings.style || "" });
+    const reply = await codexExec(prompt, { cwd: imgDir, schema: SLIDES_SCHEMA, timeoutMs: 600000 });
+    slides = normalizeSlides(JSON.parse(reply).slides, { count, stills, hook, maxNew });
+    writeJSON(slidesPath, { transcript, slides });
+    log(`carousel: Codex done in ${Math.round((Date.now() - t0) / 1000)}s`);
   }
 
   const projectDir = ensureDir(path.join(dir, "project"));
@@ -261,7 +255,7 @@ export async function makeCarousel(workDir, { out, force = false, slides: count 
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(projectDir, "assets", "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(projectDir, "assets", "vendor", "gsap.min.js"));
   const placed = slides.map((s, k) => {
-    const file = s.reuse ? stills[s.reuse - 1]?.file : path.join(imgDir, `slide-${k + 1}.png`);
+    const file = s.reuse ? stills[s.reuse - 1]?.file : s.scene ? savedImage(imgDir, `slide-${k + 1}.png`) : null;
     if (!file || !fs.existsSync(file)) return { ...s, img: null };
     const rel = `assets/img/slide-${k + 1}${path.extname(file)}`;
     fs.copyFileSync(file, path.join(projectDir, rel));

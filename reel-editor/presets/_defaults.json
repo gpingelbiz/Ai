@@ -90,7 +90,6 @@
     "every": 12,
     "duration": 2.4,
     "gap": 4,
-    "parallel": 1,
     "style": ""
   },
   "carousel": {

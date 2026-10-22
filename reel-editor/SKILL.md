@@ -51,7 +51,7 @@ It runs Claude Code headless with only the Sandcastles hook and format lookups a
 
 ## B-roll and carousel
 
-`--broll` on `reel edit` adds 1-3 Codex stills after the hook (no faces, no readable text); `reel carousel videos/<name> --out "<reel folder>/Carousel"` makes the IG carousel from the finished reel, reusing those stills. Both need the Codex CLI signed in and stop for 30 minutes after a rate limit. Check every still before posting: describe what is in it, and never present an AI image as real footage of Greg, a client or a real event.
+`--broll` on `reel edit` adds 1-3 Codex stills after the hook (no faces, no readable text); `reel carousel videos/<name> --out "<reel folder>/Carousel"` makes the IG carousel from the finished reel, reusing those stills. Both need the Codex CLI signed in and stop for 20 minutes after a rate limit. Check every still before posting: describe what is in it, and never present an AI image as real footage of Greg, a client or a real event.
 
 ## Deliver
 

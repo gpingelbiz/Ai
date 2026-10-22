@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { brollCount, brollCandidates, placeBroll, picksPrompt } from "../src/broll.mjs";
-import { codexModels, isModelRefusal, imagePrompt, pool } from "../src/codex.mjs";
+import { codexModels, isModelRefusal, imageInstructions, savedImage } from "../src/codex.mjs";
 import { renderHTML } from "../src/compose.mjs";
 
 const groups = Array.from({ length: 30 }, (_, i) => ({ start: i * 2, end: i * 2 + 1.8, text: `line ${i}`, words: [] }));
@@ -37,15 +37,17 @@ test("placement keeps real lines, in order, spaced apart", () => {
   assert.deepEqual(shots.map((s) => s.motion), ["in", "left", "out"]);
 });
 
-test("the picks prompt lists only allowed lines and bans faces and text", () => {
+test("one prompt picks the lines and draws the stills; faces and text are banned", () => {
   const cands = brollCandidates(groups.slice(0, 6), 14, { hook: { start: 0, duration: 3 } });
-  const p = picksPrompt({ candidates: cands, transcript: "x", hook: "Hook", count: 1 });
+  const p = picksPrompt({ candidates: cands, transcript: "x", hook: "Hook", count: 1, spacing: 6.4, style: "moody" });
   assert.match(p, /^2: 4\.0s line 2$/m);
   assert.doesNotMatch(p, /^0: /m);
-  assert.match(p, /no faces/);
-  assert.match(imagePrompt("a desk"), /No faces/);
-  assert.match(imagePrompt("a desk"), /No readable text/);
-  assert.match(imagePrompt("a desk."), /vertical 9:16 image: a desk\.\n/);
+  assert.match(p, /at least 6\.4 seconds apart/);
+  assert.match(p, /broll-1\.png/);
+  assert.match(p, /vertical 9:16 image/);
+  assert.match(p, /Look for every image: moody/);
+  assert.match(imageInstructions(), /No faces/);
+  assert.match(imageInstructions(), /No readable text/);
 });
 
 test("codex model: env wins, else config default then the fallback", () => {
@@ -55,11 +57,16 @@ test("codex model: env wins, else config default then the fallback", () => {
   assert.ok(!isModelRefusal("network error"));
 });
 
-test("pool keeps order and returns errors in place", async () => {
-  const r = await pool([1, 2, 3, 4], 2, async (x) => { if (x === 3) throw new Error("no"); return x * 10; });
-  assert.equal(r[0], 10);
-  assert.ok(r[2] instanceof Error);
-  assert.equal(r[3], 40);
+test("only real, non-empty image files count", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "img-"));
+  fs.writeFileSync(path.join(d, "empty.png"), "");
+  fs.writeFileSync(path.join(d, "real.png"), Buffer.alloc(5000));
+  assert.equal(savedImage(d, "empty.png"), null);
+  assert.equal(savedImage(d, "missing.png"), null);
+  assert.equal(savedImage(d, "real.png"), path.join(d, "real.png"));
 });
 
 test("render: b-roll sits between the footage and the captions", () => {

@@ -32,7 +32,7 @@ export function hasCodex(env = process.env) {
  * pauses every Codex call from the editor for COOLDOWN_MIN minutes, saved to a file so the next drop waits too,
  * instead of retrying into the limit.
  */
-const COOLDOWN_MIN = 30;
+const COOLDOWN_MIN = 20;
 export const cooldownFile = (env = process.env) => env.REEL_CODEX_COOLDOWN_FILE || path.join(os.homedir(), ".cache", "reel-editor", "codex-cooldown");
 export const isRateLimit = (text) => /\b429\b|too many requests|rate.?limit|usage limit/i.test(String(text));
 
@@ -118,43 +118,24 @@ export const IMAGE_RULES = [
   "No readable text, letters, numbers, logos, brand names or UI labels anywhere in the image; screens and papers show only blurred or abstract shapes.",
 ];
 
-export function imagePrompt(scene, { aspect = "9:16", style = "" } = {}) {
+/**
+ * The image half of a prompt: draw each listed scene with the image tool, one call per scene, in order, and save
+ * them in the current folder under the given names. One Codex session does all of a reel's images: every
+ * session costs a full setup prompt, and separate sessions back to back trip the plan's rate limit.
+ */
+export function imageInstructions({ aspect = "9:16", style = "" } = {}) {
   const shape = aspect === "9:16" ? "vertical 9:16" : aspect === "4:5" ? "portrait 4:5" : aspect;
   return [
-    "Use your image generation tool exactly once.",
-    `Make one ${shape} image: ${String(scene).trim().replace(/\.$/, "")}.`,
-    style ? `Look: ${style}` : "",
-    ...IMAGE_RULES,
-    "Save the image in the current folder as image.png. Do not write any other files and do not run anything else.",
+    `Then make the images: for each scene, use your image generation tool once to make a ${shape} image of it, one at a time, and save it in the current folder under the file name given. If one image fails, skip it and keep going; never retry more than once.`,
+    style ? `Look for every image: ${style}` : "",
+    "Rules for every image:",
+    ...IMAGE_RULES.map((r) => `- ${r}`),
+    "Do not write any other files and do not run anything else.",
   ].filter(Boolean).join("\n");
 }
 
-/** Generate one still with Codex's image tool and move it to `outPath` (a .png). */
-export async function codexImage(scene, outPath, { aspect = "9:16", style = "", timeoutMs = 240000 } = {}) {
-  const dir = ensureDir(path.join(path.dirname(outPath), `.codex-${path.basename(outPath, path.extname(outPath))}`));
-  for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { recursive: true, force: true });
-  try {
-    await codexExec(imagePrompt(scene, { aspect, style }), { cwd: dir, timeoutMs });
-    const made = fs.readdirSync(dir).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)).map((f) => path.join(dir, f));
-    if (!made.length) throw new Error("codex finished without saving an image");
-    made.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
-    fs.renameSync(made[0], outPath);
-    return outPath;
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-/** Run `fn` over `items` with at most `n` at a time; results keep the input order, failures come back as Error. */
-export async function pool(items, n, fn) {
-  const results = new Array(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      try { results[i] = await fn(items[i], i); } catch (e) { results[i] = e instanceof Error ? e : new Error(String(e)); }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
-  return results;
+/** Image files Codex saved in `dir`, by name, that are real images (not empty). */
+export function savedImage(dir, name) {
+  const f = path.join(dir, name);
+  try { return fs.statSync(f).size > 1000 ? f : null; } catch { return null; }
 }

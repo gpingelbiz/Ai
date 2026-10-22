@@ -99,7 +99,7 @@ The filename is the brief:
 | `clip #nobroll.mov` | No generated b-roll |
 | `clip #nocarousel.mov` | No carousel |
 
-`caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. B-roll and the carousel need the Codex CLI signed in with a ChatGPT plan (the installer offers it; by hand: `npm install -g @openai/codex`, then `codex login`); without it the reel is made without them. Codex has usage limits: when it hits one, the editor skips b-roll and carousel images for 30 minutes and the reel still arrives. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
+`caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. B-roll and the carousel need the Codex CLI signed in with a ChatGPT plan (the installer offers it; by hand: `npm install -g @openai/codex`, then `codex login`); without it the reel is made without them. Codex has usage limits: when it hits one, the editor skips b-roll and carousel images for 20 minutes and the reel still arrives. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
 
 ## Troubleshooting
 
