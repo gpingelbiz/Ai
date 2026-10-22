@@ -19,11 +19,11 @@ export const TYPES = ["stat", "list", "quote", "headline", "steps"];
 /** How long each kind of card holds, from how much there is to read. */
 export function sceneDuration(s) {
   const n = (s.items || []).length;
-  // Overlay cards can stay longer: the speaker is still on screen, so the card reads at the viewer's pace.
-  if (s.type === "list" || s.type === "steps") return r3(Math.min(4.5, 2.6 + 0.5 * n));
-  if (s.type === "quote") return 3.6;
-  if (s.type === "headline") return 3;
-  return 3;
+  // Cards hold long enough to be read twice: the speaker is still on screen, so a card is never a cut.
+  if (s.type === "list" || s.type === "steps") return r3(Math.min(8, 4.5 + 0.7 * n));
+  if (s.type === "quote") return 6;
+  if (s.type === "headline") return 5.5;
+  return 5.5;
 }
 
 /** Up to one card per `every` seconds after the hook. */
@@ -60,21 +60,29 @@ export function normalizeScene(raw) {
 }
 
 /** Caption lines a card may start on: after the hook, with room before the end and the CTA. */
-export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail = 1.5, longest = 3.8 } = {}) {
+export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail = 1.5, longest = 8 } = {}) {
   const from = hook ? hook.start + hook.duration + lead : 3;
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   return groups.map((g, i) => ({ i, start: g.start, text: g.text })).filter((c) => c.start >= from && c.start + 2.2 <= until && c.start + Math.min(longest, until - c.start) <= until);
 }
 
-/** Time the scenes: real candidate lines, in order, `gap` seconds apart, each ending before `until`. */
-export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 6, tail = 1.5 } = {}) {
+/**
+ * Time the scenes: real candidate lines, in order, `gap` seconds apart, each ending before `until`. When the next
+ * card comes before the previous one would end, the previous one is shortened (never below `minHold`) rather than
+ * the next one dropped: a card that holds long is good, a point with no card is worse.
+ */
+export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 6, tail = 1.5, minHold = 4 } = {}) {
   const byLine = new Map(candidates.map((c) => [c.i, c]));
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   const out = [];
   for (const s of [...scenes].filter((x) => x && byLine.has(x.line)).sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
     const start = byLine.get(s.line).start;
     const prev = out[out.length - 1];
-    if (prev && start < prev.start + prev.duration + gap) continue;
+    if (prev && start < prev.start + prev.duration + gap) {
+      const room = r3(start - gap - prev.start);
+      if (room < minHold) continue;
+      prev.duration = room;
+    }
     const dur = r3(Math.min(s.duration, until - start));
     if (dur < 2) continue;
     out.push({ ...s, start: r3(start), duration: dur });
@@ -131,8 +139,10 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
     if (saved.key === key && Array.isArray(saved.scenes)) {
-      log(`graphics: reusing ${saved.scenes.length} card${saved.scenes.length === 1 ? "" : "s"} from ${planPath}`);
-      return saved.scenes;
+      // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
+      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, duration: sceneDuration(s) })), candidates, { duration, cta, gap: settings.gap ?? 3, max });
+      log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath}`);
+      return scenes;
     }
   }
   if (!hasClaude()) { warn("graphics need the Claude Code CLI (claude) signed in; skipped"); return []; }
@@ -199,27 +209,27 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
   const overlay = mode === "overlay" ? `
       .gfx { background: none; }
       .gfx::after { background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 30%, rgba(0,0,0,0) 42%); }
-      .g-box { left: 6%; right: 6%; top: 5.5%; bottom: auto; max-height: 30%; justify-content: flex-start; gap: ${px(18)}; padding: ${px(26)} ${px(30)} ${px(30)}; border-radius: ${px(26)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55), inset 0 ${px(3)} 0 ${c.accent}; }
+      .g-box { left: 4%; right: 4%; top: 5.5%; bottom: auto; max-height: 40%; justify-content: flex-start; gap: ${px(24)}; padding: ${px(36)} ${px(40)} ${px(40)}; border-radius: ${px(26)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55), inset 0 ${px(3)} 0 ${c.accent}; }
       .g-center { align-items: flex-start; text-align: left; }
-      .g-eyebrow { font-size: ${px(24)}; }
-      .g-stat { font-size: ${px(112)} !important; line-height: 1; }
-      .g-stat2 { font-size: ${px(96)} !important; }
-      .g-arrow { font-size: ${px(24)}; margin: ${px(-6)} 0; }
-      .g-sub { font-size: ${px(32)}; max-width: 100%; }
-      .g-title { font-size: ${px(48)}; }
-      .g-rows { gap: ${px(10)}; }
-      .g-row { padding: ${px(14)} ${px(18)}; font-size: ${px(32)}; border-radius: ${px(14)}; gap: ${px(14)}; }
-      .g-mark { width: ${px(40)}; }
-      .g-num { font-size: ${px(22)}; }
-      .g-tag { font-size: ${px(18)}; }
-      .g-paper { width: 100%; padding: ${px(26)} ${px(28)} ${px(30)}; transform: none; }
-      .g-paper-eyebrow { font-size: ${px(18)}; margin-bottom: ${px(10)}; }
-      .g-quote { font-size: ${px(38)}; line-height: 1.2; }
-      .g-headline { font-size: ${px(58)}; text-align: left; }
-      .g-rule { width: ${px(90)}; height: ${px(8)}; }
-      .g-steps { flex-direction: row; align-items: stretch; gap: ${px(10)}; width: 100%; }
-      .g-node { flex: 1; justify-content: center; padding: ${px(14)} ${px(10)}; font-size: ${px(24)}; text-align: center; gap: ${px(8)}; flex-direction: column; }
-      .g-node-num { font-size: ${px(18)}; }
+      .g-eyebrow { font-size: ${px(32)}; }
+      .g-stat { font-size: ${px(160)} !important; line-height: 1; }
+      .g-stat2 { font-size: ${px(130)} !important; }
+      .g-arrow { font-size: ${px(28)}; margin: ${px(-6)} 0; }
+      .g-sub { font-size: ${px(44)}; max-width: 100%; }
+      .g-title { font-size: ${px(64)}; }
+      .g-rows { gap: ${px(14)}; }
+      .g-row { padding: ${px(20)} ${px(24)}; font-size: ${px(48)}; border-radius: ${px(18)}; gap: ${px(18)}; }
+      .g-mark { width: ${px(54)}; }
+      .g-num { font-size: ${px(30)}; }
+      .g-tag { font-size: ${px(22)}; }
+      .g-paper { width: 100%; padding: ${px(34)} ${px(36)} ${px(38)}; transform: none; }
+      .g-paper-eyebrow { font-size: ${px(22)}; margin-bottom: ${px(14)}; }
+      .g-quote { font-size: ${px(54)}; line-height: 1.2; }
+      .g-headline { font-size: ${px(82)}; text-align: left; }
+      .g-rule { width: ${px(110)}; height: ${px(10)}; }
+      .g-steps { flex-direction: row; align-items: stretch; gap: ${px(12)}; width: 100%; }
+      .g-node { flex: 1; justify-content: center; padding: ${px(22)} ${px(12)}; font-size: ${px(34)}; text-align: center; gap: ${px(10)}; flex-direction: column; }
+      .g-node-num { font-size: ${px(22)}; }
       .g-link { width: ${px(26)}; height: ${px(4)}; align-self: center; background: linear-gradient(90deg, ${c.accent}, ${c.accent}55); }` : "";
   return `
       .gfx { --u: ${u}px; position: absolute; inset: 0; overflow: hidden; opacity: 0; background: radial-gradient(120% 62% at 50% 34%, ${c.accent}2e 0%, ${c.accent}00 60%), ${c.bg}; color: ${c.text}; font-family: "Inter", sans-serif; }
@@ -270,7 +280,7 @@ export const GRAPHICS_JS = `
           else {
             tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: 0.3, ease: "power3.out" }, g.start);
             // The footage slides down a little while the card is up, so the card never sits on the forehead.
-            const drop = PLAN.height * 0.075;
+            const drop = PLAN.height * 0.11;
             tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
             tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
           }

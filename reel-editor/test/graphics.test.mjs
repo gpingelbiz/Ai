@@ -81,3 +81,10 @@ test("render: cards and reveal captions", () => {
   assert.match(html, /\.cap \.w \{ opacity: 0\.38; \}/);
   assert.match(html, /PLAN\.graphics\.forEach/);
 });
+
+test("a close next card shortens the previous one instead of being dropped; never below 4 s", () => {
+  const cands = sceneCandidates(groups, 80, { hook: { start: 0, duration: 3 } });
+  const mk = (line) => ({ type: "headline", line, text: "x", eyebrow: "", duration: 6 });
+  const placed = placeScenes([mk(5), mk(9), mk(11), mk(20)], cands, { duration: 80, gap: 3 });
+  assert.deepEqual(placed.map((s) => [s.line, s.duration]), [[5, 5], [9, 6], [20, 6]], "line 9 shortens line 5 to 5 s; line 11 would leave line 9 under 4 s, so it is dropped");
+});
