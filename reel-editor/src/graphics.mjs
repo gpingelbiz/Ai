@@ -173,7 +173,8 @@ export function sceneHTML(s) {
   const eyebrow = s.eyebrow ? `<div class="g-eyebrow g-in"><span class="g-dot"></span>${esc(s.eyebrow)}</div>` : "";
   if (s.type === "stat") {
     // Long values ("10 minutes") step down from 190px so they stay on one line.
-    const size = (v) => Math.round(Math.min(190, 1500 / Math.max(1, String(v).length)));
+    // Sized by length so a long value ("Almost 8 years") stays inside the card; short ones go big.
+    const size = (v) => Math.round(Math.min(170, 1250 / Math.max(1, String(v).length)));
     const range = s.value2 ? `<div class="g-arrow g-in">to</div><div class="g-stat g-stat2 g-in" style="font-size:calc(var(--u) * ${size(s.value2)})">${esc(s.value2)}</div>` : "";
     return `<div class="g-box g-center">${eyebrow}<div class="g-stat g-in" style="font-size:calc(var(--u) * ${size(s.value)})">${esc(s.value)}</div>${range}${s.sub ? `<div class="g-sub g-in">${esc(s.sub)}</div>` : ""}</div>`;
   }
@@ -212,8 +213,7 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-box { left: 4%; right: 4%; top: 5.5%; bottom: auto; max-height: 40%; justify-content: flex-start; gap: ${px(24)}; padding: ${px(36)} ${px(40)} ${px(40)}; border-radius: ${px(26)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55), inset 0 ${px(3)} 0 ${c.accent}; }
       .g-center { align-items: flex-start; text-align: left; }
       .g-eyebrow { font-size: ${px(32)}; }
-      .g-stat { font-size: ${px(160)} !important; line-height: 1; }
-      .g-stat2 { font-size: ${px(130)} !important; }
+      .g-stat { line-height: 1; }
       .g-arrow { font-size: ${px(28)}; margin: ${px(-6)} 0; }
       .g-sub { font-size: ${px(44)}; max-width: 100%; }
       .g-title { font-size: ${px(64)}; }
