@@ -54,7 +54,14 @@
     ],
     "origin": "50% 38%",
     "snap": 0.12,
-    "style": "snap"
+    "style": "snap",
+    "cadence": {
+      "enabled": false,
+      "min": 2.5,
+      "lead": 1.5,
+      "scale": 1.08,
+      "tightScale": 1.05
+    }
   },
   "cuts": {
     "silence": "medium",
@@ -75,7 +82,9 @@
     "sfxPrompts": {
       "zoom": "short fast cinematic whoosh swoosh transition, clean, no music",
       "hook": "short punchy pop hit, subtle, clean, no music"
-    }
+    },
+    "sounds": false,
+    "soundsVolume": 0.3
   },
   "render": {
     "quality": "looks",
@@ -138,5 +147,9 @@
     "max": 5,
     "minSpacing": 8,
     "hold": 1.1
+  },
+  "coldOpen": {
+    "enabled": false,
+    "duration": 0.6
   }
 }

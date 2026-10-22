@@ -78,6 +78,9 @@ Options (edit / batch)
                            as it is spoken. --no-annotate off
   --zoom-style <s>         camera (creator punch-in: push, slight tilt, edge defocus) | snap (hard cut-in zoom)
   --broll-cut <s>          hard (default) | flash (a white editorial flash on the cut) | blur (the still arrives from a blur)
+  --no-cadence             no cut cadence (the frame otherwise cuts between two framings every 2.5-4.5 s)
+  --cold-open              with b-roll: frame 0 shows a still under the hook for 0.6 s, then flashes to you. --no-cold-open off
+  --sounds                 small CC0 sounds on the edits: card lands, word slam, camera move, flash, marker. --no-sounds off
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -141,6 +144,11 @@ const EDIT_OPTIONS = {
   "no-annotate": { type: "boolean" },
   "zoom-style": { type: "string" },
   "broll-cut": { type: "string" },
+  "no-cadence": { type: "boolean" },
+  "cold-open": { type: "boolean" },
+  "no-cold-open": { type: "boolean" },
+  sounds: { type: "boolean" },
+  "no-sounds": { type: "boolean" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   check: { type: "boolean" },

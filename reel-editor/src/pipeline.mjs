@@ -8,7 +8,8 @@ import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./
 import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
-import { planZooms } from "./zooms.mjs";
+import { planZooms, planCadence } from "./zooms.mjs";
+import { soundCues, describeCues } from "./sounds.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { makeBroll } from "./broll.mjs";
 import { makeGraphics } from "./graphics.mjs";
@@ -256,14 +257,21 @@ export async function runEdit(input, opts = {}) {
   if (preset.zooms.enabled) {
     zooms = planZooms(shownGroups, duration, { ...preset.zooms, busy: [...graphics, ...broll], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
+    if (preset.zooms.cadence?.enabled) {
+      zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: broll, hook, tight: tightFrame });
+      log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
+    }
   }
+  // Cold open: the first b-roll still holds under the hook for a beat before the speaker appears.
+  const coldOpen = preset.coldOpen?.enabled && broll.length ? { duration: Math.min(preset.coldOpen.duration || 0.6, Math.max(0.3, duration / 20)), src: broll[0].src, file: broll[0].file } : null;
+  if (preset.coldOpen?.enabled) log(coldOpen ? `cold open: ${coldOpen.duration}s on the first still` : "cold open: no still to open on");
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
   const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...graphics, ...broll], zooms }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" ") });
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics, slams, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
 
   const plan = {
     version: 1,
@@ -280,6 +288,7 @@ export async function runEdit(input, opts = {}) {
     graphics,
     broll,
     slams,
+    coldOpen,
     reframe,
     audio,
     words: cleanWords,
@@ -300,7 +309,7 @@ function readVoice(plan) {
   try { return fs.readFileSync(voiceFile(plan), "utf8"); } catch { return ""; }
 }
 
-async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], transcript = "" }) {
+async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], transcript = "", cues = null }) {
   const assets = ensureDir(path.join(projectDir, "assets"));
   const audio = { tracks: [], replaceAudio: !!opts.replaceAudio };
 
@@ -344,6 +353,11 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
     if (audio.replaceAudio) log("voiceover replaces the footage audio");
   }
 
+  if (preset.audio.sounds && cues) {
+    const tracks = soundCues({ ...cues, level: preset.audio.soundsVolume ?? 0.3 }).filter((t) => t.start < duration - 0.2);
+    audio.tracks.push(...tracks);
+    log(`sounds: ${tracks.length ? describeCues(tracks) : "nothing to sound"}`);
+  }
   if (preset.audio.sfx) {
     if (!eleven.hasKey()) warn("--sfx needs ELEVENLABS_API_KEY; skipping sound effects");
     else {

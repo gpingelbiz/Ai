@@ -45,6 +45,9 @@ export function composeProject(plan, projectDir) {
   ensureDir(path.join(assets, "vendor"));
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(assets, "vendor", "gsap.min.js"));
+  const sfxUsed = new Set((plan.audio?.tracks || []).map((t) => t.src).filter((s) => s.startsWith("assets/sfx/")));
+  if (sfxUsed.size) ensureDir(path.join(assets, "sfx"));
+  for (const s of sfxUsed) fs.copyFileSync(path.join(PKG_ROOT, s), path.join(projectDir, s));
   const ext = path.extname(plan.video.src) || ".mp4";
   const footage = `assets/footage${ext}`;
   copyOrLink(plan.video.src, path.join(projectDir, footage));
@@ -52,6 +55,7 @@ export function composeProject(plan, projectDir) {
     b.src = `assets/broll/broll-${i + 1}${path.extname(b.file) || ".png"}`;
     copyOrLink(b.file, path.join(projectDir, b.src));
   });
+  if (plan.coldOpen && plan.broll?.[0]?.src) plan.coldOpen.src = plan.broll[0].src;
   fs.writeFileSync(path.join(projectDir, "index.html"), renderHTML(plan, footage));
   return projectDir;
 }
@@ -131,6 +135,13 @@ export function renderHTML(plan, footage) {
     .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move"><img src="${esc(b.src)}" alt=""${grade}${pullStyle} /></div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`)
     .join("\n");
 
+  // Cold open: the strongest still under the hook for the first beat, then a flash into the speaker.
+  const open = plan.coldOpen && plan.coldOpen.src ? plan.coldOpen : null;
+  const openHTML = open
+    ? `      <div id="cold-open" class="broll clip" data-start="0" data-duration="${open.duration}" data-track-index="2"><div class="broll-move"><img src="${esc(open.src)}" alt=""${grade} /></div><div class="broll-shade"></div></div>
+      <div id="open-flash" class="clip" data-start="0" data-duration="${r3(open.duration + 0.5)}" data-track-index="5" data-layout-allow-overflow><div class="broll-flash"></div><div class="broll-flash-core"></div></div>`
+    : "";
+
   // Climax words: a gold word stamps in big in the top third as it is said.
   const slamList = plan.slams || [];
   const slamFont = (t) => Math.round(Math.min(0.115 * H, (0.86 * W) / Math.max(3, t.length * 0.52)));
@@ -172,6 +183,7 @@ export function renderHTML(plan, footage) {
     zoomStyle: s.zooms?.style || "snap",
     focusPull,
     brollCut,
+    coldOpen: open ? { duration: open.duration } : null,
     annotate,
     width: W,
     height: H,
@@ -202,6 +214,7 @@ export function renderHTML(plan, footage) {
       .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%); }
       .broll-flash { position: absolute; inset: -12%; opacity: 0; background: rgb(255,253,250); pointer-events: none; }
+      #open-flash { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
       .broll-flash-core { position: absolute; inset: -18%; opacity: 0; background: radial-gradient(ellipse 68% 92% at 37% 47%, rgb(255,255,255) 0%, rgba(255,255,255,0.98) 20%, rgba(255,253,250,0.86) 45%, rgba(255,174,105,0.32) 67%, rgba(255,174,105,0) 100%); }
       .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
       .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
@@ -257,6 +270,7 @@ ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850
         <video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>
       </div>
 ${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div id="defocus"></div>` : ""}
+${openHTML}
 ${brollHTML}
 ${gfxHTML}
 ${slamHTML}
@@ -339,20 +353,35 @@ ${audioHTML}
         if (PLAN.hook) tl.fromTo("#video-wrap", { scale: 1 }, { scale: 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
         // Punch-ins. "camera": the creator move (push with a slight tilt and lift, the edges defocus for a beat, a slow
         // return); "snap": the hard cut-in zoom.
+        // Cut cadence: an instant change of framing (a jump cut) between the punch-ins.
+        const jump = (z) => tl.set("#video-wrap", { scale: z.scale, xPercent: z.xPercent || 0, yPercent: z.scale > 1 ? -0.6 : 0, rotationX: 0, rotationY: 0 }, z.t);
         if (PLAN.zoomStyle === "camera") {
           gsap.set("#video-wrap", { transformPerspective: 1200 });
           let n = 0;
           PLAN.zooms.forEach((z) => {
-            if (z.scale > 1) {
+            if (z.cut) jump(z);
+            else if (z.scale > 1) {
               const dir = n++ % 2 ? 1 : -1;
               tl.to("#video-wrap", { scale: z.scale, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
               tl.to("#defocus", { opacity: 1, duration: 0.3, ease: "power2.out" }, z.t);
               tl.to("#defocus", { opacity: 0, duration: 0.45, ease: "power2.in" }, z.t + 0.3);
             } else {
-              tl.to("#video-wrap", { scale: 1, yPercent: 0, rotationX: 0, rotationY: 0, duration: 0.9, ease: "power2.inOut" }, z.t);
+              tl.to("#video-wrap", { scale: 1, xPercent: 0, yPercent: 0, rotationX: 0, rotationY: 0, duration: 0.9, ease: "power2.inOut" }, z.t);
             }
           });
-        } else PLAN.zooms.forEach((z) => tl.to("#video-wrap", { scale: z.scale, duration: z.snap, ease: "power3.out" }, z.t));
+        } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to("#video-wrap", { scale: z.scale, xPercent: 0, duration: z.snap, ease: "power3.out" }, z.t)));
+        // Cold open: the still holds under the hook with a slow push, the flash hits on the cut to the speaker.
+        if (PLAN.coldOpen) {
+          const d = PLAN.coldOpen.duration;
+          tl.set("#cold-open", { opacity: 1 }, 0);
+          tl.fromTo("#cold-open .broll-move", { scale: 1.04 }, { scale: 1.1, duration: d, ease: "none" }, 0);
+          tl.set("#cold-open", { opacity: 0 }, d);
+          const wash = document.querySelector("#open-flash .broll-flash"), core = document.querySelector("#open-flash .broll-flash-core");
+          tl.fromTo(wash, { opacity: 0 }, { opacity: 0.92, duration: 0.04, ease: "power4.in", immediateRender: false }, d - 0.04);
+          tl.fromTo(core, { opacity: 0, scale: 0.86 }, { opacity: 1, scale: 1, duration: 0.05, ease: "power4.in", immediateRender: false }, d - 0.04);
+          tl.to(wash, { opacity: 0, duration: 0.18, ease: "power3.out" }, d);
+          tl.to(core, { opacity: 0, scale: 1.18, duration: 0.3, ease: "power2.out" }, d + 0.01);
+        }
 ${gfxList.length ? GRAPHICS_JS : ""}
         // B-roll: hard cut in and out. The push (6%, ease-out, settles before the end) and the Ken Burns pans (a
         // steady drift with a little scale, no ease) run on the wrapper; the cut lands with a short focus pull.

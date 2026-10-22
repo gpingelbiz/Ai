@@ -74,5 +74,10 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noAnnotate) p.captions.annotate = false;
   if (o.zoomStyle) p.zooms.style = o.zoomStyle;
   if (o.brollCut) p.broll.cut = o.brollCut;
+  if (o.noCadence) p.zooms.cadence.enabled = false;
+  if (o.coldOpen) p.coldOpen.enabled = true;
+  if (o.noColdOpen) p.coldOpen.enabled = false;
+  if (o.sounds) p.audio.sounds = true;
+  if (o.noSounds) p.audio.sounds = false;
   return p;
 }
