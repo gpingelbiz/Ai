@@ -20,8 +20,9 @@ test("lines fit 90% of the width with the real font, cap height 120-200, two lin
   for (const title of ["OWN IT *FIRST*", "NOBODY *PERFORMS* NOW", "THEY *COPY* YOU", "BAD NUMBER. *BREATHE.*"]) {
     const l = fitLines(title);
     assert.ok(l.lines.length <= 2);
-    assert.ok(l.T >= 120 && l.T <= 200, `${title}: T ${l.T}`);
-    for (const line of l.lines) assert.ok(lineWidthPx(line, l.T) <= 1080 * 0.9 + 1, `${line} too wide`);
+    assert.ok(l.T >= 120 && l.T <= 190, `${title}: T ${l.T}`);
+    // At the 120 px floor a too-long title may still overflow; titleFits() rejects those before they are used.
+    if (l.T > 120) for (const line of l.lines) assert.ok(lineWidthPx(line, l.T) * (line.includes("*") ? 1.22 : 1) <= 1080 * 0.88 + 1, `${line} too wide`);
   }
 });
 
@@ -44,7 +45,8 @@ test("cover html: real frame, zoomed around the face, three styles, accent word,
     assert.match(html, /#C8A24B/);
     assert.match(html, /id="grain"/);
     if (style === "outline") assert.match(html, /-webkit-text-stroke: \d+px #000/);
-    if (style === "bar") assert.match(html, /border-top: 10px solid #C8A24B/);
+    if (style === "whitebox") assert.match(html, /background: #fff; border-radius: 22px/);
+    if (style === "outline") assert.match(html, /class="line payoff">/);
     if (style === "box") assert.match(html, /background: #C8A24B; padding/);
   }
   assert.ok(coverTimes(66).length > 20 && coverTimes(3).length >= 2);

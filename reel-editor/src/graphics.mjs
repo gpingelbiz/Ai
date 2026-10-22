@@ -19,10 +19,11 @@ export const TYPES = ["stat", "list", "quote", "headline", "steps"];
 /** How long each kind of card holds, from how much there is to read. */
 export function sceneDuration(s) {
   const n = (s.items || []).length;
-  if (s.type === "list" || s.type === "steps") return r3(Math.min(3.8, 2.2 + 0.45 * n));
-  if (s.type === "quote") return 3.2;
-  if (s.type === "headline") return 2.6;
-  return 2.6;
+  // Overlay cards can stay longer: the speaker is still on screen, so the card reads at the viewer's pace.
+  if (s.type === "list" || s.type === "steps") return r3(Math.min(4.5, 2.6 + 0.5 * n));
+  if (s.type === "quote") return 3.6;
+  if (s.type === "headline") return 3;
+  return 3;
 }
 
 /** Up to one card per `every` seconds after the hook. */
@@ -186,11 +187,40 @@ export function sceneHTML(s) {
   return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-steps">${nodes}</div></div>`;
 }
 
-/** CSS for the cards at canvas size W x H. Content sits in the upper two thirds; captions keep the bottom. */
-export function graphicsCSS({ W, H, colors }) {
+/**
+ * CSS for the cards at canvas size W x H. Two modes: "full" takes the screen (content in the upper two thirds,
+ * captions keep the bottom); "overlay" is a compact glass panel in the top third while the footage keeps playing,
+ * the way explainer reels drop a payroll card or a checklist over the speaker.
+ */
+export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const u = H / 1920;
   const px = (n) => `${Math.round(n * u)}px`;
+  const overlay = mode === "overlay" ? `
+      .gfx { background: none; }
+      .gfx::after { background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 30%, rgba(0,0,0,0) 42%); }
+      .g-box { left: 6%; right: 6%; top: 5.5%; bottom: auto; max-height: 30%; justify-content: flex-start; gap: ${px(18)}; padding: ${px(26)} ${px(30)} ${px(30)}; border-radius: ${px(26)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55), inset 0 ${px(3)} 0 ${c.accent}; }
+      .g-center { align-items: flex-start; text-align: left; }
+      .g-eyebrow { font-size: ${px(24)}; }
+      .g-stat { font-size: ${px(112)} !important; line-height: 1; }
+      .g-stat2 { font-size: ${px(96)} !important; }
+      .g-arrow { font-size: ${px(24)}; margin: ${px(-6)} 0; }
+      .g-sub { font-size: ${px(32)}; max-width: 100%; }
+      .g-title { font-size: ${px(48)}; }
+      .g-rows { gap: ${px(10)}; }
+      .g-row { padding: ${px(14)} ${px(18)}; font-size: ${px(32)}; border-radius: ${px(14)}; gap: ${px(14)}; }
+      .g-mark { width: ${px(40)}; }
+      .g-num { font-size: ${px(22)}; }
+      .g-tag { font-size: ${px(18)}; }
+      .g-paper { width: 100%; padding: ${px(26)} ${px(28)} ${px(30)}; transform: none; }
+      .g-paper-eyebrow { font-size: ${px(18)}; margin-bottom: ${px(10)}; }
+      .g-quote { font-size: ${px(38)}; line-height: 1.2; }
+      .g-headline { font-size: ${px(58)}; text-align: left; }
+      .g-rule { width: ${px(90)}; height: ${px(8)}; }
+      .g-steps { flex-direction: row; align-items: stretch; gap: ${px(10)}; width: 100%; }
+      .g-node { flex: 1; justify-content: center; padding: ${px(14)} ${px(10)}; font-size: ${px(24)}; text-align: center; gap: ${px(8)}; flex-direction: column; }
+      .g-node-num { font-size: ${px(18)}; }
+      .g-link { width: ${px(26)}; height: ${px(4)}; align-self: center; background: linear-gradient(90deg, ${c.accent}, ${c.accent}55); }` : "";
   return `
       .gfx { --u: ${u}px; position: absolute; inset: 0; overflow: hidden; opacity: 0; background: radial-gradient(120% 62% at 50% 34%, ${c.accent}2e 0%, ${c.accent}00 60%), ${c.bg}; color: ${c.text}; font-family: "Inter", sans-serif; }
       .gfx::after { content: ""; position: absolute; inset: 0; background: radial-gradient(90% 60% at 50% 40%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 100%); pointer-events: none; }
@@ -226,7 +256,7 @@ export function graphicsCSS({ W, H, colors }) {
       .g-node { display: inline-flex; align-items: center; gap: ${px(20)}; padding: ${px(26)} ${px(40)}; border-radius: ${px(18)}; background: rgba(255,255,255,0.06); border: ${px(2)} solid rgba(255,255,255,0.14); font-size: ${px(50)}; font-weight: 800; text-transform: uppercase; box-shadow: 0 ${px(18)} ${px(50)} rgba(0,0,0,0.45); }
       .g-node-last { border-color: ${c.accent}; box-shadow: 0 0 ${px(50)} ${c.accent}33, 0 ${px(18)} ${px(50)} rgba(0,0,0,0.45); }
       .g-node-num { font-size: ${px(28)}; color: ${c.accent}; letter-spacing: 0.08em; }
-      .g-link { width: ${px(4)}; height: ${px(70)}; background: linear-gradient(${c.accent}, ${c.accent}55); transform-origin: 50% 0; }`;
+      .g-link { width: ${px(4)}; height: ${px(70)}; background: linear-gradient(${c.accent}, ${c.accent}55); transform-origin: 50% 0; }${overlay}`;
 }
 
 /** GSAP for the cards (runs inside the composition's timeline script; expects PLAN.graphics and tl). */
@@ -236,11 +266,18 @@ export const GRAPHICS_JS = `
           const box = el.querySelector(".g-box");
           const ins = el.querySelectorAll(".g-in");
           tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
-          tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
+          if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
+          else {
+            tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: 0.3, ease: "power3.out" }, g.start);
+            // The footage slides down a little while the card is up, so the card never sits on the forehead.
+            const drop = PLAN.height * 0.075;
+            tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
+            tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
+          }
           tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: Math.min(0.22, 1.1 / Math.max(1, ins.length)) }, g.start + 0.06);
           const t1 = g.start + 0.06 + 0.42 + Math.min(0.22, 1.1 / Math.max(1, ins.length)) * Math.max(0, ins.length - 1);
           el.querySelectorAll(".g-strike-line").forEach((s, k) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.3, ease: "power2.inOut" }, t1 + 0.1 + k * 0.18));
-          el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, { scaleY: 0 }, { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
+          el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, PLAN.graphicsMode === "overlay" ? { scaleX: 0 } : { scaleY: 0 }, PLAN.graphicsMode === "overlay" ? { scaleX: 1, duration: 0.25, ease: "power2.out" } : { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
           el.querySelectorAll(".g-hl").forEach((s) => tl.fromTo(s, { backgroundSize: "0% 46%" }, { backgroundSize: "100% 46%", duration: 0.5, ease: "power2.inOut" }, t1 + 0.05));
           el.querySelectorAll(".g-rule").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power3.inOut" }, t1));
           tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);

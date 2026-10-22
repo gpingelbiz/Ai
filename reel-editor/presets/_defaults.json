@@ -92,6 +92,7 @@
   },
   "graphics": {
     "enabled": false,
+    "mode": "overlay",
     "max": 6,
     "every": 10,
     "gap": 3

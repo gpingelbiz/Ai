@@ -155,12 +155,13 @@ export function fitLines(title) {
   if (words.length <= 2) lines = [words];
   else if (words.length === 3) lines = plain(words[0]).length + plain(words[1]).length + 1 <= 12 ? [[words[0], words[1]], [words[2]]] : [[words[0]], [words[1], words[2]]];
   else lines = [words.slice(0, Math.ceil(words.length / 2)), words.slice(Math.ceil(words.length / 2))];
-  const widest = Math.max(...lines.map((l) => lineWidthPx(l.join(" "), 100)));
-  const T = Math.max(120, Math.min(200, Math.floor((1080 * 0.9) / (widest / 100))));
-  return { lines: lines.map((l) => l.join(" ")), T, fontPx: Math.round(T / antonFont().cap), lineH: Math.round(1.12 * T), blockH: Math.round(lines.length * 1.12 * T) };
+  const widest = Math.max(...lines.map((l) => lineWidthPx(l.join(" "), 100) * (l.some((w) => w.includes("*")) ? 1.22 : 1)));
+  const T = Math.max(120, Math.min(190, Math.floor((1080 * 0.88) / (widest / 100))));
+  const blockH = Math.round(lines.reduce((a, l) => a + 1.12 * T * (l.some((w) => w.includes("*")) ? 1.22 : 1), 0));
+  return { lines: lines.map((l) => l.join(" ")), T, fontPx: Math.round(T / antonFont().cap), lineH: Math.round(1.12 * T), blockH };
 }
 
-export const STYLES = ["outline", "bar", "box"];
+export const STYLES = ["outline", "whitebox", "box"];
 
 /**
  * Cover on the real frame: the room stays, darkened a touch with a vignette; the title in Anton caps with one
@@ -171,9 +172,10 @@ export function coverHTML({ W = 1080, H = 1920, frame, face, title, palette, sty
   const p = palette;
   const lay = fitLines(title);
   const pos = placeOnFrame({ W, H, face, blockH: lay.blockH + (style === "bar" ? 70 : 0) });
-  const stroke = Math.round(0.07 * lay.T);
+  const stroke = Math.max(6, Math.round(0.045 * lay.T));
   const mark = (s) => esc(s).replace(/\*([^*]+)\*/g, '<span class="k">$1</span>');
-  const lines = lay.lines.map((l) => `<div class="line">${mark(l)}</div>`).join("");
+  // In the outline style the line that carries the accent word is the payoff: the whole line goes gold and larger.
+  const lines = lay.lines.map((l) => `<div class="line${style === "outline" && l.includes("*") ? " payoff" : ""}">${mark(l)}</div>`).join("");
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${W}, height=${H}" /><title>cover</title>
 <script src="assets/vendor/gsap.min.js"></script>
@@ -181,11 +183,13 @@ export function coverHTML({ W = 1080, H = 1920, frame, face, title, palette, sty
   @font-face { font-family: "Anton"; src: url("assets/fonts/Anton-Regular.ttf") format("truetype"); font-display: block; }
   html, body { margin: 0; background: #000; }
   #root { position: relative; width: ${W}px; height: ${H}px; overflow: hidden; background: #000; }
-  #frame { position: absolute; left: ${pos.tx}px; top: ${pos.ty}px; width: ${Math.round(W * pos.scale)}px; height: ${Math.round(H * pos.scale)}px; filter: contrast(1.08) saturate(1.05) brightness(0.86); }
-  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 38%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%); }
-  #block { position: absolute; left: 4%; right: 4%; top: ${pos.blockTop}px; text-align: center; ${style === "bar" ? `padding: 28px 24px 34px; background: rgba(8,8,10,0.86); border-top: 10px solid ${p.accent}; border-bottom: 10px solid ${p.accent};` : ""} }
-  .line { white-space: nowrap; font-family: "Anton", sans-serif; font-size: ${lay.fontPx}px; line-height: ${lay.lineH}px; letter-spacing: 0.012em; text-transform: uppercase; color: #fff; ${style === "outline" ? `-webkit-text-stroke: ${stroke}px #000; paint-order: stroke fill; text-shadow: 0 ${Math.round(0.08 * lay.T)}px ${Math.round(0.1 * lay.T)}px rgba(0,0,0,0.85), 0 0 ${Math.round(0.2 * lay.T)}px rgba(0,0,0,0.6);` : `text-shadow: 0 6px 14px rgba(0,0,0,0.7);`} }
-  .line .k { color: ${p.accent}; ${style === "box" ? `display: inline-block; line-height: 1.02; color: #0b0b0d; background: ${p.accent}; padding: 0.02em 0.14em 0; margin: 0 0.04em; border-radius: 0.06em; -webkit-text-stroke: 0; text-shadow: none; vertical-align: baseline;` : ""} }
+  #frame { position: absolute; left: ${pos.tx}px; top: ${pos.ty}px; width: ${Math.round(W * pos.scale)}px; height: ${Math.round(H * pos.scale)}px; filter: contrast(1.08) saturate(1.05) brightness(0.8); }
+  #vig { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 46%, rgba(0,0,0,0.7) 88%), radial-gradient(ellipse at 50% 35%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.4) 100%); }
+  #block { position: absolute; left: 50%; transform: translateX(-50%); top: ${pos.blockTop}px; text-align: center; white-space: nowrap; ${style === "whitebox" ? `padding: 22px 40px 26px; background: #fff; border-radius: 22px; box-shadow: 0 18px 50px rgba(0,0,0,0.55);` : ""} }
+  .line { white-space: nowrap; font-family: "Anton", sans-serif; font-size: ${lay.fontPx}px; line-height: ${lay.lineH}px; letter-spacing: 0.015em; text-transform: uppercase; color: ${style === "whitebox" ? "#0b0b0d" : "#fff"}; ${style === "outline" ? `-webkit-text-stroke: ${stroke}px #000; paint-order: stroke fill;` : style === "box" ? `-webkit-text-stroke: ${stroke}px #000; paint-order: stroke fill;` : ""} }
+  .line.payoff { font-size: ${Math.round(lay.fontPx * 1.22)}px; line-height: ${Math.round(lay.lineH * 1.22)}px; color: ${p.accent}; }
+  .line.payoff .k { color: inherit; }
+  .line .k { color: ${style === "whitebox" ? "#D7262C" : p.accent}; ${style === "box" ? `display: inline-block; line-height: 1.02; color: #0b0b0d; background: ${p.accent}; padding: 0.02em 0.14em 0; margin: 0 0.04em; border-radius: 0.06em; -webkit-text-stroke: 0; vertical-align: baseline;` : ""} }
   #grain { position: absolute; inset: 0; opacity: 0.05; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='300' height='300' filter='url(%23n)'/></svg>"); background-size: 300px 300px; }
 </style></head>
 <body><div id="root" data-composition-id="cover" data-start="0" data-width="${W}" data-height="${H}" data-duration="1" data-fps="30">

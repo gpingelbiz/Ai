@@ -55,7 +55,7 @@ The drop folders split the looks: `Raw - Reel` is the classic look (`--no-graphi
 
 ## Cover
 
-Every reel gets `covers/Cover 1-3.png` in its work dir (the drop folder copies them into the reel folder), made per the thumbnail-system v10 rules without an image model (real frame scored and cut out with Vision, title typeset in Anton, block bottom y=1400, one gold power word, three palettes). Tell Greg to upload Cover 1. `reel cover <workdir>` remakes them.
+Every reel gets `covers/Cover 1-3.png` in its work dir (the drop folder copies them into the reel folder), built on the real frame like the top-performing covers in this lane (frame scored with Vision, face big, 2-4 word Anton title with one accent word, outline / bar / box styles, inside the 3:4 grid crop); no image model, no cut-out plates. Tell Greg to upload Cover 1. `reel cover <workdir>` remakes them.
 
 ## Long recordings and hook tests
 
