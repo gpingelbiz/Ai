@@ -45,7 +45,10 @@ Options (edit / batch)
   --no-captions            no captions                     --active-word   karaoke pop on the spoken word
   --words-per-line <n>     captions words per line (preset default 3)
   --canvas <c>             auto (default) | portrait | landscape | square | source
-  --music <file>           music bed, looped to length     --music-volume <0-1>  default 0.12
+  --music <file>           music bed, normalized and trimmed to length   --music-volume <0-1>  default 0.10
+  --music-dir <folder>     pick the bed from a folder of "<Mood> - Title - Artist.mp3" files by the mood of what
+                           is said (Claude, headless); "Signature ..." tracks come back more often
+  --music-want <text>      with --music-dir: the track whose file name contains this    --no-duck  flat level
   --no-clean-audio         skip noise reduction + loudness normalization
   --sfx                    ElevenLabs whoosh on zoom-ins and pop on the hook (needs ELEVENLABS_API_KEY)
   --voiceover <script.txt> ElevenLabs narration track      --voice <id>    --replace-audio (mute footage)
@@ -96,6 +99,9 @@ const EDIT_OPTIONS = {
   "words-per-line": { type: "string" },
   canvas: { type: "string" },
   music: { type: "string" },
+  "music-dir": { type: "string" },
+  "music-want": { type: "string" },
+  "no-duck": { type: "boolean" },
   "music-volume": { type: "string" },
   "no-clean-audio": { type: "boolean" },
   sfx: { type: "boolean" },

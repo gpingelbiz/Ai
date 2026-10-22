@@ -13,7 +13,7 @@
   "captions": {
     "enabled": true,
     "wordsPerLine": 3,
-    "position": 0.72,
+    "position": 0.6,
     "fontSizeFrac": 0.04,
     "uppercase": true,
     "animation": "pop",
@@ -55,7 +55,7 @@
   "cta": {
     "enabled": false,
     "last": 3,
-    "position": 0.62,
+    "position": 0.48,
     "style": "pill",
     "fontSizeFrac": 0.036
   },

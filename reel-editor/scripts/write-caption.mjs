@@ -38,7 +38,9 @@ export function buildPrompt({ transcript, hook, voice, cta }) {
     "- Caption: 1 or 2 short lines in the speaker's own point of view: the point they are making. No emojis. No invented numbers, results or stories: only what the transcript says.",
     "- When the speaker quotes someone else or acts out a message, call or line (\"text me: hey, I messed up\"), never present those words as the speaker's own.",
     "- Hashtags: exactly 3, matching the content.",
-    cta ? `- End the caption with this call to action, word for word: ${cta}` : "- No call to action of any kind (no comment/DM/follow/share/save asks).",
+    cta
+      ? `- End the caption with an offer built around this call to action: ${cta}. Phrase it as something the reader gets ("Want the exact words? ${cta} and I'll send them."), never as a bare instruction on its own: Instagram does not recommend posts that only ask people to comment a word.`
+      : "- No call to action of any kind (no comment/DM/follow/share/save asks).",
     "- Hook options: 3, each 4 to 8 words, true to what the speaker says. Option 1 is the hook already in the reel, exactly as given. Options 2 and 3 each model a different winning pattern; never copy another creator's wording.",
     "- For each hook option, name its pattern and cite one Sandcastles example as @handle, views, and outlier score (e.g. 153x). Option 1 may cite none.",
     "",

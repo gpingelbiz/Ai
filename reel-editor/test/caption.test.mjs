@@ -10,7 +10,8 @@ test("the caption prompt carries the voice, the hook, the transcript and the CTA
   assert.match(none, /Own it first\./);
   assert.match(none, /never present those words as the speaker's own/);
   const withCta = buildPrompt({ transcript: "x", hook: "", voice: "v", cta: "Comment GHOST" });
-  assert.match(withCta, /word for word: Comment GHOST/);
+  assert.match(withCta, /offer built around this call to action: Comment GHOST/);
+  assert.match(withCta, /never as a bare instruction/);
   assert.doesNotMatch(withCta, /No call to action/);
 });
 

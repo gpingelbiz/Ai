@@ -109,9 +109,11 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
   for (const s of segs) {
     const a = Math.max(0, s.start);
     const b = Math.min(duration, s.end);
-    if (b - a < minSegment) continue;
+    if (b <= a) continue;
     const prev = out[out.length - 1];
-    if (prev && !s.forced && a - prev.end < minGapCut) prev.end = r3(b);
+    // Every segment holds a kept word, so a sliver under minSegment is merged into its neighbour, never dropped
+    // (an isolated 40 ms word between two pauses used to vanish from both video and captions).
+    if (prev && (b - a < minSegment || (!s.forced && a - prev.end < minGapCut))) prev.end = r3(Math.max(prev.end, b));
     else out.push({ start: r3(a), end: r3(b) });
   }
   if (!out.length) out.push({ start: 0, end: r3(duration) });
@@ -132,6 +134,27 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
     keptDuration: r3(kept),
     words: words.map((w, i) => (drop[i] ? { ...w, drop: drop[i] } : w)),
   };
+}
+
+/**
+ * Snap segment edges to the source frame grid. Video trims land on frames while audio trims are sample-exact, so
+ * unaligned edges leave up to a frame of mismatch per cut and 25 cuts can put the lips a few frames out.
+ */
+export function snapSegments(segments, fps, duration) {
+  const q = 1 / (fps || 30);
+  const out = [];
+  for (const s of segments) {
+    let a = Math.round(s.start / q) * q;
+    let b = Math.round(s.end / q) * q;
+    if (duration != null) b = Math.min(b, duration);
+    a = Math.max(0, a);
+    if (b - a < q) b = a + q;
+    const prev = out[out.length - 1];
+    if (prev && a < prev.end) a = prev.end;
+    if (b <= a) continue;
+    out.push({ ...s, start: r3(a), end: r3(b) });
+  }
+  return out;
 }
 
 /** Move kept words onto the cut timeline. Dropped words and words outside every segment disappear. */
@@ -226,15 +249,30 @@ export async function audioEnvelope(input, { step = 0.02 } = {}) {
  * checked too, so a clipped opening word is not trimmed away.
  * Returns { cuts, restored } with segments, removed and keptDuration rebuilt.
  */
-export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 0.04 } = {}) {
+export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 0.04, minLoud = 0.08 } = {}) {
   const { step, db } = env;
   if (!db.length) return { cuts, restored: 0 };
-  const sorted = [...db].sort((a, b) => a - b);
+  // Room noise is measured inside the planned gaps, not across the speech: that is where the floor matters.
+  const gapDb = [];
+  let tg = 0;
+  for (const s of [...cuts.segments, { start: duration, end: duration }]) {
+    for (let i = Math.floor(tg / step); i < Math.min(db.length, Math.floor(s.start / step)); i++) gapDb.push(db[i]);
+    tg = s.end;
+  }
+  const sorted = (gapDb.length >= 10 ? gapDb : [...db]).sort((a, b) => a - b);
   const floor = sorted[Math.floor(sorted.length * 0.1)];
   const loudDb = Math.min(-30, Math.max(-48, floor + 12)); // a little above this recording's room noise
+  // A sound counts only when it lasts: a breath or a click is a frame or two, a word is not.
+  const minRun = Math.max(1, Math.round(minLoud / step));
   const loud = (t0, t1) => {
     const out = [];
-    for (let i = Math.max(0, Math.floor(t0 / step)); i < Math.min(db.length, Math.ceil(t1 / step)); i++) if (db[i] > loudDb) out.push(i);
+    const i0 = Math.max(0, Math.floor(t0 / step)), i1 = Math.min(db.length, Math.ceil(t1 / step));
+    let run = [];
+    for (let i = i0; i <= i1; i++) {
+      if (i < i1 && db[i] > loudDb) { run.push(i); continue; }
+      if (run.length >= minRun) out.push(...run);
+      run = [];
+    }
     return out;
   };
   const intentional = cuts.removed.filter((r) => r.reason !== "silence");
@@ -290,8 +328,10 @@ export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 
   }
   if (duration - t > 0.001) silences.push({ start: r3(t), end: r3(duration), reason: "silence" });
   const kept = out.reduce((acc, s) => acc + (s.end - s.start), 0);
+  const planned = cuts.removed.filter((r) => r.reason === "silence").length;
   return {
     cuts: { ...cuts, segments: out, removed: [...intentional, ...silences].sort((a, b) => a.start - b.start), keptDuration: r3(kept) },
     restored,
+    noisy: planned >= 4 && restored / planned > 0.5,
   };
 }

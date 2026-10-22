@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
-import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts } from "./cuts.mjs";
+import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments } from "./cuts.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
 import { detectFaces, headExtent, placeHook, zoomDuring, captionsRepeatingHook } from "./placement.mjs";
@@ -13,6 +13,7 @@ import { composeProject, canvasFor } from "./compose.mjs";
 import { makeBroll } from "./broll.mjs";
 import { makeGraphics } from "./graphics.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
+import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
@@ -120,6 +121,12 @@ export async function runEdit(input, opts = {}) {
     const guarded = guardSilenceCuts(cuts, await audioEnvelope(input), meta.duration);
     cuts = guarded.cuts;
     if (guarded.restored) log(`audio check: kept sound in ${guarded.restored} cut${guarded.restored === 1 ? "" : "s"} the transcript timing would have clipped`);
+    if (guarded.noisy) warn("audio check: the room is noisy (fan, AC, traffic?), so most silence cuts were kept; the reel will run longer. A quieter room or --silence off avoids this");
+  }
+  if (cutsOn) {
+    // Frame-aligned edges keep video and audio cutting at the same instants (no lip-sync drift over many cuts).
+    cuts.segments = snapSegments(cuts.segments, meta.fps || preset.render.fps || 30, meta.duration);
+    cuts.keptDuration = r3(cuts.segments.reduce((a, s) => a + (s.end - s.start), 0));
   }
   writeJSON(path.join(workDir, "cuts.json"), cuts);
   const byReason = {};
@@ -205,7 +212,7 @@ export async function runEdit(input, opts = {}) {
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
-  const audio = await prepareAudio({ projectDir, preset, opts, duration, hook, zooms });
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" ") });
 
   const plan = {
     version: 1,
@@ -236,18 +243,39 @@ function readVoice(plan) {
   try { return fs.readFileSync(voiceFile(plan), "utf8"); } catch { return ""; }
 }
 
-async function prepareAudio({ projectDir, preset, opts, duration, hook, zooms }) {
+async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], transcript = "" }) {
   const assets = ensureDir(path.join(projectDir, "assets"));
   const audio = { tracks: [], replaceAudio: !!opts.replaceAudio };
 
-  if (preset.audio.music) {
-    const src = path.resolve(preset.audio.music);
-    if (!fs.existsSync(src)) throw new Error(`music file not found: ${src}`);
+  // The bed: a file (--music), or a pick from the music folder (--music-dir) by the mood of what is said.
+  let src = preset.audio.music ? path.resolve(preset.audio.music) : null;
+  let pickNote = null;
+  if (src && !fs.existsSync(src)) throw new Error(`music file not found: ${src}`);
+  if (!src && preset.audio.musicDir) {
+    const tracks = listTracks(path.resolve(preset.audio.musicDir));
+    if (!tracks.length) log(`music: no tracks in ${preset.audio.musicDir}`);
+    else {
+      const want = preset.audio.musicWant || "";
+      const choice = want ? { moods: [] } : await chooseMoods({ transcript, hook: hook?.text, moods: moodsOf(tracks), voice: readVoice({ style: preset }) });
+      if (choice.none && !want) log(`music: none for this one${choice.why ? ` (${choice.why})` : ""}`);
+      else {
+        const t = pickTrack(tracks, { want, moods: choice.moods, seed: workDir });
+        src = t.file;
+        pickNote = describePick(t, choice);
+      }
+    }
+  }
+  if (src) {
     const dst = path.join(assets, "music.m4a");
-    // Loop/trim the bed to the reel length so it always covers the whole video.
-    await run("ffmpeg", ["-y", "-loglevel", "error", "-stream_loop", "-1", "-i", src, "-t", String(duration), "-vn", "-c:a", "aac", "-b:a", "192k", dst]);
-    audio.tracks.push({ id: "music", src: "assets/music.m4a", start: 0, duration, volume: preset.audio.musicVolume, fadeIn: 1, fadeOut: 1.5, track: 8 });
-    log(`music: ${path.basename(src)} at ${preset.audio.musicVolume}`);
+    const level = preset.audio.musicVolume;
+    const startAt = Math.min(0.5, duration / 4);
+    // Trim (or loop a short track) to the reel length and normalize the bed, so the level means the same for
+    // a loud trap beat and a soft pad: -16 LUFS like the voice, then `level` under it.
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-stream_loop", "-1", "-i", src, "-t", String(r3(duration - startAt)), "-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "192k", dst]);
+    const lane = preset.audio.duck === false ? null : duckingLane(words, { duration, level, start: startAt });
+    audio.tracks.push({ id: "music", src: "assets/music.m4a", start: startAt, duration: r3(duration - startAt), volume: level, fadeIn: 1, fadeOut: 1.5, lane, track: 8 });
+    fs.writeFileSync(path.join(workDir, "music.txt"), `Music: ${path.basename(src)}\n`);
+    log(`music: ${pickNote || path.basename(src)} at ${level}${lane ? ", swelling in the pauses" : ""}`);
   }
 
   if (opts.voiceover) {
@@ -299,9 +327,33 @@ export async function renderProject(workDir, opts = {}) {
   log(`rendering → ${output}`);
   const t0 = Date.now();
   await render(projectDir, output, { quality: opts.quality || plan.style?.render?.quality || "looks", fps: opts.fps || plan.style?.render?.fps });
+  if (plan.video.hasAudio && plan.style?.render?.deliveryLoudness !== false) await normalizeDelivery(output);
   const outMeta = await probe(output);
   log(`done in ${Math.round((Date.now() - t0) / 1000)}s: ${output} (${outMeta.width}x${outMeta.height}, ${r3(outMeta.duration)}s)`);
   return output;
+}
+
+/**
+ * Delivery loudness: the mix lands at -14 LUFS integrated, -1 dBTP (what Instagram normalizes toward), measured
+ * in a first pass and applied linearly in a second, video copied untouched. Skipped quietly on any failure.
+ */
+export async function normalizeDelivery(file) {
+  const tmp = file.replace(/\.mp4$/, ".loud.mp4");
+  try {
+    const { err } = await run("ffmpeg", ["-hide_banner", "-nostats", "-i", file, "-af", "loudnorm=I=-14:TP=-1:LRA=11:print_format=json", "-f", "null", "-"], { capture: true, allowFail: true });
+    const m = err.match(/\{[^{}]*"input_i"[^{}]*\}/);
+    if (!m) return false;
+    const j = JSON.parse(m[0]);
+    const af = `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${j.input_i}:measured_TP=${j.input_tp}:measured_LRA=${j.input_lra}:measured_thresh=${j.input_thresh}:offset=${j.target_offset}:linear=true:print_format=summary`;
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-map", "0:v", "-map", "0:a", "-c:v", "copy", "-af", af, "-ar", "48000", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp]);
+    fs.renameSync(tmp, file);
+    log(`loudness: ${Number(j.input_i).toFixed(1)} LUFS → -14 LUFS, peak -1 dBTP`);
+    return true;
+  } catch (e) {
+    warn(`loudness pass skipped: ${String(e.message).split("\n")[0]}`);
+    fs.rmSync(tmp, { force: true });
+    return false;
+  }
 }
 
 export async function batchEdit(folder, opts = {}) {

@@ -194,7 +194,7 @@ export function graphicsCSS({ W, H, colors }) {
   return `
       .gfx { --u: ${u}px; position: absolute; inset: 0; overflow: hidden; opacity: 0; background: radial-gradient(120% 62% at 50% 34%, ${c.accent}2e 0%, ${c.accent}00 60%), ${c.bg}; color: ${c.text}; font-family: "Inter", sans-serif; }
       .gfx::after { content: ""; position: absolute; inset: 0; background: radial-gradient(90% 60% at 50% 40%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 100%); pointer-events: none; }
-      .g-box { position: absolute; left: 8%; right: 8%; top: 12%; bottom: 34%; display: flex; flex-direction: column; justify-content: center; gap: ${px(34)}; z-index: 1; }
+      .g-box { position: absolute; left: 8%; right: 11%; top: 15%; bottom: 46%; display: flex; flex-direction: column; justify-content: center; gap: ${px(34)}; z-index: 1; }
       .g-center { align-items: center; text-align: center; }
       .g-eyebrow { display: inline-flex; align-items: center; gap: ${px(14)}; font-size: ${px(30)}; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: ${c.accent}; }
       .g-dot { width: ${px(12)}; height: ${px(12)}; border-radius: 50%; background: ${c.accent}; box-shadow: 0 0 ${px(18)} ${c.accent}; }

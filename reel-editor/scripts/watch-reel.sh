@@ -9,9 +9,9 @@
 # Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9,
 # "#low" drops the hook to chest height (wide shots where the default sits on your head),
 # "#top" lifts it above the head (close-up selfies where your face fills the middle).
-# Music: a random track from REEL_WATCH_MUSIC (default ~/Reels/music; Desktop/Reels/Music is a shortcut to it) plays
-# under the voice at REEL_WATCH_MUSIC_VOLUME (default 0.12). "#music:calm" picks the first track whose name contains
-# "calm"; "#nomusic" skips it. Nothing happens when the folder is empty. The track used is noted in music.txt.
+# Music: the editor picks a track from REEL_WATCH_MUSIC (default ~/Reels/music; Desktop/Reels/Music is a shortcut) by
+# the mood of what is said, at REEL_WATCH_MUSIC_VOLUME (default 0.10) under the voice. "#music:calm" asks for the track
+# whose name contains "calm"; "#nomusic" skips it. Nothing happens when the folder is empty. music.txt names the track.
 # Every folder also gets caption.txt (Sandcastles-backed post copy via write-caption.mjs) when the Claude Code
 # CLI is installed; REEL_WATCH_CAPTION=0 turns that off. B-roll and carousels need the Codex CLI signed in.
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
@@ -85,38 +85,17 @@ case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
-# Pick a music track: "#music:<name>" names one (substring of the file name, case-insensitive), else random.
-# Prints the path, or nothing when there is no track. Never lists anything outside the music folder.
-pick_music() {
-  local want="$1" f n i
-  [ -d "$MUSIC_DIR" ] || return 0
-  local tracks=()
-  for f in "$MUSIC_DIR"/*.mp3 "$MUSIC_DIR"/*.m4a "$MUSIC_DIR"/*.wav "$MUSIC_DIR"/*.aac "$MUSIC_DIR"/*.aif "$MUSIC_DIR"/*.aiff "$MUSIC_DIR"/*.flac "$MUSIC_DIR"/*.MP3 "$MUSIC_DIR"/*.WAV; do
-    [ -f "$f" ] && tracks+=("$f")
-  done
-  [ "${#tracks[@]}" -gt 0 ] || return 0
-  if [ -n "$want" ]; then
-    want=$(printf '%s' "$want" | tr 'A-Z' 'a-z')
-    for f in "${tracks[@]}"; do
-      n=$(basename "$f" | tr 'A-Z' 'a-z')
-      case "$n" in *"$want"*) printf '%s' "$f"; return 0;; esac
-    done
-    echo "$(date '+%F %T') music: no track matching '$want', picking one at random" >> "$REELS/watch.log"
-  fi
-  i=$(( $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % ${#tracks[@]} ))
-  printf '%s' "${tracks[$i]}"
-}
-
-music=""
-if [ "$MODE" != carousel ]; then
+# Music: the editor picks from the music folder by the mood of what is said; "#music:<name>" asks for a track
+# whose file name contains <name>; "#nomusic" skips it. Carousels never get music.
+if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then
   case "$base" in
     *"#nomusic"*) ;;
-    *) want=""; case "$base" in *"#music:"*) want="${base#*#music:}"; want="${want%%[ .#]*}";; esac; music="$(pick_music "$want")";;
+    *)
+      flags+=(--music-dir "$MUSIC_DIR")
+      case "$base" in *"#music:"*) want="${base#*#music:}"; want="${want%%[ .#]*}"; flags+=(--music-want "$want");; esac
+      [ -n "$MUSIC_VOLUME" ] && flags+=(--music-volume "$MUSIC_VOLUME")
+      ;;
   esac
-fi
-if [ -n "$music" ]; then
-  flags+=(--music "$music")
-  [ -n "$MUSIC_VOLUME" ] && flags+=(--music-volume "$MUSIC_VOLUME")
 fi
 # The b-roll folder gets the full look (the preset's cards and reveal captions plus photos); the plain folder keeps
 # the classic captions with no cards.
@@ -185,7 +164,7 @@ else
     printf 'No b-roll this time: Codex was busy or rate-limited, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$folder/No b-roll this time.txt"
   fi
   [ -s "$work/review.txt" ] && cp -f "$work/review.txt" "$folder/check these words.txt"
-  [ -n "$music" ] && printf 'Music: %s\n' "$(basename "$music")" > "$folder/music.txt"
+  [ -s "$work/music.txt" ] && cp -f "$work/music.txt" "$folder/music.txt"
   echo "$(date '+%F %T') done  $dest" >> "$log"
   if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder."; else notify "$label ready" "$title"; fi
 fi

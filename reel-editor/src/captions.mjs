@@ -60,6 +60,8 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
     g.start = r3(Math.max(0, first.start - 0.05));
     const limit = next ? Math.max(0, next.words[0].start - 0.05) : duration;
     g.end = r3(Math.min(limit, last.end + 0.6));
+    // A hold that would end just before the next line leaves blank frames between them: run straight into it.
+    if (next && limit - g.end < 0.3) g.end = r3(limit);
     if (g.end - g.start < 0.3) g.end = r3(Math.min(limit, g.start + 0.3));
     g.text = g.words.map((w) => w.text).join(" ");
   });
@@ -68,8 +70,10 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
 }
 
 /**
- * Mark highlight words per line: dictionary terms first (multi-word terms highlight every word),
- * then numbers / dollar amounts / power words. At most maxPerLine highlights unless a term is longer.
+ * Mark highlight words per line: dictionary terms first (framework names, always gold; multi-word terms highlight
+ * every word), then numbers / dollar amounts / power words, then dictionary candidates and automatic picks under
+ * the rarity rule (once per clip, never on two lines in a row), so gold keeps meaning something.
+ * At most maxPerLine highlights unless a term is longer.
  */
 
 // Fallback keyword picker for lines with no dictionary term, number or power word. Real speech rarely
@@ -114,6 +118,7 @@ export function markKeywords(groups, dict = {}, { maxPerLine = 1, auto = false }
   // phrases highlight like terms but are not sent to Whisper as spelling hints (a hint can change what it hears).
   const terms = [...(dict.terms || []), ...(dict.phrases || [])].map((t) => t.toLowerCase().split(/\s+/).map(norm)).filter((t) => t.length && t[0]).sort((a, b) => b.length - a.length);
   const power = new Set((dict.powerWords || []).map(norm));
+  const candidates = new Set((dict.candidates || []).map(norm));
   const usedAuto = new Set();
   let prevAuto = false;
   for (const g of groups) {
@@ -145,7 +150,16 @@ export function markKeywords(groups, dict = {}, { maxPerLine = 1, auto = false }
         break;
       }
     }
-    if (marked || !auto) continue;
+    if (marked) continue;
+    // Candidates (everyday business words) are gold once per clip and never on two lines in a row.
+    const ci = toks.findIndex((t) => candidates.has(t) && !usedAuto.has(t));
+    if (ci >= 0 && !wasAuto) {
+      g.words[ci].key = true;
+      usedAuto.add(toks[ci]);
+      prevAuto = true;
+      continue;
+    }
+    if (!auto) continue;
     const pick = autoKeyword(g.words);
     if (!pick || pick.score < 2) continue;
     const word = toks.slice(pick.i, pick.i + pick.len).join(" ");

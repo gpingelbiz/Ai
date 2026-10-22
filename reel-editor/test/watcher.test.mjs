@@ -73,6 +73,7 @@ echo "$*" >> "$HOME/reel-calls"
 if [ "$1" = carousel ]; then ${carouselFails ? "exit 1" : 'mkdir -p "$4"; echo slide > "$4/Slide 1.png"; exit 0'}; fi
 work="$4"; name="$6"; mkdir -p "$work/renders" "$work/broll"
 case "$*" in *--no-render*) ;; *) echo "$name" > "$work/renders/$name.mp4";; esac
+case "$*" in *--music-dir*) all="$*"; d="\${all#*--music-dir }"; d="\${d%% *}"; w=""; case "$*" in *--music-want*) w="\${all#*--music-want }"; w="\${w%% *}";; esac; t="$(ls "$d"/*.mp3 "$d"/*.wav 2>/dev/null | { if [ -n "$w" ]; then grep -i -- "$w" | head -1; else head -1; fi; })"; [ -n "$t" ] && echo "Music: $(basename "$t")" > "$work/music.txt";; esac
 files=""
 case "$*" in *--broll*)
   i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
@@ -121,11 +122,11 @@ test("music: a random track from the folder, #music:name picks one, #nomusic ski
   const r = fakeDrops({ brollShots: 0, music: ["Calm Morning.mp3", "Dark Drive.wav"], clips: { reel: ["a.mov", "b__Own it #music:dark.mov", "c__Own it #nomusic.mov"], broll: ["d.mov"], carousel: ["e.mov"] } });
   const lines = r.calls.trim().split("\n");
   const edit = (name) => lines.find((l) => l.startsWith("edit ") && l.includes("/" + name + " "));
-  assert.match(edit("a.mov"), /--music .*\/(Calm Morning\.mp3|Dark Drive\.wav)/);
-  assert.match(edit("b__Own it #music:dark.mov"), /--music .*\/Dark Drive\.wav/);
+  assert.match(edit("a.mov"), /--music-dir \S+\/music/);
+  assert.match(edit("b__Own it #music:dark.mov"), /--music-dir \S+\/music --music-want dark/);
   assert.match(edit("b__Own it #music:dark.mov"), /--hook Own it /, "the #music tag is stripped from the hook");
   assert.doesNotMatch(edit("c__Own it #nomusic.mov"), /--music/);
-  assert.match(edit("d.mov"), /--music /);
+  assert.match(edit("d.mov"), /--music-dir /);
   assert.doesNotMatch(edit("e.mov"), /--music/);
   const reel1 = r.list(`${r.day} Reel 1`);
   assert.ok(reel1.includes("music.txt"));
@@ -134,8 +135,7 @@ test("music: a random track from the folder, #music:name picks one, #nomusic ski
   assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 2`, "Own it.mp4")), "the slug and title drop the tag");
 });
 
-test("music: an empty folder means no music, no error", () => {
+test("music: an empty folder means no music.txt, no error", () => {
   const r = fakeDrops({ brollShots: 0, music: [] });
-  assert.doesNotMatch(r.calls, /--music/);
   assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4"]);
 });

@@ -121,9 +121,11 @@ export function renderHTML(plan, footage) {
   const audioHTML = tracks
     .map((t) => {
       const dur = t.duration ? ` data-duration="${t.duration}"` : "";
+      // A lane (ducking: swell in the pauses) is in reel time; fades are relative to the clip start.
+      const points = t.lane ? t.lane.map((p) => ({ t: r3(p.t - t.start), v: p.v })).filter((p) => p.t >= 0) : null;
       const vol =
-        t.fadeIn || t.fadeOut
-          ? ` data-automation='${JSON.stringify({ version: 1, lanes: [{ target: "volume", points: fadePoints(t) }] })}'`
+        points || t.fadeIn || t.fadeOut
+          ? ` data-automation="${esc(JSON.stringify({ version: 1, lanes: [{ target: "volume", points: points || fadePoints(t) }] }))}"`
           : ` data-volume="${t.volume ?? 1}"`;
       return `      <audio id="${esc(t.id)}" src="${esc(t.src)}" data-start="${t.start}"${dur} data-track-index="${t.track ?? 6}"${vol}></audio>`;
     })
@@ -163,7 +165,7 @@ export function renderHTML(plan, footage) {
 ${gfxList.length ? graphicsCSS({ W, H, colors: c }) : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
-        position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3(cap.sideMarginFrac * 100)}%; top: ${r3(cap.position * 100)}%;
+        position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3((cap.rightMarginFrac ?? cap.sideMarginFrac) * 100)}%; top: ${r3(cap.position * 100)}%;
         margin-top: -0.6em; display: flex; justify-content: center; opacity: 0;
       }
       .cap-line {
@@ -201,7 +203,7 @@ ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="reel" data-start="0" data-width="${W}" data-height="${H}" data-duration="${D}" data-fps="${s.render?.fps || 30}">
+    <div id="root" data-composition-id="reel" data-start="0" data-width="${W}" data-height="${H}" data-duration="${D}" data-fps="${s.render?.fps || 30}"${plan.video.hasAudio || tracks.length ? ` data-fx-chain="${esc(JSON.stringify({ version: 1, nodes: [{ type: "truepeak", id: "ceiling", label: "Delivery ceiling", params: { ceiling: -1.5, lookahead: 3, release: 80 } }] }))}"` : ""}>
       <div id="video-wrap" data-layout-allow-overflow>
         <video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>
       </div>
@@ -222,12 +224,14 @@ ${audioHTML}
           const h = PLAN.hook;
           const words = document.querySelectorAll("#hook-lines .hw");
           const step = 0.06;
-          const t0 = h.start + 0.04;
-          const done = t0 + step * words.length + 0.2;
-          tl.fromTo("#hook-scrim", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power1.out" }, h.start);
-          tl.fromTo(words, { opacity: 0, y: h.font * 0.42 }, { opacity: 1, y: 0, duration: 0.34, ease: "power3.out", stagger: step }, t0);
+          // Frame 0 carries the whole hook at full strength (reels that spread show text by frame 4); the words
+          // settle from a slight lift, the gold phrase pulses once and the rule draws in under it.
+          const t0 = h.start;
+          const done = t0 + 0.3 + step * words.length;
+          tl.set("#hook-scrim", { opacity: 1 }, h.start);
+          tl.fromTo(words, { opacity: 1, y: h.font * 0.12 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out", stagger: step * 0.5 }, t0);
           tl.fromTo("#hook-lines .hw.k", { scale: 1 }, { scale: 1.09, duration: 0.13, ease: "power2.out", yoyo: true, repeat: 1 }, done - 0.05);
-          tl.fromTo("#hook-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.36, ease: "power3.inOut" }, done - 0.12);
+          tl.fromTo("#hook-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.36, ease: "power3.inOut" }, h.start + 0.08);
           tl.to("#hook-block", { opacity: 0, y: -h.font * 0.3, duration: 0.24, ease: "power2.in" }, h.start + h.duration - 0.28);
         } else if (PLAN.hook) {
           const h = PLAN.hook;
@@ -258,6 +262,8 @@ ${audioHTML}
           }
           tl.set(el, { opacity: 0 }, g.end);
         });
+        // Motion from the first frame: a slow push-in under the hook (a static face in frame 1 reads as a still).
+        if (PLAN.hook) tl.fromTo("#video-wrap", { scale: 1 }, { scale: 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
         PLAN.zooms.forEach((z) => tl.to("#video-wrap", { scale: z.scale, duration: z.snap, ease: "power3.out" }, z.t));
 ${gfxList.length ? GRAPHICS_JS : ""}
         // B-roll: quick dissolve in and out, slow push or pan while it holds.
