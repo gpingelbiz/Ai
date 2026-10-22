@@ -29,6 +29,8 @@ export function loadDictionary(file) {
 /** CLI flags win over the preset. */
 export function mergeOverrides(preset, o = {}) {
   const p = structuredClone(preset);
+  // Numbers are read with `!= null`, so --music-volume 0 and --hook-position 0 count (a bare `if (o.x)` dropped them).
+  const num = (v) => (v == null || v === "" ? null : parseFloat(v));
   if (o.silence) p.cuts.silence = o.silence;
   if (o.noBadTakes) p.cuts.badTakes = false;
   if (o.noFillers) p.cuts.fillers = false;
@@ -37,21 +39,21 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noHook) p.hook.enabled = false;
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;
-  if (o.hookPosition) p.hook.position = parseFloat(o.hookPosition);
+  if (num(o.hookPosition) != null) p.hook.position = num(o.hookPosition);
   if (o.noAutoKeywords) p.captions.autoKeywords = false;
   if (o.cta) { p.cta.enabled = true; p.cta.text = o.cta; }
   if (o.ctaLast) p.cta.last = parseFloat(o.ctaLast);
   if (o.ctaAt) p.cta.start = parseFloat(o.ctaAt);
   if (o.ctaDuration) p.cta.duration = parseFloat(o.ctaDuration);
   if (o.ctaStyle) p.cta.style = o.ctaStyle;
-  if (o.ctaPosition) p.cta.position = parseFloat(o.ctaPosition);
+  if (num(o.ctaPosition) != null) p.cta.position = num(o.ctaPosition);
   if (o.wordsPerLine) p.captions.wordsPerLine = parseInt(o.wordsPerLine, 10);
   if (o.canvas) p.canvas = o.canvas;
   if (o.music) p.audio.music = o.music;
   if (o.musicDir) p.audio.musicDir = o.musicDir;
   if (o.musicWant) p.audio.musicWant = o.musicWant;
   if (o.noDuck) p.audio.duck = false;
-  if (o.musicVolume) p.audio.musicVolume = parseFloat(o.musicVolume);
+  if (num(o.musicVolume) != null) p.audio.musicVolume = num(o.musicVolume);
   if (o.sfx) p.audio.sfx = true;
   if (o.noCleanAudio) p.audio.cleanAudio = false;
   if (o.voice) p.audio.voiceId = o.voice;

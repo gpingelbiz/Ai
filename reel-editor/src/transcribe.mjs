@@ -4,7 +4,8 @@ import { run, writeJSON, r3, PKG_ROOT } from "./util.mjs";
 
 const PY_SCRIPT = path.join(PKG_ROOT, "scripts", "transcribe_words.py");
 
-const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9&$%']/g, "");
+import { norm as normBase } from "./text.mjs";
+const norm = (t) => normBase(String(t).replace(/%/g, " percent"));
 
 /** Accept the common word-timestamp shapes and return [{text,start,end}]. */
 export function normalizeWords(obj) {

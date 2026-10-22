@@ -23,7 +23,7 @@ function hexA(hex, a) {
   return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${a})`;
 }
 
-const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+import { esc } from "./text.mjs";
 
 function fadePoints(t) {
   const v = t.volume ?? 1;
@@ -143,6 +143,7 @@ export function renderHTML(plan, footage) {
     broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.motion || "in" })),
     graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration })),
     reveal,
+    reframe: plan.reframe || [],
   };
 
   return `<!doctype html>
@@ -262,6 +263,15 @@ ${audioHTML}
           }
           tl.set(el, { opacity: 0 }, g.end);
         });
+        // Face-tracking reframe: slide the crop window across a wide source as the speaker moves.
+        if (PLAN.reframe.length) {
+          const first = PLAN.reframe[0];
+          tl.set("#footage", { objectPosition: first.x + "% 50%" }, 0);
+          for (let i = 1; i < PLAN.reframe.length; i++) {
+            const p = PLAN.reframe[i], q = PLAN.reframe[i - 1];
+            tl.to("#footage", { objectPosition: p.x + "% 50%", duration: Math.max(0.2, p.t - q.t), ease: "power1.inOut" }, q.t);
+          }
+        }
         // Motion from the first frame: a slow push-in under the hook (a static face in frame 1 reads as a still).
         if (PLAN.hook) tl.fromTo("#video-wrap", { scale: 1 }, { scale: 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
         PLAN.zooms.forEach((z) => tl.to("#video-wrap", { scale: z.scale, duration: z.snap, ease: "power3.out" }, z.t));

@@ -1,6 +1,6 @@
 import { r3 } from "./util.mjs";
 
-const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9&$']/g, "");
+import { norm } from "./text.mjs";
 
 /** Strip emojis and trailing commas/periods. Keeps ? and ! because they carry tone. */
 export function cleanText(t, { emojis = false } = {}) {

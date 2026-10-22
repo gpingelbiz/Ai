@@ -1,3 +1,4 @@
+import { norm } from "./text.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -118,7 +119,6 @@ const round = (x) => Math.round(x * 1000) / 1000;
 /** Caption lines that only repeat an automatic hook (the clip's own first sentence) while it is on screen. */
 export function captionsRepeatingHook(groups, hook) {
   if (!hook?.auto) return new Set();
-  const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9']/g, "");
   const hookToks = new Set(String(hook.text).split(/\s+/).map(norm).filter(Boolean));
   const end = hook.start + hook.duration;
   const hide = new Set();

@@ -75,3 +75,48 @@ test("guardSilenceCuts keeps sound the transcript timing would have cut", async 
   const quiet = guardSilenceCuts({ ...cuts }, { step, db: db.map((v, i) => (i * step >= 2.0 && i * step < 2.3 ? -60 : v)) }, 6);
   assert.equal(quiet.restored, 0, "a truly quiet gap is cut as planned");
 });
+
+test("short words are merged into a neighbour, never dropped", async () => {
+  const { planCuts, remapWords } = await import("../src/cuts.mjs");
+  const words = [{ text: "Own", start: 1, end: 1.4 }, { text: "it.", start: 1.45, end: 1.8 }, { text: "Go", start: 4, end: 4.04 }, { text: "Now", start: 7, end: 7.4 }];
+  const cuts = planCuts(words, 9, { silence: "fast", badTakes: false, fillers: false });
+  const kept = remapWords(cuts.words, cuts.segments).map((w) => w.text);
+  assert.deepEqual(kept, ["Own", "it.", "Go", "Now"]);
+});
+
+test("segment edges snap to the frame grid", async () => {
+  const { snapSegments } = await import("../src/cuts.mjs");
+  const s = snapSegments([{ start: 0.017, end: 1.011 }, { start: 1.02, end: 2.345 }], 30, 10);
+  assert.deepEqual(s, [{ start: 0.033, end: 1 }, { start: 1.033, end: 2.333 }]);
+  for (const x of s) for (const v of [x.start, x.end]) assert.ok(Math.abs(v * 30 - Math.round(v * 30)) < 0.02);
+});
+
+test("a noisy room: short bursts do not count as sound; most cuts kept raises the noisy flag", async () => {
+  const { guardSilenceCuts } = await import("../src/cuts.mjs");
+  const step = 0.02;
+  const db = new Array(500).fill(-55); // 10 s of quiet room
+  for (let i = 50; i < 100; i++) db[i] = -20; // speech 1-2 s
+  for (let i = 150; i < 200; i++) db[i] = -20; // speech 3-4 s
+  db[125] = -20; // one click in the gap
+  const cuts = { segments: [{ start: 1, end: 2 }, { start: 3, end: 4 }], removed: [{ start: 0, end: 1, reason: "silence" }, { start: 2, end: 3, reason: "silence" }, { start: 4, end: 10, reason: "silence" }], keptDuration: 2 };
+  const g = guardSilenceCuts(cuts, { step, db }, 10);
+  assert.equal(g.restored, 0, "a single loud frame is not a sound");
+  for (let i = 110; i < 140; i++) db[i] = -20; // a real word in the gap
+  const g2 = guardSilenceCuts(cuts, { step, db }, 10);
+  assert.equal(g2.restored, 1);
+  assert.ok(g2.cuts.segments.some((s) => s.start <= 2.2 && s.end >= 2.8), "the word in the gap is inside a kept segment");
+  const big = { segments: [{ start: 1, end: 2 }, { start: 3, end: 4 }, { start: 5, end: 6 }, { start: 7, end: 8 }], removed: [0, 2, 4, 6, 8].map((t) => ({ start: t, end: t + 1, reason: "silence" })), keptDuration: 4 };
+  const hum = new Array(500).fill(-40); // loud room: every gap sounds like something
+  const g3 = guardSilenceCuts(big, { step, db: hum.map((v, i) => ([50, 150, 250, 350].some((s) => i >= s && i < s + 50) ? -20 : v)) }, 10);
+  assert.equal(g3.noisy, false, "a steady floor measured in the gaps is not noise");
+});
+
+test("a sign-off in the last seconds is dropped; the same words earlier are kept", async () => {
+  const { planCuts, findSignOff } = await import("../src/cuts.mjs");
+  const words = [{ text: "Own", start: 1, end: 1.4 }, { text: "it.", start: 1.5, end: 1.8 }, { text: "Thanks", start: 20, end: 20.3 }, { text: "for", start: 20.3, end: 20.5 }, { text: "watching", start: 20.5, end: 20.9 }];
+  assert.equal(findSignOff(words, 22), 2);
+  assert.equal(findSignOff(words, 60), -1);
+  const cuts = planCuts(words, 22, { badTakes: false, fillers: false });
+  assert.deepEqual(cuts.words.filter((w) => w.drop).map((w) => w.text), ["Thanks", "for", "watching"]);
+  assert.ok(cuts.removed.some((r) => r.reason === "sign-off"));
+});

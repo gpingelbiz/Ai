@@ -14,6 +14,7 @@ import { makeBroll } from "./broll.mjs";
 import { makeGraphics } from "./graphics.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
+import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
@@ -58,6 +59,7 @@ export async function runEdit(input, opts = {}) {
 
   // 1. Words
   const wordsPath = path.join(workDir, "words.json");
+  const early = { second: null, envelope: meta.hasAudio ? audioEnvelope(input).catch(() => ({ step: 0.02, db: [] })) : null };
   let words;
   let primaryEngine = null;
   let reusedWords = false;
@@ -74,6 +76,14 @@ export async function runEdit(input, opts = {}) {
     if (!meta.hasAudio) throw new Error("source has no audio track, nothing to transcribe (pass --transcript to supply words)");
     const eng = resolveEngine(preset.transcribe.engine);
     log(`transcribing with ${eng === "elevenlabs" ? "ElevenLabs Scribe" : `faster-whisper (${preset.transcribe.model})`}…`);
+    // The second opinion and the audio level run alongside the first transcript: each decodes the input on its own.
+    if (preset.transcribe.verify && !opts.noVerify) {
+      const other = secondEngine(eng);
+      if (other) {
+        log(`second opinion from ${other === "elevenlabs" ? "ElevenLabs Scribe" : `faster-whisper (${preset.transcribe.verifyModel || preset.transcribe.model})`} (alongside)…`);
+        early.second = transcribe(input, { engine: other, model: preset.transcribe.verifyModel || preset.transcribe.model, language: preset.transcribe.language, prompt: (dict.terms || []).slice(0, 40).join(", "), out: path.join(workDir, "words-second.json"), hyperframesBin: hyperframesBin() }).catch((e) => { warn(`second opinion failed: ${String(e.message).split("\n")[0]}`); return null; });
+      }
+    }
     words = await transcribe(input, {
       engine: preset.transcribe.engine,
       model: preset.transcribe.model,
@@ -96,7 +106,8 @@ export async function runEdit(input, opts = {}) {
     const other = secondEngine(primaryEngine || "faster-whisper");
     const secondPath = path.join(workDir, "words-second.json");
     let second = null;
-    if (fs.existsSync(secondPath) && !opts.force && reusedWords) second = readJSON(secondPath).words;
+    if (early.second) second = await early.second;
+    else if (fs.existsSync(secondPath) && !opts.force && reusedWords) second = readJSONSafe(secondPath)?.words || null;
     else if (other) {
       log(`second opinion from ${other === "elevenlabs" ? "ElevenLabs Scribe" : `faster-whisper (${preset.transcribe.verifyModel || preset.transcribe.model})`}…`);
       try {
@@ -123,7 +134,7 @@ export async function runEdit(input, opts = {}) {
     ? planCuts(words, meta.duration, preset.cuts)
     : { segments: [{ start: 0, end: r3(meta.duration) }], removed: [], originalDuration: r3(meta.duration), keptDuration: r3(meta.duration), words };
   if (cutsOn && meta.hasAudio && preset.cuts.audioGuard !== false) {
-    const guarded = guardSilenceCuts(cuts, await audioEnvelope(input), meta.duration);
+    const guarded = guardSilenceCuts(cuts, await early.envelope, meta.duration);
     cuts = guarded.cuts;
     if (guarded.restored) log(`audio check: kept sound in ${guarded.restored} cut${guarded.restored === 1 ? "" : "s"} the transcript timing would have clipped`);
     if (guarded.noisy) warn("audio check: the room is noisy (fan, AC, traffic?), so most silence cuts were kept; the reel will run longer. A quieter room or --silence off avoids this");
@@ -157,7 +168,7 @@ export async function runEdit(input, opts = {}) {
   }
   if (needsPass) {
     log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? " + clean audio" : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + ")…");
-    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr });
+    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta) });
     videoSrc = cleanPath;
     cleanMeta = await probe(cleanPath);
   }
@@ -197,6 +208,16 @@ export async function runEdit(input, opts = {}) {
       }
     }
   }
+  // Wide source into a tall canvas: follow the face instead of cropping the middle.
+  let reframe = null;
+  const canvas1 = canvasFor(preset.canvas, cleanMeta);
+  if (preset.reframe?.enabled !== false && needsReframe(cleanMeta, canvas1)) {
+    const det = await detectFaces(videoSrc, sampleTimes(duration, preset.reframe?.step ?? 0.5));
+    if (det?.frames?.length) {
+      reframe = objectPositionLane(smoothTrack(faceCentres(det)), cleanMeta, canvas1);
+      log(`reframe: following the face across ${reframe.length} move${reframe.length === 1 ? "" : "s"} (wide source into ${canvas1.mode})`);
+    } else log("reframe: no face found in the wide shot, keeping the centre crop");
+  }
   log(`captions: ${groups.length} lines, ${groups.filter((g) => g.words.some((w) => w.key)).length} with a highlight`);
   log(`hook: ${hook ? `"${hook.text}"${hook.auto ? " (auto, pass --hook for a written one)" : ""}` : "none"}`);
   log(`zooms: ${zooms.length}`);
@@ -233,6 +254,7 @@ export async function runEdit(input, opts = {}) {
     zooms,
     graphics,
     broll,
+    reframe,
     audio,
     words: cleanWords,
   };
@@ -311,6 +333,45 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
   return audio;
 }
 
+/**
+ * Hook A/B: the first `seconds` of the reel rendered once per alternative hook, into <workDir>/hooks/. The plan is
+ * reused as is (same cuts, captions, music); only the hook text changes. Returns the output paths.
+ */
+export async function renderHookVariants(workDir, hooks, { seconds = 4, quality = "draft" } = {}) {
+  workDir = path.resolve(workDir);
+  const base = readJSON(path.join(workDir, "plan.json"));
+  if (!base.hook) throw new Error("this reel has no hook to vary");
+  const outDir = ensureDir(path.join(workDir, "hooks"));
+  const outs = [];
+  for (let i = 0; i < hooks.length; i++) {
+    const text = String(hooks[i]).trim();
+    if (!text) continue;
+    const dict = loadDictionary();
+    const plan = structuredClone(base);
+    plan.name = `hook-${i + 1}`;
+    plan.hook = { ...plan.hook, ...hookWords(text, dict) };
+    const D = Math.min(seconds, plan.video.duration);
+    plan.video = { ...plan.video, duration: D };
+    plan.captions = (plan.captions || []).filter((g) => g.start < D).map((g) => ({ ...g, end: Math.min(g.end, D) }));
+    plan.zooms = (plan.zooms || []).filter((z) => z.t < D);
+    plan.graphics = (plan.graphics || []).filter((g) => g.start < D);
+    plan.broll = (plan.broll || []).filter((b) => b.start < D);
+    plan.cta = null;
+    plan.audio = { ...(plan.audio || {}), tracks: (plan.audio?.tracks || []).filter((t) => t.start < D).map((t) => ({ ...t, duration: Math.min(t.duration || D, D - t.start), lane: t.lane ? t.lane.filter((p) => p.t <= D) : t.lane })) };
+    const projectDir = path.join(outDir, `project-${i + 1}`);
+    // Assets (footage, music, stills) are shared with the main project.
+    ensureDir(projectDir);
+    const mainAssets = path.join(workDir, "project", "assets");
+    if (fs.existsSync(mainAssets)) { fs.rmSync(path.join(projectDir, "assets"), { recursive: true, force: true }); fs.symlinkSync(mainAssets, path.join(projectDir, "assets")); }
+    fs.writeFileSync(path.join(projectDir, "index.html"), (await import("./compose.mjs")).renderHTML(plan, `assets/footage${path.extname(plan.video.src) || ".mp4"}`));
+    const output = path.join(outDir, `Hook ${i + 1} - ${text.replace(/\*/g, "").replace(/[/:"*?<>|\\]/g, "").replace(/[.\s]+$/, "")}.mp4`);
+    log(`hook ${i + 1}: "${text}" → ${path.basename(output)}`);
+    await render(projectDir, output, { quality });
+    outs.push(output);
+  }
+  return outs;
+}
+
 export async function buildProject(workDir, opts = {}) {
   workDir = path.resolve(workDir);
   const planPath = path.join(workDir, "plan.json");
@@ -328,7 +389,7 @@ export async function renderProject(workDir, opts = {}) {
   const plan = readJSON(path.join(workDir, "plan.json"));
   const projectDir = path.join(workDir, "project");
   const output = path.resolve(opts.output || path.join(workDir, "renders", `${plan.name}.mp4`));
-  if (!opts.noCheck) await check(projectDir);
+  if (opts.check) await check(projectDir);
   log(`rendering → ${output}`);
   const t0 = Date.now();
   await render(projectDir, output, { quality: opts.quality || plan.style?.render?.quality || "looks", fps: opts.fps || plan.style?.render?.fps });

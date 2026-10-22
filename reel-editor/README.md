@@ -83,7 +83,29 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 `presets/pingel-brand.json` is the default and carries the brand look. `presets/clean.json` is plain subtitles. Any key in `presets/_defaults.json` can be overridden in a preset or passed as a path: `--preset my-look.json`.
 
-### Layout and safe zones
+### One long recording into several reels
+
+`reel clips <long video> [--count 5] [--plan-only] [--replan]` transcribes the whole recording once, has headless Claude pick up to `count` windows of 30-90 s (each starting where a thought begins and ending on its payoff, scored 0-100 for how well it would hold a cold viewer, with a hook written for each), cuts each window out of the source with the hardware encoder and runs the normal edit on it with its slice of the transcript. `clips.json` in the work dir lists the windows, scores and outputs; `--plan-only` stops after the pick, `--replan` picks again, `--auto-hook` uses the opening line instead of Claude's hook. Every edit option applies to each clip.
+
+## Hook A/B
+
+`reel hooks <workdir> "hook A" "hook B"` renders the first 4 s of a finished reel once per hook (draft quality, same cuts, captions and music) into `<workdir>/hooks/`. The drop folders do this with hook ideas 2 and 3 from `caption.txt` into a `Hook options` folder next to the reel; drop the clip again as `clip__Chosen hook.mov` to re-edit with the winner. `REEL_WATCH_HOOKS=0` turns it off.
+
+## Wide shots
+
+A source wider than the canvas (a landscape or wide clip into 9:16) is reframed: Apple Vision samples the face every half second, the x centre is smoothed with a dead band, and the crop window follows the speaker (an object-position lane on the footage) instead of staying on the middle of the frame. `reframe.enabled: false` in a preset keeps the centre crop.
+
+## Voice and speed
+
+The clean pass sums the phone's stereo to mono, then high-pass, spectral denoise, de-ess, gentle compression, a limiter and -16 LUFS, encoded with the Apple hardware encoder at the canvas size (never upscaled; a wider source keeps its width for the reframe). The two transcripts and the level scan run side by side, the final render uses GPU encoding, and the lint/layout check is opt-in (`--check`). A 1-minute phone clip now edits in about 1.5 minutes with cards and music. `REEL_SW_ENCODE=1` / `REEL_SW_RENDER=1` force software; `REEL_DEEPFILTER=<path>` is reserved for a DeepFilterNet denoiser.
+
+Sign-offs ("thanks for watching", "see you in the next one", "link in bio"...) inside the last 10 s are cut, so a reel ends on its last point.
+
+## Publishing
+
+`scripts/publish.mjs <work dir> --media-url <public link> [--trial] [--date <iso>] [--reviewer you@x.com]` writes `post.json` (caption and 5 hashtags from `caption.json`, cover frame at the hook, `isAiGenerated` when the reel has AI stills, as Instagram requires) and sends the reel to Metricool for your approval through headless Claude with only the Metricool review tool allowed. Metricool needs the video as a public link (Dropbox or Google Drive links are uploaded by it), so upload the MP4 first. It never auto-posts: a reviewer approves in Metricool.
+
+## Layout and safe zones
 
 Captions sit at 0.60 of the height (Meta's safe box ends at 65%: the username, caption and audio bar cover the bottom 35%), with a 7% left and 12% right margin so nothing runs under the action buttons on the right. The hook goes above the head or under the chin and the cards keep to the top 54%. The CTA pill sits at 0.48. The hook is on screen at full strength from frame 0 with a slow push-in on the footage (reels that spread show text by frame 4 and motion in the first half second).
 

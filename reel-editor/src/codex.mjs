@@ -114,7 +114,7 @@ export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}
 /** Rules every generated still follows: nothing that reads as a real person, no text the eye tries to read. */
 export const IMAGE_RULES = [
   "Photorealistic, cinematic, shallow depth of field, natural light, like a frame from a well-shot documentary.",
-  "No faces. If a person helps the shot, show only hands, a silhouette, or someone from behind, never a recognizable face, and never anyone posed as the speaker.",
+  "No people. Objects, places and moments carry the shot; hands are allowed only when the scene cannot work without them, and never a face, a silhouette or anyone who could read as the speaker (AI people lower trust).",
   "No readable text, letters, numbers, logos, brand names or UI labels anywhere in the image; screens and papers show only blurred or abstract shapes.",
 ];
 

@@ -154,7 +154,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
 
 // ---------------------------------------------------------------- rendering
 
-const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+import { esc } from "./text.mjs";
 const marked = (s, cls) => esc(s).replace(/\*([^*]+)\*/g, `<span class="${cls}">$1</span>`).replace(/\*/g, "");
 
 /** Inner HTML of one card. Elements with g-in animate in, in document order. */

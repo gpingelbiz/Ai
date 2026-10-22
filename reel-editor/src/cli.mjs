@@ -6,6 +6,8 @@ import { listPresets, loadPreset, loadDictionary } from "./presets.mjs";
 import { hyperframesBin } from "./render.mjs";
 import { doctor } from "./doctor.mjs";
 import { makeCarousel } from "./carousel.mjs";
+import { makeClips } from "./clips.mjs";
+import { renderHookVariants } from "./pipeline.mjs";
 import { writeJSON, log } from "./util.mjs";
 
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
@@ -16,6 +18,10 @@ Usage
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
   reel batch <folder> [options]     edit every video in a folder that has no render yet
+  reel clips <long video> [--count 5] [--plan-only] [--replan] [edit options]
+                                    one long recording into several reels: Claude picks 30-90 s windows with a
+                                    hook and a score, each is cut out and edited (clips.json lists them)
+  reel hooks <workdir> "hook A" "hook B"  the first 4 s rendered once per hook, into <workdir>/hooks/
   reel carousel <workdir> [--out <dir>] [--slides 6] [--images 2] [--force]
                                     IG carousel from a finished reel: Codex writes the slides and draws the images
                                     (reusing the reel's b-roll), the editor sets the words; 1080x1350 PNGs
@@ -53,6 +59,7 @@ Options (edit / batch)
   --sfx                    ElevenLabs whoosh on zoom-ins and pop on the hook (needs ELEVENLABS_API_KEY)
   --voiceover <script.txt> ElevenLabs narration track      --voice <id>    --replace-audio (mute footage)
   --quality <q>            draft | looks (default) | delivery        --fps <n>  default 30
+  --check                  run the HyperFrames lint/layout check before rendering (off by default; slow)
   --broll                  Codex b-roll: 1-3 generated stills cut in after the hook, slow push-in, voice and captions
                            keep going (needs the Codex CLI signed in). --no-broll turns a preset's b-roll off,
                            --new-broll draws fresh stills instead of reusing the saved ones
@@ -119,6 +126,7 @@ const EDIT_OPTIONS = {
   "caption-style": { type: "string" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
+  check: { type: "boolean" },
   force: { type: "boolean" },
   title: { type: "string" },
   dictionary: { type: "string" },
@@ -164,6 +172,20 @@ export async function main(argv) {
       console.log(path.dirname(files[0]));
       return;
     }
+    case "clips": {
+      const { opts, positionals } = parse(rest, { ...EDIT_OPTIONS, count: { type: "string" }, "plan-only": { type: "boolean" }, replan: { type: "boolean" }, "auto-hook": { type: "boolean" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const r = await makeClips(positionals[0], opts);
+      for (const c of r.clips) if (c.output) console.log(c.output);
+      return;
+    }
+    case "hooks": {
+      const { opts, positionals } = parse(rest, { seconds: { type: "string" }, quality: { type: "string" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || positionals.length < 2) return console.log(USAGE);
+      const outs = await renderHookVariants(positionals[0], positionals.slice(1), { seconds: parseFloat(opts.seconds || 4), quality: opts.quality || "draft" });
+      outs.forEach((o) => console.log(o));
+      return;
+    }
     case "render": {
       const { opts, positionals } = parse(rest);
       console.log(await renderProject(positionals[0] || ".", opts));
@@ -185,7 +207,12 @@ export async function main(argv) {
         hyperframesBin: hyperframesBin(),
       });
       words = applyCorrections(words, dict.corrections);
-      writeJSON(out, { source: input, words });
+      // Same shape the pipeline saves, so a later `reel edit --transcript` keeps the engine and the source check.
+      let sourceStat = null;
+      try { const st = (await import("node:fs")).statSync(input); sourceStat = { size: st.size, mtimeMs: Math.round(st.mtimeMs) }; } catch {}
+      let engine = null;
+      try { engine = JSON.parse((await import("node:fs")).readFileSync(out, "utf8")).engine || null; } catch {}
+      writeJSON(out, { source: input, sourceStat, engine, words });
       log(`${words.length} words → ${out}`);
       return;
     }

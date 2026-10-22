@@ -196,6 +196,19 @@ fi
 if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
   if node "$HERE/write-caption.mjs" "$work" "$folder/caption.txt" >> "$log" 2>&1 && [ -s "$folder/caption.txt" ]; then
     notify "$label caption ready" "$title"
+    # Hook A/B: the first 4 s rendered with hook options 2 and 3 from the caption, into "Hook options" (reels only).
+    if [ "$MODE" != carousel ] && [ "${REEL_WATCH_HOOKS:-1}" != 0 ] && [ -f "$work/caption.json" ]; then
+      alt=$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const h of (j.hooks||[]).slice(1,3))if(h&&h.text)console.log(h.text)}catch(e){}' "$work/caption.json" 2>/dev/null || true)
+      if [ -n "$alt" ]; then
+        hd="$folder/Hook options"
+        mkdir "$hd" 2>/dev/null || true
+        # shellcheck disable=SC2086
+        if ( cd "$work" && printf '%s\n' "$alt" | tr '\n' '\0' | xargs -0 reel hooks "$work" ) >> "$log" 2>&1 && ls "$work"/hooks/*.mp4 >/dev/null 2>&1; then
+          for h in "$work"/hooks/*.mp4; do cp "$h" "$hd/"; done
+          printf 'The same first 4 seconds with the other two hook ideas from caption.txt. Pick one, then drop the clip again as "clip__Your hook here.mov" to re-edit with it.\n' > "$hd/What is this.txt"
+        fi
+      fi
+    fi
   fi
 fi
 printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"

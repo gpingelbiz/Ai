@@ -46,7 +46,7 @@ test("one prompt picks the lines and draws the stills; faces and text are banned
   assert.match(p, /broll-1\.png/);
   assert.match(p, /vertical 9:16 image/);
   assert.match(p, /Look for every image: moody/);
-  assert.match(imageInstructions(), /No faces/);
+  assert.match(imageInstructions(), /No people/);
   assert.match(imageInstructions(), /No readable text/);
 });
 

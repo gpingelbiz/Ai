@@ -87,7 +87,7 @@ export function normalizeSlides(raw, { count, stills = [], hook = "", maxNew = 2
   return slides;
 }
 
-const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+import { esc } from "./text.mjs";
 
 /** "*10 minutes* after a bad number" -> escaped HTML with the starred phrase in a gold span. */
 export function markGold(text) {
