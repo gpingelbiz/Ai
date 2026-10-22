@@ -1,0 +1,10 @@
+{
+  "name": "pace-fast",
+  "_about": "Measured pacing overlay (herk-edit-kit EDITING-PLAYBOOK, 27 top Reels, MIT): shots average 1.1-1.4 s and never pass 2.8 s, the first cut lands at 0.6-1.0 s, no dead air over about 0.2 s between phrases with the beat after a comma kept, 1-3 word captions that hard-swap and appear two frames early, the speaker never away for more than 3.5 s. Applied on top of any preset with --pace fast or #fast in a dropped file name.",
+  "cuts": { "silence": "tight", "pad": 0.08, "beats": 0.4 },
+  "captions": { "wordsPerLine": 2, "lead": 0.067, "animation": "cut", "minShow": 0.3 },
+  "hook": { "push": false },
+  "zooms": { "cadence": { "enabled": true, "min": 1.1, "lead": 0.6, "first": 0.7, "max": 2.8, "steps": [1.08, 1.16] } },
+  "broll": { "duration": 2 },
+  "pacing": { "avgShot": [1.1, 1.4], "maxShot": 2.8, "firstCut": 1.0, "maxAway": 3.5 }
+}

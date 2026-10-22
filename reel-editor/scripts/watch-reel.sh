@@ -14,7 +14,8 @@
 # Hook from the filename: "clip__You don't have a sales problem.mov" -> --hook "You don't have a sales problem"
 # Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9,
 # "#low" drops the hook to chest height (wide shots where the default sits on your head),
-# "#top" lifts it above the head (close-up selfies where your face fills the middle).
+# "#top" lifts it above the head (close-up selfies where your face fills the middle). "#fast" adds the measured
+# short-form pacing (presets/pace-fast.json).
 # Music: the editor picks a track from REEL_WATCH_MUSIC (default ~/Reels/music; Desktop/Reels/Music is a shortcut) by
 # the mood of what is said, at REEL_WATCH_MUSIC_VOLUME (default 0.10) under the voice. "#music:calm" asks for the track
 # whose name contains "calm"; "#nomusic" skips it. Nothing happens when the folder is empty. music.txt names the track.
@@ -109,6 +110,7 @@ case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
+case "$base" in *"#fast"*) flags+=(--pace fast);; esac
 # Music: the editor picks from the music folder by the mood of what is said; "#music:<name>" asks for a track
 # whose file name contains <name>; "#nomusic" skips it. Carousels never get music.
 if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then
@@ -189,7 +191,7 @@ if [ "$MODE" = long ]; then
   folder="$(create_reel_folder "$DONE" "$REELS/videos" Clips)"
   label="$(basename "$folder")"
   made=0
-  while IFS=$'\t' read -r k out hooktxt score range why; do
+  while IFS=$'\t' read -r k out hooktxt score range why edges; do
     [ -f "$out" ] || continue
     pretty=$(printf '%s' "$hooktxt" | sed -E 's/\*//g; s/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
     cp "$out" "$folder/Clip $k - ${pretty:-clip}.mp4"
@@ -197,12 +199,12 @@ if [ "$MODE" = long ]; then
     [ -f "$cdir/covers/Cover.png" ] && cp -f "$cdir/covers/Cover.png" "$folder/Clip $k - Cover.png"
     [ -s "$cdir/review.txt" ] && cp -f "$cdir/review.txt" "$folder/Clip $k - check these words.txt"
     [ -s "$cdir/music.txt" ] && cp -f "$cdir/music.txt" "$folder/Clip $k - music.txt"
-    printf 'Clip %s  (%s, score %s)\n  %s\n  %s\n\n' "$k" "$range" "$score" "$hooktxt" "$why" >> "$folder/clips.txt"
+    printf 'Clip %s  (%s, score %s)\n  %s\n  %s\n  %s\n\n' "$k" "$range" "$score" "$hooktxt" "$why" "${edges:-}" >> "$folder/clips.txt"
     if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
       node "$HERE/write-caption.mjs" "$cdir" "$folder/Clip $k - caption.txt" >> "$log" 2>&1 || true
     fi
     made=$((made + 1))
-  done < <(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const f=(s)=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");(j.clips||[]).forEach((c,i)=>{if(c.output)console.log([i+1,c.output,(c.hook||"").replace(/\t/g," "),c.score,f(c.start)+"-"+f(c.end),(c.why||"").replace(/\t|\n/g," ")].join("\t"))})' "$work/clips.json" 2>/dev/null || true)
+  done < <(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const f=(s)=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");(j.clips||[]).forEach((c,i)=>{if(c.output)console.log([i+1,c.output,(c.hook||"").replace(/\t/g," "),c.score,f(c.start)+"-"+f(c.end),(c.why||"").replace(/\t|\n/g," "),c.problems?(c.problems.length?"Edges: "+c.problems.map((p)=>p.message).join("; "):"Edges: clean start and finish"):""].join("\t"))})' "$work/clips.json" 2>/dev/null || true)
   echo "$(date '+%F %T') done  $folder ($made clips)" >> "$log"
   notify "$label ready" "$made clip$([ "$made" = 1 ] || echo s) from $base"
   printf '{"ok":true,"input":"%s","output":"%s","name":"%s","clips":%s}\n' "$FILE" "$folder" "$name" "$made"

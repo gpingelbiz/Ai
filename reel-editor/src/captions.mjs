@@ -61,7 +61,7 @@ export function tidyLines(lines, max = 4) {
  * each run is split into balanced lines of at most wordsPerLine words.
  * Returns [{ words:[{text,start,end,key?}], start, end, text }].
  */
-export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, emojis = false } = {}) {
+export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, emojis = false, lead = 0.05, minShow = 0 } = {}) {
   const runs = [];
   let run = [];
   for (const w of words) {
@@ -78,14 +78,30 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
     }
   }
   if (run.length) runs.push(run);
-  const groups = runs.flatMap((r) => tidyLines(balancedSplit(r, Math.max(1, wordsPerLine)), Math.max(2, wordsPerLine + 1))).map((ws) => ({ words: ws }));
+  let lines = runs.flatMap((r) => tidyLines(balancedSplit(r, Math.max(1, wordsPerLine)), Math.max(2, wordsPerLine + 1)));
+  // minShow: a line that would be on screen for less than this joins the next one (fast talkers with short lines
+  // otherwise flash a word for a few frames); never past wordsPerLine + 2 words, never across a pause.
+  if (minShow > 0) {
+    const merged = [];
+    for (let k = 0; k < lines.length; k++) {
+      const cur = lines[k], next = lines[k + 1];
+      if (next && next[0].start - cur[0].start < minShow && cur.length + next.length <= wordsPerLine + 2 && next[0].start - cur[cur.length - 1].end <= maxGap) {
+        lines[k + 1] = [...cur, ...next];
+        continue;
+      }
+      merged.push(cur);
+    }
+    lines = merged;
+  }
+  const groups = lines.map((ws) => ({ words: ws }));
 
   groups.forEach((g, i) => {
     const next = groups[i + 1];
     const first = g.words[0];
     const last = g.words[g.words.length - 1];
-    g.start = r3(Math.max(0, first.start - 0.05));
-    const limit = next ? Math.max(0, next.words[0].start - 0.05) : duration;
+    // `lead`: a line appears this long before its first word (the measured preset: two frames).
+    g.start = r3(Math.max(0, first.start - lead));
+    const limit = next ? Math.max(0, next.words[0].start - lead) : duration;
     g.end = r3(Math.min(limit, last.end + 0.6));
     // A hold that would end just before the next line leaves blank frames between them: run straight into it.
     if (next && limit - g.end < 0.3) g.end = r3(limit);

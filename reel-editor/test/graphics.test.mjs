@@ -162,3 +162,12 @@ test("saved plans survive a hook change: cards and stills follow their lines by 
   assert.equal(shots[0].start, 25);
   fs.rmSync(wd, { recursive: true, force: true });
 });
+
+test("cards: a quote that carries its own quote marks gets no extra ones; a long compare label is set smaller", async () => {
+  const { sceneHTML } = await import("../src/graphics.mjs");
+  const q = sceneHTML({ type: "quote", text: 'Not "Who dropped it?" *"What happened?"*' });
+  assert.doesNotMatch(q, /&rdquo;|&ldquo;/);
+  assert.match(sceneHTML({ type: "quote", text: "Own the number" }), /&ldquo;Own the number&rdquo;/);
+  const c = sceneHTML({ type: "compare", a: { label: "Slam the desk" }, b: { label: "Breathe, lower your voice" } });
+  assert.match(c, /g-side g-side-b g-side-long/);
+});

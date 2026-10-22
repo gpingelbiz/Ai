@@ -4,13 +4,23 @@
   "description": "Self-hosted reel editor: Whisper transcript -> silence and bad-take cuts -> brand captions, hook title, magic zooms -> HyperFrames render. ElevenLabs for SFX, voiceover and Scribe transcription.",
   "type": "module",
   "license": "MIT",
-  "bin": { "reel": "bin/reel.mjs" },
-  "engines": { "node": ">=22" },
+  "bin": {
+    "reel": "bin/reel.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "test:golden": "node scripts/golden.mjs",
+    "test:golden:update": "node scripts/golden.mjs --update",
     "doctor": "node bin/reel.mjs doctor"
   },
   "dependencies": {
     "hyperframes": "^0.8.181"
+  },
+  "devDependencies": {
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0"
   }
 }

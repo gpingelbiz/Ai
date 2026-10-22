@@ -218,6 +218,8 @@ export function renderHTML(plan, footage) {
     width: W,
     height: H,
     reveal,
+    capCut: cap.animation === "cut",
+    hookPush: s.hook?.push !== false,
     reframe: plan.reframe || [],
     fps: s.render?.fps || 30,
     base: plan.framing?.scale || 1,
@@ -390,9 +392,9 @@ ${audioHTML}
             tl.fromTo(we, { scale: 1 }, { scale: 1.06, duration: 0.09, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.28);
           });
           if (PLAN.reveal) {
-            tl.fromTo(line, { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.12, ease: "power2.out" }, g.start);
+            if (!PLAN.capCut) tl.fromTo(line, { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.12, ease: "power2.out" }, g.start);
             g.words.forEach((w, j) => tl.fromTo("#cap-" + i + "-w" + j, { opacity: 0.38 }, { opacity: 1, duration: 0.07, ease: "none", immediateRender: false }, Math.max(g.start, w[0])));
-          } else {
+          } else if (!PLAN.capCut) {
             tl.fromTo(line, { scale: 0.8 }, { scale: 1, duration: 0.16, ease: "back.out(2.5)" }, g.start);
           }
           if (PLAN.activeWord) {
@@ -416,7 +418,7 @@ ${audioHTML}
         const BASE = PLAN.base || 1;
         if (BASE !== 1 || PLAN.baseShift) tl.set(WRAP, { scale: BASE, y: PLAN.baseShift || 0 }, 0);
         // Motion from the first frame: a slow push-in under the hook (a static face in frame 1 reads as a still).
-        if (PLAN.hook) tl.fromTo(WRAP, { scale: BASE }, { scale: BASE * 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
+        if (PLAN.hook && PLAN.hookPush) tl.fromTo(WRAP, { scale: BASE }, { scale: BASE * 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
         // Punch-ins. "camera": the creator move (push with a slight tilt and lift, the edges defocus for a beat, a slow
         // return); "snap": the hard cut-in zoom.
         // Cut cadence: an instant change of framing (a jump cut) between the punch-ins.

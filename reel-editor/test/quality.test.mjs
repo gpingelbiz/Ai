@@ -68,3 +68,23 @@ test("preflight layout: captions over the chin, the hook on the face, the Instag
   assert.match(describePreflight(res), /1 warning: something/);
   assert.equal(describePreflight({ status: "ok", items: [] }), "preflight: ok");
 });
+
+test("pacing checks: shots, first cut, time away and caption flashes from the plan; targets only with a pacing preset", async () => {
+  const { pacingChecks } = await import("../src/preflight.mjs");
+  const plan = {
+    video: { duration: 20 },
+    zooms: [{ t: 0.8, scale: 1.08 }, { t: 2, scale: 1 }, { t: 3.2, scale: 1.16 }],
+    graphics: [{ start: 8, duration: 4 }],
+    broll: [{ start: 14, duration: 2 }, { start: 16, duration: 2 }],
+    coldOpen: null,
+    captions: [{ start: 1, end: 1.6, text: "the call" }, { start: 1.6, end: 1.75, text: "you it" }],
+    style: {},
+  };
+  const r = pacingChecks(plan);
+  assert.equal(r.stats.firstCut, 0.8);
+  assert.equal(r.stats.maxShot, 4.8, "3.2 to 8 is the longest hold");
+  assert.equal(r.stats.maxAway, 4, "two cutaways back to back keep the speaker away 4 s");
+  assert.deepEqual(r.items.map((i) => i.code), ["caption-speed"], "no pace targets without a pacing preset");
+  const fast = pacingChecks({ ...plan, style: { pacing: { avgShot: [1.1, 1.4], maxShot: 2.8, firstCut: 1, maxAway: 3.5 } } });
+  assert.deepEqual(fast.items.map((i) => i.code).sort(), ["caption-speed", "pace-average", "pace-away", "pace-longest"]);
+});

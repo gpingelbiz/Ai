@@ -1,7 +1,7 @@
 import { SDR_FILTER, SDR_TAGS } from "./hdr.mjs";
 import { run, r3 } from "./util.mjs";
 
-export const PACE = { off: Infinity, slow: 1.0, medium: 0.6, fast: 0.35 };
+export const PACE = { off: Infinity, slow: 1.0, medium: 0.6, fast: 0.35, tight: 0.2 };
 const FILLERS = new Set(["um", "uh", "uhm", "umm", "uhh", "erm", "hmm", "mm", "ah", "er", "mhm"]);
 // Function words where an immediate repeat is almost always a stutter ("I I think", "the the").
 const STUTTER_WORDS = new Set(["i", "the", "a", "an", "to", "and", "so", "but", "we", "you", "it", "is", "in", "of", "for", "if", "what", "when", "they", "he", "she", "my", "our", "this", "that's", "it's"]);
@@ -67,16 +67,26 @@ export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5,
 
 /**
  * Build the keep-list.
- * - silence: off | slow | medium | fast (gap threshold between words)
+ * - silence: off | slow | medium | fast | tight (gap threshold between words; tight is the measured pacing preset:
+ *   no dead air over about 0.2 s between phrases)
+ * - beats: a pause after a comma, colon or list marker up to this long is a natural beat and stays (0 = off)
  * - badTakes / fillers: drop those words and force a cut around them
  * Returns { segments:[{start,end}], removed:[{start,end,reason}], words:[...with drop], originalDuration, keptDuration }.
  */
-export function planCuts(words, duration, { silence = "fast", badTakes = true, fillers = true, signOff = true, pad = 0.12, minGapCut = 0.15, minSegment = 0.3 } = {}) {
+export function planCuts(words, duration, { silence = "fast", badTakes = true, fillers = true, signOff = true, pad = 0.12, minGapCut = 0.15, minSegment = 0.3, beats = 0 } = {}) {
   const thr = PACE[silence] ?? PACE.fast;
+  const beatAfter = (w) => /[,;:]$|^(first|second|third|so|now|look)[,]?$/i.test(String(w?.text || "").trim());
   const drop = badTakes ? findBadTakes(words) : new Array(words.length).fill(null);
   if (signOff) {
     const i = findSignOff(words, duration);
     if (i >= 0) for (let k = i; k < words.length; k++) drop[k] = "sign-off";
+    // A recording that stops mid-word ("so go set-") ends on its last finished sentence when one is close by.
+    const last = words.length - 1;
+    if (last > 0 && /[-—]$/.test(String(words[last].text).trim())) {
+      let k = last - 1;
+      while (k >= 0 && !/[.!?,;]$/.test(String(words[k].text).trim())) k--;
+      if (k >= 0 && words[last].end - words[k].end <= 4) for (let j = k + 1; j <= last; j++) drop[j] = drop[j] || "cut-off";
+    }
   }
   if (fillers) {
     words.forEach((w, i) => {
@@ -101,7 +111,8 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
       else pending.push({ start: w.start, end: w.end, reason: drop[i] });
       continue;
     }
-    if (cur && !pending.length && w.start - cur.lastEnd <= thr) {
+    const gap = cur ? w.start - cur.lastEnd : 0;
+    if (cur && !pending.length && (gap <= thr || (beats > 0 && gap <= beats && beatAfter(words[i - 1])))) {
       cur.lastEnd = Math.max(cur.lastEnd, w.end);
       continue;
     }
