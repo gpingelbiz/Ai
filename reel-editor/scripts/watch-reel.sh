@@ -29,7 +29,10 @@ if [ -f "$HOME/.zshrc" ]; then
   while IFS= read -r line; do
     var="${line#export }"; var="${var%%=*}"
     [ "$var" != "PATH" ] && [ -n "${!var+x}" ] && continue
-    eval "$line"
+    # Only a plain assignment is run; a zsh-only expansion would abort the job under set -e.
+    case "$line" in
+      export\ [A-Z_]*=\"*\"|export\ [A-Z_]*=\'*\'|export\ [A-Z_]*=[A-Za-z0-9_./:~-]*) eval "$line" || true;;
+    esac
   done < <(grep -E '^export (REEL_|ELEVENLABS_|PRODUCER_|PATH=)' "$HOME/.zshrc" 2>/dev/null || true)
 fi
 export PRODUCER_BROWSER_GPU_MODE="${PRODUCER_BROWSER_GPU_MODE:-hardware}"
@@ -42,15 +45,28 @@ MUSIC_VOLUME="${REEL_WATCH_MUSIC_VOLUME:-}"
 EXTRA_ARGS="${REEL_WATCH_ARGS:-}"
 mkdir -p "$DONE" "$REELS/videos"
 
-# Wait until the file stops growing (phone exports and Drive sync write in chunks).
+# Wait until the file is finished: size stable, untouched for 5 s, and readable by ffprobe twice (phone exports and
+# Drive sync write in chunks, and a stalled copy can pass a size check while the file is still truncated).
+# REEL_WATCH_FAST=1 skips the wait (tests).
 filesize() { if stat -c %s "$1" >/dev/null 2>&1; then stat -c %s "$1"; else stat -f %z "$1"; fi; }
-last=-1
-for _ in $(seq 1 120); do
-  size=$(filesize "$FILE")
-  if [ "$size" = "$last" ] && [ "$size" -gt 0 ]; then break; fi
-  last=$size
-  sleep 2
-done
+filemtime() { if stat -c %Y "$1" >/dev/null 2>&1; then stat -c %Y "$1"; else stat -f %m "$1"; fi; }
+probe_ok() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" 2>/dev/null | grep -Eq '^[0-9.]+$'; }
+if [ "${REEL_WATCH_FAST:-0}" != 1 ]; then
+  last=-1; good=0
+  for _ in $(seq 1 150); do
+    size=$(filesize "$FILE")
+    age=$(( $(date +%s) - $(filemtime "$FILE") ))
+    if [ "$size" = "$last" ] && [ "$size" -gt 0 ] && [ "$age" -ge 5 ] && probe_ok "$FILE"; then good=$((good + 1)); else good=0; fi
+    [ "$good" -ge 2 ] && break
+    last=$size
+    sleep 2
+  done
+  if [ "$good" -lt 2 ]; then
+    echo "$(date '+%F %T') FAIL  $(basename "$FILE"): still copying or not a readable video after 5 minutes" >> "${REEL_WATCH_ROOT:-$HOME/Reels}/watch.log"
+    printf '{"ok":false,"input":"%s","error":"file never finished copying"}\n' "$FILE"
+    exit 1
+  fi
+fi
 
 # Mac notification (shows on the Mini; harmless when there is no GUI session).
 notify() { local t m; t=$(printf '%s' "$1" | tr '"' "'"); m=$(printf '%s' "$2" | tr '"' "'"); osascript -e "display notification \"$m\" with title \"$t\"" >/dev/null 2>&1 || true; }
@@ -112,6 +128,13 @@ case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; es
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
+# Housekeeping: keep the log under 5 MB and drop work folders (intermediates, not the delivered reels) older than
+# REEL_WATCH_PRUNE_DAYS (default 30; 0 turns it off).
+if [ -f "$log" ] && [ "$(filesize "$log")" -gt 5000000 ]; then tail -c 1000000 "$log" > "$log.tmp" && mv -f "$log.tmp" "$log"; fi
+prune="${REEL_WATCH_PRUNE_DAYS:-30}"
+if [ "$prune" -gt 0 ] 2>/dev/null; then
+  find "$REELS/videos" -mindepth 1 -maxdepth 1 -type d -not -name ".*" -mtime +"$prune" -exec rm -rf {} + 2>/dev/null || true
+fi
 echo "$(date '+%F %T') start $base ($MODE) -> $work ${flags[*]:-}" >> "$log"
 cd "$REELS"
 # shellcheck disable=SC2086

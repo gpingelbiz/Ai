@@ -38,8 +38,8 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | `REEL_WATCH_ROOT` | `~/Reels` | work folder (renders in `videos/<name>/`) |
 | `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per drop: `<date> Reel <n>` (from `REEL_WATCH_RAW`), `<date> Reel <n> with B-roll` (from `REEL_WATCH_RAW_BROLL`, default `~/Reels/raw-broll`) or `<date> Carousel <n>` (from `REEL_WATCH_RAW_CAROUSEL`, default `~/Reels/raw-carousel`), each with `caption.txt`; on the Mini this is `~/Desktop/Reels` |
 | `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set it to an empty string (`export REEL_WATCH_CTA=""`) for no CTA |
-| `REEL_WATCH_MUSIC` | `~/Reels/music` | music folder: a random track plays under every reel (mp3, m4a, wav); empty means no music |
-| `REEL_WATCH_MUSIC_VOLUME` | preset (0.12) | music level under the voice |
+| `REEL_WATCH_MUSIC` | `~/Reels/music` | music folder (`<Mood> - Title - Artist.mp3`): a track picked by the mood of the transcript plays under every reel; empty means no music |
+| `REEL_WATCH_MUSIC_VOLUME` | preset (0.10) | music level under the voice |
 | `REEL_WATCH_CAROUSEL_IMAGES` | `3` | new Codex images per carousel from `raw-carousel` |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 

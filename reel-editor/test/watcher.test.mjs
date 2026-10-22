@@ -86,7 +86,7 @@ echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > 
   for (const m of music) fs.writeFileSync(path.join(musicDir, m), "audio");
   const done = path.join(home, "Done");
   spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], {
-    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_CAPTION: "0", REEL_WATCH_CTA: "" },
+    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: "0", REEL_WATCH_CTA: "" },
     stdio: "pipe",
   });
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
@@ -108,14 +108,14 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   assert.ok(lines.some((l) => /^edit .*raw-broll\/clip\.mov .*--broll --graphics --caption-style reveal/.test(l)), "b-roll reel: the full look");
   assert.ok(lines.some((l) => /^edit .*raw-carousel\/clip\.mov .*--no-render/.test(l)));
   assert.ok(lines.some((l) => /^carousel .*clip-carousel --out .*Carousel 1 --images 3$/.test(l)));
-  assert.deepEqual(r.seen, ["broll-clip.mov.done", "carousel-clip.mov.done", "clip.mov.done"]);
+  assert.deepEqual(r.seen.map((m) => m.replace(/@.*(\.done|\.failed)$/, "$1")).filter((m) => !m.startsWith(".")), ["broll-clip.mov.done", "carousel-clip.mov.done", "clip.mov.done"]);
 });
 
 test("no b-roll back from Codex leaves a note; a failed carousel leaves a note and is marked failed", () => {
   const r = fakeDrops({ brollShots: 0, carouselFails: true });
   assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["No b-roll this time.txt", "Own it first.mp4"]);
   assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Carousel failed.txt"]);
-  assert.ok(r.seen.includes("carousel-clip.mov.failed"));
+  assert.ok(r.seen.some((m) => /^carousel-clip\.mov@.*\.failed$/.test(m)));
 });
 
 test("music: a random track from the folder, #music:name picks one, #nomusic skips; carousels never get music", () => {

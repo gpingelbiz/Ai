@@ -22,6 +22,11 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3, slug, run, VIDEO_EXTS } 
 /** A saved transcript is reused only for the same source file (same path, size and modified time). A work folder
  *  name can repeat for a different clip (IMG_0287 edited in chat, then dropped again), and reusing its words
  *  would caption the new video with the old transcript. Transcripts saved before this check carry only a path. */
+/** A half-written words.json (a killed run) reads as absent instead of failing every retry. */
+function readJSONSafe(p) {
+  try { return readJSON(p); } catch { return null; }
+}
+
 function sameSource(saved, input) {
   if (!saved?.source || path.resolve(saved.source) !== input) {
     if (saved?.source) log(`saved transcript is for ${saved.source}; transcribing this file fresh`);
@@ -59,8 +64,8 @@ export async function runEdit(input, opts = {}) {
   if (opts.transcript) {
     words = importTranscript(path.resolve(opts.transcript));
     log(`imported ${words.length} words from ${opts.transcript}`);
-  } else if (fs.existsSync(wordsPath) && !opts.force && sameSource(readJSON(wordsPath), input)) {
-    const saved = readJSON(wordsPath);
+  } else if (fs.existsSync(wordsPath) && !opts.force && sameSource(readJSONSafe(wordsPath), input)) {
+    const saved = readJSONSafe(wordsPath);
     words = saved.words;
     primaryEngine = saved.engine || null;
     reusedWords = true;

@@ -34,9 +34,12 @@ export function readJSON(p) {
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
 
+/** Written whole or not at all (temp file + rename), so a killed run never leaves a half-written plan behind. */
 export function writeJSON(p, v) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(v, null, 2) + "\n");
+  const tmp = `${p}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(v, null, 2) + "\n");
+  fs.renameSync(tmp, p);
 }
 
 export function ensureDir(p) {

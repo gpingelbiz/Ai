@@ -90,7 +90,7 @@ If you said yes to the drop folder, it is already on. Desktop/Reels has three dr
 
 Every folder also gets `caption.txt` (a caption, 3 hashtags and 3 hook ideas), and reels get `check these words.txt` when there is something to check.
 
-**Music:** put licensed tracks (mp3, m4a or wav, for example Epidemic Sound downloads) in **Desktop/Reels/Music**. Every reel gets one at random, low under your voice with a fade in and out, and `music.txt` in the reel folder names the track. Name a clip `clip #music:calm.mov` to use the track whose name has "calm", or `clip #nomusic.mov` for none. An empty Music folder means no music. Reels are named after their hook, and the numbers start again at 1 each day. To get two of them from one clip, drop it into both folders.
+**Music:** put licensed tracks (mp3, m4a or wav, for example Epidemic Sound downloads) in **Desktop/Reels/Music**, named `<Mood> - Title - Artist.mp3`. The editor reads what you say and picks a track from the moods that fit, low under your voice (about 20 dB down), swelling a little in your pauses. Tracks named `Signature ...` come back more often; move tracks into the `Bench` folder to park them. `music.txt` in the reel folder names the track. Name a clip `clip #music:calm.mov` to force the track whose name has "calm", or `clip #nomusic.mov` for none. An empty Music folder means no music. Reels are named after their hook, and the numbers start again at 1 each day. To get two of them from one clip, drop it into both folders.
 
 The Raw folders are shortcuts to `~/Reels/raw`, `~/Reels/raw-broll` and `~/Reels/raw-carousel`. macOS stops background jobs from reading Desktop folders, so leave them as shortcuts.
 

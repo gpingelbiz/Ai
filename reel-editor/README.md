@@ -83,13 +83,18 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 `presets/pingel-brand.json` is the default and carries the brand look. `presets/clean.json` is plain subtitles. Any key in `presets/_defaults.json` can be overridden in a preset or passed as a path: `--preset my-look.json`.
 
-### Dictionary
+### Layout and safe zones
+
+Captions sit at 0.60 of the height (Meta's safe box ends at 65%: the username, caption and audio bar cover the bottom 35%), with a 7% left and 12% right margin so nothing runs under the action buttons on the right. The hook goes above the head or under the chin and the cards keep to the top 54%. The CTA pill sits at 0.48. The hook is on screen at full strength from frame 0 with a slow push-in on the footage (reels that spread show text by frame 4 and motion in the first half second).
+
+## Dictionary
 
 `dictionary.json` has four lists:
 
 - `terms`: phrases that always get the gold highlight (framework names, money words). Also fed to Whisper as the initial prompt so it spells them right.
 - `phrases`: extra phrases that always get the gold highlight but are NOT sent to Whisper. Use this for everyday phrases (`show up`): a hint can change what Whisper hears, and it once dropped a clipped opening "Don't".
 - `corrections`: fixes for how Whisper hears a term (`"ghost p and l"` becomes `Ghost P&L`).
+- `candidates`: everyday business words (close, sales, pipeline, money...) that get gold at most once per clip and never on two lines in a row, so gold keeps meaning something.
 - `powerWords`: single words that get highlighted when no term is in the line.
 
 With `autoKeywords` on (the brand preset), lines with none of the above get an automatic pick: a number with its unit (`three minutes`), a number word, or a strong 6+ letter word. A word gets automatic gold only once per clip and never on two automatic lines in a row. `--no-auto-keywords` turns it off; `--hook-position 0.40` drops the hook to chest height for wide shots.
@@ -100,7 +105,9 @@ With `autoKeywords` on (the brand preset), lines with none of the above get an a
 
 ## Music
 
-`--music <file>` loops a track to the reel's length at `--music-volume` (0.12) with a fade in and out. The drop folders pick one at random from `~/Reels/music` (Desktop/Reels/Music; `REEL_WATCH_MUSIC`), honor `#music:<name>` and `#nomusic` in the filename, and write `music.txt` in the reel folder naming the track. Tracks are the user's own licensed files (Epidemic Sound downloads work as they are).
+`--music-dir <folder>` picks the bed from a folder of `<Mood> - Title - Artist.mp3` files by the mood of what is said: headless Claude reads the transcript and names 2-3 moods from the ones on disk (or none, for a raw confrontation), and a track is drawn inside them; files named `Signature ...` are the brand sound and weigh 3; a `Bench/` subfolder is parked. `--music-want <text>` (the drop folders' `#music:<name>`) forces the track whose name contains it; `--music <file>` is a fixed file. The bed is normalized to -16 LUFS, then plays at `--music-volume` (0.10, about 20 dB under the voice) from 0.5 s in, with a 1 s fade in, 1.5 s fade out and a swell to about double in pauses of 0.9 s or more (`--no-duck` for a flat level). `music.txt` in the work dir and the reel folder names the track. The drop folders use `~/Reels/music` (Desktop/Reels/Music; `REEL_WATCH_MUSIC`); `#nomusic` skips. The mix runs through a true-peak ceiling of -1.5 dBTP and the delivered file is normalized to -14 LUFS / -1 dBTP in two passes (`render.deliveryLoudness: false` to skip).
+
+Research behind the defaults (Oct 2026): an active pool of 30-40 tracks with 5-8 signature ones beats a big random one, 8-10% under the voice is safer than 12% on phone speakers, Instagram turns loud uploads down toward -14 LUFS, and no mainstream editor matches music to the words.
 
 ## Graphic cards and reveal captions
 
