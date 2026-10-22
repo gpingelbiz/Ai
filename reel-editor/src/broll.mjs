@@ -1,7 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { codexExec, hasCodex, codexPausedUntil, imageInstructions, savedImage } from "./codex.mjs";
+import os from "node:os";
 import { log, warn, writeJSON, readJSON, ensureDir, r3 } from "./util.mjs";
+
+/** Scenes drawn for recent reels, so the next reel does not get the same empty conference room again. */
+export const recentFile = (env = process.env) => env.REEL_BROLL_RECENT || path.join(os.homedir(), ".cache", "reel-editor", "broll-recent.json");
+export function readRecent(file = recentFile()) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")).scenes || []; } catch { return []; }
+}
+export function rememberScenes(scenes, file = recentFile(), keep = 24) {
+  const list = [...readRecent(file), ...scenes.map((s) => String(s).replace(/\s+/g, " ").trim()).filter(Boolean)].slice(-keep);
+  try { ensureDir(path.dirname(file)); fs.writeFileSync(file, JSON.stringify({ scenes: list }, null, 2) + "\n"); } catch {}
+  return list;
+}
 
 /**
  * B-roll: Codex reads the finished transcript, picks the lines a picture would land on, and draws a still for each.
@@ -62,13 +74,14 @@ export const PICKS_SCHEMA = {
   additionalProperties: false,
 };
 
-export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4, style = "" }) {
+export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4, style = "", recent = [] }) {
   return [
     "You are a reel editor adding b-roll to a talking-head Instagram reel.",
     `First pick ${count} caption lines where cutting away to a still image would make the point land harder, spread across the reel, at least ${spacing} seconds apart.`,
     "For each, describe the image in one or two sentences: a concrete, literal, cinematic scene that shows what the line says (an object, a place, a moment). Prefer things you can photograph: a phone face-down on a desk, an empty conference room at night, a hand on a door handle.",
     "Scenes never show faces or anyone who could read as the speaker, readable text, numbers, logos or brands, or clip-art metaphors (lightbulbs, chess pieces, rockets, puzzle pieces, mountains, arrows).",
     "Skip lines where the speaker is talking about themself in a way only their face can carry.",
+    recent.length ? `Recent reels already used these scenes; pick something clearly different (another object, place or moment):\n${recent.map((s) => `- ${s}`).join("\n")}` : "",
     `Name the images broll-1.png, broll-2.png and so on, in time order.`,
     imageInstructions({ aspect: "9:16", style }),
     "",
@@ -117,7 +130,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   try {
     log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"} and drawing the stills…`);
     const transcript = groups.map((g) => g.text).join(" ");
-    const reply = await codexExec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: len + gap, style: settings.style || "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
+    const reply = await codexExec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: len + gap, style: settings.style || "", recent: readRecent() }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
     picks = JSON.parse(reply).picks || [];
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);
@@ -127,7 +140,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   const drawn = picks.map((p) => ({ ...p, path: savedImage(dir, path.basename(String(p.file || ""))) })).filter((p) => p.path);
   const files = new Map(drawn.map((p) => [p.line, p.path]));
   const shots = placeBroll(drawn, candidates, { len, gap, max }).map((s) => ({ ...s, file: files.get(s.line) }));
-  if (shots.length) writeJSON(planPath, { key, shots });
+  if (shots.length) { writeJSON(planPath, { key, shots }); rememberScenes(shots.map((s) => s.scene)); }
   if (shots.length < picks.length) warn(`b-roll: ${picks.length - shots.length} of ${picks.length} picks had no image or no room`);
   log(`b-roll: ${shots.length} still${shots.length === 1 ? "" : "s"} ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
   return shots;

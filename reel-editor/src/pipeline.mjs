@@ -15,6 +15,7 @@ import { makeGraphics } from "./graphics.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
+import { makeCover } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
@@ -179,7 +180,7 @@ export async function runEdit(input, opts = {}) {
   const groups = preset.captions.enabled ? markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords }) : [];
   const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: Math.min(preset.hook.duration, duration) }) : null;
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
-  const zooms = preset.zooms.enabled ? planZooms(groups.length ? groups : cleanWords, duration, preset.zooms) : [];
+  let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
 
   // Face: captions sit just under the chin (never over the mouth), the hook stays off the head.
@@ -210,7 +211,7 @@ export async function runEdit(input, opts = {}) {
     }
     if (preset.hook.autoPlace && opts.hookPosition == null && sameShape) {
       const t0 = hook.start, t1 = hook.start + hook.duration;
-      const head = headExtent(detection, { zoom: zoomDuring(zooms, t0, t1) });
+      const head = headExtent(detection, { zoom: 1.06 }); // the opening push-in reaches 1.06 by the end of the hook
       const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
       const spot = placeHook(head, { words: hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), W: canvas0.width, H: canvas0.height, fontPx, captionTop, defaultPosition: preset.hook.position });
       if (head) {
@@ -235,7 +236,6 @@ export async function runEdit(input, opts = {}) {
   }
   log(`captions: ${groups.length} lines, ${groups.filter((g) => g.words.some((w) => w.key)).length} with a highlight`);
   log(`hook: ${hook ? `"${hook.text}"${hook.auto ? " (auto, pass --hook for a written one)" : ""}` : "none"}`);
-  log(`zooms: ${zooms.length}`);
   if (cta) log(`cta: "${cta.text}" at ${cta.start}s for ${cta.duration}s (${cta.style})`);
   if (review) {
     const spots = writeReview(workDir, { ...review, segments: cuts.segments, title: hook?.text || name });
@@ -243,13 +243,19 @@ export async function runEdit(input, opts = {}) {
   }
 
   // 4b. Graphic cards (Claude writes them from the transcript), then b-roll photos (Codex) in the gaps between
-  // them. Either one failing leaves the reel without it.
+  // them. Either one failing leaves the reel without it. Punch-ins come last: on gold lines, clear of both.
+  const headForZoom = headExtent(detection);
+  const tightFrame = !!(headForZoom && headForZoom.bottom - headForZoom.top > 0.4);
   const graphics = preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics })
     : [];
   const broll = preset.broll?.enabled && shownGroups.length
     ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: graphics })
     : [];
+  if (preset.zooms.enabled) {
+    zooms = planZooms(shownGroups, duration, { ...preset.zooms, busy: [...graphics, ...broll], hook, tight: tightFrame });
+    log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}`);
+  }
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
@@ -278,7 +284,11 @@ export async function runEdit(input, opts = {}) {
   log(`project: ${projectDir} (edit ${path.join(workDir, "plan.json")} and run: reel build ${workDir})`);
   if (opts.noRender) return { workDir, plan };
   const output = await renderProject(workDir, opts);
-  return { workDir, plan, output };
+  let cover = null;
+  if (preset.cover?.enabled !== false && hook) {
+    try { cover = await makeCover(workDir, plan, { handle: preset.carousel?.handle || "" }); } catch (e) { warn(`cover skipped: ${String(e.message).split("\n")[0]}`); }
+  }
+  return { workDir, plan, output, cover };
 }
 
 function readVoice(plan) {

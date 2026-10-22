@@ -29,6 +29,33 @@ export function balancedSplit(run, per) {
   return out;
 }
 
+// Words a line should not start or end on: a line that reads "OR A" or ends on "the" is a fragment, not a thought.
+const GLUE = new Set(["a", "an", "the", "or", "and", "but", "of", "to", "in", "on", "at", "for", "with", "from", "by", "as", "than", "so", "if", "that", "your", "my", "our", "their", "his", "her", "its"]);
+const isGlue = (w) => GLUE.has(norm(w.text));
+
+/**
+ * Keep phrases whole: a line made only of glue words joins the next line, and a line ending on a glue word hands
+ * that word to the next line ("a bad number or | a bad month" becomes "a bad number | or a bad month"). A line may
+ * grow to `max` + 1 words rather than leave a dangling word. Runs until nothing moves.
+ */
+export function tidyLines(lines, max = 4) {
+  let out = lines.map((l) => [...l]);
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (let i = 0; i < out.length; i++) {
+      const cur = out[i];
+      if (!cur.length) continue;
+      const next = out[i + 1];
+      if (!next) continue;
+      if (cur.every(isGlue) && cur.length + next.length <= max + 2) { out[i + 1] = [...cur, ...next]; out[i] = []; moved = true; continue; }
+      if (isGlue(cur[cur.length - 1]) && cur.length > 1 && next.length + 1 <= max + 1) { next.unshift(cur.pop()); moved = true; }
+    }
+    out = out.filter((l) => l.length);
+    if (!moved) break;
+  }
+  return out;
+}
+
 /**
  * Group words into caption lines. A run ends at a sentence end or a pause longer than maxGap;
  * each run is split into balanced lines of at most wordsPerLine words.
@@ -51,7 +78,7 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
     }
   }
   if (run.length) runs.push(run);
-  const groups = runs.flatMap((r) => balancedSplit(r, Math.max(1, wordsPerLine))).map((ws) => ({ words: ws }));
+  const groups = runs.flatMap((r) => tidyLines(balancedSplit(r, Math.max(1, wordsPerLine)), Math.max(2, wordsPerLine + 1))).map((ws) => ({ words: ws }));
 
   groups.forEach((g, i) => {
     const next = groups[i + 1];

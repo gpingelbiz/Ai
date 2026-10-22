@@ -100,3 +100,18 @@ test("a 429 pauses Codex for everyone; refusals and other errors do not", async 
   fs.writeFileSync(f, String(Date.now() - 1));
   assert.equal(codexPausedUntil(Date.now(), env), 0);
 });
+
+test("recent scenes are remembered (last 24) and shown to Codex as things to avoid", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { readRecent, rememberScenes } = await import("../src/broll.mjs");
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "br-")), "recent.json");
+  assert.deepEqual(readRecent(f), []);
+  rememberScenes(["an empty conference room", "  a dinner table  "], f);
+  assert.deepEqual(readRecent(f), ["an empty conference room", "a dinner table"]);
+  rememberScenes(Array.from({ length: 30 }, (_, i) => `scene ${i}`), f);
+  assert.equal(readRecent(f).length, 24);
+  const cands = brollCandidates(groups.slice(0, 6), 14, { hook: { start: 0, duration: 3 } });
+  assert.match(picksPrompt({ candidates: cands, transcript: "x", hook: "h", count: 1, recent: ["an empty conference room"] }), /already used these scenes[\s\S]*- an empty conference room/);
+});

@@ -53,6 +53,10 @@ It runs Claude Code headless with only the Sandcastles hook and format lookups a
 
 The drop folders split the looks: `Raw - Reel` is the classic look (`--no-graphics --caption-style pop`), `Raw - Reel with B-roll` is the full look. By hand, the brand preset cuts in graphic cards (`--graphics`: stats, checklists, highlighted quotes, headlines, step diagrams, written by headless Claude from the transcript) and uses word-by-word reveal captions (`--caption-style reveal`). Read `graphics.json` after an edit and check every card says only what Greg said (numbers with their qualifiers). `--no-graphics` / `--caption-style pop` give the earlier look.
 
+## Cover
+
+Every reel gets `cover.png` in its work dir (the drop folder copies it as `Cover.png`); tell Greg to upload it as the Instagram cover. `reel cover <workdir>` remakes it.
+
 ## Long recordings and hook tests
 
 `reel clips <long video> --count 5` turns a live or training into scored reels (clips.json); `reel hooks <workdir> "A" "B"` renders the first 4 s per hook for a pick. Landscape sources are reframed to follow the face automatically. `scripts/publish.mjs <workdir> --media-url <link> --reviewer <email>` sends a reel to Metricool for Greg's approval (never auto-posts); reels with AI stills are flagged isAiGenerated.

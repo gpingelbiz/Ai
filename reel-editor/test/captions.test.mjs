@@ -20,12 +20,12 @@ test("dictionary corrections merge split framework names and keep punctuation", 
   assert.equal(w[i + 1].end, 3.55);
 });
 
-test("groupWords makes 3-word lines, breaks on sentence end and pauses, never overlaps", () => {
+test("groupWords makes short lines (3, one more to keep a phrase whole), breaks on sentence end and pauses, never overlaps", () => {
   const groups = groupWords(sample, 24, { wordsPerLine: 3 });
-  assert.ok(groups.every((g) => g.words.length <= 3));
+  assert.ok(groups.every((g) => g.words.length <= 4));
   for (let i = 1; i < groups.length; i++) assert.ok(groups[i].start >= groups[i - 1].end);
   assert.equal(groups[0].text, "Most coaches don't");
-  assert.ok(groups.some((g) => g.text === "sales problem"), "trailing period stripped and sentence ends the line");
+  assert.ok(groups.some((g) => /sales problem$/.test(g.text)), "trailing period stripped and sentence ends the line");
 });
 
 test("markKeywords prefers dictionary terms, then numbers and power words", () => {
@@ -48,12 +48,14 @@ test("pickHook uses the first sentence or the supplied text", () => {
   assert.equal(pickHook(sample, { text: "You don't have a sales problem." }).text, "You don't have a sales problem");
 });
 
-test("planZooms alternates in/out and respects the interval", () => {
-  const groups = groupWords(sample, 24);
-  const z = planZooms(groups, 24, { interval: 4, scales: [1.14, 1.22] });
-  assert.ok(z.length >= 2);
-  assert.ok(z[0].scale > 1 && z[1].scale === 1);
-  for (let i = 1; i < z.length; i++) assert.ok(z[i].t - z[i - 1].t >= 4 * 0.8 - 0.001);
+test("planZooms punches in on gold lines only, releases each one, and keeps them apart", () => {
+  const groups = markKeywords(groupWords(sample, 24), dict);
+  const z = planZooms(groups, 24, { minSpacing: 4, scales: [1.14, 1.22] });
+  const ins = z.filter((k) => k.scale > 1);
+  assert.ok(ins.length >= 1);
+  for (const k of ins) assert.ok(groups.some((g) => g.start === k.t && g.words.some((w) => w.key)), "every punch-in sits on a gold line");
+  for (let i = 1; i < ins.length; i++) assert.ok(ins[i].t - ins[i - 1].t >= 4);
+  assert.equal(z.filter((k) => k.scale === 1).length, ins.length, "each punch-in is released");
 });
 
 test("renderHTML produces a standalone composition with one timeline and local fonts", () => {
@@ -91,4 +93,16 @@ test("renderHTML renders the CTA pill and hook styles", () => {
   assert.doesNotMatch(outline, /id="cta"/);
   const box = renderHTML({ ...base, style: { ...style, hook: { ...style.hook, style: "box" } }, hook: pickHook(sample), cta: null }, "assets/footage.mp4");
   assert.match(box, /background: rgba\(11, 11, 13, 0.86\)/);
+});
+
+test("caption lines keep phrases whole: no line made of glue words, none ending on one", async () => {
+  const { tidyLines, groupWords } = await import("../src/captions.mjs");
+  const w = (s) => s.split(" ").map((t, i) => ({ text: t, start: i, end: i + 0.5 }));
+  const lines = groupWords(w("a bad number or a bad month here is why you can breathe lower your voice"), 100, { wordsPerLine: 3 }).map((g) => g.text);
+  for (const l of lines) {
+    assert.doesNotMatch(l, /\b(or|a|the|of|to|and|your)$/, `line ends on glue: "${l}"`);
+    assert.notEqual(l, "or a");
+  }
+  assert.ok(lines.every((l) => l.split(" ").length <= 5));
+  assert.deepEqual(tidyLines([[{ text: "or" }, { text: "a" }], [{ text: "bad" }, { text: "month" }]]).map((l) => l.map((x) => x.text).join(" ")), ["or a bad month"]);
 });

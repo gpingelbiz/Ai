@@ -7,6 +7,8 @@ import { hyperframesBin } from "./render.mjs";
 import { doctor } from "./doctor.mjs";
 import { makeCarousel } from "./carousel.mjs";
 import { makeClips } from "./clips.mjs";
+import { makeCover } from "./cover.mjs";
+import { readJSON } from "./util.mjs";
 import { renderHookVariants } from "./pipeline.mjs";
 import { writeJSON, log } from "./util.mjs";
 
@@ -22,6 +24,7 @@ Usage
                                     one long recording into several reels: Claude picks 30-90 s windows with a
                                     hook and a score, each is cut out and edited (clips.json lists them)
   reel hooks <workdir> "hook A" "hook B"  the first 4 s rendered once per hook, into <workdir>/hooks/
+  reel cover <workdir>              the cover image again (cover.png: a hook-window frame with the hook at chest height)
   reel carousel <workdir> [--out <dir>] [--slides 6] [--images 2] [--force]
                                     IG carousel from a finished reel: Codex writes the slides and draws the images
                                     (reusing the reel's b-roll), the editor sets the words; 1080x1350 PNGs
@@ -179,6 +182,13 @@ export async function main(argv) {
       if (opts.help || !positionals[0]) return console.log(USAGE);
       const r = await makeClips(positionals[0], opts);
       for (const c of r.clips) if (c.output) console.log(c.output);
+      return;
+    }
+    case "cover": {
+      const { positionals } = parse(rest, { help: { type: "boolean", short: "h" } });
+      const wd = path.resolve(positionals[0] || ".");
+      const plan = readJSON(path.join(wd, "plan.json"));
+      console.log(await makeCover(wd, plan, { handle: plan.style?.carousel?.handle || "" }));
       return;
     }
     case "hooks": {
