@@ -14,18 +14,19 @@ export const SOUNDS = {
 };
 
 /**
- * Build the cue list. `level` scales every cue (preset audio.soundsVolume). Markers sound once per caption line
- * that carries one, and never within 0.35 s of a louder cue, so a slam is never doubled by a scratch.
+ * Build the cue list. `level` scales every cue (preset audio.soundsVolume). Marker scratches are off unless
+ * `markers` is true (Greg: the chirps on the words were too much); when on, one per caption line and never
+ * within 0.35 s of a louder cue.
  * Returns [{id, src, start, duration, volume, track}].
  */
-export function soundCues({ zooms = [], graphics = [], slams = [], coldOpen = null, captions = [], annotate = false, level = 0.3, lead = { move: 0.06, slam: 0.02, card: 0.0, flash: 0.05, marker: 0.0 } } = {}) {
+export function soundCues({ zooms = [], graphics = [], slams = [], coldOpen = null, captions = [], annotate = false, markers = false, level = 0.3, lead = { move: 0.06, slam: 0.02, card: 0.0, flash: 0.05, marker: 0.0 } } = {}) {
   const cues = [];
   const add = (kind, at) => cues.push({ kind, at: r3(Math.max(0, at - (lead[kind] || 0))) });
   for (const z of zooms) if (z.scale > 1 && !z.cut) add("move", z.t);
   for (const g of graphics) add("card", g.start + 0.1);
   for (const s of slams) add("slam", s.t + 0.3);
   if (coldOpen) add("flash", coldOpen.duration);
-  if (annotate) {
+  if (annotate && markers) {
     for (const g of captions) {
       const w = (g.words || []).find((x) => x.key);
       if (w) add("marker", Math.max(g.start, w.start ?? g.start) + 0.04);

@@ -7,7 +7,8 @@ import { renderHTML } from "../src/compose.mjs";
 const groups = Array.from({ length: 30 }, (_, i) => ({ start: i * 2, end: i * 2 + 1.8, text: `line ${i}`, words: [] }));
 
 test("b-roll count scales with length", () => {
-  assert.equal(brollCount(12), 0);
+  assert.equal(brollCount(7), 0);
+  assert.equal(brollCount(12), 1, "a short reel still gets one still");
   assert.equal(brollCount(20), 1);
   assert.equal(brollCount(40), 3);
   assert.equal(brollCount(90), 3);

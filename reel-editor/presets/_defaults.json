@@ -84,7 +84,8 @@
       "hook": "short punchy pop hit, subtle, clean, no music"
     },
     "sounds": false,
-    "soundsVolume": 0.3
+    "soundsVolume": 0.3,
+    "soundMarkers": false
   },
   "render": {
     "quality": "looks",

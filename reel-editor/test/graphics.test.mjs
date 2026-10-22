@@ -34,7 +34,8 @@ test("placement: after the hook, spaced, ends before the CTA and the last 1.5s",
   assert.deepEqual(placed.map((s) => s.line), [2, 10, 35]);
   assert.equal(placed[2].start, 70);
   assert.equal(placed[2].duration, 2.5, "trimmed to end at the CTA");
-  assert.equal(graphicsCount(12), 0);
+  assert.equal(graphicsCount(8), 0);
+  assert.equal(graphicsCount(12), 1, "a short reel still gets one card");
   assert.equal(graphicsCount(67), 6);
 });
 

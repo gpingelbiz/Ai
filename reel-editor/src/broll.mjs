@@ -21,9 +21,11 @@ export function rememberScenes(scenes, file = recentFile(), keep = 24) {
  * captions stay on top. Never during the hook, never in the last second, never over the CTA.
  */
 
-/** How many cutaways a reel of this length gets: about one per 12 seconds after the hook, 1 to `max`. */
+/** How many cutaways a reel of this length gets: about one per 12 seconds after the hook, 1 to `max`. A short
+ *  reel (8 s and up) still gets one, so a 10-second clip in the b-roll folder does not come back plain. */
 export function brollCount(duration, { max = 3, every = 12 } = {}) {
-  return Math.max(0, Math.min(max, Math.floor((duration - 4) / every)));
+  const n = Math.max(0, Math.min(max, Math.floor((duration - 4) / every)));
+  return n === 0 && duration >= 8 && max >= 1 ? 1 : n;
 }
 
 /**

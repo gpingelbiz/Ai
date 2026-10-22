@@ -354,7 +354,7 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
   }
 
   if (preset.audio.sounds && cues) {
-    const tracks = soundCues({ ...cues, level: preset.audio.soundsVolume ?? 0.3 }).filter((t) => t.start < duration - 0.2);
+    const tracks = soundCues({ ...cues, markers: !!preset.audio.soundMarkers, level: preset.audio.soundsVolume ?? 0.3 }).filter((t) => t.start < duration - 0.2);
     audio.tracks.push(...tracks);
     log(`sounds: ${tracks.length ? describeCues(tracks) : "nothing to sound"}`);
   }

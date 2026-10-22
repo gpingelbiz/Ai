@@ -15,6 +15,7 @@ test("sound cues: one per edit, markers skipped next to a louder cue, levels sca
     coldOpen: { duration: 0.6 },
     captions: [{ start: 30.2, words: [{ text: "truth", key: true, start: 30.26 }] }, { start: 40, words: [{ text: "own", key: true, start: 40.1 }] }, { start: 44, words: [{ text: "x" }] }],
     annotate: true,
+    markers: true,
     level: 0.3,
   });
   assert.deepEqual(cues.map((c) => c.id), ["sfx-flash-1", "sfx-move-1", "sfx-card-1", "sfx-slam-1", "sfx-marker-1"], "a jump cut makes no sound; the marker next to the slam is dropped");
@@ -24,6 +25,7 @@ test("sound cues: one per edit, markers skipped next to a louder cue, levels sca
   for (const k of Object.keys(SOUNDS)) assert.ok(fs.existsSync(path.join(PKG_ROOT, "assets", "sfx", SOUNDS[k].file)), `${k} file vendored`);
   assert.ok(fs.readFileSync(path.join(PKG_ROOT, "assets", "sfx", "NOTICE.md"), "utf8").includes("CC0"));
   assert.deepEqual(soundCues({ zooms: [], graphics: [] }), []);
+  assert.ok(soundCues({ captions: [{ start: 1, words: [{ text: "own", key: true, start: 1 }] }], annotate: true }).length === 0, "marker sounds are off by default");
 });
 
 test("cadence: jump cuts fill the gaps between punch-ins, alternate the frame, stay clear of cards and the hook", () => {

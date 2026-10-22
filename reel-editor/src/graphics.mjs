@@ -91,9 +91,10 @@ export function sceneDuration(s) {
   return 5.5;
 }
 
-/** Up to one card per `every` seconds after the hook. */
+/** Up to one card per `every` seconds after the hook; a short reel (9 s and up) still gets one. */
 export function graphicsCount(duration, { max = 6, every = 10 } = {}) {
-  return Math.max(0, Math.min(max, Math.floor((duration - 4) / every)));
+  const n = Math.max(0, Math.min(max, Math.floor((duration - 4) / every)));
+  return n === 0 && duration >= 9 && max >= 1 ? 1 : n;
 }
 
 const clean = (s, max = 80) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);

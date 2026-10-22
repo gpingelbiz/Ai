@@ -40,7 +40,7 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set it to an empty string (`export REEL_WATCH_CTA=""`) for no CTA |
 | `REEL_WATCH_MUSIC` | `~/Reels/music` | music folder (`<Mood> - Title - Artist.mp3`): a track picked by the mood of the transcript plays under every reel; empty means no music |
 | `REEL_WATCH_MUSIC_VOLUME` | preset (0.10) | music level under the voice |
-| `REEL_WATCH_HOOKS` | `1` | `0` skips the Hook options folder (hook ideas 2 and 3 rendered for 4 s) |
+| `REEL_WATCH_CAPTION` | `1` | `0` skips the post copy; with it on, a clip with no written hook gets its hook from the post copy (the strongest of three, never the opening words) |
 | `REEL_WATCH_PRUNE_DAYS` | `30` | work folders under `videos/` older than this are removed; `0` keeps them |
 | `REEL_WATCH_CAROUSEL_IMAGES` | `3` | new Codex images per carousel from `raw-carousel` |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |

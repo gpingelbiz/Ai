@@ -139,6 +139,23 @@ if [ "$prune" -gt 0 ] 2>/dev/null; then
 fi
 echo "$(date '+%F %T') start $base ($MODE) -> $work ${flags[*]:-}" >> "$log"
 cd "$REELS"
+# No written hook in the file name: a first pass (no render) gets the transcript, the cards and the stills, then
+# the post copy writes three hooks, strongest first, and the finished reel is edited with that one on screen.
+# The opening words are never the hook. Carousels have no on-screen hook.
+written_hook=""
+if [ -z "$hook" ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} --no-render $EXTRA_ARGS >> "$log" 2>&1 \
+     && node "$HERE/write-caption.mjs" "$work" "$work/caption.txt" >> "$log" 2>&1 && [ -s "$work/caption.txt" ]; then
+    written_hook=$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(j.bestIsWritten&&j.best)process.stdout.write(j.best)}catch(e){}' "$work/caption.json" 2>/dev/null || true)
+    if [ -n "$written_hook" ]; then
+      flags+=(--hook "$written_hook")
+      hook="$written_hook"
+      echo "$(date '+%F %T') hook  $base -> \"$written_hook\" (written, from the post copy)" >> "$log"
+    fi
+  fi
+fi
+run_start=$(( $(wc -l < "$log" 2>/dev/null || echo 0) + 1 ))
 # shellcheck disable=SC2086
 # ${flags[@]+...}: macOS bash 3.2 treats an empty array as unbound under set -u (a plain drop has no flags).
 if ! reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
@@ -186,7 +203,14 @@ else
       [ -f "$still" ] && cp "$still" "$folder/B-roll $i.png" && i=$((i + 1))
     done <<< "$shots"
   elif [ "$MODE" = broll ]; then
-    printf 'No b-roll this time: Codex was busy or rate-limited, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$folder/No b-roll this time.txt"
+    # Say why, from the editor's own lines for this run, instead of guessing at Codex.
+    if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
+      printf 'No b-roll this time: the clip is under 8 seconds, too short for a still.\n' > "$folder/No b-roll this time.txt"
+    elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "rate-limited"; then
+      printf 'No b-roll this time: Codex is rate-limited on the ChatGPT plan, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$folder/No b-roll this time.txt"
+    else
+      printf 'No b-roll this time: Codex gave nothing usable for this clip (see ~/Reels/watch.log).\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again to retry.\n' > "$folder/No b-roll this time.txt"
+    fi
   fi
   [ -s "$work/review.txt" ] && cp -f "$work/review.txt" "$folder/check these words.txt"
   # Covers: three variants (titles x palettes), the thumbnail-system way; Cover 1 is the pick.
@@ -196,23 +220,13 @@ else
   if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder."; else notify "$label ready" "$title"; fi
 fi
 
-# Post copy (caption, hashtags, hook options) from Sandcastles via headless Claude. Never holds up the delivery.
+# Post copy (caption, hashtags, the hook options) from Sandcastles via headless Claude. Written in the first pass
+# when the hook came from it; otherwise written now. Never holds up the delivery.
 if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
-  if node "$HERE/write-caption.mjs" "$work" "$folder/caption.txt" >> "$log" 2>&1 && [ -s "$folder/caption.txt" ]; then
+  if [ -n "$written_hook" ] && [ -s "$work/caption.txt" ]; then
+    cp -f "$work/caption.txt" "$folder/caption.txt"
+  elif node "$HERE/write-caption.mjs" "$work" "$folder/caption.txt" >> "$log" 2>&1 && [ -s "$folder/caption.txt" ]; then
     notify "$label caption ready" "$title"
-    # Hook A/B: the first 4 s rendered with hook options 2 and 3 from the caption, into "Hook options" (reels only).
-    if [ "$MODE" != carousel ] && [ "${REEL_WATCH_HOOKS:-1}" != 0 ] && [ -f "$work/caption.json" ]; then
-      alt=$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const h of (j.hooks||[]).slice(1,3))if(h&&h.text)console.log(h.text)}catch(e){}' "$work/caption.json" 2>/dev/null || true)
-      if [ -n "$alt" ]; then
-        hd="$folder/Hook options"
-        mkdir "$hd" 2>/dev/null || true
-        # shellcheck disable=SC2086
-        if ( cd "$work" && printf '%s\n' "$alt" | tr '\n' '\0' | xargs -0 reel hooks "$work" ) >> "$log" 2>&1 && ls "$work"/hooks/*.mp4 >/dev/null 2>&1; then
-          for h in "$work"/hooks/*.mp4; do cp "$h" "$hd/"; done
-          printf 'The same first 4 seconds with the other two hook ideas from caption.txt. Pick one, then drop the clip again as "clip__Your hook here.mov" to re-edit with it.\n' > "$hd/What is this.txt"
-        fi
-      fi
-    fi
   fi
 fi
 printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"
