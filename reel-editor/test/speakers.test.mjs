@@ -51,10 +51,39 @@ test("camera: dead band then eased pans; layout plan and ffmpeg graph", () => {
   assert.ok(plan.segments.length >= 2);
   assert.ok(plan.segments.every((s, i) => !i || s.start >= plan.segments[i - 1].end - 1e-6), "segments in order, no overlap");
   const f = layoutFilter(plan, { W: 1920, H: 1080, fps: 30, duration: 20 });
-  assert.match(f.graph, /crop@single=w=608:h=1080/);
-  assert.match(f.commands, /^0\.000 crop@single x \d+;/);
+  assert.match(f.graph, /crop@single=w=506:h=900/, "a 1.2x tighter single crop");
+  assert.match(f.commands, /crop@single x \d+, crop@single y \d+;/, "x and y move per frame so the face sits near the eye line");
+  assert.match(layoutFilter(plan, { W: 1920, H: 1080, fps: 30, duration: 20, zoom: 1 }).graph, /crop@single=w=608:h=1080/);
+  assert.match(f.commands, /^0\.000 crop@single x \d+, crop@single y \d+;/);
   if (plan.segments.some((s) => s.mode === "split")) {
     assert.match(f.graph, /vstack.*overlay=enable='between\(t,/);
     assert.match(f.commands, /crop@pa x \d+, crop@pa y \d+;/);
   }
+});
+
+test("turns: a listener who fidgets never takes the crop from the person talking (one shared lip scale)", () => {
+  // A talks for 20 s. B listens and fidgets: small mouth movement, a different range than A's, which a per-face
+  // scale would stretch to look as big as A's talking.
+  const frames = [];
+  for (let t = 0; t < 20; t += 0.25) {
+    frames.push({ t: Math.round(t * 1000) / 1000, faces: [
+      { x: 0.18, y: 0.3, w: 0.14, h: 0.25, mouth: 0.3 + 0.2 * Math.sin(t * 20), yaw: 0 },
+      { x: 0.68, y: 0.32, w: 0.14, h: 0.25, mouth: 0.05 + 0.02 * Math.sin(t * 3.1), yaw: 0 },
+    ] });
+  }
+  const words = [];
+  for (let t = 0; t < 20; t += 0.4) words.push({ text: "w", start: t, end: t + 0.3 });
+  const tracks = trackFaces(frames);
+  const turns = settleTurns(speakerTurns(tracks, words, { from: 0, to: 20 }));
+  assert.deepEqual(turns.map((x) => x.track), [0], `turns: ${JSON.stringify(turns)}`);
+});
+
+test("tracks: a brief false detection (a logo, a neck) is not a person", () => {
+  const frames = [];
+  for (let t = 0; t < 30; t += 0.25) {
+    const faces = [{ x: 0.2, y: 0.3, w: 0.1, h: 0.2, mouth: 0.1 }];
+    if (t >= 10 && t < 13) faces.push({ x: 0.5, y: 0.8, w: 0.05, h: 0.08, mouth: 0.1 });
+    frames.push({ t: Math.round(t * 1000) / 1000, faces });
+  }
+  assert.equal(trackFaces(frames).length, 1);
 });

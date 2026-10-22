@@ -232,7 +232,13 @@ export function renderHTML(plan, footage) {
   // than 30% of the frame (the podcast convention) and never under 22%.
   const room = fx ? (framing.side === "right" ? 1 - (fx.cx + fx.w / 2) : fx.cx - fx.w / 2) - 0.2 * fx.w - 0.04 : 0.3;
   const gw = Math.round(Math.max(0.22, Math.min(0.3, room)) * 100);
-  const sideVars = fx
+  const multi = !!framing.multi && fx;
+  // A group: the card band sits centred above the heads (the free wall), never beside one of the people.
+  const headTop = multi ? Math.min(...(framing.people || []).map((p) => p.cy - 0.75 * p.h)) : 1;
+  const topOfHeads = multi ? (framing.origin ? parseFloat(framing.origin.split(" ")[1]) / 100 : 0.5) + (headTop - (parseFloat(framing.origin.split(" ")[1]) / 100 || 0.5)) * (framing.scale || 1) + (framing.shift || 0) : 1;
+  const sideVars = multi
+    ? `--gx: ${Math.round((100 - 36) / 2)}%; --gw: 36%; --gy: ${Math.round(Math.max(3, Math.min(8, topOfHeads * 100 - 30)))}%; --ly: 80%;`
+    : fx
     ? `--gx: ${framing.side === "right" ? `${100 - 4 - gw}%` : "4%"}; --gw: ${gw}%; --gy: ${Math.round(Math.max(6, Math.min(50, (fx.cy - fx.h * 0.6) * 100)))}%; --ly: ${Math.round(Math.max(30, Math.min(80, (fx.cy + fx.h * 0.55) * 100)))}%;`
     : "--gx: 56%; --gw: 40%; --gy: 20%; --ly: 70%;";
 
@@ -422,14 +428,14 @@ ${audioHTML}
             if (z.cut) jump(z);
             else if (z.scale > 1) {
               const dir = n++ % 2 ? 1 : -1;
-              tl.to(WRAP, { scale: z.scale * BASE, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
+              tl.to(WRAP, { scale: z.scale * BASE, xPercent: z.xPercent || 0, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
               tl.to("#defocus", { opacity: 1, duration: 0.3, ease: "power2.out" }, z.t);
               tl.to("#defocus", { opacity: 0, duration: 0.45, ease: "power2.in" }, z.t + 0.3);
             } else {
               tl.to(WRAP, { scale: BASE, xPercent: 0, yPercent: 0, rotationX: 0, rotationY: 0, duration: 0.9, ease: "power2.inOut" }, z.t);
             }
           });
-        } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to(WRAP, { scale: z.scale * BASE, xPercent: 0, duration: z.snap, ease: "power3.out" }, z.t)));
+        } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to(WRAP, { scale: z.scale * BASE, xPercent: z.xPercent || 0, duration: z.snap, ease: "power3.out" }, z.t)));
         // Cold open: the still holds under the hook with a slow push, the flash hits on the cut to the speaker.
         if (PLAN.coldOpen) {
           const d = PLAN.coldOpen.duration;

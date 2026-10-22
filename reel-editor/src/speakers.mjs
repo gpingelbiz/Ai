@@ -60,7 +60,9 @@ export function trackFaces(frames, { reach = 0.6, lost = 2.0, minSamples = 6 } =
       best.samples.push({ t: f.t, cx, cy, w: face.w, h: face.h, mouth: face.mouth ?? 0 });
     }
   }
-  return tracks.filter((tr) => tr.samples.length >= minSamples).map((tr, i) => ({ ...tr, id: i }));
+  const most = Math.max(0, ...tracks.map((tr) => tr.samples.length));
+  // A face seen for under 15% of the main one is a false detection (a logo, a neck), not a person.
+  return tracks.filter((tr) => tr.samples.length >= Math.max(minSamples, 0.15 * most)).map((tr, i) => ({ ...tr, id: i }));
 }
 
 /** Voice activity from the words: [[start, end]] with gaps under `gap` merged. */
@@ -77,25 +79,28 @@ export function speechSpans(words, { gap = 0.35 } = {}) {
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 const pct = (xs, p) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : 0; };
 
-/** Lip motion per track per sample: the spread of mouth openness in a ±win window, scaled per face (20th-80th percentile). */
+/**
+ * Lip motion per track per sample: the spread of mouth openness in a ±win window. All faces share ONE scale (the 85th
+ * percentile of everyone's motion): scaling each face by its own range made a listener's twitches count as much as
+ * the talker's words, and the crop cut to the person who was not speaking.
+ */
 export function lipActivity(tracks, { win = 0.5 } = {}) {
-  return tracks.map((tr) => {
-    const raw = tr.samples.map((s, i) => {
+  const raws = tracks.map((tr) =>
+    tr.samples.map((s) => {
       const near = tr.samples.filter((q) => Math.abs(q.t - s.t) <= win).map((q) => q.mouth);
       const m = near.reduce((a, b) => a + b, 0) / near.length;
       return Math.sqrt(near.reduce((a, b) => a + (b - m) ** 2, 0) / near.length);
-    });
-    const lo = pct(raw, 0.2), hi = pct(raw, 0.8);
-    const act = raw.map((v) => (hi > lo ? Math.max(0, Math.min(1, (v - lo) / (hi - lo))) : 0));
-    return { id: tr.id, points: tr.samples.map((s, i) => ({ t: s.t, a: act[i] })) };
-  });
+    }),
+  );
+  const hi = pct(raws.flat(), 0.85) || 1;
+  return tracks.map((tr, k) => ({ id: tr.id, points: tr.samples.map((s, i) => ({ t: s.t, a: Math.min(1.5, raws[k][i] / hi) })) }));
 }
 
 /**
  * Who is talking, as turns [{start, end, track}]. At each step the face with the most lip motion wins, but only
  * during speech, only by a clear margin, and only after `confirm` seconds of winning; a turn holds at least `hold`.
  */
-export function speakerTurns(tracks, words, { from = 0, to, step = 0.25, margin = 0.15, confirm = 0.75, hold = 1.2 } = {}) {
+export function speakerTurns(tracks, words, { from = 0, to, step = 0.25, margin = 0.3, confirm = 0.75, hold = 1.2, floor = 0.3 } = {}) {
   if (!tracks.length) return [];
   const spans = speechSpans(words);
   const talking = (t) => spans.some(([a, b]) => t >= a - 0.15 && t <= b + 0.15);
@@ -115,7 +120,7 @@ export function speakerTurns(tracks, words, { from = 0, to, step = 0.25, margin 
     if (!talking(t) || present.length < 2) { candidate = null; continue; }
     const sorted = present.sort((a, b) => scores[b] - scores[a]);
     const best = sorted[0], second = sorted[1];
-    const clear = (scores[best] - scores[second]) / Math.max(1e-6, scores[best] + scores[second]) >= margin;
+    const clear = scores[best] >= floor && (scores[best] - scores[second]) / Math.max(1e-6, scores[best] + scores[second]) >= margin;
     if (!clear || best === current) { candidate = null; continue; }
     if (candidate !== best) { candidate = best; candSince = t; continue; }
     if (t - candSince + step >= confirm && t - since >= hold) {
@@ -230,8 +235,11 @@ export function pathAt(path, t) {
  * Single: a full-height 9:16 crop that follows the face. Split: two 9:8 panels (1080x960) stacked, each framed on
  * its person, laid over the single view while the split holds.
  */
-export function layoutFilter(plan, { W, H, fps = 30, duration, outW = 1080, outH = 1920 }) {
-  const cw = Math.round((H * outW) / outH / 2) * 2; // single crop width in source pixels
+export function layoutFilter(plan, { W, H, fps = 30, duration, outW = 1080, outH = 1920, zoom = 1.2, eye = 0.42 }) {
+  // Single view: a crop `zoom` times tighter than the full height, slid so the face sits near the eye line. A full-height
+  // crop leaves a seated person's face low in the frame, and the captions then land on the chin and the chest.
+  const cw = Math.round((H * outW) / outH / zoom / 2) * 2; // single crop width in source pixels
+  const ch = Math.round(H / zoom / 2) * 2; // and height
   const ph = Math.round(Math.min(H, H * 0.62) / 2) * 2; // panel height: a tighter frame than the full height
   const pw = Math.round((ph * outW) / (outH / 2) / 2) * 2;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -244,7 +252,8 @@ export function layoutFilter(plan, { W, H, fps = 30, duration, outW = 1080, outH
     if (!s) break;
     const pa = pathAt(plan.paths[s.a] || [], t);
     const x = pa ? clamp(Math.round(pa.cx * W - cw / 2), 0, W - cw) : Math.round((W - cw) / 2);
-    lines.push(`${t.toFixed(3)} crop@single x ${x};`);
+    const y = pa ? clamp(Math.round(pa.cy * H - eye * ch), 0, H - ch) : Math.round((H - ch) / 2);
+    lines.push(`${t.toFixed(3)} crop@single x ${x}, crop@single y ${y};`);
     if (s.mode === "split") {
       const pb = pathAt(plan.paths[s.b] || [], t);
       for (const [name, p] of [["pa", pa], ["pb", pb]]) {
@@ -257,8 +266,8 @@ export function layoutFilter(plan, { W, H, fps = 30, duration, outW = 1080, outH
   const enable = plan.segments.filter((s) => s.mode === "split").map((s) => `between(t,${s.start},${s.end})`).join("+") || "0";
   const hasSplit = plan.segments.some((s) => s.mode === "split");
   const graph = hasSplit
-    ? `[0:v]split=3[v0][v1][v2];[v0]sendcmd=f='CMDS',crop@single=w=${cw}:h=${H}:x=0:y=0,scale=${outW}:${outH},setsar=1[single];[v1]crop@pa=w=${pw}:h=${ph}:x=0:y=0,scale=${outW}:${outH / 2},setsar=1[pa];[v2]crop@pb=w=${pw}:h=${ph}:x=0:y=0,scale=${outW}:${outH / 2},setsar=1[pb];[pa][pb]vstack[splitv];[single][splitv]overlay=enable='${enable}'[out]`
-    : `[0:v]sendcmd=f='CMDS',crop@single=w=${cw}:h=${H}:x=0:y=0,scale=${outW}:${outH},setsar=1[out]`;
+    ? `[0:v]split=3[v0][v1][v2];[v0]sendcmd=f='CMDS',crop@single=w=${cw}:h=${ch}:x=0:y=0,scale=${outW}:${outH},setsar=1[single];[v1]crop@pa=w=${pw}:h=${ph}:x=0:y=0,scale=${outW}:${outH / 2},setsar=1[pa];[v2]crop@pb=w=${pw}:h=${ph}:x=0:y=0,scale=${outW}:${outH / 2},setsar=1[pb];[pa][pb]vstack[splitv];[single][splitv]overlay=enable='${enable}'[out]`
+    : `[0:v]sendcmd=f='CMDS',crop@single=w=${cw}:h=${ch}:x=0:y=0,scale=${outW}:${outH},setsar=1[out]`;
   return { commands: lines.join("\n") + "\n", graph, cw, pw, ph };
 }
 
