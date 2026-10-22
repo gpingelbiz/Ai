@@ -17,6 +17,7 @@ import { planZooms, planCadence } from "./zooms.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
+import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { makeGraphics } from "./graphics.mjs";
@@ -257,10 +258,19 @@ export async function runEdit(input, opts = {}) {
   // shot, and which side of the speaker has room for cards.
   let framing = { scale: 1, origin: preset.zooms.origin || "50% 40%" };
   let face = null;
+  let people = [];
   if (preset.framing?.enabled && sameShape) {
     const det = await detectFaces(videoSrc, Array.from({ length: 12 }, (_, i) => r3(Math.min(duration - 0.05, 0.5 + (i * duration) / 12))));
     face = faceBox(det);
-    if (face) {
+    people = peopleFrom(det);
+    if (people.length >= 2) {
+      // Two or more people in the shot: fit all of them, and aim the camera at whoever talks.
+      const g = groupFraming(people, { max: preset.framing.max ?? 1.3, eyeLine: preset.framing.eyeLine ?? 0.42 });
+      framing = { scale: g.scale, origin: g.origin, shift: g.shift, multi: true, people };
+      face = g.face;
+      detection = det; // the caption and hook placement see every person across the whole video
+      log(`framing: ${people.length} people at ${people.map((p) => Math.round(p.cx * 100) + "%").join(", ")} across → base ${framing.scale}x on the group, zooms aim at whoever is talking, cards above the heads`);
+    } else if (face) {
       framing = baseFraming(face, { target: preset.framing.faceHeight ?? 0.27, max: preset.framing.max ?? 1.3, eyeLine: preset.framing.eyeLine ?? 0.42 });
       log(`framing: face ${Math.round(face.h * 100)}% of the frame at ${Math.round(face.cx * 100)}% across → base ${framing.scale}x, cards on the ${face.cx < 0.5 ? "right" : "left"}`);
       if (detection) detection = { ...detection, frames: detection.frames }; // the hook and caption placement see the same frames, scaled below
@@ -269,7 +279,7 @@ export async function runEdit(input, opts = {}) {
   const zoomedHead = (d, z) => headExtent(d, { zoom: framing.scale * z, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38 });
   let captionTop = preset.captions.position - 0.04;
   if (showCaptions && preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
-    const head = zoomedHead(detection, 1);
+    const head = zoomedHead(detection, framing.multi ? Math.max(1, ...(preset.zooms.scales || [1])) : 1);
     const spot = placeCaptions(head, { fontSizeFrac: preset.captions.fontSizeFrac, defaultPosition: preset.captions.position, min: preset.captions.placeMin ?? 0.56, max: preset.captions.placeMax ?? 0.76, gap: preset.captions.placeGap ?? 0.03 });
     preset.captions.position = spot.position;
     captionTop = spot.top - 0.02;
@@ -371,6 +381,12 @@ export async function runEdit(input, opts = {}) {
     if (preset.zooms.cadence?.enabled) {
       zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: broll, hook, tight: tightFrame, tail });
       log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
+    }
+    if (framing.multi) {
+      const tl = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
+      const ox = parseFloat(framing.origin) / 100;
+      zooms = aimZooms(zooms, { people: framing.people, base: framing.scale, originX: ox, at: tl?.at });
+      log(tl ? `speakers: ${tl.turns.length} turn${tl.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
     }
   }
   // Cold open: the first b-roll still holds under the hook for a beat before the speaker appears.
