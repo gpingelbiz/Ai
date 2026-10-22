@@ -22,6 +22,8 @@ curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/inst
 
 [SETUP.md](SETUP.md) has the details, your own words and colors, and troubleshooting.
 
+**Sending it to someone?** `scripts/package-kit.sh ~/Desktop` builds `Reel Editor Kit.zip`: a double-click installer plus a one-page Start Here guide. It holds no code or keys; the installer pulls the latest version from GitHub when it runs.
+
 ## Install (Mac Mini)
 
 ```bash
