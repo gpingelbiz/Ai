@@ -152,5 +152,10 @@
   "coldOpen": {
     "enabled": false,
     "duration": 0.6
+  },
+  "cover": {
+    "enabled": true,
+    "style": "frame",
+    "at": 0.05
   }
 }

@@ -301,9 +301,26 @@ export async function runEdit(input, opts = {}) {
   const output = await renderProject(workDir, opts);
   let cover = null;
   if (preset.cover?.enabled !== false && hook) {
-    try { cover = await makeCover(workDir, plan, { handle: preset.carousel?.handle || "" }); } catch (e) { warn(`cover skipped: ${String(e.message).split("\n")[0]}`); }
+    // The cover is the reel's own first frame (the cold-open still with the hook on it, or the speaker under the
+    // hook); the designed Cover 1-3 set is behind cover.style "designed" (Greg: they were not turning out right).
+    try {
+      cover = preset.cover?.style === "designed"
+        ? await makeCover(workDir, plan, { handle: preset.carousel?.handle || "" })
+        : await frameCover(workDir, output, { at: preset.cover?.at ?? 0.05 });
+    } catch (e) { warn(`cover skipped: ${String(e.message).split("\n")[0]}`); }
   }
   return { workDir, plan, output, cover };
+}
+
+/** Cover from the finished render: its first frame as covers/Cover.png and cover.png. */
+async function frameCover(workDir, output, { at = 0.05 } = {}) {
+  const dir = ensureDir(path.join(workDir, "covers"));
+  for (const f of fs.readdirSync(dir)) if (/^Cover( \d+)?\.png$/.test(f)) fs.rmSync(path.join(dir, f), { force: true });
+  const png = path.join(dir, "Cover.png");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(at), "-i", output, "-frames:v", "1", png], { quiet: true });
+  fs.copyFileSync(png, path.join(workDir, "cover.png"));
+  log(`cover: the first frame (${at}s) → ${png}`);
+  return [png];
 }
 
 function readVoice(plan) {

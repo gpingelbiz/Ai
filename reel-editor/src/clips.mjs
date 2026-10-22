@@ -8,6 +8,7 @@ import { hyperframesBin } from "./render.mjs";
 import { loadPreset, loadDictionary } from "./presets.mjs";
 import { runEdit } from "./pipeline.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3, slug } from "./util.mjs";
+import { reframeClip, describeLayout } from "./speakers.mjs";
 
 /**
  * One long video (a live, a training, a podcast) into several reels. The whole thing is transcribed once, headless
@@ -117,10 +118,28 @@ export async function makeClips(input, opts = {}) {
       log(`clip ${i + 1}: cutting ${fmt(c.start)}-${fmt(c.end)}…`);
       await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(c.start), "-to", String(c.end), "-i", input, "-c:v", process.platform === "darwin" ? "h264_videotoolbox" : "libx264", ...(process.platform === "darwin" ? ["-q:v", "75"] : ["-preset", "veryfast", "-crf", "16"]), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", src], { quiet: true });
     }
+    const clipWords = sliceWords(words, c.start, c.end);
+    // Wide footage (a podcast, an interview, a screen recording) becomes a portrait source that follows whoever is
+    // talking, cuts on the turn and splits the screen when two people trade lines; a portrait clip is used as is.
+    let editSrc = src;
+    if (opts.layout !== false && !opts.noLayout) {
+      const portrait = path.join(dir, "source-portrait.mp4");
+      try {
+        if (!fs.existsSync(portrait) || opts.force) {
+          const cm = await probe(src);
+          const r = await reframeClip(src, portrait, { words: clipWords, meta: cm, fps: preset.render?.fps || 30 });
+          if (r) log(`clip ${i + 1}: speaker framing: ${describeLayout(r.plan)}`);
+          else log(`clip ${i + 1}: already portrait or no face found; using the plain cut`);
+        }
+        if (fs.existsSync(portrait)) editSrc = portrait;
+      } catch (e) {
+        warn(`clip ${i + 1}: speaker framing failed (${String(e.message).split("\n")[0]}); using the plain cut`);
+      }
+    }
     const tPath = path.join(dir, "transcript.json");
-    writeJSON(tPath, { source: src, words: sliceWords(words, c.start, c.end) });
+    writeJSON(tPath, { source: editSrc, words: clipWords });
     try {
-      const r = await runEdit(src, { ...opts, out: path.join(dir, "edit"), title: `${name}-${i + 1}`, transcript: tPath, hook: opts.autoHook ? undefined : c.hook || undefined, force: false, count: undefined, planOnly: undefined });
+      const r = await runEdit(editSrc, { ...opts, out: path.join(dir, "edit"), title: `${name}-${i + 1}`, transcript: tPath, hook: opts.autoHook ? undefined : c.hook || undefined, force: false, count: undefined, planOnly: undefined });
       results.push({ ...c, output: r.output, workDir: r.workDir });
     } catch (e) {
       warn(`clip ${i + 1} failed: ${String(e.message).split("\n")[0]}`);

@@ -60,7 +60,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] } } = {}) {
+function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, longClips = 2 } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -71,6 +71,12 @@ function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = 
   stub("reel", `
 echo "$*" >> "$HOME/reel-calls"
 if [ "$1" = carousel ]; then ${carouselFails ? "exit 1" : 'mkdir -p "$4"; echo slide > "$4/Slide 1.png"; exit 0'}; fi
+if [ "$1" = clips ]; then
+  work="$4"; name="$6"; list=""
+  i=1; while [ $i -le ${longClips} ]; do d="$work/clip-$i/edit"; mkdir -p "$d/renders" "$d/covers"; echo clip$i > "$d/renders/$name-$i.mp4"; echo cover > "$d/covers/Cover.png"; echo "Music: bed.mp3" > "$d/music.txt"
+    list="$list{\\"start\\":$((i*60)),\\"end\\":$((i*60+45)),\\"hook\\":\\"Own it *first*. Clip $i?\\",\\"score\\":$((90-i)),\\"why\\":\\"a stake, a turn\\",\\"output\\":\\"$d/renders/$name-$i.mp4\\"},"; i=$((i + 1)); done
+  echo "{\\"clips\\":[\${list%,}]}" > "$work/clips.json"; exit 0
+fi
 work="$4"; name="$6"; mkdir -p "$work/renders" "$work/broll"
 case "$*" in *--no-render*) ;; *) echo "$name" > "$work/renders/$name.mp4";; esac
 case "$*" in *--music-dir*) all="$*"; d="\${all#*--music-dir }"; d="\${d%% *}"; w=""; case "$*" in *--music-want*) w="\${all#*--music-want }"; w="\${w%% *}";; esac; t="$(ls "$d"/*.mp3 "$d"/*.wav 2>/dev/null | { if [ -n "$w" ]; then grep -i -- "$w" | head -1; else head -1; fi; })"; [ -n "$t" ] && echo "Music: $(basename "$t")" > "$work/music.txt";; esac
@@ -79,7 +85,7 @@ case "$*" in *--broll*)
   i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
 esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > "$work/plan.json"`);
-  const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel") };
+  const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel"), long: path.join(home, "raw-long") };
   for (const [mode, d] of Object.entries(dirs)) { fs.mkdirSync(d); for (const c of clips[mode] || []) fs.writeFileSync(path.join(d, c), "video"); }
   // A .zshrc like Greg's: the CTA is set to empty with a trailing comment, and one line uses a zsh-only expansion.
   fs.writeFileSync(path.join(home, ".zshrc"), 'export REEL_WATCH_CTA=""   # no CTA for now\nexport REEL_NOPE="$(zsh-only)"\nexport PRODUCER_BROWSER_GPU_MODE=hardware\n');
@@ -88,7 +94,7 @@ echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > 
   for (const m of music) fs.writeFileSync(path.join(musicDir, m), "audio");
   const done = path.join(home, "Done");
   spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], {
-    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: "0" },
+    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_RAW_LONG: dirs.long, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: "0" },
     stdio: "pipe",
   });
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
@@ -145,4 +151,13 @@ test("music: an empty folder means no music.txt, no error", () => {
 test("an empty CTA with a trailing comment in .zshrc still means no CTA; a command substitution is skipped", () => {
   const r = fakeDrops({ brollShots: 0 });
   assert.doesNotMatch(r.calls, /--cta/, "no Comment GHOST pill when REEL_WATCH_CTA is set empty in .zshrc");
+});
+
+test("a long recording in Raw - Long Form becomes a Clips folder with one reel per moment", () => {
+  const r = fakeDrops({ clips: { long: ["podcast.mp4"] }, longClips: 2 });
+  assert.deepEqual(r.top, [`${r.day} Clips 1`]);
+  assert.deepEqual(r.list(`${r.day} Clips 1`), ["Clip 1 - Cover.png", "Clip 1 - Own it first. Clip 1.mp4", "Clip 1 - music.txt", "Clip 2 - Cover.png", "Clip 2 - Own it first. Clip 2.mp4", "Clip 2 - music.txt", "clips.txt"]);
+  assert.match(r.read(`${r.day} Clips 1/clips.txt`), /Clip 1 {2}\(1:00-1:45, score 89\)\n {2}Own it \*first\*\. Clip 1\?\n {2}a stake, a turn/);
+  assert.ok(r.calls.split("\n").some((l) => /^clips .*raw-long\/podcast\.mp4 --out .*podcast-clips --title podcast-clips --count 5 .*--broll --graphics --caption-style reveal/.test(l)), r.calls);
+  assert.ok(r.seen.some((s) => s.startsWith("long-podcast.mp4@") && s.endsWith(".done")));
 });
