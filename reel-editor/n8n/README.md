@@ -45,6 +45,7 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | `REEL_WATCH_CAROUSEL_IMAGES` | `3` | new Codex images per carousel from `raw-carousel` |
 | `REEL_WATCH_RAW_LONG` | `~/Reels/raw-long` | Raw - Clips from Long Video: a long recording cut into reels (`<date> Clips <n>`) |
 | `REEL_WATCH_CLIPS` | `5` | how many clips a long recording is cut into |
+| `REEL_WATCH_RAW_RUNWAY` | `~/Reels/raw-runway` | Raw - Reel with Runway B-roll: generated video clips as b-roll (`<date> Reel <n> with Runway`) |
 | `REEL_WATCH_RAW_YOUTUBE` | `~/Reels/raw-youtube` | Raw - Full YouTube Edit: the whole video edited for YouTube (`<date> YouTube <n>`) |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 
@@ -70,6 +71,7 @@ ln -s ~/Reels/raw-broll ~/Desktop/Reels/"Raw - Reel with B-roll"
 ln -s ~/Reels/raw-carousel ~/Desktop/Reels/"Raw - Carousel"
 ln -s ~/Reels/raw-long ~/Desktop/Reels/"Raw - Clips from Long Video"
 ln -s ~/Reels/raw-youtube ~/Desktop/Reels/"Raw - Full YouTube Edit"
+ln -s ~/Reels/raw-runway ~/Desktop/Reels/"Raw - Reel with Runway B-roll"
 ```
 
 Writing finished reels to the Desktop (`REEL_WATCH_DONE=~/Desktop/Reels`) works fine. Granting /bin/bash Full Disk Access would also work, but it opens far more than this needs. That script edits each new clip once through `watch-reel.sh`, leaves a `.done` or `.failed` marker in `~/Reels/videos/.seen`, and keeps scanning until nothing new is left. Rename a failed clip to retry it. Its own output goes to `~/Reels/watch-launchd.log`; each edit still logs to `~/Reels/watch.log`.

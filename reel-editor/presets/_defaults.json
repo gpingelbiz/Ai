@@ -136,7 +136,14 @@
     },
     "focusPull": 0.3,
     "cut": "hard",
-    "aspect": "9:16"
+    "aspect": "9:16",
+    "engine": "codex",
+    "videoModel": "gen4_turbo",
+    "videoSeconds": 5,
+    "videoRatio": "720:1280",
+    "imageRatio": "720:1280",
+    "maxCreditsPerReel": 150,
+    "keepCredits": 0
   },
   "carousel": {
     "slides": 6,
@@ -170,5 +177,11 @@
     "endSafe": 0,
     "chapters": false,
     "booking": ""
+  },
+  "framing": {
+    "enabled": false,
+    "faceHeight": 0.27,
+    "max": 1.3,
+    "eyeLine": 0.42
   }
 }

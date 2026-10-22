@@ -24,6 +24,7 @@ Usage
                                     sparse cards and b-roll, 112% punch-ins, end-screen-safe ending, and the package
                                     (description with chapters, titles, captions.srt, thumbnails, endscreen.json,
                                     edit.v3.json). Captions off by default (--captions burns them in)
+  reel usage                        what the paid generations (Runway b-roll) cost this month and last, and the balance
   reel clips <long video> [--count 5] [--plan-only] [--replan] [--no-layout] [edit options]
                                     one long recording into several reels: Claude picks 30-90 s windows with a
                                     hook and a score, each is cut out and edited (clips.json lists them)
@@ -82,6 +83,8 @@ Options (edit / batch)
                            as it is spoken. --no-annotate off
   --zoom-style <s>         camera (creator punch-in: push, slight tilt, edge defocus) | snap (hard cut-in zoom)
   --broll-cut <s>          hard (default) | flash (a white editorial flash on the cut) | blur (the still arrives from a blur)
+  --broll-engine <e>       codex (stills drawn by Codex) | runway (generated video clips via the Runway API; needs
+                           RUNWAY_API_KEY, about 30 credits = $0.30 per 5-second clip; every clip goes in the usage ledger)
   --no-cadence             no cut cadence (the frame otherwise cuts between two framings every 2.5-4.5 s)
   --cold-open              with b-roll: frame 0 shows a still under the hook for 0.6 s, then flashes to you. --no-cold-open off
   --sounds                 small CC0 sounds on the edits: card lands, word slam, camera move, flash, marker. --no-sounds off
@@ -149,6 +152,7 @@ const EDIT_OPTIONS = {
   "no-annotate": { type: "boolean" },
   "zoom-style": { type: "string" },
   "broll-cut": { type: "string" },
+  "broll-engine": { type: "string" },
   "no-cadence": { type: "boolean" },
   "cold-open": { type: "boolean" },
   "no-cold-open": { type: "boolean" },
@@ -208,6 +212,11 @@ export async function main(argv) {
       const { makeYouTube } = await import("./youtube.mjs");
       const r = await makeYouTube(positionals[0], opts);
       if (r.output) console.log(r.output);
+      return;
+    }
+    case "usage": {
+      const { readUsage, usageReport } = await import("./usage.mjs");
+      process.stdout.write(usageReport(readUsage()));
       return;
     }
     case "clips": {

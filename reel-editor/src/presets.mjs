@@ -16,7 +16,11 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
   const file = fs.existsSync(nameOrPath) && nameOrPath.endsWith(".json") ? nameOrPath : path.join(PRESET_DIR, `${nameOrPath}.json`);
   if (!fs.existsSync(file)) throw new Error(`preset not found: ${nameOrPath} (have: ${listPresets().join(", ")})`);
   const base = readJSON(path.join(PRESET_DIR, "_defaults.json"));
-  const p = deepMerge(base, readJSON(file));
+  const own = readJSON(file);
+  // "extends": another preset's settings underneath this one's (pingel-runway builds on pingel-brand).
+  const parent = own.extends ? deepMerge(base, readJSON(path.join(PRESET_DIR, `${own.extends}.json`))) : base;
+  const p = deepMerge(parent, own);
+  delete p.extends;
   if (!p.name) p.name = path.basename(file, ".json");
   return p;
 }
@@ -75,6 +79,7 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noAnnotate) p.captions.annotate = false;
   if (o.zoomStyle) p.zooms.style = o.zoomStyle;
   if (o.brollCut) p.broll.cut = o.brollCut;
+  if (o.brollEngine) p.broll.engine = o.brollEngine;
   if (o.noCadence) p.zooms.cadence.enabled = false;
   if (o.coldOpen) p.coldOpen.enabled = true;
   if (o.noColdOpen) p.coldOpen.enabled = false;

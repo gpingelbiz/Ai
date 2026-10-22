@@ -53,6 +53,7 @@ export function composeProject(plan, projectDir) {
   copyOrLink(plan.video.src, path.join(projectDir, footage));
   (plan.broll || []).forEach((b, i) => {
     b.src = `assets/broll/broll-${i + 1}${path.extname(b.file) || ".png"}`;
+    b.video = /\.(mp4|mov|webm|m4v)$/i.test(b.file || "");
     copyOrLink(b.file, path.join(projectDir, b.src));
   });
   if (plan.coldOpen && plan.broll?.[0]?.src) plan.coldOpen.src = plan.broll[0].src;
@@ -131,8 +132,12 @@ export function renderHTML(plan, footage) {
   // The cut: hard (the default from the b-roll research), flash (the Social Flash recipe: a white wash with a warm
   // core on the frame of the cut, in and out), or blur (the still arrives from and leaves into a blur).
   const brollCut = ["flash", "blur"].includes(s.broll?.cut) ? s.broll.cut : "hard";
+  // A still is an <img>; a generated clip (Runway) is a muted <video> that plays from its start while the cut holds.
+  const brollMedia = (b) => (b.video
+    ? `<video class="broll-media" src="${esc(b.src)}" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2" muted playsinline${grade}${pullStyle}></video>`
+    : `<img class="broll-media" src="${esc(b.src)}" alt=""${grade}${pullStyle} />`);
   const brollHTML = brollList
-    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move"><img src="${esc(b.src)}" alt=""${grade}${pullStyle} /></div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`)
+    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`)
     .join("\n");
 
   // Cold open: the strongest still under the hook for the first beat, then a flash into the speaker.
@@ -182,7 +187,7 @@ export function renderHTML(plan, footage) {
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
-    broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.motion || "in" })),
+    broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video })),
     graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration })),
     graphicsMode: s.graphics?.mode || "overlay",
     slams: slamList.map((sl) => ({ t: sl.t, end: sl.end })),
@@ -197,7 +202,20 @@ export function renderHTML(plan, footage) {
     reveal,
     reframe: plan.reframe || [],
     fps: s.render?.fps || 30,
+    base: plan.framing?.scale || 1,
+    baseShift: Math.round((plan.framing?.shift || 0) * H),
   };
+  const framing = plan.framing || { scale: 1, side: "right", face: null };
+  const origin = framing.scale > 1 && framing.origin ? framing.origin : s.zooms.origin || "50% 40%";
+  // Cards beside the speaker: the free third, vertically on the face.
+  const fx = framing.face;
+  // The box takes the empty third: from the frame edge to a fifth of a face width short of the face, never wider
+  // than 30% of the frame (the podcast convention) and never under 22%.
+  const room = fx ? (framing.side === "right" ? 1 - (fx.cx + fx.w / 2) : fx.cx - fx.w / 2) - 0.2 * fx.w - 0.04 : 0.3;
+  const gw = Math.round(Math.max(0.22, Math.min(0.3, room)) * 100);
+  const sideVars = fx
+    ? `--gx: ${framing.side === "right" ? `${100 - 4 - gw}%` : "4%"}; --gw: ${gw}%; --gy: ${Math.round(Math.max(6, Math.min(50, (fx.cy - fx.h * 0.6) * 100)))}%; --ly: ${Math.round(Math.max(30, Math.min(80, (fx.cy + fx.h * 0.55) * 100)))}%;`
+    : "--gx: 56%; --gw: 40%; --gy: 20%; --ly: 70%;";
 
   return `<!doctype html>
 <html lang="en">
@@ -211,19 +229,20 @@ export function renderHTML(plan, footage) {
       @font-face { font-family: "Inter"; src: url("assets/fonts/Inter.ttf") format("truetype"); font-weight: 100 900; font-style: normal; font-display: block; }
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
-      #video-wrap { position: absolute; inset: 0; transform-origin: ${s.zooms.origin || "50% 40%"}; will-change: transform; }
+      #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
+      #root { ${sideVars} }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       /* Creator punch-in: the frame edges defocus for a beat while the camera moves (the centre stays sharp). */
       #defocus { position: absolute; inset: 0; opacity: 0; pointer-events: none; backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px); -webkit-mask-image: radial-gradient(ellipse 62% 58% at 50% 45%, transparent 58%, rgba(0,0,0,0.85) 92%); mask-image: radial-gradient(ellipse 62% 58% at 50% 45%, transparent 58%, rgba(0,0,0,0.85) 92%); }
       .broll { position: absolute; inset: 0; overflow: hidden; opacity: 0; background: #000; }
       /* Finish: HyperFrames grades the still (muted editorial, vignette, film grain); the bottom keeps a scrim for the captions. */
       .broll-move { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
-      .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .broll img, .broll video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%); }
       .broll-flash { position: absolute; inset: -12%; opacity: 0; background: rgb(255,253,250); pointer-events: none; }
       #open-flash { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
       .broll-flash-core { position: absolute; inset: -18%; opacity: 0; background: radial-gradient(ellipse 68% 92% at 37% 47%, rgb(255,255,255) 0%, rgba(255,255,255,0.98) 20%, rgba(255,253,250,0.86) 45%, rgba(255,174,105,0.32) 67%, rgba(255,174,105,0) 100%); }
-      #lower-third { position: absolute; left: 5%; bottom: 12%; display: flex; align-items: stretch; gap: ${Math.round(H * 0.012)}px; opacity: 0; pointer-events: none; }
+      #lower-third { position: absolute; left: 5%; top: 80%; display: flex; align-items: stretch; gap: ${Math.round(H * 0.012)}px; opacity: 0; pointer-events: none; }
       .lt-bar { width: ${Math.round(H * 0.008)}px; background: ${c.accent}; border-radius: ${Math.round(H * 0.004)}px; transform-origin: 50% 100%; }
       .lt-text { display: flex; flex-direction: column; justify-content: center; gap: ${Math.round(H * 0.004)}px; padding: ${Math.round(H * 0.008)}px 0; font-family: "Inter", sans-serif; color: ${c.text}; text-shadow: 0 0.06em 0.4em rgba(0,0,0,0.6); }
       .lt-name { font-size: ${Math.round(H * 0.04)}px; font-weight: 850; letter-spacing: -0.01em; line-height: 1; }
@@ -362,12 +381,15 @@ ${audioHTML}
             tl.to("#footage", { objectPosition: p.x + "% 50%", duration: Math.max(0.2, p.t - q.t), ease: "power1.inOut" }, q.t);
           }
         }
+        // Base framing (long form): a tighter default frame on a wide shot; every punch-in is relative to it.
+        const BASE = PLAN.base || 1;
+        if (BASE !== 1 || PLAN.baseShift) tl.set("#video-wrap", { scale: BASE, y: PLAN.baseShift || 0 }, 0);
         // Motion from the first frame: a slow push-in under the hook (a static face in frame 1 reads as a still).
-        if (PLAN.hook) tl.fromTo("#video-wrap", { scale: 1 }, { scale: 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
+        if (PLAN.hook) tl.fromTo("#video-wrap", { scale: BASE }, { scale: BASE * 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
         // Punch-ins. "camera": the creator move (push with a slight tilt and lift, the edges defocus for a beat, a slow
         // return); "snap": the hard cut-in zoom.
         // Cut cadence: an instant change of framing (a jump cut) between the punch-ins.
-        const jump = (z) => tl.set("#video-wrap", { scale: z.scale, xPercent: z.xPercent || 0, yPercent: z.scale > 1 ? -0.6 : 0, rotationX: 0, rotationY: 0 }, z.t);
+        const jump = (z) => tl.set("#video-wrap", { scale: z.scale * BASE, xPercent: z.xPercent || 0, yPercent: z.scale > 1 ? -0.6 : 0, rotationX: 0, rotationY: 0 }, z.t);
         if (PLAN.zoomStyle === "camera") {
           gsap.set("#video-wrap", { transformPerspective: 1200 });
           let n = 0;
@@ -375,14 +397,14 @@ ${audioHTML}
             if (z.cut) jump(z);
             else if (z.scale > 1) {
               const dir = n++ % 2 ? 1 : -1;
-              tl.to("#video-wrap", { scale: z.scale, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
+              tl.to("#video-wrap", { scale: z.scale * BASE, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
               tl.to("#defocus", { opacity: 1, duration: 0.3, ease: "power2.out" }, z.t);
               tl.to("#defocus", { opacity: 0, duration: 0.45, ease: "power2.in" }, z.t + 0.3);
             } else {
-              tl.to("#video-wrap", { scale: 1, xPercent: 0, yPercent: 0, rotationX: 0, rotationY: 0, duration: 0.9, ease: "power2.inOut" }, z.t);
+              tl.to("#video-wrap", { scale: BASE, xPercent: 0, yPercent: 0, rotationX: 0, rotationY: 0, duration: 0.9, ease: "power2.inOut" }, z.t);
             }
           });
-        } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to("#video-wrap", { scale: z.scale, xPercent: 0, duration: z.snap, ease: "power3.out" }, z.t)));
+        } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to("#video-wrap", { scale: z.scale * BASE, xPercent: 0, duration: z.snap, ease: "power3.out" }, z.t)));
         // Cold open: the still holds under the hook with a slow push, the flash hits on the cut to the speaker.
         if (PLAN.coldOpen) {
           const d = PLAN.coldOpen.duration;
@@ -398,11 +420,12 @@ ${audioHTML}
 ${gfxList.length ? GRAPHICS_JS : ""}
         // B-roll: hard cut in and out. The push (6%, ease-out, settles before the end) and the Ken Burns pans (a
         // steady drift with a little scale, no ease) run on the wrapper; the cut lands with a short focus pull.
-        const MOVES = { in: [{ scale: 1.0 }, { scale: 1.06, ease: "power2.out" }], out: [{ scale: 1.06 }, { scale: 1.0, ease: "power2.out" }], left: [{ scale: 1.04, xPercent: 1.6 }, { scale: 1.07, xPercent: -1.6, ease: "none" }], right: [{ scale: 1.04, xPercent: -1.6 }, { scale: 1.07, xPercent: 1.6, ease: "none" }] };
+        // A generated clip already moves, so it gets no push: "none" holds the frame.
+        const MOVES = { none: [{ scale: 1.0 }, { scale: 1.0, ease: "none" }], in: [{ scale: 1.0 }, { scale: 1.06, ease: "power2.out" }], out: [{ scale: 1.06 }, { scale: 1.0, ease: "power2.out" }], left: [{ scale: 1.04, xPercent: 1.6 }, { scale: 1.07, xPercent: -1.6, ease: "none" }], right: [{ scale: 1.04, xPercent: -1.6 }, { scale: 1.07, xPercent: 1.6, ease: "none" }] };
         PLAN.broll.forEach((b, i) => {
           const el = document.getElementById("broll-" + i);
           const m = MOVES[b.motion] || MOVES.in;
-          const img = el.querySelector("img");
+          const img = el.querySelector(".broll-media");
           const bEnd = b.start + b.duration;
           if (PLAN.brollCut === "blur") {
             tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" }, b.start);

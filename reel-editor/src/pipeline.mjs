@@ -5,7 +5,7 @@ import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs
 import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments } from "./cuts.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook } from "./placement.mjs";
+import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -13,6 +13,7 @@ import { soundCues, describeCues } from "./sounds.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { makeBroll } from "./broll.mjs";
+import { makeRunwayBroll } from "./broll-runway.mjs";
 import { makeGraphics } from "./graphics.mjs";
 import { planSlams } from "./slams.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
@@ -200,10 +201,24 @@ export async function runEdit(input, opts = {}) {
     const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
     detection = await detectFaces(videoSrc, times);
   }
+  // Base framing (long form): the face sampled across the whole video sets a tighter default frame on a wide
+  // shot, and which side of the speaker has room for cards.
+  let framing = { scale: 1, origin: preset.zooms.origin || "50% 40%" };
+  let face = null;
+  if (preset.framing?.enabled && sameShape) {
+    const det = await detectFaces(videoSrc, Array.from({ length: 12 }, (_, i) => r3(Math.min(duration - 0.05, 0.5 + (i * duration) / 12))));
+    face = faceBox(det);
+    if (face) {
+      framing = baseFraming(face, { target: preset.framing.faceHeight ?? 0.27, max: preset.framing.max ?? 1.3, eyeLine: preset.framing.eyeLine ?? 0.42 });
+      log(`framing: face ${Math.round(face.h * 100)}% of the frame at ${Math.round(face.cx * 100)}% across → base ${framing.scale}x, cards on the ${face.cx < 0.5 ? "right" : "left"}`);
+      if (detection) detection = { ...detection, frames: detection.frames }; // the hook and caption placement see the same frames, scaled below
+    } else log("framing: no face found, keeping the frame as shot");
+  }
+  const zoomedHead = (d, z) => headExtent(d, { zoom: framing.scale * z, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38 });
   let captionTop = preset.captions.position - 0.04;
   if (showCaptions && preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
-    const head = headExtent(detection);
-    const spot = placeCaptions(head, { fontSizeFrac: preset.captions.fontSizeFrac, defaultPosition: preset.captions.position });
+    const head = zoomedHead(detection, 1);
+    const spot = placeCaptions(head, { fontSizeFrac: preset.captions.fontSizeFrac, defaultPosition: preset.captions.position, min: preset.captions.placeMin ?? 0.56, max: preset.captions.placeMax ?? 0.76, gap: preset.captions.placeGap ?? 0.03 });
     preset.captions.position = spot.position;
     captionTop = spot.top - 0.02;
     const where = { "below-chin": "just under the chin", capped: "as low as the caption overlay allows (chin is low in the frame)", "safe-zone": "at the safe-zone line (wide shot)", default: "at the preset height (no face found)" }[spot.zone];
@@ -217,7 +232,7 @@ export async function runEdit(input, opts = {}) {
     }
     if (preset.hook.autoPlace && opts.hookPosition == null && sameShape) {
       const t0 = hook.start, t1 = hook.start + hook.duration;
-      const head = headExtent(detection, { zoom: 1.06 }); // the opening push-in reaches 1.06 by the end of the hook
+      const head = zoomedHead(detection, 1.06); // the opening push-in reaches 1.06 by the end of the hook
       const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
       const spot = placeHook(head, { words: hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), W: canvas0.width, H: canvas0.height, fontPx, captionTop, defaultPosition: preset.hook.position });
       if (head) {
@@ -250,7 +265,7 @@ export async function runEdit(input, opts = {}) {
 
   // 4b. Graphic cards (Claude writes them from the transcript), then b-roll photos (Codex) in the gaps between
   // them. Either one failing leaves the reel without it. Punch-ins come last: on gold lines, clear of both.
-  const headForZoom = headExtent(detection);
+  const headForZoom = zoomedHead(detection, 1);
   const tightFrame = !!(headForZoom && headForZoom.bottom - headForZoom.top > 0.4);
   // Long form: the last `endSafe` seconds stay clean for YouTube's end screen; the structure (chapters, re-hooks)
   // comes first so its title cards take their slots before the other cards are planned around them.
@@ -273,9 +288,10 @@ export async function runEdit(input, opts = {}) {
     : [];
   // Structure cards win their slots: a planned card within 6 s of one is dropped.
   const allCards = [...structureCards, ...graphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2)))].sort((a, b) => a.start - b.start);
+  // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
+  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail };
   const broll = preset.broll?.enabled && shownGroups.length
-    // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
-    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail })
+    ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
   if (preset.zooms.enabled) {
     zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll], hook, tight: tightFrame });
@@ -316,6 +332,7 @@ export async function runEdit(input, opts = {}) {
     coldOpen,
     lowerThird,
     structure,
+    framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right" },
     reframe,
     audio,
     words: cleanWords,

@@ -410,7 +410,7 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
   const band = mode === "band" ? `
       .gfx { background: none; }
       .gfx::after { background: linear-gradient(0deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0) 44%); }
-      .g-box { left: 4%; right: 4%; top: auto; bottom: 7%; max-height: 36%; justify-content: flex-start; gap: ${px(18)}; padding: ${px(28)} ${px(36)} ${px(30)}; border-radius: ${px(22)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55); border-left: ${px(8)} solid ${c.accent}; }
+      .g-box { left: var(--gx, 56%); right: auto; width: var(--gw, 40%); top: var(--gy, 20%); bottom: auto; max-height: 62%; justify-content: flex-start; gap: ${px(18)}; padding: ${px(28)} ${px(36)} ${px(30)}; border-radius: ${px(22)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55); border-left: ${px(8)} solid ${c.accent}; }
       .g-center { align-items: flex-start; text-align: left; }
       .g-eyebrow { font-size: ${px(26)}; }
       .g-stat { line-height: 1; }
@@ -444,7 +444,7 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-bubble { font-size: ${px(28)}; padding: ${px(12)} ${px(20)}; max-width: 70%; }
       .g-post { padding: ${px(20)} ${px(24)} ${px(18)}; }
       .g-post-text { font-size: ${px(30)}; }
-      .g-chapter { left: 6%; right: auto; bottom: 12%; max-width: 56%; }
+      .g-chapter { width: var(--gw, 40%); }
       .g-chapter .g-headline { font-size: ${px(72)}; }` : "";
   return `
       .gfx { --u: ${u}px; position: absolute; inset: 0; overflow: hidden; opacity: 0; background: radial-gradient(120% 62% at 50% 34%, ${c.accent}2e 0%, ${c.accent}00 60%), ${c.bg}; color: ${c.text}; font-family: "Inter", sans-serif; }
