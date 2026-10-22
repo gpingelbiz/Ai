@@ -236,9 +236,13 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
-    if (saved.key === key && Array.isArray(saved.scenes)) {
+    // Reuse while every card still has its line (a new hook hides different caption lines and shifts the line
+    // numbers; the cards follow their line by start time instead of costing another Claude call).
+    const byStart = (s) => candidates.find((c) => Math.abs(c.start - (s.start ?? -1)) < 0.05);
+    const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.every(byStart);
+    if ((saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
-      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, duration: sceneDuration(s), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max });
+      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max });
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath}`);
       return scenes;
     }

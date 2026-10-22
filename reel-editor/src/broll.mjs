@@ -118,7 +118,10 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
 
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
-    if (saved.key === key && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
+    // Reuse while the lines the stills were drawn for are still there (a new hook hides different caption lines,
+    // which must not cost another Codex session).
+    const stillThere = (s) => candidates.some((c) => Math.abs(c.start - s.start) < 0.05 && c.text === s.text);
+    if ((saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
       log(`b-roll: reusing ${saved.shots.length} still${saved.shots.length === 1 ? "" : "s"} from ${dir}`);
       return saved.shots;
     }

@@ -252,7 +252,8 @@ export async function runEdit(input, opts = {}) {
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "" })
     : [];
   const broll = preset.broll?.enabled && shownGroups.length
-    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: graphics })
+    // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
+    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : graphics })
     : [];
   if (preset.zooms.enabled) {
     zooms = planZooms(shownGroups, duration, { ...preset.zooms, busy: [...graphics, ...broll], hook, tight: tightFrame });
@@ -263,7 +264,7 @@ export async function runEdit(input, opts = {}) {
     }
   }
   // Cold open: the first b-roll still holds under the hook for a beat before the speaker appears.
-  const coldOpen = preset.coldOpen?.enabled && broll.length ? { duration: Math.min(preset.coldOpen.duration || 0.6, Math.max(0.3, duration / 20)), src: broll[0].src, file: broll[0].file } : null;
+  const coldOpen = preset.coldOpen?.enabled && broll.length ? { duration: r3(Math.min(preset.coldOpen.duration || 0.6, Math.max(0.3, duration / 20))), src: broll[0].src, file: broll[0].file } : null;
   if (preset.coldOpen?.enabled) log(coldOpen ? `cold open: ${coldOpen.duration}s on the first still` : "cold open: no still to open on");
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
   const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...graphics, ...broll], zooms }) : [];

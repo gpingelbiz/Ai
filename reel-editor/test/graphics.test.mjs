@@ -136,3 +136,29 @@ test("compare, bars, message and post cards: fields are checked, list rows get i
   const steps = normalizeScene({ type: "steps", line: 5, items: [{ text: "Make the calls" }, { text: "Own the number" }] });
   assert.ok(!sceneHTML(steps).includes("g-icon"), "icons are for list rows only");
 });
+
+test("saved plans survive a hook change: cards and stills follow their lines by start time", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { makeGraphics } = await import("../src/graphics.mjs");
+  const { makeBroll } = await import("../src/broll.mjs");
+  const wd = fs.mkdtempSync(path.join(os.tmpdir(), "reuse-"));
+  const lines = Array.from({ length: 12 }, (_, i) => ({ start: 4 + i * 3, end: 6 + i * 3, text: `line ${i}`, words: [] }));
+  const hook = { start: 0, duration: 3 };
+  // A plan saved against the full line list, then the same reel with line 2 hidden (a new hook repeats its words).
+  fs.writeFileSync(path.join(wd, "graphics.json"), JSON.stringify({ key: "stale", scenes: [{ type: "headline", line: 5, start: 19, eyebrow: "", text: "Own it", duration: 5.5 }] }));
+  const hidden = lines.filter((_, i) => i !== 2);
+  const scenes = await makeGraphics({ workDir: wd, groups: hidden, duration: 40, hook, cta: null, settings: {} });
+  assert.equal(scenes.length, 1, "reused without a Claude call");
+  assert.equal(scenes[0].start, 19, "the card stays on its line");
+  assert.equal(scenes[0].line, 4, "line number re-mapped after the hidden line");
+  const still = path.join(wd, "still.png");
+  fs.writeFileSync(still, "x");
+  fs.mkdirSync(path.join(wd, "broll"));
+  fs.writeFileSync(path.join(wd, "broll", "broll.json"), JSON.stringify({ key: "stale", shots: [{ line: 7, start: 25, duration: 2, text: "line 7", scene: "a desk", file: still, motion: "in" }] }));
+  const shots = await makeBroll({ workDir: wd, groups: hidden, duration: 40, hook, cta: null, settings: {} });
+  assert.equal(shots.length, 1, "stills reused without a Codex session");
+  assert.equal(shots[0].start, 25);
+  fs.rmSync(wd, { recursive: true, force: true });
+});

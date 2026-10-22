@@ -168,7 +168,7 @@ fi
 # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
 used_hook="$hook"
 [ -n "$used_hook" ] || used_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
-pretty=$(printf '%s' "$used_hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
+pretty=$(printf '%s' "$used_hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
 title="${pretty:-$name}"
 mkdir -p "$DONE"
 
@@ -206,6 +206,8 @@ else
     # Say why, from the editor's own lines for this run, instead of guessing at Codex.
     if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
       printf 'No b-roll this time: the clip is under 8 seconds, too short for a still.\n' > "$folder/No b-roll this time.txt"
+    elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: no room after the hook"; then
+      printf 'No b-roll this time: no room for a 2-second still between the hook and the end of this clip.\n' > "$folder/No b-roll this time.txt"
     elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "rate-limited"; then
       printf 'No b-roll this time: Codex is rate-limited on the ChatGPT plan, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$folder/No b-roll this time.txt"
     else
