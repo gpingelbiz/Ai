@@ -53,6 +53,10 @@ It runs Claude Code headless with only the Sandcastles hook and format lookups a
 
 The drop folders split the looks: `Raw - Reel` is the classic look (`--no-graphics --caption-style pop`), `Raw - Reel with B-roll` is the full look. By hand, the brand preset cuts in graphic cards (`--graphics`: stats, checklists, highlighted quotes, headlines, step diagrams, written by headless Claude from the transcript) and uses word-by-word reveal captions (`--caption-style reveal`). Read `graphics.json` after an edit and check every card says only what Greg said (numbers with their qualifiers). `--no-graphics` / `--caption-style pop` give the earlier look.
 
+## Music
+
+Licensed tracks live in `~/Reels/music` (Desktop/Reels/Music). For a chat edit pass one with `--music`; the drop folders pick at random and note the track in `music.txt`. Never add music from anywhere else.
+
 ## B-roll and carousel
 
 `--broll` on `reel edit` adds 1-3 Codex stills after the hook (no faces, no readable text); `reel carousel videos/<name> --out "<reel folder>/Carousel"` makes the IG carousel from the finished reel, reusing those stills. Both need the Codex CLI signed in and stop for 20 minutes after a rate limit. Check every still before posting: describe what is in it, and never present an AI image as real footage of Greg, a client or a real event.

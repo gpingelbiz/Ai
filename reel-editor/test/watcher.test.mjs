@@ -60,7 +60,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, carouselFails = false } = {}) {
+function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] } } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -79,15 +79,19 @@ case "$*" in *--broll*)
 esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > "$work/plan.json"`);
   const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel") };
-  for (const d of Object.values(dirs)) { fs.mkdirSync(d); fs.writeFileSync(path.join(d, "clip.mov"), "video"); }
+  for (const [mode, d] of Object.entries(dirs)) { fs.mkdirSync(d); for (const c of clips[mode] || []) fs.writeFileSync(path.join(d, c), "video"); }
+  const musicDir = path.join(home, "music");
+  fs.mkdirSync(musicDir);
+  for (const m of music) fs.writeFileSync(path.join(musicDir, m), "audio");
   const done = path.join(home, "Done");
   spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], {
-    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_CAPTION: "0", REEL_WATCH_CTA: "" },
+    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_CAPTION: "0", REEL_WATCH_CTA: "" },
     stdio: "pipe",
   });
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
   const list = (d) => (fs.existsSync(path.join(done, d)) ? fs.readdirSync(path.join(done, d)).sort() : null);
-  return { home, day, done, list, top: fs.readdirSync(done).sort(), calls: fs.readFileSync(path.join(home, "reel-calls"), "utf8"), seen: fs.readdirSync(path.join(home, "Reels", "videos", ".seen")).sort() };
+  const read = (p) => fs.readFileSync(path.join(done, p), "utf8").trim();
+  return { home, day, done, list, read, top: fs.readdirSync(done).sort(), calls: fs.readFileSync(path.join(home, "reel-calls"), "utf8"), seen: fs.readdirSync(path.join(home, "Reels", "videos", ".seen")).sort() };
 }
 
 test("each drop folder makes its own thing: reel, reel with b-roll, carousel", () => {
@@ -111,4 +115,27 @@ test("no b-roll back from Codex leaves a note; a failed carousel leaves a note a
   assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["No b-roll this time.txt", "Own it first.mp4"]);
   assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Carousel failed.txt"]);
   assert.ok(r.seen.includes("carousel-clip.mov.failed"));
+});
+
+test("music: a random track from the folder, #music:name picks one, #nomusic skips; carousels never get music", () => {
+  const r = fakeDrops({ brollShots: 0, music: ["Calm Morning.mp3", "Dark Drive.wav"], clips: { reel: ["a.mov", "b__Own it #music:dark.mov", "c__Own it #nomusic.mov"], broll: ["d.mov"], carousel: ["e.mov"] } });
+  const lines = r.calls.trim().split("\n");
+  const edit = (name) => lines.find((l) => l.startsWith("edit ") && l.includes("/" + name + " "));
+  assert.match(edit("a.mov"), /--music .*\/(Calm Morning\.mp3|Dark Drive\.wav)/);
+  assert.match(edit("b__Own it #music:dark.mov"), /--music .*\/Dark Drive\.wav/);
+  assert.match(edit("b__Own it #music:dark.mov"), /--hook Own it /, "the #music tag is stripped from the hook");
+  assert.doesNotMatch(edit("c__Own it #nomusic.mov"), /--music/);
+  assert.match(edit("d.mov"), /--music /);
+  assert.doesNotMatch(edit("e.mov"), /--music/);
+  const reel1 = r.list(`${r.day} Reel 1`);
+  assert.ok(reel1.includes("music.txt"));
+  assert.match(r.read(`${r.day} Reel 2/music.txt`), /^Music: Dark Drive\.wav$/);
+  assert.ok(!r.list(`${r.day} Reel 3`).includes("music.txt"));
+  assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 2`, "Own it.mp4")), "the slug and title drop the tag");
+});
+
+test("music: an empty folder means no music, no error", () => {
+  const r = fakeDrops({ brollShots: 0, music: [] });
+  assert.doesNotMatch(r.calls, /--music/);
+  assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4"]);
 });

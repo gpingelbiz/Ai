@@ -88,7 +88,9 @@ If you said yes to the drop folder, it is already on. Desktop/Reels has three dr
 | `Raw - Reel with B-roll` | `2026-10-21 Reel 2 with B-roll`: the full look: graphic cards that show what you say (numbers, checklists, quotes, key lines), captions that light up word by word, and 1-2 generated b-roll photos in the gaps, plus the pictures (`B-roll 1.png`...) |
 | `Raw - Carousel` | `2026-10-21 Carousel 1`: Instagram carousel slides made from the video, plus `carousel.txt` with the slide text |
 
-Every folder also gets `caption.txt` (a caption, 3 hashtags and 3 hook ideas), and reels get `check these words.txt` when there is something to check. Reels are named after their hook, and the numbers start again at 1 each day. To get two of them from one clip, drop it into both folders.
+Every folder also gets `caption.txt` (a caption, 3 hashtags and 3 hook ideas), and reels get `check these words.txt` when there is something to check.
+
+**Music:** put licensed tracks (mp3, m4a or wav, for example Epidemic Sound downloads) in **Desktop/Reels/Music**. Every reel gets one at random, low under your voice with a fade in and out, and `music.txt` in the reel folder names the track. Name a clip `clip #music:calm.mov` to use the track whose name has "calm", or `clip #nomusic.mov` for none. An empty Music folder means no music. Reels are named after their hook, and the numbers start again at 1 each day. To get two of them from one clip, drop it into both folders.
 
 The Raw folders are shortcuts to `~/Reels/raw`, `~/Reels/raw-broll` and `~/Reels/raw-carousel`. macOS stops background jobs from reading Desktop folders, so leave them as shortcuts.
 
@@ -102,6 +104,7 @@ The filename is the brief:
 | `clip #nozoom.mov` | No punch-in zooms |
 | `clip #landscape.mov` | 16:9 for YouTube |
 | `clip #low.mov` or `clip #top.mov` | Force the hook low or high |
+| `clip #music:calm.mov` or `clip #nomusic.mov` | Use the Music track whose name has "calm", or no music |
 
 `caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. B-roll and the carousel need the Codex CLI signed in with a ChatGPT plan (the installer offers it; by hand: `npm install -g @openai/codex`, then `codex login`); without it, the b-roll folder gives a plain reel and the carousel folder gives nothing. Codex has usage limits: when it hits one, Codex is skipped for 20 minutes; a b-roll reel still arrives (with a note, and without b-roll) and a carousel leaves a note to drop it again. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
 

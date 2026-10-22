@@ -25,6 +25,8 @@ The watcher reads the filename so you can steer an edit from your phone without 
 | `clip #landscape.mov` | 16:9 canvas for YouTube |
 | `clip #low.mov` | force the hook to chest height (it normally places itself around your face) |
 | `clip #top.mov` | force the hook above your head |
+| `clip #music:calm.mov` | the track in the music folder whose name contains "calm" (default: a random one) |
+| `clip #nomusic.mov` | no music bed |
 | `clip__The *10 minutes* after a bad number.mov` | asterisks pick the gold phrase in the hook |
 
 Tags combine: `objections__Stop explaining the price #nocta.mov`.
@@ -36,6 +38,8 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | `REEL_WATCH_ROOT` | `~/Reels` | work folder (renders in `videos/<name>/`) |
 | `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per drop: `<date> Reel <n>` (from `REEL_WATCH_RAW`), `<date> Reel <n> with B-roll` (from `REEL_WATCH_RAW_BROLL`, default `~/Reels/raw-broll`) or `<date> Carousel <n>` (from `REEL_WATCH_RAW_CAROUSEL`, default `~/Reels/raw-carousel`), each with `caption.txt`; on the Mini this is `~/Desktop/Reels` |
 | `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set it to an empty string (`export REEL_WATCH_CTA=""`) for no CTA |
+| `REEL_WATCH_MUSIC` | `~/Reels/music` | music folder: a random track plays under every reel (mp3, m4a, wav); empty means no music |
+| `REEL_WATCH_MUSIC_VOLUME` | preset (0.12) | music level under the voice |
 | `REEL_WATCH_CAROUSEL_IMAGES` | `3` | new Codex images per carousel from `raw-carousel` |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 

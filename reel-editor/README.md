@@ -98,6 +98,10 @@ With `autoKeywords` on (the brand preset), lines with none of the above get an a
 
 `scripts/write-caption.mjs <work dir> [out.txt]` writes the Instagram post copy for a finished reel: a 1-2 line caption in the speaker's words, 3 hashtags, and 3 hook-text options, each tied to a hook pattern Sandcastles shows winning for the reel's topic (with the example creator, views and outlier score). It runs `claude -p` with only the Sandcastles `top_hooks` and `top_formats` tools allowed, so it can't touch files or run commands. Voice comes from `REEL_CAPTION_VOICE`, else `voice/greg.md` for the brand preset, else `voice/default.md`. The drop folder runs it after every reel (`REEL_WATCH_CAPTION=0` turns it off). Needs the Claude Code CLI signed in and the Sandcastles connector added on claude.ai; without them the reel is delivered without a caption file.
 
+## Music
+
+`--music <file>` loops a track to the reel's length at `--music-volume` (0.12) with a fade in and out. The drop folders pick one at random from `~/Reels/music` (Desktop/Reels/Music; `REEL_WATCH_MUSIC`), honor `#music:<name>` and `#nomusic` in the filename, and write `music.txt` in the reel folder naming the track. Tracks are the user's own licensed files (Epidemic Sound downloads work as they are).
+
 ## Graphic cards and reveal captions
 
 The brand look is modeled on explainer reels: designed cards cut in to show what is being said, and captions that light up word by word.
