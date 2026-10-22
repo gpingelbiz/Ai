@@ -132,7 +132,7 @@ export const IMAGE_RULES = [
  * session costs a full setup prompt, and separate sessions back to back trip the plan's rate limit.
  */
 export function imageInstructions({ aspect = "9:16", style = "" } = {}) {
-  const shape = aspect === "9:16" ? "vertical 9:16" : aspect === "4:5" ? "portrait 4:5" : aspect;
+  const shape = aspect === "9:16" ? "vertical 9:16 (1080x1920)" : aspect === "4:5" ? "portrait 4:5 (1080x1350)" : aspect === "16:9" ? "wide landscape 16:9 (1920x1080, wider than it is tall)" : aspect;
   return [
     `Then make the images: for each scene, use your image generation tool once to make a ${shape} image of it, one at a time, and save it in the current folder under the file name given. If one image fails, skip it and keep going; never retry more than once.`,
     `Look for every image: ${style || IMAGE_STYLE}`,

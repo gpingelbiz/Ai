@@ -10,7 +10,7 @@ import { norm } from "./text.mjs";
 
 const DISPLAY_MAX = 16;
 // Everyday gold words that are not worth a stamp on their own ("one thing", "first", "why").
-const WEAK = new Set("one two three four five six seven eight nine ten first last next why what that this thing things here there never always".split(" "));
+const WEAK = new Set("one two three four five six seven eight nine ten first last next why what that this thing things here there never always right okay yeah really actually just like".split(" "));
 
 function rankWord(text, dict) {
   const t = norm(text);
@@ -35,7 +35,7 @@ export function slamCandidates(groups, dict = {}) {
       const run = words.slice(j, k + 1);
       const text = run.map((w) => tidy(w.text)).join(" ").trim();
       const rank = Math.max(...run.map((w) => rankWord(w.text, dict)));
-      const weak = rank < 2 && (WEAK.has(norm(text)) || norm(text).length < 5);
+      const weak = (rank < 2 && (WEAK.has(norm(text)) || norm(text).length < 5)) || WEAK.has(norm(text)) || /^\d{1,2}:\d{2}$/.test(text);
       if (text && text.length <= DISPLAY_MAX && !weak) out.push({ line: i, t: r3(run[0].start ?? g.start), end: r3(run[run.length - 1].end ?? g.end), text, rank });
       j = k;
     }

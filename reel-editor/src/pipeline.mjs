@@ -264,7 +264,7 @@ export async function runEdit(input, opts = {}) {
       if (hook && structure.promise && hook.auto) { Object.assign(hook, { text: structure.promise.replace(/\*/g, ""), auto: false }, hookWords(structure.promise, dict)); log(`hook: "${hook.text}" (the promise, from the structure)`); }
       structureCards = [
         ...structure.chapters.slice(1).map((c, i) => ({ type: "chapter", text: c.title, number: i + 2, eyebrow: "", start: r3(c.start), duration: 3.5 })),
-        ...structure.rehooks.map((h) => ({ type: "headline", text: h.text, eyebrow: "", start: r3(h.start), duration: 4.5 })),
+        ...structure.rehooks.filter((h) => !structure.chapters.some((c) => Math.abs(c.start - h.start) < 8)).map((h) => ({ type: "headline", text: h.text, eyebrow: "", start: r3(h.start), duration: 4.5 })),
       ].filter((c) => c.start > (hook ? hook.start + hook.duration + 0.5 : 3) && c.start + c.duration < duration - tail).sort((a, b) => a.start - b.start);
     }
   }
