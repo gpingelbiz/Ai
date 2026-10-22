@@ -4,8 +4,8 @@
 #   REEL_WATCH_RAW           Raw - Reel: the edited reel                (default ~/Reels/raw)
 #   REEL_WATCH_RAW_BROLL     Raw - Reel with B-roll                     (default ~/Reels/raw-broll)
 #   REEL_WATCH_RAW_CAROUSEL  Raw - Carousel: an IG carousel from the video (default ~/Reels/raw-carousel)
-#   REEL_WATCH_RAW_LONG      Raw - Long Form: a long recording cut into several reels (default ~/Reels/raw-long)
-#   REEL_WATCH_RAW_YOUTUBE   Raw - YouTube: the whole long video edited for YouTube (default ~/Reels/raw-youtube)
+#   REEL_WATCH_RAW_LONG      Raw - Clips from Long Video: a long recording cut into several reels (default ~/Reels/raw-long)
+#   REEL_WATCH_RAW_YOUTUBE   Raw - Full YouTube Edit: the whole long video edited for YouTube (default ~/Reels/raw-youtube)
 #   REEL_WATCH_ROOT          work folder (default ~/Reels); markers live in videos/.seen
 # A clip is skipped once it has a .done or .failed marker. Rename a failed clip to retry it.
 set -uo pipefail

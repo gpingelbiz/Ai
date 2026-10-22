@@ -28,7 +28,7 @@ Four research passes on 2026-10-22 (editing craft, open-source tools, YouTube sp
 
 Cuts between words, a zoom on every cut, captions as noise, stock b-roll that shows nothing, one looping track, a sound on every pop. The pro counter-rules: clarity over cut count, change on meaning, restraint for a 25+ audience, b-roll only when it carries information.
 
-## What the editor does for a whole video (`reel youtube`, drop folder `Raw - YouTube`)
+## What the editor does for a whole video (`reel youtube`, drop folder `Raw - Full YouTube Edit`)
 
 1. One transcript (Scribe), the normal cuts (silence to ~0.3 s, fillers, false starts), plus retake collapse: a sentence said twice inside 30 s keeps the last take.
 2. Claude reads the sentence-timed transcript once and returns the structure: the promise (hook, on screen in the first 3 s), chapters (>= 3, >= 10 s, keyworded titles) with a title card at each boundary, re-hook lines near 3:00 and 6:00 and every 2-3 min after, the sparse card moments (one per 60-90 s), the b-roll slots (evidence only, 4 s), three title options, the description hook line and a pinned comment.

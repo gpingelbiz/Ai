@@ -209,12 +209,12 @@ if [ "$WATCH" = y ]; then
   [ -e "$D/Raw - Reel" ] || ln -s "$HOME/Reels/raw" "$D/Raw - Reel"
   [ -e "$D/Raw - Reel with B-roll" ] || ln -s "$HOME/Reels/raw-broll" "$D/Raw - Reel with B-roll"
   [ -e "$D/Raw - Carousel" ] || ln -s "$HOME/Reels/raw-carousel" "$D/Raw - Carousel"
-  [ -e "$D/Raw - Long Form" ] || ln -s "$HOME/Reels/raw-long" "$D/Raw - Long Form"
-  [ -e "$D/Raw - YouTube" ] || ln -s "$HOME/Reels/raw-youtube" "$D/Raw - YouTube"
+  [ -e "$D/Raw - Clips from Long Video" ] || ln -s "$HOME/Reels/raw-long" "$D/Raw - Clips from Long Video"
+  [ -e "$D/Raw - Full YouTube Edit" ] || ln -s "$HOME/Reels/raw-youtube" "$D/Raw - Full YouTube Edit"
   [ -e "$D/Music" ] || ln -s "$HOME/Reels/music" "$D/Music"
   [ -e "$HOME/Reels/music/Put music here.txt" ] || printf 'Drop licensed music files here (mp3, m4a or wav), for example Epidemic Sound downloads.\nEvery reel gets one at random, low under your voice. Name a clip "...#music:calm.mov" to use the track whose name has "calm", or "...#nomusic.mov" for none.\n' > "$HOME/Reels/music/Put music here.txt"
   REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh" >/dev/null
-  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel, Raw - Long Form, Raw - YouTube (music from Desktop/Reels/Music)"
+  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit (music from Desktop/Reels/Music)"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it
