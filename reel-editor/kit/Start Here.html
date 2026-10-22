@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reel Editor: Start Here</title>
+<style>
+  :root { --bg: #ffffff; --text: #16161a; --muted: #5c5c66; --line: #e3e3e8; --card: #f6f6f8; --accent: #b0862a; --code: #f0f0f3; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111114; --text: #ececf1; --muted: #a2a2ad; --line: #2c2c33; --card: #1a1a1f; --accent: #e0b44c; --code: #23232a; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 36px 0 10px; padding-top: 18px; border-top: 1px solid var(--line); }
+  p { margin: 10px 0; }
+  .lead { color: var(--muted); font-size: 17px; margin-bottom: 24px; }
+  ol, ul { padding-left: 22px; } li { margin: 6px 0; }
+  code { background: var(--code); padding: 1px 6px; border-radius: 5px; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre { background: var(--code); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: 13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
+  .card strong { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 15px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Reel Editor</h1>
+  <p class="lead">Drop a raw talking-head clip in a folder and get back a finished vertical reel: captions, tight cuts, a hook title placed around your face, a check on every word, and a ready-to-post caption.</p>
+
+  <div class="card"><strong>You need:</strong> a Mac with Apple Silicon (M1 or newer), about 4 GB of free space, and internet. Optional: an ElevenLabs account for the most accurate transcription.</div>
+
+  <h2>1. Install (about 10 minutes)</h2>
+  <ol>
+    <li>Double-click <b>Install Reel Editor.command</b> in this folder. A Terminal window opens and does the work.</li>
+    <li>Answer three questions:
+      <table>
+        <tr><th>Question</th><th>What to pick</th></tr>
+        <tr><td>Your look</td><td><b>2</b> for plain white captions, or <b>3</b> for your own colors (two hex codes, like <code>#00AAFF</code>). Pick <b>1</b> only if you make content for Greg Pingel.</td></tr>
+        <tr><td>ElevenLabs key</td><td>Paste it, or press Return to skip. Get one at elevenlabs.io, under Developers, API Keys.</td></tr>
+        <tr><td>Drop folder</td><td>Press Return for yes.</td></tr>
+      </table>
+    </li>
+    <li>It finishes by playing a short test reel. That means it worked.</li>
+  </ol>
+
+  <div class="card">
+    <p><strong>If your Mac says the file "can't be opened" or "Apple could not verify" it:</strong></p>
+    <ol>
+      <li>Open <b>System Settings</b>, then <b>Privacy &amp; Security</b>.</li>
+      <li>Scroll down to the message about <b>Install Reel Editor.command</b> and click <b>Open Anyway</b>.</li>
+      <li>Confirm, and enter your Mac password if asked.</li>
+    </ol>
+    <p>Or skip the file: open <b>Terminal</b> (in Applications, Utilities), paste this line and press Return:</p>
+    <pre>curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash</pre>
+  </div>
+  <p class="muted">If a window asks to install Apple's command line tools, click Install, wait for it to finish, then run the installer again. If Homebrew is missing, the installer adds it and asks for your Mac password once.</p>
+
+  <h2>2. Make a reel</h2>
+  <ol>
+    <li>Drop a clip into <b>Desktop/Reels/Raw</b>.</li>
+    <li>Wait for the notification. A 1-minute clip takes about 3 minutes.</li>
+    <li>Open the new folder in <b>Desktop/Reels</b>. Each reel gets its own, named by date and number: <code>2026-10-21 Reel 1</code>, <code>Reel 2</code>, and so on.</li>
+  </ol>
+  <table>
+    <tr><th>In each folder</th><th>What it is</th></tr>
+    <tr><td>the .mp4</td><td>The finished reel, named after its hook</td></tr>
+    <tr><td>check these words.txt</td><td>Only when the two transcription engines disagreed on a word, with its time in the reel. Check those spots before posting.</td></tr>
+    <tr><td>caption.txt</td><td>A caption, 3 hashtags and 3 hook ideas based on what is working for that topic right now. Needs Claude Code and the Sandcastles connector; otherwise it is skipped.</td></tr>
+  </table>
+
+  <p>The filename is the brief:</p>
+  <table>
+    <tr><th>Name your clip</th><th>Result</th></tr>
+    <tr><td><code>clip.mov</code></td><td>Your opening sentence becomes the hook</td></tr>
+    <tr><td><code>clip__Stop explaining the price.mov</code></td><td>Everything after the two underscores is the hook</td></tr>
+    <tr><td><code>clip__Stop *explaining* the price.mov</code></td><td>Asterisks pick the highlighted word</td></tr>
+    <tr><td><code>clip #nozoom.mov</code></td><td>No punch-in zooms</td></tr>
+    <tr><td><code>clip #landscape.mov</code></td><td>16:9 for YouTube</td></tr>
+    <tr><td><code>clip #low.mov</code> / <code>clip #top.mov</code></td><td>Force the hook low or high (it normally places itself around your face)</td></tr>
+  </table>
+
+  <h2>3. Make it yours</h2>
+  <ul>
+    <li><b>Your words:</b> open <code>~/.reel/dictionary.json</code> and add your program and framework names under <code>terms</code>. They get highlighted and spelled right.</li>
+    <li><b>Your caption voice:</b> edit <code>~/.reel/voice.md</code> with who you talk to, words you use, and words you never use.</li>
+    <li><b>A call-to-action:</b> add <code>export REEL_WATCH_CTA="Comment YOURWORD"</code> inside the reel-editor block in <code>~/.zshrc</code>.</li>
+    <li><b>Change your look:</b> double-click the installer again and pick another option.</li>
+  </ul>
+
+  <h2>Fix a problem</h2>
+  <table>
+    <tr><th>What you see</th><th>Fix</th></tr>
+    <tr><td>Nothing happens after a drop</td><td>Make sure you dropped into <b>Raw</b>, not the Reels folder. A "Reel failed" notification means: rename the clip (any new name) to try again.</td></tr>
+    <tr><td>A word in the captions is wrong</td><td>Check <b>check these words.txt</b>. To fix it for good, add the word under <code>corrections</code> in <code>~/.reel/dictionary.json</code>.</td></tr>
+    <tr><td>The hook covers your face</td><td>Add <code>#top</code> or <code>#low</code> to the clip's name and drop it again.</td></tr>
+    <tr><td>Anything else, or to update</td><td>Double-click the installer again. It updates and repairs, and keeps your settings.</td></tr>
+  </table>
+
+  <h2>Remove it</h2>
+  <p>In Terminal, run <code>~/Ai/reel-editor/scripts/install-watcher.sh --uninstall</code> to turn off the drop folder. Then delete the folders <code>~/Ai</code>, <code>~/.reel</code> and <code>~/.reel-venv</code>, and the lines between <code># &gt;&gt;&gt; reel-editor &gt;&gt;&gt;</code> and <code># &lt;&lt;&lt; reel-editor &lt;&lt;&lt;</code> in <code>~/.zshrc</code>. Your reels in Desktop/Reels stay.</p>
+
+  <p class="muted">Full guide: <a href="https://github.com/gpingelbiz/Ai/blob/main/reel-editor/SETUP.md">github.com/gpingelbiz/Ai, reel-editor/SETUP.md</a></p>
+</main>
+</body>
+</html>
