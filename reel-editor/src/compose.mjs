@@ -142,6 +142,12 @@ export function renderHTML(plan, footage) {
       <div id="open-flash" class="clip" data-start="0" data-duration="${r3(open.duration + 0.5)}" data-track-index="5" data-layout-allow-overflow><div class="broll-flash"></div><div class="broll-flash-core"></div></div>`
     : "";
 
+  // Lower third: the name and handle once, early in the first chapter (long-form).
+  const lt = plan.lowerThird;
+  const lowerHTML = lt && lt.name
+    ? `      <div id="lower-third" class="clip" data-start="${lt.at}" data-duration="${lt.duration}" data-track-index="3" data-layout-allow-overflow><div class="lt-bar"></div><div class="lt-text"><div class="lt-name">${esc(lt.name)}</div>${lt.handle ? `<div class="lt-handle">${esc(lt.handle)}</div>` : ""}</div></div>`
+    : "";
+
   // Climax words: a gold word stamps in big in the top third as it is said.
   const slamList = plan.slams || [];
   const slamFont = (t) => Math.round(Math.min(0.115 * H, (0.86 * W) / Math.max(3, t.length * 0.52)));
@@ -184,6 +190,7 @@ export function renderHTML(plan, footage) {
     focusPull,
     brollCut,
     coldOpen: open ? { duration: open.duration } : null,
+    lowerThird: lt && lt.name ? { at: lt.at, duration: lt.duration } : null,
     annotate,
     width: W,
     height: H,
@@ -216,6 +223,11 @@ export function renderHTML(plan, footage) {
       .broll-flash { position: absolute; inset: -12%; opacity: 0; background: rgb(255,253,250); pointer-events: none; }
       #open-flash { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
       .broll-flash-core { position: absolute; inset: -18%; opacity: 0; background: radial-gradient(ellipse 68% 92% at 37% 47%, rgb(255,255,255) 0%, rgba(255,255,255,0.98) 20%, rgba(255,253,250,0.86) 45%, rgba(255,174,105,0.32) 67%, rgba(255,174,105,0) 100%); }
+      #lower-third { position: absolute; left: 5%; bottom: 12%; display: flex; align-items: stretch; gap: ${Math.round(H * 0.012)}px; opacity: 0; pointer-events: none; }
+      .lt-bar { width: ${Math.round(H * 0.008)}px; background: ${c.accent}; border-radius: ${Math.round(H * 0.004)}px; transform-origin: 50% 100%; }
+      .lt-text { display: flex; flex-direction: column; justify-content: center; gap: ${Math.round(H * 0.004)}px; padding: ${Math.round(H * 0.008)}px 0; font-family: "Inter", sans-serif; color: ${c.text}; text-shadow: 0 0.06em 0.4em rgba(0,0,0,0.6); }
+      .lt-name { font-size: ${Math.round(H * 0.04)}px; font-weight: 850; letter-spacing: -0.01em; line-height: 1; }
+      .lt-handle { font-size: ${Math.round(H * 0.022)}px; font-weight: 600; color: ${c.accent}; letter-spacing: 0.04em; }
       .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
       .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
       .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
@@ -272,6 +284,7 @@ ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850
 ${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div id="defocus"></div>` : ""}
 ${openHTML}
 ${brollHTML}
+${lowerHTML}
 ${gfxHTML}
 ${slamHTML}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
@@ -413,6 +426,16 @@ ${gfxList.length ? GRAPHICS_JS : ""}
             });
           }
         });
+        // Lower third: the bar grows, the text slides in from behind it, then both leave the way they came.
+        if (PLAN.lowerThird) {
+          const l = PLAN.lowerThird;
+          tl.set("#lower-third", { opacity: 1 }, l.at);
+          tl.fromTo("#lower-third .lt-bar", { scaleY: 0 }, { scaleY: 1, duration: 0.35, ease: "power3.out" }, l.at);
+          tl.fromTo("#lower-third .lt-text", { x: -30, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: "power3.out" }, l.at + 0.15);
+          tl.to("#lower-third .lt-text", { x: -30, opacity: 0, duration: 0.3, ease: "power2.in" }, l.at + l.duration - 0.45);
+          tl.to("#lower-third .lt-bar", { scaleY: 0, duration: 0.25, ease: "power2.in" }, l.at + l.duration - 0.3);
+          tl.set("#lower-third", { opacity: 0 }, l.at + l.duration);
+        }
         // Climax words: slam down from 1.6x with expo weight, a three-frame impact shake, a quiet drift, a whip up and out.
         const frame = 1 / (PLAN.fps || 30);
         PLAN.slams.forEach((sl, i) => {

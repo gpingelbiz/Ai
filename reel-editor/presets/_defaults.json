@@ -135,7 +135,8 @@
       }
     },
     "focusPull": 0.3,
-    "cut": "hard"
+    "cut": "hard",
+    "aspect": "9:16"
   },
   "carousel": {
     "slides": 6,
@@ -157,5 +158,17 @@
     "enabled": true,
     "style": "frame",
     "at": 0.05
+  },
+  "lowerThird": {
+    "enabled": false,
+    "name": "",
+    "handle": "",
+    "at": 4,
+    "duration": 5
+  },
+  "youtube": {
+    "endSafe": 0,
+    "chapters": false,
+    "booking": ""
   }
 }

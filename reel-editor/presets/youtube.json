@@ -1,0 +1,21 @@
+{
+  "name": "youtube",
+  "canvas": "landscape",
+  "colors": { "text": "#F5F1E8", "accent": "#C8A24B", "stroke": "#000000", "bg": "#0B0B0D" },
+  "transcribe": { "verify": false },
+  "captions": { "enabled": false, "style": "reveal", "autoKeywords": true, "annotate": false, "position": 0.86, "fontSizeFrac": 0.034 },
+  "hook": { "enabled": true, "duration": 3, "position": 0.14, "fontSizeFrac": 0.046, "maxWords": 8, "autoPlace": true, "style": "headline" },
+  "zooms": { "enabled": true, "style": "snap", "scales": [1.12, 1.12], "tightScales": [1.08, 1.08], "snap": 0.04, "minSpacing": 20, "maxPer30": 2, "cadence": { "enabled": true, "min": 20, "lead": 1.5, "scale": 1.12, "tightScale": 1.08, "earlyUntil": 180, "earlyMin": 12 } },
+  "cuts": { "silence": "medium", "badTakes": true, "fillers": true, "pad": 0.14 },
+  "audio": { "music": null, "musicVolume": 0.1, "duck": true, "cleanAudio": true, "sfx": false, "sounds": true, "soundsVolume": 0.25, "soundMarkers": false },
+  "render": { "quality": "looks", "fps": 30 },
+  "cta": { "enabled": false },
+  "graphics": { "enabled": true, "mode": "band", "max": 12, "every": 75, "gap": 8 },
+  "broll": { "enabled": true, "max": 12, "maxWithGraphics": 12, "every": 75, "duration": 4, "gap": 20, "aspect": "16:9", "cut": "hard", "style": "" },
+  "slams": { "enabled": true, "max": 20, "minSpacing": 45, "hold": 1.2 },
+  "coldOpen": { "enabled": true, "duration": 0.6 },
+  "cover": { "enabled": true, "style": "frame", "at": 0.05 },
+  "carousel": { "handle": "@officialgregpingel" },
+  "lowerThird": { "enabled": true, "name": "Greg Pingel", "handle": "@officialgregpingel", "at": 4, "duration": 5 },
+  "youtube": { "endSafe": 20, "chapters": true, "booking": "" }
+}

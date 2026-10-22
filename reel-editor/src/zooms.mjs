@@ -40,8 +40,10 @@ export function planZooms(groups, duration, { minSpacing = 10, scales = [1.14, 1
  * footage keeps moving under them), never in the last 1.5 s. A tight frame gets a gentler step.
  * Returns the merged key list, time-ordered. Cut keys carry `cut: true` and `snap: 0`.
  */
-export function planCadence(groups, duration, keys = [], { min = 2.5, lead = 1.5, scale = 1.08, tightScale = 1.05, busy = [], hook = null, tight = false } = {}) {
+export function planCadence(groups, duration, keys = [], { min = 2.5, lead = 1.5, scale = 1.08, tightScale = 1.05, busy = [], hook = null, tight = false, tail = 1.5, earlyUntil = 0, earlyMin = 0 } = {}) {
   const from = hook ? hook.start + hook.duration : 0.5;
+  duration = duration - Math.max(0, tail - 1.5);
+  const gapAt = (t) => (earlyUntil && t < earlyUntil && earlyMin ? earlyMin : min);
   const covered = (t) => busy.some((b) => t >= b.start - 0.3 && t < b.start + b.duration + 0.3);
   const step = tight ? tightScale : scale;
   const all = [...keys].sort((a, b) => a.t - b.t);
@@ -52,7 +54,7 @@ export function planCadence(groups, duration, keys = [], { min = 2.5, lead = 1.5
     if (t < from || t > duration - 1.5 || covered(t)) continue;
     const moves = [...all, ...out];
     const lastMove = Math.max(from, ...moves.filter((k) => k.t <= t).map((k) => k.t));
-    if (t - lastMove < min) continue;
+    if (t - lastMove < gapAt(t)) continue;
     if (all.some((k) => k.t > t && k.t - t < lead)) continue;
     // The frame we are in right now: the last key before t, else the base frame.
     const before = moves.filter((k) => k.t <= t).sort((a, b) => b.t - a.t)[0];

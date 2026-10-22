@@ -36,6 +36,7 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noFillers) p.cuts.fillers = false;
   if (o.noZooms) p.zooms.enabled = false;
   if (o.noCaptions) p.captions.enabled = false;
+  if (o.captions) p.captions.enabled = true;
   if (o.noHook) p.hook.enabled = false;
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;

@@ -201,7 +201,7 @@ export REEL_PYTHON="$VENV/bin/python" PRODUCER_BROWSER_GPU_MODE=hardware REEL_PR
 [ -z "$KEY" ] || export ELEVENLABS_API_KEY="$KEY"
 
 if [ "$WATCH" = y ]; then
-  mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-carousel" "$HOME/Reels/raw-long" "$HOME/Reels/music" "$HOME/Desktop/Reels"
+  mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-carousel" "$HOME/Reels/raw-long" "$HOME/Reels/raw-youtube" "$HOME/Reels/music" "$HOME/Desktop/Reels"
   # macOS blocks background jobs from reading the Desktop, so the real drop folders live in ~/Reels and the
   # Desktop gets shortcuts. An older single "Raw" shortcut becomes "Raw - Reel".
   D="$HOME/Desktop/Reels"
@@ -210,10 +210,11 @@ if [ "$WATCH" = y ]; then
   [ -e "$D/Raw - Reel with B-roll" ] || ln -s "$HOME/Reels/raw-broll" "$D/Raw - Reel with B-roll"
   [ -e "$D/Raw - Carousel" ] || ln -s "$HOME/Reels/raw-carousel" "$D/Raw - Carousel"
   [ -e "$D/Raw - Long Form" ] || ln -s "$HOME/Reels/raw-long" "$D/Raw - Long Form"
+  [ -e "$D/Raw - YouTube" ] || ln -s "$HOME/Reels/raw-youtube" "$D/Raw - YouTube"
   [ -e "$D/Music" ] || ln -s "$HOME/Reels/music" "$D/Music"
   [ -e "$HOME/Reels/music/Put music here.txt" ] || printf 'Drop licensed music files here (mp3, m4a or wav), for example Epidemic Sound downloads.\nEvery reel gets one at random, low under your voice. Name a clip "...#music:calm.mov" to use the track whose name has "calm", or "...#nomusic.mov" for none.\n' > "$HOME/Reels/music/Put music here.txt"
   REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh" >/dev/null
-  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel, Raw - Long Form (music from Desktop/Reels/Music)"
+  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel, Raw - Long Form, Raw - YouTube (music from Desktop/Reels/Music)"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it

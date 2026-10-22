@@ -10,6 +10,7 @@ import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
+import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { makeBroll } from "./broll.mjs";
 import { makeGraphics } from "./graphics.mjs";
@@ -248,18 +249,36 @@ export async function runEdit(input, opts = {}) {
   // them. Either one failing leaves the reel without it. Punch-ins come last: on gold lines, clear of both.
   const headForZoom = headExtent(detection);
   const tightFrame = !!(headForZoom && headForZoom.bottom - headForZoom.top > 0.4);
+  // Long form: the last `endSafe` seconds stay clean for YouTube's end screen; the structure (chapters, re-hooks)
+  // comes first so its title cards take their slots before the other cards are planned around them.
+  const endSafe = preset.youtube?.endSafe || 0;
+  const tail = Math.max(1.5, endSafe);
+  let structure = null;
+  let structureCards = [];
+  if (preset.youtube?.chapters && shownGroups.length) {
+    structure = await makeStructure({ workDir, groups: shownGroups, duration, handle: preset.carousel?.handle || "", voice: readVoice({ style: preset }), force: !!opts.newGraphics, endSafe });
+    if (structure) {
+      if (hook && structure.promise && hook.auto) { Object.assign(hook, { text: structure.promise.replace(/\*/g, ""), auto: false }, hookWords(structure.promise, dict)); log(`hook: "${hook.text}" (the promise, from the structure)`); }
+      structureCards = [
+        ...structure.chapters.slice(1).map((c, i) => ({ type: "chapter", text: c.title, number: i + 2, eyebrow: "", start: r3(c.start), duration: 3.5 })),
+        ...structure.rehooks.map((h) => ({ type: "headline", text: h.text, eyebrow: "", start: r3(h.start), duration: 4.5 })),
+      ].filter((c) => c.start > (hook ? hook.start + hook.duration + 0.5 : 3) && c.start + c.duration < duration - tail).sort((a, b) => a.start - b.start);
+    }
+  }
   const graphics = preset.graphics?.enabled && shownGroups.length
-    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "" })
+    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
+  // Structure cards win their slots: a planned card within 6 s of one is dropped.
+  const allCards = [...structureCards, ...graphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2)))].sort((a, b) => a.start - b.start);
   const broll = preset.broll?.enabled && shownGroups.length
     // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
-    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : graphics })
+    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail })
     : [];
   if (preset.zooms.enabled) {
-    zooms = planZooms(shownGroups, duration, { ...preset.zooms, busy: [...graphics, ...broll], hook, tight: tightFrame });
+    zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
     if (preset.zooms.cadence?.enabled) {
-      zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: broll, hook, tight: tightFrame });
+      zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: broll, hook, tight: tightFrame, tail });
       log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
     }
   }
@@ -267,12 +286,13 @@ export async function runEdit(input, opts = {}) {
   const coldOpen = preset.coldOpen?.enabled && broll.length ? { duration: r3(Math.min(preset.coldOpen.duration || 0.6, Math.max(0.3, duration / 20))), src: broll[0].src, file: broll[0].file } : null;
   if (preset.coldOpen?.enabled) log(coldOpen ? `cold open: ${coldOpen.duration}s on the first still` : "cold open: no still to open on");
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
-  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...graphics, ...broll], zooms }) : [];
+  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll], zooms, tail }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics, slams, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
 
   const plan = {
     version: 1,
@@ -286,10 +306,12 @@ export async function runEdit(input, opts = {}) {
     cta,
     captions: shownGroups,
     zooms,
-    graphics,
+    graphics: allCards,
     broll,
     slams,
     coldOpen,
+    lowerThird,
+    structure,
     reframe,
     audio,
     words: cleanWords,

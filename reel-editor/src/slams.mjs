@@ -49,8 +49,9 @@ export function slamCandidates(groups, dict = {}) {
  * word hit together. Each slam holds `hold` seconds (longer if the word itself runs longer).
  * Returns [{t, end, text}] in time order.
  */
-export function planSlams(groups, duration, { dict = {}, hook = null, busy = [], zooms = [], minSpacing = 8, max = 5, hold = 1.1 } = {}) {
+export function planSlams(groups, duration, { dict = {}, hook = null, busy = [], zooms = [], minSpacing = 8, max = 5, hold = 1.1, tail = 1.5 } = {}) {
   const from = hook ? hook.start + hook.duration + 0.3 : 1;
+  duration = duration - Math.max(0, tail - 1.5);
   const punch = new Set(zooms.filter((z) => z.scale > 1).map((z) => z.t));
   const covered = (a, b) => busy.some((x) => a < x.start + x.duration + 0.4 && b > x.start - 0.4);
   const cands = slamCandidates(groups, dict)
