@@ -93,6 +93,24 @@ export function estimateClip({ seconds = 5, imageModel = "gen4_image", imageRati
   return { image, video: perSecond * seconds, credits, dollars: r3(credits * CREDIT_USD) };
 }
 
+/** Animate a still we already have (as a data URI; no image is bought). Returns {mp4, items}. */
+export async function animateStill({ png, mp4, motion, seconds = 5, ratio = "720:1280", videoModel = "gen4_turbo", fps = 30, fetchFn, sleepFn } = {}) {
+  const items = [];
+  const data = `data:image/png;base64,${fs.readFileSync(png).toString("base64")}`;
+  const vid = await createVideo({ image: data, prompt: motion, ratio, duration: seconds, model: videoModel, fetchFn });
+  let task;
+  try {
+    task = await waitForTask(vid.id, { fetchFn, sleepFn });
+  } catch (e) {
+    items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: e.cost ?? vid.estimatedCredits ?? 0, dollars: r3((e.cost ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: false, error: e.message });
+    throw Object.assign(e, { items });
+  }
+  items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: task.cost?.credits ?? vid.estimatedCredits ?? 0, dollars: r3((task.cost?.credits ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: true });
+  await download(task.output[0], mp4, { fetchFn });
+  await conformClip(mp4, { fps });
+  return { mp4, items };
+}
+
 /** Make one clip: still, then video from it. Downloads both; returns {png, mp4, items:[usage lines]}. */
 /** Runway clips come at 24 fps with a keyframe every 5 s, which makes the renderer's seeks freeze; conform to 30 fps, a keyframe a second. */
 export async function conformClip(file, { fps = 30, runFn = run } = {}) {

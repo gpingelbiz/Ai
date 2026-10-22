@@ -3,7 +3,7 @@ import path from "node:path";
 import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { brollCount, brollCandidates, placeBroll, readRecent, rememberScenes } from "./broll.mjs";
 import { IMAGE_STYLE, IMAGE_RULES } from "./codex.mjs";
-import { hasRunway, makeClip, estimateClip, organization } from "./runway.mjs";
+import { hasRunway, makeClip, animateStill, estimateClip, organization } from "./runway.mjs";
 import { recordUsage, reelUsageNote } from "./usage.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
 
@@ -14,15 +14,20 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
  * and the account balance are checked before anything is bought.
  */
 
-export function runwayPicksPrompt({ candidates, transcript, hook, count, spacing = 8, style = "", recent = [] }) {
+export function runwayPicksPrompt({ candidates, transcript, hook, count, spacing = 8, style = "", recent = [], voice = "" }) {
   return [
-    "You are a reel editor adding b-roll to a talking-head Instagram reel. The b-roll will be short generated video clips. Reply with JSON only; use no tools.",
-    `Pick ${count} caption line${count === 1 ? "" : "s"} where cutting away would make the point land harder, spread across the reel, at least ${spacing} seconds apart.`,
-    "For each, write `scene`: one or two sentences describing a literal object or process shot tied to what is being said at that moment, lived-in and specific, with the light named (a phone face-down on a truck tailgate under a cold fluorescent; a whiteboard with one smudged number lit from a window). Then `motion`: one short line of camera or subject motion that a 5-second clip can carry (a slow push toward the phone; steam drifting off the coffee; the garage door rolling up), nothing fast, no people entering.",
-    "Never: empty conference rooms, dinner tables, skylines, empty offices, generic desks; faces or anyone who could read as the speaker; readable text, numbers, logos or brands; clip-art metaphors (lightbulbs, chess pieces, rockets, puzzles, mountains, arrows).",
-    `Look for every scene: ${style || IMAGE_STYLE}`,
+    "You are a reel editor adding b-roll to a talking-head Instagram reel. The b-roll will be short generated video clips that have to stop a thumb: each one shows the exact thing the line is about, with one strong action. Reply with JSON only; use no tools.",
+    `Pick ${count} caption line${count === 1 ? "" : "s"} where a cutaway makes the point hit harder, spread across the reel, at least ${spacing} seconds apart. Prefer lines with a concrete thing in them (the report, the number, the call, the desk, the truck, the text message) over abstract lines.`,
+    "For each, write three fields:",
+    "- `scene`: one or two sentences that show the literal subject of that line, in the speaker's world, close and specific, with the light named. Not a mood shot: the viewer must see what the line says. A line about a bad number on a report shows the report on the desk with a hand's shadow over it; a line about slamming the desk shows the fist hitting the desk, coffee jumping; a line about reps watching shows the empty chairs turned toward one chair.",
+    "- `action`: the one beat that grabs attention, happening in the first two seconds: something drops, flips, lights up, spills, swings, snaps shut or lands. Hands, arms, boots, a figure from behind or out of focus are fine; never a face, never children. No hitting, punching, slamming, breaking, weapons, anger or anyone in distress: the generator's moderation refuses those and the clip is lost.",
+    "- `motion`: the camera, in one line, decisive: a fast push toward the subject, a crash zoom, a rack focus from the foreground to the subject, a handheld whip that settles. Never a slow drift.",
+    "Never: empty conference rooms, dinner tables, skylines, generic desks; faces or anyone who could read as the speaker; readable text, numbers, logos or brands; clip-art metaphors (lightbulbs, chess pieces, rockets, puzzles, mountains, arrows); slow motion of nothing.",
+    `Look for every scene: ${style || IMAGE_STYLE} High contrast, one hard practical light, deep blacks, the subject big in frame.`,
+    voice ? `\nThe speaker's world (use it so every scene is theirs):\n${voice.trim().slice(0, 1200)}` : "",
     "Rules for every scene:",
-    ...IMAGE_RULES.map((r) => `- ${r}`),
+    ...IMAGE_RULES.filter((r) => !/people|hands|fingers/i.test(r)).map((r) => `- ${r}`),
+    "- No faces, no one who could be mistaken for the speaker; hands, backs and boots are allowed.",
     recent.length ? `Recent reels already used these scenes; pick something clearly different:\n${recent.map((s) => `- ${s}`).join("\n")}` : "",
     "",
     `Hook on screen at the start: ${hook || "(none)"}`,
@@ -33,7 +38,7 @@ export function runwayPicksPrompt({ candidates, transcript, hook, count, spacing
     "Lines you may pick from (number: start time, text):",
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
-    'Reply: {"picks":[{"line":<number from the list>,"scene":"...","motion":"..."}]}',
+    'Reply: {"picks":[{"line":<number from the list>,"scene":"...","action":"...","motion":"..."}]}',
   ].filter(Boolean).join("\n");
 }
 
@@ -56,7 +61,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
       return saved.shots;
     }
   }
-  const has = deps.hasRunway || hasRunway, claude = deps.claudeText || claudeText, make = deps.makeClip || makeClip, org = deps.organization || organization, record = deps.recordUsage || recordUsage;
+  const has = deps.hasRunway || hasRunway, claude = deps.claudeText || claudeText, make = deps.makeClip || makeClip, animate = deps.animateStill || animateStill, org = deps.organization || organization, record = deps.recordUsage || recordUsage;
   if (!has()) { warn("Runway b-roll needs RUNWAY_API_KEY; rendering without it"); return []; }
   if (!(deps.hasClaude || hasClaude)()) { warn("Runway b-roll needs the Claude Code CLI to pick the scenes; skipped"); return []; }
 
@@ -76,7 +81,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   try {
     log(`b-roll: Claude is picking ${affordable} moment${affordable === 1 ? "" : "s"} for Runway (about ${est.credits} credits ≈ $${est.dollars.toFixed(2)} each)…`);
     const transcript = groups.map((g) => g.text).join(" ");
-    const reply = await claude(runwayPicksPrompt({ candidates, transcript, hook: hook?.text, count: affordable, spacing: len + gap, style: settings.style || "", recent: readRecent() }), { timeoutMs: 240000 });
+    const reply = await claude(runwayPicksPrompt({ candidates, transcript, hook: hook?.text, count: affordable, spacing: len + gap, style: settings.style || "", recent: readRecent(), voice: settings.world || voice }), { timeoutMs: 240000 });
     picks = (firstJSON(reply).picks || []).filter((p) => Number.isInteger(p.line) && String(p.scene || "").trim());
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);
@@ -91,12 +96,24 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
     const s = placed[k];
     const p = byLine.get(s.line);
     try {
-      const r = await make({ scene: p.scene, motion: p.motion || "a slow, steady push in", dir, name: `broll-${k + 1}`, seconds, ratio: settings.videoRatio || "720:1280", imageRatio: settings.imageRatio || "720:1280", videoModel: settings.videoModel || "gen4_turbo" });
+      // The still shows the scene at the moment before the action; the video prompt carries the action and the camera.
+      const still = `${p.scene} The instant before: ${p.action || "the subject is about to move"}. Cinematic, high contrast, the subject large in frame, no text.`;
+      const move = `${p.action || "the subject moves"}. Camera: ${p.motion || "a fast push toward the subject that settles"}. The action lands in the first two seconds; no text, no faces.`;
+      const r = await make({ scene: still, motion: move, dir, name: `broll-${k + 1}`, seconds, ratio: settings.videoRatio || "720:1280", imageRatio: settings.imageRatio || "720:1280", videoModel: settings.videoModel || "gen4_turbo" });
       items.push(...r.items);
       shots.push({ ...s, file: r.mp4, still: r.png, motion: "none", scene: p.scene });
     } catch (e) {
       if (e.items) items.push(...e.items);
-      warn(`b-roll: clip ${k + 1} failed (${String(e.message).split("\n")[0]})${e.png ? "; keeping its still" : ""}`);
+      // A refused video gets one more try from its own still with gentler motion (no new image is bought).
+      if (e.png && fs.existsSync(e.png) && /SAFETY/.test(String(e.code || e.message))) {
+        try {
+          warn(`b-roll: clip ${k + 1} was refused by moderation; one more try with gentler motion`);
+          const r2 = await animate({ png: e.png, mp4: e.png.replace(/\.png$/, ".mp4"), motion: "Gentle, natural movement in the scene: light shifts, something small settles. Camera: a steady push toward the subject. No people moving, no faces, no text.", seconds, ratio: settings.videoRatio || "720:1280", videoModel: settings.videoModel || "gen4_turbo" });
+          items.push(...r2.items);
+          shots.push({ ...s, file: r2.mp4, still: e.png, motion: "none", scene: p.scene });
+          continue;
+        } catch (e2) { if (e2.items) items.push(...e2.items); warn(`b-roll: clip ${k + 1} refused again (${String(e2.message).split("\n")[0]}); keeping its still`); }
+      } else warn(`b-roll: clip ${k + 1} failed (${String(e.message).split("\n")[0]})${e.png ? "; keeping its still" : ""}`);
       if (e.png && fs.existsSync(e.png)) shots.push({ ...s, file: e.png, motion: "in", scene: p.scene });
     }
   }

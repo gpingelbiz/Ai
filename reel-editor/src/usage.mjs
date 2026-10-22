@@ -23,9 +23,12 @@ export function recordUsage({ reel = "", items = [], balance = null, file = usag
   for (const it of items) {
     const credits = Number(it.credits) || 0, dollars = Number(it.dollars) || 0;
     m.lines.push({ t: at.toISOString(), reel, service: it.service || "runway", model: it.model || "", kind: it.kind || "", seconds: it.seconds ?? null, credits, dollars, ok: it.ok !== false });
-    if (it.ok !== false) { m.credits += credits; m.dollars += dollars; m.generations += 1; } else m.failed += 1;
+    // A failed generation is still charged when the service reports a cost (Runway charges moderated tasks).
+    m.credits += credits; m.dollars += dollars;
+    if (it.ok !== false) m.generations += 1; else m.failed += 1;
     const r = (m.reels[reel || "(none)"] ||= { credits: 0, dollars: 0, generations: 0 });
-    if (it.ok !== false) { r.credits += credits; r.dollars += dollars; r.generations += 1; }
+    r.credits += credits; r.dollars += dollars;
+    if (it.ok !== false) r.generations += 1;
   }
   m.dollars = Math.round(m.dollars * 1000) / 1000;
   if (balance != null) u.balance = { credits: balance, at: at.toISOString() };
@@ -56,10 +59,10 @@ export function usageReport(u = readUsage(), { now = new Date() } = {}) {
 /** The note that goes next to a reel: what it cost. */
 export function reelUsageNote(items, { balance = null } = {}) {
   const ok = items.filter((i) => i.ok !== false);
-  const credits = ok.reduce((s, i) => s + (Number(i.credits) || 0), 0), dollars = ok.reduce((s, i) => s + (Number(i.dollars) || 0), 0);
+  const credits = items.reduce((s, i) => s + (Number(i.credits) || 0), 0), dollars = items.reduce((s, i) => s + (Number(i.dollars) || 0), 0);
   return [
-    `Runway: ${ok.length} generation${ok.length === 1 ? "" : "s"}, ${Math.round(credits)} credits ≈ $${dollars.toFixed(2)}${items.length > ok.length ? ` (${items.length - ok.length} failed, not charged)` : ""}`,
-    ...ok.map((i) => `  ${i.kind || i.model}${i.seconds ? ` ${i.seconds}s` : ""}: ${Math.round(i.credits)} credits`),
+    `Runway: ${ok.length} generation${ok.length === 1 ? "" : "s"}, ${Math.round(credits)} credits ≈ $${dollars.toFixed(2)}${items.length > ok.length ? ` (${items.length - ok.length} failed and still charged)` : ""}`,
+    ...items.map((i) => `  ${i.kind || i.model}${i.seconds ? ` ${i.seconds}s` : ""}: ${Math.round(i.credits)} credits${i.ok === false ? ` (failed: ${String(i.error || "").split(":")[0]})` : ""}`),
     balance != null ? `Balance after: ${balance} credits` : "",
     "Monthly totals: reel usage",
   ].filter(Boolean).join("\n") + "\n";
