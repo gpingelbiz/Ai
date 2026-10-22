@@ -65,6 +65,6 @@ test("runway b-roll: budget checks, picks via Claude, clips made, usage recorded
   const capped = await makeRunwayBroll({ workDir: fs.mkdtempSync(path.join(os.tmpdir(), "rw3-")), groups, duration: 50, hook: { start: 0, duration: 3 }, cta: null, settings: { maxCreditsPerReel: 10 }, deps });
   assert.equal(capped.length, 0, "the per-reel cap under one clip buys nothing");
   assert.match(usageReport(readUsage(usage)), /This month: 4 generations, 60 credits ≈ \$0\.60/);
-  assert.match(reelUsageNote([{ kind: "video", seconds: 5, credits: 25, dollars: 0.25 }, { kind: "image", credits: 5, dollars: 0.05, ok: false }]), /1 generation, 25 credits ≈ \$0\.25 \(1 failed, not charged\)/);
+  assert.match(reelUsageNote([{ kind: "video", seconds: 5, credits: 25, dollars: 0.25 }, { kind: "image", credits: 5, dollars: 0.05, ok: false, error: "SAFETY.INPUT.TEXT: no" }]), /1 generation, 30 credits ≈ \$0\.30 \(1 failed and still charged\)[\s\S]*image: 5 credits \(failed: SAFETY\.INPUT\.TEXT\)/);
   fs.rmSync(wd, { recursive: true, force: true });
 });
