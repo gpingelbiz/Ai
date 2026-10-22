@@ -39,7 +39,7 @@ Run it in Terminal, not inside Claude Code: the questions need a keyboard, and w
 
 The installer sets your look. Two things are still yours to fill in.
 
-1. **Your words.** Open `~/.reel/dictionary.json` and add your program and framework names to `terms`: they are always highlighted and Whisper spells them right. Add fixes for words it keeps mishearing to `corrections`, such as `{"from": "ghost p and l", "to": "Ghost P&L"}`. Everyday phrases to highlight go in `phrases`.
+1. **Your words.** Open `~/.reel/dictionary.json` and add your program and framework names to `terms`: they are always highlighted and Whisper spells them right. Add fixes for words it keeps mishearing to `corrections`, such as `{"from": "ghost p and l", "to": "Ghost P&L"}`. Everyday phrases to highlight go in `phrases`. People and company names go in `names`: the caption word fix (Claude reads the transcript against these lists and corrects only what was clearly mis-heard) spells them right without highlighting them.
 2. **A call-to-action, if you want one.** `--cta "Comment YOURWORD"` adds a pop-up for the last 3 seconds of a reel. For drop-folder reels, put the same text in `REEL_WATCH_CTA` in `~/.zshrc`.
 
 To change your look later, run the install line again and pick another option, or open `~/.reel/my-brand.json` and edit the `colors` hex codes.
@@ -124,6 +124,9 @@ Run `reel doctor` first; most problems show up there.
 | Drop folder does nothing, no notification | The drop folder was moved onto the Desktop as a real folder | Move your clips out, delete that Raw folder, then run the install line again to make the shortcuts |
 | "Reel failed" notification | Something broke mid-edit | Read the end of `~/Reels/watch.log`, then rename the clip to retry |
 | Hook sits on your face | No face found (turned away, very dark) | Add `--hook-position 0.08` (top) or `0.4` (chest), or `#top` / `#low` in the filename |
-| A caption word is wrong | Both engines misheard it the same way | Fix the `text` in `plan.json`, run `reel build`, and add the word to `corrections` in `~/.reel/dictionary.json` |
+| A caption word is wrong | Both engines misheard it the same way and the word fix had no term to go on | Add the term or name to `terms` or `names` in `~/.reel/dictionary.json` (the fix corrects it next time), or fix the `text` in `plan.json` and run `reel build` |
+| doctor says `deep-filter ... not installed` | The studio-sound denoiser binary is missing | Run `~/Ai/reel-editor/scripts/install-deepfilter.sh` (one 28 MB download); until then the older spectral denoiser runs and the log says so |
+| `check this reel.txt` in the reel folder | The preflight found something: loudness off, a black or static open, dead air, captions over the chin, text in Instagram's caption strip | Read the note; the reel is still delivered. Most fixes are a re-shoot of the open or `--caption-position` |
+| The hook does not run behind your head | No face in the first frames, you fill almost the whole frame, or Swift is missing (`reel doctor`) | The log line starting `hook behind you:` says which; the hook falls back to its normal spot above the head |
 
 To update later, paste the install line again.

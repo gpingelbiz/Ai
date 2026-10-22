@@ -3,9 +3,14 @@ import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
 import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments } from "./cuts.mjs";
+import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
+import { fixWords, describeFix } from "./correct.mjs";
+import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
+import { makeCutout, describeCutout } from "./behind.mjs";
+import { runPreflight, writePreflight, describePreflight } from "./preflight.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming } from "./placement.mjs";
+import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -23,7 +28,7 @@ import { makeCover } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
-import { log, warn, readJSON, writeJSON, ensureDir, r3, slug, run, VIDEO_EXTS } from "./util.mjs";
+import { log, warn, readJSON, writeJSON, ensureDir, r3, slug, run, sha1, VIDEO_EXTS } from "./util.mjs";
 
 /** A saved transcript is reused only for the same source file (same path, size and modified time). A work folder
  *  name can repeat for a different clip (IMG_0287 edited in chat, then dropped again), and reusing its words
@@ -133,6 +138,45 @@ export async function runEdit(input, opts = {}) {
   }
   if (!words.length) warn("transcript is empty: no captions, no cuts");
 
+  // 1c. Caption word fix (Claude, text only, against the dictionary) and forced alignment (ElevenLabs), so a fixed
+  // word and a faster-whisper word both land on the syllable. Both are cached in the work folder.
+  if (words.length && !opts.transcript) {
+    let changed = false;
+    if (preset.transcribe.fix !== false) {
+      const before = words;
+      const fix = await fixWords({ words, dict, review, workDir, force: !!opts.force, minProb: preset.transcribe.minProb ?? 0.5 });
+      (fix.note ? warn : log)(describeFix(fix, before));
+      if (fix.edits.length) {
+        words = fix.words;
+        changed = true;
+        // Review spots the fix resolved come off the list.
+        if (review?.items?.length) {
+          const spans = fix.edits.map((e) => [before[e.i].start - 0.015, before[e.i + e.n - 1].end]);
+          review.items = review.items.filter((it) => !spans.some(([s, e]) => it.start >= s && it.start <= e));
+        }
+      }
+    }
+    const alignMode = preset.transcribe.align ?? "auto";
+    const softTimings = (primaryEngine || "") !== "elevenlabs";
+    if (alignMode === "always" || (alignMode === "auto" && (changed || softTimings))) {
+      if (!hasAlignment()) log("word timing: ELEVENLABS_API_KEY not set, keeping the engine's timings");
+      else {
+        const alignedPath = path.join(workDir, "words-aligned.json");
+        const key = sha1(JSON.stringify(words.map((w) => [w.text, w.start])));
+        const saved = !opts.force && fs.existsSync(alignedPath) ? readJSONSafe(alignedPath) : null;
+        let res;
+        if (saved?.key === key) res = { ...saved.result, cached: true };
+        else {
+          res = await realignWords(input, words);
+          if (!res.error) writeJSON(alignedPath, { key, result: res });
+        }
+        (res.error ? warn : log)(describeAlignment(res, changed ? "after the fix" : softTimings ? "faster-whisper timings" : "requested") + (res.cached ? " (saved)" : ""));
+        if (!res.error) { words = res.words; changed = true; }
+      }
+    }
+    if (changed) writeJSON(wordsPath, { source: input, sourceStat, engine: primaryEngine, words });
+  }
+
   // 2. Cut plan
   const cutsOn = !opts.noCuts && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers);
   let cuts = cutsOn
@@ -171,9 +215,17 @@ export async function runEdit(input, opts = {}) {
       warn("VideoToolbox tone mapping unavailable: converting PQ with the colorspace filter, colors may look flat");
     }
   }
+  // Studio sound: DeepFilterNet denoises the whole voice on the source timeline; the cut pass then takes that WAV
+  // instead of the source audio and runs the leveler chain. Falls back to the spectral denoiser when it is missing.
+  let studio = null;
+  if (needsPass && meta.hasAudio && preset.audio.cleanAudio && preset.audio.studio !== false) {
+    const res = await studioVoice(cutInput, path.join(workDir, "studio-voice.wav"));
+    if (res && !res.error) studio = res;
+    (res && !res.error ? log : warn)(describeStudio(res));
+  }
   if (needsPass) {
-    log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? " + clean audio" : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + ")…");
-    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta) });
+    log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? (studio ? " + studio sound" : " + clean audio") : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + ")…");
+    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined });
     videoSrc = cleanPath;
     cleanMeta = await probe(cleanPath);
   }
@@ -195,7 +247,7 @@ export async function runEdit(input, opts = {}) {
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
     const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
@@ -242,6 +294,26 @@ export async function runEdit(input, opts = {}) {
         log(`hook placement: ${where} at ${Math.round(spot.position * 100)}%${spot.fontScale < 1 ? `, text at ${Math.round(spot.fontScale * 100)}%` : ""} (head spans ${Math.round(head.top * 100)}-${Math.round(head.bottom * 100)}%)`);
       } else {
         log(`hook placement: no face found, keeping ${Math.round(preset.hook.position * 100)}% from the top`);
+      }
+    }
+  }
+  // Text behind you: the person is cut out of the hook window and layered over the headline, so the hook is placed
+  // to run behind the top of the head (its lower part hidden by the forehead) instead of clearing it.
+  let behindPlan = null;
+  if (hook && preset.hook.behind && sameShape && opts.hookPosition == null) {
+    const head0 = zoomedHead(detection, 1.06);
+    if (!head0) log("hook behind you: off (no face found in the hook frames)");
+    else {
+      const cut = await makeCutout({ video: videoSrc, start: hook.start, duration: hook.duration, fps: preset.render.fps || 30, outDir: workDir });
+      if (cut.error) warn(describeCutout(cut));
+      else {
+        behindPlan = { file: cut.src, start: cut.start, duration: cut.duration, coverage: cut.coverage };
+        preset.hook.fontSizeFrac = r3(preset.hook.fontSizeFrac * (preset.hook.behindScale ?? 1.12));
+        const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
+        const h = hookBlockHeight(hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), { W: canvas0.width, H: canvas0.height, fontPx });
+        const behindFrac = preset.hook.behindOverlap ?? 0.4; // share of the text block that sits behind the head
+        preset.hook.position = r3(Math.max(0.06, head0.top - (1 - behindFrac) * h));
+        log(`${describeCutout(cut)}; hook at ${Math.round(preset.hook.position * 100)}%, its lower ${Math.round(behindFrac * 100)}% behind the head (head top ${Math.round(head0.top * 100)}%)`);
       }
     }
   }
@@ -334,6 +406,8 @@ export async function runEdit(input, opts = {}) {
     structure,
     framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right" },
     reframe,
+    behind: behindPlan,
+    head: (() => { const h = zoomedHead(detection, 1); return h ? { top: r3(h.top), bottom: r3(h.bottom) } : null; })(),
     audio,
     words: cleanWords,
   };
@@ -502,6 +576,24 @@ export async function renderProject(workDir, opts = {}) {
   if (plan.video.hasAudio && plan.style?.render?.deliveryLoudness !== false) await normalizeDelivery(output);
   const outMeta = await probe(output);
   log(`done in ${Math.round((Date.now() - t0) / 1000)}s: ${output} (${outMeta.width}x${outMeta.height}, ${r3(outMeta.duration)}s)`);
+  // Preflight: sound, the open, dead air, length and layout checked on the finished file; preflight.txt sits next
+  // to plan.json. With preflight.strict a failing file is kept as <name>.failed.mp4 and the run stops.
+  const pf = plan.style?.preflight;
+  if (pf?.enabled !== false && !opts.noPreflight) {
+    try {
+      const res = await runPreflight(output, { plan });
+      writePreflight(workDir, res);
+      (res.status === "fail" ? warn : log)(describePreflight(res));
+      if (res.status === "fail" && pf?.strict) {
+        const failed = output.replace(/\.mp4$/, ".failed.mp4");
+        fs.renameSync(output, failed);
+        throw new Error(`preflight failed (${res.items.filter((i) => i.level === "fail").map((i) => i.message).join("; ")}); the file is at ${failed}`);
+      }
+    } catch (e) {
+      if (/^preflight failed/.test(e.message)) throw e;
+      warn(`preflight skipped: ${String(e.message).split("\n")[0]}`);
+    }
+  }
   return output;
 }
 

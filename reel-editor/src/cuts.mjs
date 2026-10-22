@@ -206,19 +206,22 @@ export function remapWords(words, segments) {
 /**
  * Voice chain, in signal order: sum to mono (phone side mics add comb filtering), high-pass, spectral denoise, de-ess,
  * gentle compression, a limiter, then loudness to -16 LUFS (the delivered mix is normalized again to -14 at the end).
- * REEL_DEEPFILTER=<path to deep-filter> swaps the denoiser for DeepFilterNet (run on the WAV before this pass).
+ * Studio sound (studio.mjs) denoises the voice with DeepFilterNet first and passes it in as `audioInput` with its own
+ * chain (leveler + de-click instead of the spectral denoiser).
  */
 export const VOICE_CHAIN = "pan=mono|c0=0.5*c0+0.5*c1,highpass=f=80,afftdn=nr=12:nf=-45:tn=1,deesser=i=0.4:m=0.5:f=0.5,acompressor=threshold=0.09:ratio=3:attack=10:release=150:makeup=2,alimiter=limit=0.89:attack=5:release=50,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=channel_layouts=stereo";
 
-export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto" } = {}) {
+export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN } = {}) {
   const parts = [];
   const maps = [];
+  // audioInput: a denoised voice WAV on the source's timeline replaces the source's own audio track.
+  const ain = audioInput ? "[1:a]" : "[0:a]";
   segments.forEach((s, i) => {
     parts.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS[v${i}]`);
     if (hasAudio) {
       const d = s.end - s.start;
       const f = Math.min(0.02, d / 4);
-      parts.push(`[0:a]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=${f},afade=t=out:st=${r3(d - f)}:d=${f}[a${i}]`);
+      parts.push(`${ain}atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=${f},afade=t=out:st=${r3(d - f)}:d=${f}[a${i}]`);
     }
     maps.push(hasAudio ? `[v${i}][a${i}]` : `[v${i}]`);
   });
@@ -230,12 +233,13 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
   fc += `;[vcat]${vf || "null"}[v]`;
   let audioOut = "[a]";
   if (hasAudio && cleanAudio) {
-    fc += `;[a]${VOICE_CHAIN}[ao]`;
+    fc += `;[a]${voiceChain}[ao]`;
     audioOut = "[ao]";
   }
   const common = [
     "-y", "-loglevel", "error", "-stats",
     "-i", input,
+    ...(audioInput ? ["-i", audioInput] : []),
     "-filter_complex", fc,
     "-map", "[v]",
     ...(hasAudio ? ["-map", audioOut] : ["-an"]),

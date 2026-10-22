@@ -30,7 +30,8 @@
     "fontSizeFrac": 0.052,
     "maxWords": 8,
     "autoPlace": true,
-    "style": "headline"
+    "style": "headline",
+    "behind": true
   },
   "zooms": {
     "enabled": true,

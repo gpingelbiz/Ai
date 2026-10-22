@@ -85,5 +85,14 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noColdOpen) p.coldOpen.enabled = false;
   if (o.sounds) p.audio.sounds = true;
   if (o.noSounds) p.audio.sounds = false;
+  if (o.studio) p.audio.studio = true;
+  if (o.noStudio) p.audio.studio = false;
+  if (o.fixWords) p.transcribe.fix = true;
+  if (o.noFixWords) p.transcribe.fix = false;
+  if (o.align) p.transcribe.align = "always";
+  if (o.noAlign) p.transcribe.align = false;
+  if (o.noPreflight) p.preflight = { ...(p.preflight || {}), enabled: false };
+  if (o.behind) p.hook.behind = true;
+  if (o.noBehind) p.hook.behind = false;
   return p;
 }

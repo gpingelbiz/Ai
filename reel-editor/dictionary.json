@@ -1,35 +1,147 @@
 {
   "terms": [
-    "Ghost P&L", "Five Rooms", "The Swap", "Closer Line", "Wrong Scoreboard",
-    "high-ticket", "high ticket", "offer owner", "offer owners", "blue-collar", "GoHighLevel"
+    "Ghost P&L",
+    "Five Rooms",
+    "The Swap",
+    "Closer Line",
+    "Wrong Scoreboard",
+    "high-ticket",
+    "high ticket",
+    "offer owner",
+    "offer owners",
+    "blue-collar",
+    "GoHighLevel"
   ],
   "candidates": [
-    "objection", "objections", "close", "closer", "closers", "setter", "setters", "pipeline", "funnel",
-    "revenue", "profit", "cash", "money", "sales", "clients", "leads", "calls",
-    "scale", "system", "systems", "accountability", "faith", "God", "Instagram", "DMs"
+    "objection",
+    "objections",
+    "close",
+    "closer",
+    "closers",
+    "setter",
+    "setters",
+    "pipeline",
+    "funnel",
+    "revenue",
+    "profit",
+    "cash",
+    "money",
+    "sales",
+    "clients",
+    "leads",
+    "calls",
+    "scale",
+    "system",
+    "systems",
+    "accountability",
+    "faith",
+    "God",
+    "Instagram",
+    "DMs"
   ],
   "phrases": [
     "show up"
   ],
   "powerWords": [
-    "never", "stop", "truth", "lie", "lying", "broke", "rich", "free", "fast", "now", "wrong", "right",
-    "dead", "kill", "hate", "love", "win", "lose", "losing", "fear", "proof", "secret", "mistake",
-    "problem", "fix", "why", "price", "expensive", "cheap", "worth", "value", "excuse", "excuses",
-    "discipline", "quit", "hard", "real", "fake", "nobody", "everybody", "million", "thousand",
-    "late", "early", "respect"
+    "never",
+    "stop",
+    "truth",
+    "lie",
+    "lying",
+    "broke",
+    "rich",
+    "free",
+    "fast",
+    "now",
+    "wrong",
+    "right",
+    "dead",
+    "kill",
+    "hate",
+    "love",
+    "win",
+    "lose",
+    "losing",
+    "fear",
+    "proof",
+    "secret",
+    "mistake",
+    "problem",
+    "fix",
+    "why",
+    "price",
+    "expensive",
+    "cheap",
+    "worth",
+    "value",
+    "excuse",
+    "excuses",
+    "discipline",
+    "quit",
+    "hard",
+    "real",
+    "fake",
+    "nobody",
+    "everybody",
+    "million",
+    "thousand",
+    "late",
+    "early",
+    "respect"
   ],
   "corrections": [
-    { "from": "ghost p and l", "to": "Ghost P&L" },
-    { "from": "ghost p l", "to": "Ghost P&L" },
-    { "from": "ghost pnl", "to": "Ghost P&L" },
-    { "from": "ghost pl", "to": "Ghost P&L" },
-    { "from": "ghost p&l", "to": "Ghost P&L" },
-    { "from": "closer line", "to": "Closer Line" },
-    { "from": "wrong scoreboard", "to": "Wrong Scoreboard" },
-    { "from": "five rooms", "to": "Five Rooms" },
-    { "from": "the swap", "to": "The Swap" },
-    { "from": "go high level", "to": "GoHighLevel" },
-    { "from": "gohighlevel", "to": "GoHighLevel" },
-    { "from": "high ticket", "to": "high-ticket" }
+    {
+      "from": "ghost p and l",
+      "to": "Ghost P&L"
+    },
+    {
+      "from": "ghost p l",
+      "to": "Ghost P&L"
+    },
+    {
+      "from": "ghost pnl",
+      "to": "Ghost P&L"
+    },
+    {
+      "from": "ghost pl",
+      "to": "Ghost P&L"
+    },
+    {
+      "from": "ghost p&l",
+      "to": "Ghost P&L"
+    },
+    {
+      "from": "closer line",
+      "to": "Closer Line"
+    },
+    {
+      "from": "wrong scoreboard",
+      "to": "Wrong Scoreboard"
+    },
+    {
+      "from": "five rooms",
+      "to": "Five Rooms"
+    },
+    {
+      "from": "the swap",
+      "to": "The Swap"
+    },
+    {
+      "from": "go high level",
+      "to": "GoHighLevel"
+    },
+    {
+      "from": "gohighlevel",
+      "to": "GoHighLevel"
+    },
+    {
+      "from": "high ticket",
+      "to": "high-ticket"
+    }
+  ],
+  "names": [
+    "Greg Pingel",
+    "Pingel",
+    "Elliott 247"
   ]
 }

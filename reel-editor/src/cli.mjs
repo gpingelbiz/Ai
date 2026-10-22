@@ -88,6 +88,16 @@ Options (edit / batch)
   --no-cadence             no cut cadence (the frame otherwise cuts between two framings every 2.5-4.5 s)
   --cold-open              with b-roll: frame 0 shows a still under the hook for 0.6 s, then flashes to you. --no-cold-open off
   --sounds                 small CC0 sounds on the edits: card lands, word slam, camera move, flash, marker. --no-sounds off
+  --no-studio              skip studio sound (DeepFilterNet denoise + phrase leveler + de-click; on when the
+                           deep-filter binary is installed, see scripts/install-deepfilter.sh)
+  --no-fix-words           skip the caption word fix (Claude corrects mis-heard brand terms and names from the
+                           dictionary, text only; the words are then re-timed against the audio)
+  --align                  always re-time every word with ElevenLabs forced alignment (default: only after a fix,
+                           or when the transcript came from faster-whisper). --no-align never
+  --no-preflight           skip the preflight check on the finished file (loudness, dead or static open, silence,
+                           captions over the face, Instagram safe zones); the report is preflight.txt either way
+  --behind                 the hook sits behind you: Apple Vision cuts you out so the text runs behind your head
+                           and shoulders. --no-behind off (on in the pingel-brand and pingel-runway presets)
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -158,6 +168,15 @@ const EDIT_OPTIONS = {
   "no-cold-open": { type: "boolean" },
   sounds: { type: "boolean" },
   "no-sounds": { type: "boolean" },
+  studio: { type: "boolean" },
+  "no-studio": { type: "boolean" },
+  "fix-words": { type: "boolean" },
+  "no-fix-words": { type: "boolean" },
+  align: { type: "boolean" },
+  "no-align": { type: "boolean" },
+  "no-preflight": { type: "boolean" },
+  behind: { type: "boolean" },
+  "no-behind": { type: "boolean" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   check: { type: "boolean" },
