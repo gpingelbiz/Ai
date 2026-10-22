@@ -120,3 +120,24 @@ test("a sign-off in the last seconds is dropped; the same words earlier are kept
   assert.deepEqual(cuts.words.filter((w) => w.drop).map((w) => w.text), ["Thanks", "for", "watching"]);
   assert.ok(cuts.removed.some((r) => r.reason === "sign-off"));
 });
+
+test("tight pacing: dead air between phrases goes, the beat after a comma stays", async () => {
+  const { planCuts } = await import("../src/cuts.mjs");
+  const w = (text, start, end) => ({ text, start, end });
+  const words = [w("First,", 0, 0.4), w("you", 0.75, 0.9), w("call.", 0.95, 1.3), w("Then", 1.8, 2.0), w("close.", 2.05, 2.5)];
+  const tight = planCuts(words, 3, { silence: "tight", pad: 0.08, beats: 0.4, badTakes: false, fillers: false, signOff: false });
+  // 0.35 s after "First," is a beat and stays; the 0.5 s gap after "call." is dead air and is cut.
+  assert.ok(tight.segments.some((s) => s.start <= 0.05 && s.end >= 1.3), JSON.stringify(tight.segments));
+  assert.equal(tight.segments.length, 2);
+  const noBeats = planCuts(words, 3, { silence: "tight", pad: 0.08, badTakes: false, fillers: false, signOff: false });
+  assert.equal(noBeats.segments.length, 3, "without beats the comma pause is cut too");
+});
+
+test("a recording that stops mid-word ends on its last finished sentence nearby", async () => {
+  const { planCuts } = await import("../src/cuts.mjs");
+  const w = (text, start, end) => ({ text, start, end });
+  const words = [w("That's", 0, 0.3), w("the", 0.35, 0.5), w("standard,", 0.55, 1.0), w("so", 1.6, 1.7), w("go", 1.75, 1.85), w("set-", 2.0, 2.1)];
+  const r = planCuts(words, 2.2, { badTakes: false, fillers: false });
+  assert.ok(r.removed.some((x) => x.reason === "cut-off"), JSON.stringify(r.removed));
+  assert.ok(r.segments[r.segments.length - 1].end < 1.6, "ends after 'standard,'");
+});

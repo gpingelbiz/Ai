@@ -7,3 +7,5 @@ renders/
 # Local secrets written by `elevenlabs onboard`
 /.env.local
 dist/
+# golden-frame diffs (scripts/golden.mjs) are local evidence, not references
+test/golden/diff/

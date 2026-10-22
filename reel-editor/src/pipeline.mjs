@@ -8,6 +8,7 @@ import { fixWords, describeFix } from "./correct.mjs";
 import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
 import { makeCutout, describeCutout } from "./behind.mjs";
 import { runPreflight, writePreflight, describePreflight } from "./preflight.mjs";
+import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
 import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight } from "./placement.mjs";
@@ -365,9 +366,18 @@ export async function runEdit(input, opts = {}) {
       ].filter((c) => c.start > (hook ? hook.start + hook.duration + 0.5 : 3) && c.start + c.duration < duration - tail).sort((a, b) => a.start - b.start);
     }
   }
-  const graphics = preset.graphics?.enabled && shownGroups.length
+  let graphics = preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
+  // A card that only restates the hook title shows the same line twice in a row (the render reviewer caught one).
+  if (hook && graphics.length) {
+    const toks = (t) => String(t || "").toLowerCase().replace(/[*"“”'’.,!?:]/g, "").split(/\s+/).filter(Boolean);
+    const hk = new Set(toks(hook.text));
+    const repeats = (g) => { const t = toks(g.text || g.title); return t.length && t.filter((x) => hk.has(x)).length / t.length >= 0.8; };
+    const before = graphics.length;
+    graphics = graphics.filter((g) => !(["headline", "quote"].includes(g.type) && repeats(g)));
+    if (graphics.length < before) log(`graphics: dropped ${before - graphics.length} card${before - graphics.length === 1 ? "" : "s"} that only repeated the hook`);
+  }
   // Structure cards win their slots: a planned card within 6 s of one is dropped.
   const allCards = [...structureCards, ...graphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2)))].sort((a, b) => a.start - b.start);
   // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
@@ -598,6 +608,14 @@ export async function renderProject(workDir, opts = {}) {
   if (pf?.enabled !== false && !opts.noPreflight) {
     try {
       const res = await runPreflight(output, { plan });
+      // The render reviewer: Claude looks at frames of the finished file; what it sees joins the check note.
+      if (plan.style?.review?.watch !== false && !opts.noReview) {
+        const seen = await watchRender(output, plan, { workDir, duration: res.measures.duration });
+        log(describeWatch(seen));
+        const extra = watchItems(seen);
+        if (extra.length) { res.items.push(...extra); if (res.status === "ok") res.status = "warn"; }
+        if (!seen.error) res.viewer = seen.viewer;
+      }
       writePreflight(workDir, res);
       (res.status === "fail" ? warn : log)(describePreflight(res));
       if (res.status === "fail" && pf?.strict) {

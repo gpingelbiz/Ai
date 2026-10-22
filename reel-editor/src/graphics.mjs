@@ -320,7 +320,7 @@ export function sceneHTML(s) {
     return `<div class="g-box">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-rows">${rows}</div></div>`;
   }
   if (s.type === "quote") {
-    return `<div class="g-box g-center"><div class="g-paper g-in">${s.eyebrow ? `<div class="g-paper-eyebrow">${esc(s.eyebrow)}</div>` : ""}<div class="g-quote">&ldquo;${marked(s.text, "g-hl")}&rdquo;</div><div class="g-paper-mark"></div></div></div>`;
+    return `<div class="g-box g-center"><div class="g-paper g-in">${s.eyebrow ? `<div class="g-paper-eyebrow">${esc(s.eyebrow)}</div>` : ""}<div class="g-quote">${/["“”]/.test(s.text) ? marked(s.text, "g-hl") : `&ldquo;${marked(s.text, "g-hl")}&rdquo;`}</div><div class="g-paper-mark"></div></div></div>`;
   }
   if (s.type === "headline") {
     return `<div class="g-box g-center">${eyebrow}<div class="g-headline g-in">${marked(s.text, "g-gold")}</div><div class="g-rule g-in"></div></div>`;
@@ -334,7 +334,7 @@ export function sceneHTML(s) {
     const max = Math.max(1, ...[s.a, s.b].map((x) => (splitStat(x.value) || { to: 0 }).to));
     const side = (x, cls) => {
       const v = splitStat(x.value);
-      return `<div class="g-side ${cls}"><div class="g-side-label">${esc(x.label)}</div>${v ? `<div class="g-side-value">${esc(x.value)}</div><div class="g-side-bar"><div class="g-side-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div>` : ""}${x.note ? `<div class="g-side-note">${esc(x.note)}</div>` : ""}</div>`;
+      return `<div class="g-side ${cls}${String(x.label).length > 14 ? " g-side-long" : ""}"><div class="g-side-label">${esc(x.label)}</div>${v ? `<div class="g-side-value">${esc(x.value)}</div><div class="g-side-bar"><div class="g-side-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div>` : ""}${x.note ? `<div class="g-side-note">${esc(x.note)}</div>` : ""}</div>`;
     };
     return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-compare g-in">${side(s.a, "g-side-a")}<div class="g-vs">VS</div>${side(s.b, "g-side-b")}</div></div>`;
   }
@@ -398,7 +398,8 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-link { width: ${px(26)}; height: ${px(4)}; align-self: center; background: linear-gradient(90deg, ${c.accent}, ${c.accent}55); }
       .g-icon { width: ${px(44)}; height: ${px(44)}; }
       .g-side { padding: ${px(20)} ${px(20)}; min-height: ${px(120)}; }
-      .g-side-label { font-size: ${px(34)}; }
+      .g-side-label { font-size: ${px(34)}; overflow-wrap: break-word; }
+      .g-side-long .g-side-label { font-size: ${px(27)}; }
       .g-side-value { font-size: ${px(54)}; }
       .g-side-note { font-size: ${px(24)}; }
       .g-bar-label { font-size: ${px(30)}; }
@@ -434,7 +435,8 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-link { width: ${px(26)}; height: ${px(4)}; align-self: center; background: linear-gradient(90deg, ${c.accent}, ${c.accent}55); }
       .g-compare { grid-template-columns: 1fr 1fr; }
       .g-side { padding: ${px(16)} ${px(18)}; min-height: ${px(100)}; }
-      .g-side-label { font-size: ${px(30)}; }
+      .g-side-label { font-size: ${px(30)}; overflow-wrap: break-word; }
+      .g-side-long .g-side-label { font-size: ${px(24)}; }
       .g-side-value { font-size: ${px(46)}; }
       .g-side-note { font-size: ${px(22)}; }
       .g-bar-label { font-size: ${px(26)}; }

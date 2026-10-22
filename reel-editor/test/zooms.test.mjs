@@ -23,3 +23,22 @@ test("a tight frame gets the gentle scales; at most 3 per 30 s", () => {
   for (const k of ins) assert.ok(ins.filter((j) => j.t > k.t - 30 && j.t <= k.t).length <= 3);
   assert.deepEqual(planZooms([line(5, false), line(10, false)], 30, {}), [], "no gold, no zoom");
 });
+
+test("fast cadence: a first cut inside the hook, no framing past max, framings rotate", async () => {
+  const { planCadence } = await import("../src/zooms.mjs");
+  // Two-word caption lines every 0.6 s for 12 s, then a 5 s line with words every 0.4 s and no new line.
+  const groups = [];
+  for (let t = 0.2; t < 12; t += 0.6) groups.push({ start: Math.round(t * 1000) / 1000, words: [{ start: t, end: t + 0.25 }, { start: t + 0.3, end: t + 0.55 }] });
+  const long = { start: 12.2, words: [] };
+  for (let t = 12.2; t < 17.2; t += 0.4) long.words.push({ start: Math.round(t * 1000) / 1000, end: t + 0.3 });
+  groups.push(long, { start: 17.4, words: [{ start: 17.4, end: 17.8 }] });
+  const hook = { start: 0, duration: 3 };
+  const keys = planCadence(groups, 20, [], { min: 1.1, lead: 0.6, first: 0.7, max: 2.8, steps: [1.08, 1.16], hook, tail: 1.5 });
+  assert.ok(keys[0].t >= 0.7 && keys[0].t <= 1.0, `first cut at ${keys[0].t}`);
+  const times = [0, ...keys.map((k) => k.t), 18.5];
+  for (let i = 1; i < times.length; i++) assert.ok(times[i] - times[i - 1] <= 2.8 + 1e-6, `gap ${times[i - 1]}-${times[i]}`);
+  const tight = keys.filter((k) => k.scale > 1).map((k) => k.scale);
+  assert.ok(tight.includes(1.08) && tight.includes(1.16), `framings rotate: ${tight}`);
+  // Default cadence is unchanged: nothing inside the hook.
+  assert.ok(planCadence(groups, 20, [], { hook }).every((k) => k.t >= 3));
+});

@@ -106,3 +106,12 @@ test("caption lines keep phrases whole: no line made of glue words, none ending 
   assert.ok(lines.every((l) => l.split(" ").length <= 5));
   assert.deepEqual(tidyLines([[{ text: "or" }, { text: "a" }], [{ text: "bad" }, { text: "month" }]]).map((l) => l.map((x) => x.text).join(" ")), ["or a bad month"]);
 });
+
+test("minShow: a line that would flash joins the next one; off by default", async () => {
+  const { groupWords } = await import("../src/captions.mjs");
+  const words = [{ text: "you", start: 0, end: 0.08 }, { text: "it", start: 0.1, end: 0.18 }, { text: "works", start: 0.2, end: 0.5 }, { text: "every", start: 0.6, end: 0.9 }, { text: "time.", start: 0.95, end: 1.3 }];
+  const off = groupWords(words, 2, { wordsPerLine: 2 });
+  const on = groupWords(words, 2, { wordsPerLine: 2, minShow: 0.3 });
+  assert.ok(on.length < off.length, `${off.map((g) => g.text).join(" | ")} vs ${on.map((g) => g.text).join(" | ")}`);
+  for (let i = 0; i + 1 < on.length; i++) assert.ok(on[i + 1].start - on[i].start >= 0.25 || on[i].words.length >= 3);
+});

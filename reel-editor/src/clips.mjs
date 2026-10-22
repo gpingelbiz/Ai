@@ -9,6 +9,8 @@ import { loadPreset, loadDictionary } from "./presets.mjs";
 import { runEdit } from "./pipeline.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3, slug } from "./util.mjs";
 import { reframeClip, describeLayout } from "./speakers.mjs";
+import { audioEnvelope } from "./cuts.mjs";
+import { sentenceLines, lineEnergy, cutPoints, momentsPrompt, region, edgesPrompt, resolveClips, describeEdges } from "./moments.mjs";
 
 /**
  * One long video (a live, a training, a podcast) into several reels. The whole thing is transcribed once, headless
@@ -100,12 +102,14 @@ export async function makeClips(input, opts = {}) {
     log(`clips: Claude is picking up to ${count} moments…`);
     let voice = "";
     try { voice = fs.readFileSync(opts.voice || path.join(path.dirname(new URL(import.meta.url).pathname), "..", "voice", preset.name === "pingel-brand" ? "greg.md" : "default.md"), "utf8"); } catch {}
-    const reply = await claudeText(clipsPrompt({ words, duration: meta.duration, count, voice }), { timeoutMs: 300000 });
-    clips = tidyWindows(firstJSON(reply).clips, words, meta.duration);
+    if (opts.picker === "legacy") {
+      const reply = await claudeText(clipsPrompt({ words, duration: meta.duration, count, voice }), { timeoutMs: 300000 });
+      clips = tidyWindows(firstJSON(reply).clips, words, meta.duration);
+    } else clips = await pickCleanEdges({ input, words, duration: meta.duration, count, voice, workDir });
     writeJSON(clipsPath, { source: input, clips });
   }
   if (!clips.length) throw new Error("no usable windows were found");
-  log(`clips: ${clips.length} window${clips.length === 1 ? "" : "s"}${clips.map((c) => `\n  ${c.score}  ${fmt(c.start)}-${fmt(c.end)}  "${c.hook}"  ${c.why}`).join("")}`);
+  log(`clips: ${clips.length} window${clips.length === 1 ? "" : "s"}${clips.map((c) => `\n  ${c.score}  ${fmt(c.start)}-${fmt(c.end)}  "${c.hook}"  ${c.why}${c.problems ? `\n       ${describeEdges(c)}` : ""}`).join("")}`);
   if (opts.planOnly) return { workDir, clips };
 
   // 3. Cut each window out of the source (a fast re-encode so the cut lands exactly on the start) and edit it.
@@ -147,6 +151,35 @@ export async function makeClips(input, opts = {}) {
   }
   writeJSON(clipsPath, { source: input, clips: results.length ? results : clips });
   return { workDir, clips: results };
+}
+
+/**
+ * The clean-edge picker (src/moments.mjs): Claude finds moments by their quotable line, then picks each clip's
+ * opening and earliest complete ending among labelled real boundaries; code maps labels to times and gates the
+ * edges. Two Claude calls for the whole recording.
+ */
+async function pickCleanEdges({ input, words, duration, count, voice, workDir }) {
+  const lines = sentenceLines(words);
+  let energy = [];
+  try { energy = lineEnergy(lines, await audioEnvelope(input)); } catch {}
+  log(`clips: ${lines.length} lines, ${energy.filter((e) => e.tag).length} with raised energy; Claude is finding the moments…`);
+  const r1 = firstJSON(await claudeText(momentsPrompt({ lines, energy, count, duration, voice }), { timeoutMs: 300000 }));
+  const moments = (r1.moments || []).filter((m) => lines.some((l) => l.id === m.anchor)).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, count * 3);
+  if (!moments.length) throw new Error("Claude found no moments with a valid line label");
+  const points = cutPoints(lines, words);
+  const regions = moments.map((m) => region(lines, points, m.anchor));
+  const usable = regions.filter(Boolean);
+  log(`clips: ${moments.length} moments; Claude is choosing clean openings and endings…`);
+  const r2 = firstJSON(await claudeText(edgesPrompt(usable), { timeoutMs: 300000 }));
+  // Region numbers in the reply count only the usable regions; line them back up with the moments.
+  const order = regions.map((r, k) => (r ? k : -1)).filter((k) => k >= 0);
+  const edges = (r2.edges || []).map((e) => ({ ...e, region: order[Number(e.region) - 1] + 1 }));
+  const dropped = [];
+  const clips = resolveClips({ moments, regions, edges, lines, words, duration, count, dropped });
+  log(`clips: ${clips.length} clip${clips.length === 1 ? "" : "s"} (${clips.filter((c) => !c.problems.length).length} with clean edges)${dropped.length ? `; dropped ${dropped.length}: ${dropped.map((d) => `"${d.hook}" (${d.why})`).join(", ")}` : ""}`);
+  // The raw picks, for tracing a bad clip back to its moment and edges.
+  writeJSON(path.join(workDir, "clips-picker.json"), { moments, edges, dropped, lines: lines.length });
+  return clips;
 }
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;

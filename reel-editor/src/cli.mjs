@@ -54,7 +54,7 @@ Options (edit / batch)
   --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)
   --cta-last <s>           show the CTA for the last N seconds (default 3)   --cta-at <s> --cta-duration <s>
   --cta-style <s>          pill (default) | box | text          --cta-position <0-1>  default 0.62
-  --silence <pace>         off | slow | medium | fast (preset default)
+  --silence <pace>         off | slow | medium | fast | tight (preset default)
   --no-bad-takes           keep restarted phrases          --no-fillers    keep um/uh
   --no-cuts                keep every frame                --no-zooms      no magic zooms
   --no-captions            no captions                     --active-word   karaoke pop on the spoken word
@@ -98,6 +98,11 @@ Options (edit / batch)
                            captions over the face, Instagram safe zones); the report is preflight.txt either way
   --behind                 the hook sits behind you: Apple Vision cuts you out so the text runs behind your head
                            and shoulders. --no-behind off (on in the pingel-brand and pingel-runway presets)
+  --no-review              skip the render reviewer (Claude looks at frames of the finished reel and notes what
+                           looks wrong, with times, in preflight.txt; it never changes the reel)
+  --pace fast              the measured short-form pacing on top of the look: shots of 1.1-1.4 s (never over 2.8),
+                           the first cut by 1 s, no dead air over 0.2 s, 1-2 word captions that hard-swap two
+                           frames early (presets/pace-fast.json). #fast in a dropped file name does the same
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -176,6 +181,8 @@ const EDIT_OPTIONS = {
   "no-align": { type: "boolean" },
   "no-preflight": { type: "boolean" },
   behind: { type: "boolean" },
+  pace: { type: "string" },
+  "no-review": { type: "boolean" },
   "no-behind": { type: "boolean" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
@@ -239,7 +246,7 @@ export async function main(argv) {
       return;
     }
     case "clips": {
-      const { opts, positionals } = parse(rest, { ...EDIT_OPTIONS, count: { type: "string" }, "plan-only": { type: "boolean" }, replan: { type: "boolean" }, "auto-hook": { type: "boolean" }, "no-layout": { type: "boolean" } });
+      const { opts, positionals } = parse(rest, { ...EDIT_OPTIONS, count: { type: "string" }, "plan-only": { type: "boolean" }, replan: { type: "boolean" }, "auto-hook": { type: "boolean" }, "no-layout": { type: "boolean" }, picker: { type: "string" } });
       if (opts.help || !positionals[0]) return console.log(USAGE);
       const r = await makeClips(positionals[0], opts);
       for (const c of r.clips) if (c.output) console.log(c.output);

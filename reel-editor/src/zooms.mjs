@@ -40,27 +40,42 @@ export function planZooms(groups, duration, { minSpacing = 10, scales = [1.14, 1
  * footage keeps moving under them), never in the last 1.5 s. A tight frame gets a gentler step.
  * Returns the merged key list, time-ordered. Cut keys carry `cut: true` and `snap: 0`.
  */
-export function planCadence(groups, duration, keys = [], { min = 2.5, lead = 1.5, scale = 1.08, tightScale = 1.05, busy = [], hook = null, tight = false, tail = 1.5, earlyUntil = 0, earlyMin = 0 } = {}) {
-  const from = hook ? hook.start + hook.duration : 0.5;
+export function planCadence(groups, duration, keys = [], { min = 2.5, lead = 1.5, scale = 1.08, tightScale = 1.05, busy = [], hook = null, tight = false, tail = 1.5, earlyUntil = 0, earlyMin = 0, first = null, max = 0, steps = null } = {}) {
+  // first: the measured preset's first cut, on the first word after `first` seconds, inside the hook (the hook's slow
+  // push is off then). max: no framing holds longer than this; a stretch with no new caption line gets a cut at a
+  // word start. steps: tighter framings to rotate through instead of one.
+  const from = first != null ? first : hook ? hook.start + hook.duration : 0.5;
   duration = duration - Math.max(0, tail - 1.5);
   const gapAt = (t) => (earlyUntil && t < earlyUntil && earlyMin ? earlyMin : min);
   const covered = (t) => busy.some((b) => t >= b.start - 0.3 && t < b.start + b.duration + 0.3);
-  const step = tight ? tightScale : scale;
+  const ladder = steps && steps.length ? steps : [tight ? tightScale : scale];
   const all = [...keys].sort((a, b) => a.t - b.t);
   const out = [];
-  let side = 1;
-  for (const g of groups) {
-    const t = g.start;
+  let side = 1, rung = 0;
+  // Candidate cut times: caption line starts, plus (with `max`) every word start as a fallback.
+  const lineStarts = groups.map((g) => g.start);
+  const wordStarts = max ? groups.flatMap((g) => (g.words || []).map((w) => (Array.isArray(w) ? w[0] : w.start))).filter((t) => Number.isFinite(t)) : [];
+  const cands = [...new Set([...lineStarts, ...wordStarts].map((t) => r3(t)))].sort((a, b) => a - b);
+  const isLine = new Set(lineStarts.map((t) => r3(t)));
+  const firstAt = first != null ? cands.find((t) => t >= first) : null;
+  for (const t of cands) {
     if (t < from || t > duration - 1.5 || covered(t)) continue;
     const moves = [...all, ...out];
-    const lastMove = Math.max(from, ...moves.filter((k) => k.t <= t).map((k) => k.t));
-    if (t - lastMove < gapAt(t)) continue;
+    const lastMove = Math.max(from - (first != null ? 1e9 : 0), ...moves.filter((k) => k.t <= t).map((k) => k.t));
+    const since = t - (Number.isFinite(lastMove) && lastMove > -1e8 ? lastMove : 0);
+    const forced = t === firstAt && !out.length;
+    const overdue = max && since >= max - 0.4; // a word start just before the framing would pass `max`
+    if (!forced && !isLine.has(t) && !overdue) continue;
+    if (!forced && since < gapAt(t)) continue;
     if (all.some((k) => k.t > t && k.t - t < lead)) continue;
     // The frame we are in right now: the last key before t, else the base frame.
     const before = moves.filter((k) => k.t <= t).sort((a, b) => b.t - a.t)[0];
     const atBase = !before || before.scale === 1;
-    out.push(atBase ? { t: r3(t), scale: step, snap: 0, cut: true, xPercent: r3(1.2 * side) } : { t: r3(t), scale: 1, snap: 0, cut: true, xPercent: 0 });
-    if (atBase) side = -side;
+    if (atBase) {
+      out.push({ t: r3(t), scale: ladder[rung % ladder.length], snap: 0, cut: true, xPercent: r3(1.2 * side) });
+      side = -side;
+      rung++;
+    } else out.push({ t: r3(t), scale: 1, snap: 0, cut: true, xPercent: 0 });
   }
   return [...all, ...out].sort((a, b) => a.t - b.t);
 }

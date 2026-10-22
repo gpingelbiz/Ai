@@ -90,6 +90,50 @@ export function layoutChecks(plan) {
 const pct = (f) => `${Math.round(f * 100)}%`;
 
 /**
+ * Pacing and caption readability from the plan (after herk-edit-kit's measured numbers and remotion-captioneer's
+ * reading-speed gate, both MIT). A shot ends wherever the picture changes: a punch-in or jump cut, a card or a
+ * cutaway in or out, the cold open. Captions follow the voice, so their reading speed is the speaking speed: a line
+ * counts as missed when it flashes for under 0.3 s or runs over 30 characters a second (17 a second, the subtitle
+ * guideline, is reported as a figure only; a fast talker passes it on half the lines).
+ * Targets come from the preset's `pacing` (the fast overlay); without one only the reading speed is judged.
+ */
+export function pacingChecks(plan) {
+  const items = [];
+  if (!plan?.video?.duration) return { items, stats: null };
+  const D = plan.video.duration;
+  const changes = new Set([0, D]);
+  for (const z of plan.zooms || []) changes.add(z.t);
+  for (const g of plan.graphics || []) { changes.add(g.start); changes.add(g.start + g.duration); }
+  for (const b of plan.broll || []) { changes.add(b.start); changes.add(b.start + b.duration); }
+  if (plan.coldOpen) changes.add(plan.coldOpen.duration);
+  const t = [...changes].filter((x) => x >= 0 && x <= D).map((x) => Math.round(x * 1000) / 1000).sort((a, b) => a - b);
+  const shots = [];
+  for (let i = 1; i < t.length; i++) if (t[i] - t[i - 1] > 0.05) shots.push({ start: t[i - 1], len: t[i] - t[i - 1] });
+  const avgShot = shots.length ? shots.reduce((a, s) => a + s.len, 0) / shots.length : D;
+  const longest = shots.reduce((a, s) => (s.len > a.len ? s : a), { len: 0, start: 0 });
+  const firstCut = t.find((x) => x > 0.05 && x < D) ?? D;
+  // Away: the speaker is off screen under a full-frame cutaway (cards sit over the speaker).
+  const away = [...(plan.broll || []).map((b) => [b.start, b.start + b.duration]), ...(plan.coldOpen ? [[0, plan.coldOpen.duration]] : [])].sort((a, b) => a[0] - b[0]);
+  let maxAway = 0, run = null;
+  for (const [a, b] of away) { if (run && a <= run[1] + 0.05) run[1] = Math.max(run[1], b); else { if (run) maxAway = Math.max(maxAway, run[1] - run[0]); run = [a, b]; } }
+  if (run) maxAway = Math.max(maxAway, run[1] - run[0]);
+  // Reading speed per caption line, over the time it is on screen.
+  const cps = (plan.captions || []).map((g) => ({ start: g.start, text: g.text || "", dur: g.end - g.start, cps: String(g.text || "").replace(/\s+/g, "").length / Math.max(0.1, g.end - g.start) }));
+  const fast = cps.filter((c) => c.cps > 17);
+  const missed = cps.filter((c) => c.dur < 0.28 || c.cps > 30).sort((a, b) => a.dur - b.dur);
+  const stats = { shots: shots.length, avgShot: r3(avgShot), maxShot: r3(longest.len), maxShotAt: r3(longest.start), firstCut: r3(firstCut), maxAway: r3(maxAway), captionsOver17: fast.length, captionLines: cps.length };
+  if (missed.length) items.push({ level: "warn", code: "caption-speed", message: `${missed.length} caption line${missed.length === 1 ? " flashes" : "s flash"} by too fast to read (worst "${missed[0].text}" for ${r3(missed[0].dur)} s at ${fmt(missed[0].start)})` });
+  const tg = plan.style?.pacing;
+  if (tg) {
+    if (tg.avgShot && (avgShot < tg.avgShot[0] - 0.3 || avgShot > tg.avgShot[1] + 0.3)) items.push({ level: "warn", code: "pace-average", message: `shots average ${r3(avgShot)} s (target ${tg.avgShot[0]}-${tg.avgShot[1]} s)` });
+    if (tg.maxShot && longest.len > tg.maxShot + 0.3) items.push({ level: "warn", code: "pace-longest", message: `one shot holds ${r3(longest.len)} s at ${fmt(longest.start)} (target under ${tg.maxShot} s)` });
+    if (tg.firstCut && firstCut > tg.firstCut + 0.2) items.push({ level: "warn", code: "pace-first-cut", message: `the first cut lands at ${r3(firstCut)} s (target by ${tg.firstCut} s)` });
+    if (tg.maxAway && maxAway > tg.maxAway + 0.2) items.push({ level: "warn", code: "pace-away", message: `the speaker is off screen for ${r3(maxAway)} s in a row (target under ${tg.maxAway} s)` });
+  }
+  return { items, stats };
+}
+
+/**
  * Run every check on `file`. Returns {status: ok|warn|fail, items, measures}. `plan` is the reel's plan.json when
  * available (layout checks and the expected length).
  */
@@ -119,6 +163,9 @@ export async function runPreflight(file, { plan = null, loudnessTarget = -14, lo
   measures.openMotion = motion;
   if (motion != null && motion < 0.4) items.push({ level: "warn", code: "static-open", message: `almost nothing moves in the first 2 s (motion ${motion})` });
   items.push(...layoutChecks(plan));
+  const pace = pacingChecks(plan);
+  items.push(...pace.items);
+  if (pace.stats) measures.pacing = pace.stats;
   const status = items.some((i) => i.level === "fail") ? "fail" : items.length ? "warn" : "ok";
   return { status, items, measures };
 }
@@ -139,6 +186,8 @@ export function preflightText(res) {
   if (m.width) facts.push(`${m.width}x${m.height}`);
   if (m.openMotion != null) facts.push(`open motion ${m.openMotion}`);
   lines.push(`Measured: ${facts.join(", ")}`);
+  if (m.pacing) lines.push(`Pacing: ${m.pacing.shots} shots, average ${m.pacing.avgShot} s, longest ${m.pacing.maxShot} s, first cut at ${m.pacing.firstCut} s, speaker away at most ${m.pacing.maxAway} s; ${m.pacing.captionsOver17} of ${m.pacing.captionLines} caption lines over 17 characters a second`);
+  if (res.viewer) lines.push(`Cold viewer (Claude, from frames): ${res.viewer.first3s === "keep" ? "keeps watching" : "swipes"} after 3 s${res.viewer.why ? `: ${res.viewer.why}` : ""}${res.viewer.dropAt != null ? `. Most likely to stop at ${res.viewer.dropAt}s: ${res.viewer.dropWhy}` : ""}`);
   return lines.join("\n") + "\n";
 }
 

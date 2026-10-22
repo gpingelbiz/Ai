@@ -7,7 +7,7 @@ const PRESET_DIR = path.join(PKG_ROOT, "presets");
 export function listPresets() {
   return fs
     .readdirSync(PRESET_DIR)
-    .filter((f) => f.endsWith(".json") && !f.startsWith("_"))
+    .filter((f) => f.endsWith(".json") && !f.startsWith("_") && !f.startsWith("pace-"))
     .map((f) => f.replace(/\.json$/, ""));
 }
 
@@ -31,8 +31,17 @@ export function loadDictionary(file) {
 }
 
 /** CLI flags win over the preset. */
+/** A pacing overlay (presets/pace-<name>.json) on top of any preset: `--pace fast` is the measured short-form pacing. */
+export function applyPace(preset, pace) {
+  if (!pace || pace === "normal") return preset;
+  const file = path.join(PRESET_DIR, `pace-${pace}.json`);
+  if (!fs.existsSync(file)) throw new Error(`no pacing "${pace}" (have: ${fs.readdirSync(PRESET_DIR).filter((f) => f.startsWith("pace-")).map((f) => f.slice(5, -5)).join(", ") || "none"})`);
+  const { name, _about, ...over } = readJSON(file);
+  return { ...deepMerge(preset, over), pace };
+}
+
 export function mergeOverrides(preset, o = {}) {
-  const p = structuredClone(preset);
+  const p = structuredClone(applyPace(preset, o.pace));
   // Numbers are read with `!= null`, so --music-volume 0 and --hook-position 0 count (a bare `if (o.x)` dropped them).
   const num = (v) => (v == null || v === "" ? null : parseFloat(v));
   if (o.silence) p.cuts.silence = o.silence;
