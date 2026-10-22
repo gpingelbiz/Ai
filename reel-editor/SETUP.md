@@ -79,7 +79,9 @@ To fix a caption, edit its `text` in `videos/my-clip/plan.json` and run `reel bu
 
 ## Drop folder (optional)
 
-If you said yes to the drop folder, it is already on: drop a clip into **Desktop/Reels/Raw**, and the finished reel appears in **Desktop/Reels** with a Mac notification. A 1-minute clip takes about 3 minutes.
+If you said yes to the drop folder, it is already on: drop a clip into **Desktop/Reels/Raw**, and a Mac notification tells you when it is done. A 1-minute clip takes about 3 minutes.
+
+Each reel gets its own folder in Desktop/Reels, named by date and number: `2026-10-21 Reel 1`, `2026-10-21 Reel 2`, and so on, starting again at Reel 1 each day. Inside are the reel (named after its hook), `caption.txt`, and `check these words.txt` when there is something to check.
 
 Raw is a shortcut to `~/Reels/raw`. macOS stops background jobs from reading Desktop folders, so leave it as a shortcut.
 
@@ -94,7 +96,7 @@ The filename is the brief:
 | `clip #landscape.mov` | 16:9 for YouTube |
 | `clip #low.mov` or `clip #top.mov` | Force the hook low or high |
 
-When a reel has doubtful words, a `check these words.txt` note lands beside it. If you use [Claude Code](https://claude.com/claude-code) and have the Sandcastles connector on claude.ai, a `caption.txt` lands beside it too: a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
+`caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
 
 ## Troubleshooting
 

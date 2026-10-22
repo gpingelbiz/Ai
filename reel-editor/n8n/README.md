@@ -34,7 +34,7 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `REEL_WATCH_ROOT` | `~/Reels` | work folder (renders in `videos/<name>/`) |
-| `REEL_WATCH_DONE` | `~/Reels/done` | where finished MP4s are copied (named after the hook when there is one); on the Mini this is `~/Desktop/Reels` |
+| `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per reel (`<date> Reel <n>`, with the MP4, `caption.txt` and `check these words.txt`); on the Mini this is `~/Desktop/Reels` |
 | `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set it to an empty string (`export REEL_WATCH_CTA=""`) for no CTA |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 
