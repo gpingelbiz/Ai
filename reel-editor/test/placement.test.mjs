@@ -50,3 +50,16 @@ test("captions drop quotation marks", () => {
   assert.equal(cleanText('"Hey, Vin,'), "Hey, Vin");
   assert.equal(cleanText("“That’s on the table.”"), "That’s on the table");
 });
+
+test("captions sit under the chin, capped low, at the safe line on wide shots, default without a face", async () => {
+  const { placeCaptions } = await import("../src/placement.mjs");
+  const close = placeCaptions({ top: 0.22, bottom: 0.68 }, { fontSizeFrac: 0.04 });
+  assert.equal(close.zone, "below-chin");
+  assert.ok(close.position > 0.68 && close.position <= 0.76, String(close.position));
+  assert.ok(close.top > 0.68, "the block starts under the chin");
+  const low = placeCaptions({ top: 0.3, bottom: 0.8 }, { fontSizeFrac: 0.04 });
+  assert.deepEqual([low.position, low.zone], [0.76, "capped"]);
+  const wide = placeCaptions({ top: 0.1, bottom: 0.35 }, { fontSizeFrac: 0.04 });
+  assert.deepEqual([wide.position, wide.zone], [0.56, "safe-zone"]);
+  assert.deepEqual(placeCaptions(null, { defaultPosition: 0.6 }).position, 0.6);
+});

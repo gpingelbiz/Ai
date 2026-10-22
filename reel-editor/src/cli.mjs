@@ -5,6 +5,11 @@ import { transcribe, applyCorrections } from "./transcribe.mjs";
 import { listPresets, loadPreset, loadDictionary } from "./presets.mjs";
 import { hyperframesBin } from "./render.mjs";
 import { doctor } from "./doctor.mjs";
+import { makeCarousel } from "./carousel.mjs";
+import { makeClips } from "./clips.mjs";
+import { makeCover } from "./cover.mjs";
+import { readJSON } from "./util.mjs";
+import { renderHookVariants } from "./pipeline.mjs";
 import { writeJSON, log } from "./util.mjs";
 
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
@@ -15,6 +20,14 @@ Usage
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
   reel batch <folder> [options]     edit every video in a folder that has no render yet
+  reel clips <long video> [--count 5] [--plan-only] [--replan] [edit options]
+                                    one long recording into several reels: Claude picks 30-90 s windows with a
+                                    hook and a score, each is cut out and edited (clips.json lists them)
+  reel hooks <workdir> "hook A" "hook B"  the first 4 s rendered once per hook, into <workdir>/hooks/
+  reel cover <workdir>              the cover image again (cover.png: a hook-window frame with the hook at chest height)
+  reel carousel <workdir> [--out <dir>] [--slides 6] [--images 2] [--force]
+                                    IG carousel from a finished reel: Codex writes the slides and draws the images
+                                    (reusing the reel's b-roll), the editor sets the words; 1080x1350 PNGs
   reel presets                      list presets
   reel doctor                       check ffmpeg, whisper, hyperframes, chrome, keys
 
@@ -31,6 +44,7 @@ Options (edit / batch)
                            gold | outline (Bone text, black outline) | box (Bone on Obsidian backing)
                            Mark the gold phrase by hand with asterisks: --hook "The *10 minutes* after a bad number"
   --hook-position <0-1>    hook height from the top (default 0.22); 0.40 clears the head on wide shots
+  --caption-position <0-1> caption height from the top; by default they sit just under the chin (0.56-0.76)
   --no-auto-keywords       gold only on dictionary terms, numbers and power words (no automatic picks)
   --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)
   --cta-last <s>           show the CTA for the last N seconds (default 3)   --cta-at <s> --cta-duration <s>
@@ -41,11 +55,32 @@ Options (edit / batch)
   --no-captions            no captions                     --active-word   karaoke pop on the spoken word
   --words-per-line <n>     captions words per line (preset default 3)
   --canvas <c>             auto (default) | portrait | landscape | square | source
-  --music <file>           music bed, looped to length     --music-volume <0-1>  default 0.12
+  --music <file>           music bed, normalized and trimmed to length   --music-volume <0-1>  default 0.10
+  --music-dir <folder>     pick the bed from a folder of "<Mood> - Title - Artist.mp3" files by the mood of what
+                           is said (Claude, headless); "Signature ..." tracks come back more often
+  --music-want <text>      with --music-dir: the track whose file name contains this    --no-duck  flat level
   --no-clean-audio         skip noise reduction + loudness normalization
   --sfx                    ElevenLabs whoosh on zoom-ins and pop on the hook (needs ELEVENLABS_API_KEY)
   --voiceover <script.txt> ElevenLabs narration track      --voice <id>    --replace-audio (mute footage)
   --quality <q>            draft | looks (default) | delivery        --fps <n>  default 30
+  --check                  run the HyperFrames lint/layout check before rendering (off by default; slow)
+  --broll                  Codex b-roll: 1-3 generated stills cut in after the hook, slow push-in, voice and captions
+                           keep going (needs the Codex CLI signed in). --no-broll turns a preset's b-roll off,
+                           --new-broll draws fresh stills instead of reusing the saved ones
+  --graphics               designed cards cut in to show what you say: a number, a checklist, a highlighted
+                           quote, the key line, a step diagram. Claude writes them from the transcript, the
+                           editor sets them in the brand colors (needs the Claude Code CLI). --no-graphics off,
+                           --new-graphics replans them. With cards on, --broll adds at most 2 photos in the gaps
+  --caption-style <s>      pop (Anton, black outline) | reveal (heavy Inter, each word lights up as it is said)
+  --slams                  climax words: a gold word slams in big in the top third for a second as it is said
+                           (at most 5, 8 s apart, never under a card). --no-slams off
+  --annotate               a hand-drawn marker underlines (circles a number) the gold word in each caption line
+                           as it is spoken. --no-annotate off
+  --zoom-style <s>         camera (creator punch-in: push, slight tilt, edge defocus) | snap (hard cut-in zoom)
+  --broll-cut <s>          hard (default) | flash (a white editorial flash on the cut) | blur (the still arrives from a blur)
+  --no-cadence             no cut cadence (the frame otherwise cuts between two framings every 2.5-4.5 s)
+  --cold-open              with b-roll: frame 0 shows a still under the hook for 0.6 s, then flashes to you. --no-cold-open off
+  --sounds                 small CC0 sounds on the edits: card lands, word slam, camera move, flash, marker. --no-sounds off
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -67,6 +102,7 @@ const EDIT_OPTIONS = {
   "no-hook": { type: "boolean" },
   "title-style": { type: "string" },
   "hook-position": { type: "string" },
+  "caption-position": { type: "string" },
   "no-auto-keywords": { type: "boolean" },
   cta: { type: "string" },
   "cta-last": { type: "string" },
@@ -84,6 +120,9 @@ const EDIT_OPTIONS = {
   "words-per-line": { type: "string" },
   canvas: { type: "string" },
   music: { type: "string" },
+  "music-dir": { type: "string" },
+  "music-want": { type: "string" },
+  "no-duck": { type: "boolean" },
   "music-volume": { type: "string" },
   "no-clean-audio": { type: "boolean" },
   sfx: { type: "boolean" },
@@ -92,8 +131,27 @@ const EDIT_OPTIONS = {
   "replace-audio": { type: "boolean" },
   quality: { type: "string" },
   fps: { type: "string" },
+  broll: { type: "boolean" },
+  "no-broll": { type: "boolean" },
+  "new-broll": { type: "boolean" },
+  graphics: { type: "boolean" },
+  "no-graphics": { type: "boolean" },
+  "new-graphics": { type: "boolean" },
+  "caption-style": { type: "string" },
+  slams: { type: "boolean" },
+  "no-slams": { type: "boolean" },
+  annotate: { type: "boolean" },
+  "no-annotate": { type: "boolean" },
+  "zoom-style": { type: "string" },
+  "broll-cut": { type: "string" },
+  "no-cadence": { type: "boolean" },
+  "cold-open": { type: "boolean" },
+  "no-cold-open": { type: "boolean" },
+  sounds: { type: "boolean" },
+  "no-sounds": { type: "boolean" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
+  check: { type: "boolean" },
   force: { type: "boolean" },
   title: { type: "string" },
   dictionary: { type: "string" },
@@ -132,6 +190,34 @@ export async function main(argv) {
       if (r.output) console.log(r.output);
       return;
     }
+    case "carousel": {
+      const { opts, positionals } = parse(rest, { out: { type: "string" }, slides: { type: "string" }, images: { type: "string" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const files = await makeCarousel(positionals[0], opts);
+      console.log(path.dirname(files[0]));
+      return;
+    }
+    case "clips": {
+      const { opts, positionals } = parse(rest, { ...EDIT_OPTIONS, count: { type: "string" }, "plan-only": { type: "boolean" }, replan: { type: "boolean" }, "auto-hook": { type: "boolean" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const r = await makeClips(positionals[0], opts);
+      for (const c of r.clips) if (c.output) console.log(c.output);
+      return;
+    }
+    case "cover": {
+      const { positionals } = parse(rest, { help: { type: "boolean", short: "h" } });
+      const wd = path.resolve(positionals[0] || ".");
+      const plan = readJSON(path.join(wd, "plan.json"));
+      console.log(await makeCover(wd, plan, { handle: plan.style?.carousel?.handle || "" }));
+      return;
+    }
+    case "hooks": {
+      const { opts, positionals } = parse(rest, { seconds: { type: "string" }, quality: { type: "string" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || positionals.length < 2) return console.log(USAGE);
+      const outs = await renderHookVariants(positionals[0], positionals.slice(1), { seconds: parseFloat(opts.seconds || 4), quality: opts.quality || "draft" });
+      outs.forEach((o) => console.log(o));
+      return;
+    }
     case "render": {
       const { opts, positionals } = parse(rest);
       console.log(await renderProject(positionals[0] || ".", opts));
@@ -153,7 +239,12 @@ export async function main(argv) {
         hyperframesBin: hyperframesBin(),
       });
       words = applyCorrections(words, dict.corrections);
-      writeJSON(out, { source: input, words });
+      // Same shape the pipeline saves, so a later `reel edit --transcript` keeps the engine and the source check.
+      let sourceStat = null;
+      try { const st = (await import("node:fs")).statSync(input); sourceStat = { size: st.size, mtimeMs: Math.round(st.mtimeMs) }; } catch {}
+      let engine = null;
+      try { engine = JSON.parse((await import("node:fs")).readFileSync(out, "utf8")).engine || null; } catch {}
+      writeJSON(out, { source: input, sourceStat, engine, words });
       log(`${words.length} words → ${out}`);
       return;
     }

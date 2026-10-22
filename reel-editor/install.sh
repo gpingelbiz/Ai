@@ -3,7 +3,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash
 #
-# Asks three questions (look, ElevenLabs key, drop folder), installs everything, proves it with a test reel.
+# Asks four questions (look, ElevenLabs key, drop folder, Codex for b-roll and carousels), installs everything,
+# proves it with a test reel.
 # Safe to run again: it updates the code and keeps your settings.
 #
 # Options (for re-runs and automation):
@@ -152,6 +153,25 @@ else
 fi
 [ -n "$WATCH" ] || { ask "Turn on the drop folder (drop a clip, get a reel)? [Y/n]:" y; case "$REPLY" in n*|N*) WATCH=n ;; *) WATCH=y ;; esac; }
 
+# Codex makes the b-roll stills and carousels, on the person's own ChatGPT plan. Optional: without it, reels
+# come with no b-roll and no carousel.
+if command -v codex >/dev/null 2>&1; then
+  if codex login status >/dev/null 2>&1; then ok "Codex signed in: b-roll and carousels on"
+  else note "Codex is installed but not signed in. Run  codex login  once to turn on b-roll and carousels."; fi
+else
+  ask "Make b-roll and carousels with Codex (needs a ChatGPT account)? [Y/n]:" y
+  case "$REPLY" in
+    n*|N*) note "Codex skipped: reels come without b-roll and carousels" ;;
+    *)
+      if npm install -g @openai/codex --silent --no-audit --no-fund >/dev/null 2>&1; then ok "Codex installed"
+      else note "Codex did not install; reels come without b-roll and carousels"; fi
+      if command -v codex >/dev/null 2>&1 && [ "$YES" != 1 ] && [ -r /dev/tty ]; then
+        note "Sign in with your ChatGPT account in the browser window that opens."
+        codex login < /dev/tty > /dev/tty 2>&1 || note "Sign-in skipped. Run  codex login  later to turn on b-roll and carousels."
+      fi ;;
+  esac
+fi
+
 touch "$ZSHRC"
 # Keep a call-to-action someone set by hand; a re-run must not wipe it.
 CTA_LINE="$(grep '^export REEL_WATCH_CTA=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
@@ -181,11 +201,18 @@ export REEL_PYTHON="$VENV/bin/python" PRODUCER_BROWSER_GPU_MODE=hardware REEL_PR
 [ -z "$KEY" ] || export ELEVENLABS_API_KEY="$KEY"
 
 if [ "$WATCH" = y ]; then
-  mkdir -p "$HOME/Reels/raw" "$HOME/Desktop/Reels"
-  # macOS blocks background jobs from reading the Desktop, so the real drop folder lives in ~/Reels/raw.
-  [ -e "$HOME/Desktop/Reels/Raw" ] || ln -s "$HOME/Reels/raw" "$HOME/Desktop/Reels/Raw"
-  REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$HOME/Desktop/Reels" "$APP/scripts/install-watcher.sh" >/dev/null
-  ok "drop folder on: drop clips in Desktop/Reels/Raw, reels appear in Desktop/Reels"
+  mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-carousel" "$HOME/Reels/music" "$HOME/Desktop/Reels"
+  # macOS blocks background jobs from reading the Desktop, so the real drop folders live in ~/Reels and the
+  # Desktop gets shortcuts. An older single "Raw" shortcut becomes "Raw - Reel".
+  D="$HOME/Desktop/Reels"
+  if [ -L "$D/Raw" ] && [ ! -e "$D/Raw - Reel" ]; then mv "$D/Raw" "$D/Raw - Reel"; fi
+  [ -e "$D/Raw - Reel" ] || ln -s "$HOME/Reels/raw" "$D/Raw - Reel"
+  [ -e "$D/Raw - Reel with B-roll" ] || ln -s "$HOME/Reels/raw-broll" "$D/Raw - Reel with B-roll"
+  [ -e "$D/Raw - Carousel" ] || ln -s "$HOME/Reels/raw-carousel" "$D/Raw - Carousel"
+  [ -e "$D/Music" ] || ln -s "$HOME/Reels/music" "$D/Music"
+  [ -e "$HOME/Reels/music/Put music here.txt" ] || printf 'Drop licensed music files here (mp3, m4a or wav), for example Epidemic Sound downloads.\nEvery reel gets one at random, low under your voice. Name a clip "...#music:calm.mov" to use the track whose name has "calm", or "...#nomusic.mov" for none.\n' > "$HOME/Reels/music/Put music here.txt"
+  REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh" >/dev/null
+  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel (music from Desktop/Reels/Music)"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it
@@ -201,7 +228,7 @@ ok "test reel: $out"
 
 bold "Done."
 note "Open a new Terminal window, then:  reel edit my-clip.mov --hook \"Your *hook* here\""
-[ "$WATCH" != y ] || note "Or drop a clip into Desktop/Reels/Raw and wait for the notification."
+[ "$WATCH" != y ] || note "Or drop a clip into one of the Raw folders in Desktop/Reels and wait for the notification."
 note "Run this installer again any time to update."
 }
 

@@ -26,7 +26,7 @@ export function voiceFile(plan, env = process.env) {
 }
 
 /** The prompt Claude gets. Pure, so it can be tested. */
-export function buildPrompt({ transcript, hook, voice, cta }) {
+export function buildPrompt({ transcript, hook, voice, cta, auto = false }) {
   return [
     "You write the Instagram post copy for one finished talking-head reel.",
     "",
@@ -38,14 +38,20 @@ export function buildPrompt({ transcript, hook, voice, cta }) {
     "- Caption: 1 or 2 short lines in the speaker's own point of view: the point they are making. No emojis. No invented numbers, results or stories: only what the transcript says.",
     "- When the speaker quotes someone else or acts out a message, call or line (\"text me: hey, I messed up\"), never present those words as the speaker's own.",
     "- Hashtags: exactly 3, matching the content.",
-    cta ? `- End the caption with this call to action, word for word: ${cta}` : "- No call to action of any kind (no comment/DM/follow/share/save asks).",
-    "- Hook options: 3, each 4 to 8 words, true to what the speaker says. Option 1 is the hook already in the reel, exactly as given. Options 2 and 3 each model a different winning pattern; never copy another creator's wording.",
-    "- For each hook option, name its pattern and cite one Sandcastles example as @handle, views, and outlier score (e.g. 153x). Option 1 may cite none.",
+    cta
+      ? `- End the caption with an offer built around this call to action: ${cta}. Phrase it as something the reader gets ("Want the exact words? ${cta} and I'll send them."), never as a bare instruction on its own: Instagram does not recommend posts that only ask people to comment a word.`
+      : "- No call to action of any kind (no comment/DM/follow/share/save asks).",
+    auto
+      ? "- Hook options: 3, each 4 to 8 words, true to what the speaker says, strongest first: option 1 goes on the finished reel as its on-screen hook, so it must stop the scroll on its own and never be a greeting. Each option models a different winning pattern; never copy another creator's wording."
+      : "- Hook options: 3, each 4 to 8 words, true to what the speaker says. Option 1 is the hook already in the reel, exactly as given. Options 2 and 3 each model a different winning pattern; never copy another creator's wording.",
+    auto
+      ? "- For each hook option, name its pattern and cite one Sandcastles example as @handle, views, and outlier score (e.g. 153x)."
+      : "- For each hook option, name its pattern and cite one Sandcastles example as @handle, views, and outlier score (e.g. 153x). Option 1 may cite none.",
     "",
     "Voice:",
     voice.trim(),
     "",
-    `Hook in the reel: ${hook || "(none)"}`,
+    auto ? `The reel has no written hook yet; it opens on the speaker's first words: ${hook}` : `Hook in the reel: ${hook || "(none)"}`,
     "",
     "Transcript of the finished reel:",
     transcript,
@@ -111,8 +117,9 @@ async function main() {
   if (!transcript) { console.log("caption: no transcript in this reel, skipped"); return; }
   const cta = process.env.REEL_WATCH_CTA || "";
   const hook = plan.hook?.text || "";
+  const auto = !!(hook && plan.hook?.auto);
   const out = outArg || path.join(workDir, "caption.txt");
-  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voiceFile(plan), "utf8"), cta });
+  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voiceFile(plan), "utf8"), cta, auto });
   let reply;
   try {
     reply = await runClaude(prompt);
@@ -128,8 +135,13 @@ async function main() {
     fs.writeFileSync(path.join(workDir, "caption-raw.txt"), reply);
     return;
   }
-  if (hook && j.hooks[0]?.text !== hook) j.hooks = [{ text: hook, pattern: "the hook in the reel" }, ...j.hooks.filter((h) => h.text !== hook)].slice(0, 3);
-  fs.writeFileSync(out, formatCaptionFile(j, { title: hook || plan.name, cta }));
+  if (auto) {
+    // The strongest written option becomes the reel's hook (the watcher re-edits with it); the opening words are not an option.
+    j.hooks = j.hooks.filter((h) => h.text && h.text.trim().toLowerCase() !== hook.trim().toLowerCase()).slice(0, 3);
+    j.best = j.hooks[0]?.text || "";
+    j.bestIsWritten = !!j.best;
+  } else if (hook && j.hooks[0]?.text !== hook) j.hooks = [{ text: hook, pattern: "the hook in the reel" }, ...j.hooks.filter((h) => h.text !== hook)].slice(0, 3);
+  fs.writeFileSync(out, formatCaptionFile(j, { title: (auto && j.best) || hook || plan.name, cta }));
   fs.writeFileSync(path.join(workDir, "caption.json"), JSON.stringify(j, null, 2) + "\n");
   console.log(`caption: ${out}`);
 }

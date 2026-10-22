@@ -10,6 +10,8 @@ export function hyperframesBin() {
 export function renderEnv() {
   const env = {};
   if (process.env.REEL_BROWSER_PATH) env.HYPERFRAMES_BROWSER_PATH = process.env.REEL_BROWSER_PATH;
+  // Hardware GPU capture by default (the watcher sets it too); REEL_SW_RENDER=1 forces software.
+  if (!process.env.PRODUCER_BROWSER_GPU_MODE) env.PRODUCER_BROWSER_GPU_MODE = process.env.REEL_SW_RENDER === "1" ? "software" : "hardware";
   return env;
 }
 
@@ -57,6 +59,8 @@ export async function render(projectDir, output, { quality = "looks", fps } = {}
   fs.mkdirSync(path.dirname(output), { recursive: true });
   const args = [...bin.slice(1), "render", projectDir, "-o", output, "-q", quality];
   if (fps) args.push("-f", String(fps));
+  // GPU encoding on a Mac (VideoToolbox): same look, faster final encode. REEL_SW_ENCODE=1 keeps libx264.
+  if (process.platform === "darwin" && process.env.REEL_SW_ENCODE !== "1") args.push("--gpu");
   await run(bin[0], args, { env: renderEnv() });
   if (!fs.existsSync(output) || fs.statSync(output).size === 0) throw new Error(`render produced no file at ${output}`);
   return output;

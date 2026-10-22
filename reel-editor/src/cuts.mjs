@@ -5,7 +5,25 @@ export const PACE = { off: Infinity, slow: 1.0, medium: 0.6, fast: 0.35 };
 const FILLERS = new Set(["um", "uh", "uhm", "umm", "uhh", "erm", "hmm", "mm", "ah", "er", "mhm"]);
 // Function words where an immediate repeat is almost always a stutter ("I I think", "the the").
 const STUTTER_WORDS = new Set(["i", "the", "a", "an", "to", "and", "so", "but", "we", "you", "it", "is", "in", "of", "for", "if", "what", "when", "they", "he", "she", "my", "our", "this", "that's", "it's"]);
-const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9&$']/g, "");
+import { norm } from "./text.mjs";
+// Sign-offs: a reel ends on its last point, so a closing "thanks for watching" inside the last seconds is dropped.
+const SIGN_OFFS = ["thanks for watching", "thank you for watching", "see you in the next", "see you next time", "see you on the next", "catch you in the next", "like and subscribe", "like comment subscribe", "hit the follow", "follow for more", "link in bio", "link in my bio", "peace out", "catch you later", "that's it for today", "that's all for today", "until next time"];
+
+/** Index of the first word of a sign-off phrase that starts inside the last `tail` seconds, else -1. */
+export function findSignOff(words, duration, { tail = 10 } = {}) {
+  const toks = words.map((w) => norm(w.text));
+  for (let i = 0; i < toks.length; i++) {
+    if (words[i].start < duration - tail) continue;
+    for (const phrase of SIGN_OFFS) {
+      const p = phrase.split(" ").map(norm);
+      if (i + p.length > toks.length) continue;
+      let ok = true;
+      for (let k = 0; k < p.length; k++) if (toks[i + k] !== p[k]) { ok = false; break; }
+      if (ok) return i;
+    }
+  }
+  return -1;
+}
 const endsClause = (t) => /[.,!?;:]$/.test(String(t).trim());
 
 /**
@@ -53,9 +71,13 @@ export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5,
  * - badTakes / fillers: drop those words and force a cut around them
  * Returns { segments:[{start,end}], removed:[{start,end,reason}], words:[...with drop], originalDuration, keptDuration }.
  */
-export function planCuts(words, duration, { silence = "fast", badTakes = true, fillers = true, pad = 0.12, minGapCut = 0.15, minSegment = 0.3 } = {}) {
+export function planCuts(words, duration, { silence = "fast", badTakes = true, fillers = true, signOff = true, pad = 0.12, minGapCut = 0.15, minSegment = 0.3 } = {}) {
   const thr = PACE[silence] ?? PACE.fast;
   const drop = badTakes ? findBadTakes(words) : new Array(words.length).fill(null);
+  if (signOff) {
+    const i = findSignOff(words, duration);
+    if (i >= 0) for (let k = i; k < words.length; k++) drop[k] = "sign-off";
+  }
   if (fillers) {
     words.forEach((w, i) => {
       if (drop[i] || !FILLERS.has(norm(w.text))) return;
@@ -109,9 +131,11 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
   for (const s of segs) {
     const a = Math.max(0, s.start);
     const b = Math.min(duration, s.end);
-    if (b - a < minSegment) continue;
+    if (b <= a) continue;
     const prev = out[out.length - 1];
-    if (prev && !s.forced && a - prev.end < minGapCut) prev.end = r3(b);
+    // Every segment holds a kept word, so a sliver under minSegment is merged into its neighbour, never dropped
+    // (an isolated 40 ms word between two pauses used to vanish from both video and captions).
+    if (prev && (b - a < minSegment || (!s.forced && a - prev.end < minGapCut))) prev.end = r3(Math.max(prev.end, b));
     else out.push({ start: r3(a), end: r3(b) });
   }
   if (!out.length) out.push({ start: 0, end: r3(duration) });
@@ -132,6 +156,27 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
     keptDuration: r3(kept),
     words: words.map((w, i) => (drop[i] ? { ...w, drop: drop[i] } : w)),
   };
+}
+
+/**
+ * Snap segment edges to the source frame grid. Video trims land on frames while audio trims are sample-exact, so
+ * unaligned edges leave up to a frame of mismatch per cut and 25 cuts can put the lips a few frames out.
+ */
+export function snapSegments(segments, fps, duration) {
+  const q = 1 / (fps || 30);
+  const out = [];
+  for (const s of segments) {
+    let a = Math.round(s.start / q) * q;
+    let b = Math.round(s.end / q) * q;
+    if (duration != null) b = Math.min(b, duration);
+    a = Math.max(0, a);
+    if (b - a < q) b = a + q;
+    const prev = out[out.length - 1];
+    if (prev && a < prev.end) a = prev.end;
+    if (b <= a) continue;
+    out.push({ ...s, start: r3(a), end: r3(b) });
+  }
+  return out;
 }
 
 /** Move kept words onto the cut timeline. Dropped words and words outside every segment disappear. */
@@ -158,7 +203,14 @@ export function remapWords(words, segments) {
 
 /** One ffmpeg pass: trim+concat the kept segments, optional audio clean-up, constant frame rate.
  *  hdr: convert BT.2020/HLG video to tagged BT.709 SDR (captions disappear in HyperFrames otherwise; see hdr.mjs). */
-export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false } = {}) {
+/**
+ * Voice chain, in signal order: sum to mono (phone side mics add comb filtering), high-pass, spectral denoise, de-ess,
+ * gentle compression, a limiter, then loudness to -16 LUFS (the delivered mix is normalized again to -14 at the end).
+ * REEL_DEEPFILTER=<path to deep-filter> swaps the denoiser for DeepFilterNet (run on the WAV before this pass).
+ */
+export const VOICE_CHAIN = "pan=mono|c0=0.5*c0+0.5*c1,highpass=f=80,afftdn=nr=12:nf=-45:tn=1,deesser=i=0.4:m=0.5:f=0.5,acompressor=threshold=0.09:ratio=3:attack=10:release=150:makeup=2,alimiter=limit=0.89:attack=5:release=50,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=channel_layouts=stereo";
+
+export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto" } = {}) {
   const parts = [];
   const maps = [];
   segments.forEach((s, i) => {
@@ -172,26 +224,41 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
   });
   let fc = `${parts.join(";")};${maps.join("")}concat=n=${segments.length}:v=1:a=${hasAudio ? 1 : 0}[vcat]${hasAudio ? "[a]" : ""}`;
   // HDR (HLG/PQ, BT.2020) sources become tagged BT.709 SDR so the renderer composites captions normally.
-  fc += hdr ? `;[vcat]${SDR_FILTER}[v]` : ";[vcat]null[v]";
+  // Scale down to cover the canvas (never up): a 4K phone clip encodes and renders 4x faster at 1080p, and the
+  // composer crops to the canvas anyway. A wider source keeps its full width for panning.
+  const vf = [hdr ? SDR_FILTER : null, scaleTo ? `scale=${scaleTo.width}:${scaleTo.height}:force_original_aspect_ratio=increase:force_divisible_by=2` : null].filter(Boolean).join(",");
+  fc += `;[vcat]${vf || "null"}[v]`;
   let audioOut = "[a]";
   if (hasAudio && cleanAudio) {
-    fc += ";[a]highpass=f=80,afftdn=nr=10:nf=-40,loudnorm=I=-16:TP=-1.5:LRA=11[ao]";
+    fc += `;[a]${VOICE_CHAIN}[ao]`;
     audioOut = "[ao]";
   }
-  const args = [
+  const common = [
     "-y", "-loglevel", "error", "-stats",
     "-i", input,
     "-filter_complex", fc,
     "-map", "[v]",
     ...(hasAudio ? ["-map", audioOut] : ["-an"]),
     "-fps_mode", "cfr", "-r", String(fps),
-    "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+  ];
+  const tail = [
+    "-pix_fmt", "yuv420p",
     ...(hdr ? SDR_TAGS : []),
     ...(hasAudio ? ["-c:a", "aac", "-b:a", "192k", "-ar", "48000"] : []),
     "-movflags", "+faststart",
     output,
   ];
-  await run("ffmpeg", args);
+  // The Apple hardware encoder is several times faster than libx264 for this intermediate; fall back if it is missing.
+  const useHw = encoder === "videotoolbox" || (encoder === "auto" && process.platform === "darwin" && process.env.REEL_SW_ENCODE !== "1");
+  if (useHw) {
+    try {
+      await run("ffmpeg", [...common, "-c:v", "h264_videotoolbox", "-q:v", "72", "-allow_sw", "1", ...tail], { quiet: true });
+      return output;
+    } catch (e) {
+      if (encoder === "videotoolbox") throw e;
+    }
+  }
+  await run("ffmpeg", [...common, "-c:v", "libx264", "-preset", "medium", "-crf", "18", ...tail]);
   return output;
 }
 
@@ -226,15 +293,30 @@ export async function audioEnvelope(input, { step = 0.02 } = {}) {
  * checked too, so a clipped opening word is not trimmed away.
  * Returns { cuts, restored } with segments, removed and keptDuration rebuilt.
  */
-export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 0.04 } = {}) {
+export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 0.04, minLoud = 0.08 } = {}) {
   const { step, db } = env;
   if (!db.length) return { cuts, restored: 0 };
-  const sorted = [...db].sort((a, b) => a - b);
+  // Room noise is measured inside the planned gaps, not across the speech: that is where the floor matters.
+  const gapDb = [];
+  let tg = 0;
+  for (const s of [...cuts.segments, { start: duration, end: duration }]) {
+    for (let i = Math.floor(tg / step); i < Math.min(db.length, Math.floor(s.start / step)); i++) gapDb.push(db[i]);
+    tg = s.end;
+  }
+  const sorted = (gapDb.length >= 10 ? gapDb : [...db]).sort((a, b) => a - b);
   const floor = sorted[Math.floor(sorted.length * 0.1)];
   const loudDb = Math.min(-30, Math.max(-48, floor + 12)); // a little above this recording's room noise
+  // A sound counts only when it lasts: a breath or a click is a frame or two, a word is not.
+  const minRun = Math.max(1, Math.round(minLoud / step));
   const loud = (t0, t1) => {
     const out = [];
-    for (let i = Math.max(0, Math.floor(t0 / step)); i < Math.min(db.length, Math.ceil(t1 / step)); i++) if (db[i] > loudDb) out.push(i);
+    const i0 = Math.max(0, Math.floor(t0 / step)), i1 = Math.min(db.length, Math.ceil(t1 / step));
+    let run = [];
+    for (let i = i0; i <= i1; i++) {
+      if (i < i1 && db[i] > loudDb) { run.push(i); continue; }
+      if (run.length >= minRun) out.push(...run);
+      run = [];
+    }
     return out;
   };
   const intentional = cuts.removed.filter((r) => r.reason !== "silence");
@@ -290,8 +372,10 @@ export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 
   }
   if (duration - t > 0.001) silences.push({ start: r3(t), end: r3(duration), reason: "silence" });
   const kept = out.reduce((acc, s) => acc + (s.end - s.start), 0);
+  const planned = cuts.removed.filter((r) => r.reason === "silence").length;
   return {
     cuts: { ...cuts, segments: out, removed: [...intentional, ...silences].sort((a, b) => a.start - b.start), keptDuration: r3(kept) },
     restored,
+    noisy: planned >= 4 && restored / planned > 0.5,
   };
 }

@@ -16,23 +16,24 @@ A Mac with Apple Silicon, about 4 GB of free disk, and an internet connection. T
 
 ## Install: one command
 
-Open Terminal, paste this line, and answer three questions. It takes about 10 minutes and ends by playing a test reel.
+Open Terminal, paste this line, and answer four questions. It takes about 10 minutes and ends by playing a test reel.
 
 ```
 curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash
 ```
 
-The three questions:
+The four questions:
 
 1. **Your look:** Greg Pingel's brand, plain white captions, or your own colors (two hex codes).
 2. **Your ElevenLabs key:** paste it, or press Return to skip. It is typed hidden and saved only on your Mac.
 3. **Drop folder:** yes to get a Reels folder on your Desktop that edits any clip you drop in.
+4. **Codex:** yes to add generated b-roll and an Instagram carousel to every reel. It installs the Codex CLI and opens a browser to sign in with your ChatGPT account (it runs on your plan; no API key). Skipped when Codex is already set up.
 
 If an Apple installer window pops up first, click Install, wait for it, and paste the line again. If Homebrew is missing, the installer adds it and asks for your Mac password once.
 
 Run the same line again any time to update. It keeps your settings and only installs what is missing.
 
-Run it in Terminal, not inside Claude Code: the questions need a keyboard, and without one it quietly takes the defaults (Greg's look, no key, drop folder on). For a scripted install, pass the answers as options: `curl -fsSL <the URL above> | bash -s -- --yes --look custom --accent "#00AAFF" --text "#FFFFFF" --no-watch`.
+Run it in Terminal, not inside Claude Code: the questions need a keyboard, and without one it quietly takes the defaults (Greg's look, no key, drop folder on, Codex installed but not signed in). For a scripted install, pass the answers as options: `curl -fsSL <the URL above> | bash -s -- --yes --look custom --accent "#00AAFF" --text "#FFFFFF" --no-watch`.
 
 ## Make it yours
 
@@ -79,11 +80,19 @@ To fix a caption, edit its `text` in `videos/my-clip/plan.json` and run `reel bu
 
 ## Drop folder (optional)
 
-If you said yes to the drop folder, it is already on: drop a clip into **Desktop/Reels/Raw**, and a Mac notification tells you when it is done. A 1-minute clip takes about 3 minutes.
+If you said yes to the drop folder, it is already on. Desktop/Reels has three drop folders; the one you drop a clip into decides what you get back, and a Mac notification tells you when it is done (about 3 minutes for a 1-minute clip):
 
-Each reel gets its own folder in Desktop/Reels, named by date and number: `2026-10-21 Reel 1`, `2026-10-21 Reel 2`, and so on, starting again at Reel 1 each day. Inside are the reel (named after its hook), `caption.txt`, and `check these words.txt` when there is something to check.
+| Drop into | You get, in a new folder in Desktop/Reels |
+| --- | --- |
+| `Raw - Reel` | `2026-10-21 Reel 1`: the edited reel in the classic look (bold outlined captions, no cards) |
+| `Raw - Reel with B-roll` | `2026-10-21 Reel 2 with B-roll`: the full look: graphic cards in the top third while you keep talking (numbers, checklists, quotes, key lines, steps), captions that light up word by word with a hand-drawn marker on the gold word, climax words that stamp in big as you say them, creator punch-ins, and 1-2 generated b-roll photos (graded, with a focus pull on the cut) in the gaps, plus the pictures (`B-roll 1.png`...) |
+| `Raw - Carousel` | `2026-10-21 Carousel 1`: Instagram carousel slides made from the video, plus `carousel.txt` with the slide text |
 
-Raw is a shortcut to `~/Reels/raw`. macOS stops background jobs from reading Desktop folders, so leave it as a shortcut.
+Every folder also gets `caption.txt` (a caption, 3 hashtags and 3 hook ideas; when you did not write a hook in the file name, the first idea is the hook on the finished reel), reels get three covers, `Cover 1.png` to `Cover 3.png` (your best frame with a short bold title: outlined, on a dark bar, or with one word boxed; upload Cover 1 when you post, or whichever you like), a `Hook options` folder (the first 4 seconds rendered with hook ideas 2 and 3, so you can pick; drop the clip again as `clip__Your hook.mov` to use one) and `check these words.txt` when there is something to check. Wide or landscape clips are reframed to follow your face. A closing "thanks for watching" is cut so the reel ends on the point.
+
+**Music:** put licensed tracks (mp3, m4a or wav, for example Epidemic Sound downloads) in **Desktop/Reels/Music**, named `<Mood> - Title - Artist.mp3`. The editor reads what you say and picks a track from the moods that fit, low under your voice (about 20 dB down), swelling a little in your pauses. Tracks named `Signature ...` come back more often; move tracks into the `Bench` folder to park them. `music.txt` in the reel folder names the track. Name a clip `clip #music:calm.mov` to force the track whose name has "calm", or `clip #nomusic.mov` for none. An empty Music folder means no music. Reels are named after their hook, and the numbers start again at 1 each day. To get two of them from one clip, drop it into both folders.
+
+The Raw folders are shortcuts to `~/Reels/raw`, `~/Reels/raw-broll` and `~/Reels/raw-carousel`. macOS stops background jobs from reading Desktop folders, so leave them as shortcuts.
 
 The filename is the brief:
 
@@ -94,9 +103,10 @@ The filename is the brief:
 | `clip__Stop *explaining* the price.mov` | Asterisks pick the gold word |
 | `clip #nozoom.mov` | No punch-in zooms |
 | `clip #landscape.mov` | 16:9 for YouTube |
-| `clip #low.mov` or `clip #top.mov` | Force the hook low or high |
+| `clip #low.mov` or `clip #top.mov` | Force the hook low or high (captions place themselves under your chin) |
+| `clip #music:calm.mov` or `clip #nomusic.mov` | Use the Music track whose name has "calm", or no music |
 
-`caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
+`caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. B-roll and the carousel need the Codex CLI signed in with a ChatGPT plan (the installer offers it; by hand: `npm install -g @openai/codex`, then `codex login`); without it, the b-roll folder gives a plain reel and the carousel folder gives nothing. Codex has usage limits: when it hits one, Codex is skipped for 20 minutes; a b-roll reel still arrives (with a note, and without b-roll) and a carousel leaves a note to drop it again. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
 
 ## Troubleshooting
 
@@ -108,7 +118,7 @@ Run `reel doctor` first; most problems show up there.
 | `reel: command not found` | The Terminal window was open before the install | Open a new Terminal window |
 | doctor says `faster-whisper MISSING`, or `unexpected keyword argument 'metadata_errors'` | The Whisper setup is missing or was upgraded past what it supports | Run the install line again |
 | `ElevenLabs Scribe failed ... using local Whisper` | Key missing, wrong, or out of credits | Check the key in `~/.zshrc` and your ElevenLabs balance; the reel still finishes with Whisper |
-| Drop folder does nothing, no notification | The drop folder was moved onto the Desktop as a real folder | Move your clips out, delete that Raw folder, then run the install line again to make the shortcut |
+| Drop folder does nothing, no notification | The drop folder was moved onto the Desktop as a real folder | Move your clips out, delete that Raw folder, then run the install line again to make the shortcuts |
 | "Reel failed" notification | Something broke mid-edit | Read the end of `~/Reels/watch.log`, then rename the clip to retry |
 | Hook sits on your face | No face found (turned away, very dark) | Add `--hook-position 0.08` (top) or `0.4` (chest), or `#top` / `#low` in the filename |
 | A caption word is wrong | Both engines misheard it the same way | Fix the `text` in `plan.json`, run `reel build`, and add the word to `corrections` in `~/.reel/dictionary.json` |

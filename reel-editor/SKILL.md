@@ -49,9 +49,29 @@ node scripts/write-caption.mjs videos/<name> "<where the reel is> - caption.txt"
 
 It runs Claude Code headless with only the Sandcastles hook and format lookups allowed, in the voice from `voice/greg.md`. No CTA unless `REEL_WATCH_CTA` is set. The drop folder does this on its own after every reel.
 
+## Look
+
+The drop folders split the looks: `Raw - Reel` is the classic look (`--no-graphics --caption-style pop --no-slams --no-annotate`), `Raw - Reel with B-roll` is the full look (cards with count-up stats, compare / bars / message / post cards and list icons, graded b-roll with an optional `--broll-cut flash|blur`, camera punch-ins with a jump-cut cadence between them, a cold open on the first still, climax-word slams, hand-drawn markers on the gold words, and CC0 sounds on the edits; `--no-cadence`, `--no-cold-open`, `--no-sounds` turn each off). By hand, the brand preset cuts in graphic cards (`--graphics`: stats, checklists, highlighted quotes, headlines, step diagrams, written by headless Claude from the transcript) and uses word-by-word reveal captions (`--caption-style reveal`). Read `graphics.json` after an edit and check every card says only what Greg said (numbers with their qualifiers). `--no-graphics` / `--caption-style pop` give the earlier look.
+
+## Cover
+
+Every reel gets `covers/Cover 1-3.png` in its work dir (the drop folder copies them into the reel folder), built on the real frame like the top-performing covers in this lane (frame scored with Vision, face big, 2-4 word Anton title with one accent word, outline / bar / box styles, inside the 3:4 grid crop); no image model, no cut-out plates. Tell Greg to upload Cover 1. `reel cover <workdir>` remakes them.
+
+## Long recordings and hook tests
+
+`reel clips <long video> --count 5` turns a live or training into scored reels (clips.json); `reel hooks <workdir> "A" "B"` renders the first 4 s per hook for a pick. Landscape sources are reframed to follow the face automatically. `scripts/publish.mjs <workdir> --media-url <link> --reviewer <email>` sends a reel to Metricool for Greg's approval (never auto-posts); reels with AI stills are flagged isAiGenerated.
+
+## Music
+
+Licensed tracks live in `~/Reels/music` (Desktop/Reels/Music). For a chat edit pass one with `--music`; the drop folders pick at random and note the track in `music.txt`. Never add music from anywhere else.
+
+## B-roll and carousel
+
+`--broll` on `reel edit` adds 1-3 Codex stills after the hook (no faces, no readable text); `reel carousel videos/<name> --out "<reel folder>/Carousel"` makes the IG carousel from the finished reel, reusing those stills. Both need the Codex CLI signed in and stop for 20 minutes after a rate limit. Check every still before posting: describe what is in it, and never present an AI image as real footage of Greg, a client or a real event.
+
 ## Deliver
 
-Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> Reel <n>`, numbered through the day (the drop folder keeps the count in `~/Reels/videos/reel-count-<date>`; bump it when you add one by hand). Inside: the MP4 named after its hook, `caption.txt`, and `check these words.txt` when review.txt has spots.
+Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> Reel <n>`, numbered through the day (the drop folder keeps the count in `~/Reels/videos/reel-count-<date>`; bump it when you add one by hand). Inside: the MP4 named after its hook, `caption.txt`, and `check these words.txt` when review.txt has spots. A b-roll reel's folder is `<YYYY-MM-DD> Reel <n> with B-roll` and also holds `B-roll 1.png`...; a carousel goes in `<YYYY-MM-DD> Carousel <n>` (count in `carousel-count-<date>`). The drop folders do the same: Desktop/Reels has `Raw - Reel`, `Raw - Reel with B-roll` and `Raw - Carousel`, and the folder a clip is dropped into decides which of the three it gets.
 
 
 Give Greg the render path, the before/after duration, and anything that looked off (a mis-heard word, a caption on the face, a weak auto hook). Offer thumbnail-agent as the optional next step.

@@ -19,18 +19,22 @@
     "enabled": true,
     "wordsPerLine": 3,
     "maxGap": 0.7,
-    "position": 0.72,
-    "sideMarginFrac": 0.05,
+    "position": 0.6,
+    "autoPlace": true,
+    "sideMarginFrac": 0.07,
+    "rightMarginFrac": 0.12,
     "fontSizeFrac": 0.04,
     "uppercase": true,
     "strokeWidthFrac": 0.0055,
     "shadow": "0 0.06em 0 #000, 0 0.12em 0.35em rgba(0,0,0,0.7)",
     "animation": "pop",
+    "style": "pop",
     "activeWord": false,
     "maxKeywordsPerLine": 1,
     "shrinkAfterChars": 24,
     "emojis": false,
-    "autoKeywords": false
+    "autoKeywords": false,
+    "annotate": false
   },
   "hook": {
     "enabled": true,
@@ -49,7 +53,15 @@
       1.22
     ],
     "origin": "50% 38%",
-    "snap": 0.12
+    "snap": 0.12,
+    "style": "snap",
+    "cadence": {
+      "enabled": false,
+      "min": 2.5,
+      "lead": 1.5,
+      "scale": 1.08,
+      "tightScale": 1.05
+    }
   },
   "cuts": {
     "silence": "medium",
@@ -59,7 +71,10 @@
   },
   "audio": {
     "music": null,
-    "musicVolume": 0.12,
+    "musicDir": null,
+    "musicWant": "",
+    "musicVolume": 0.1,
+    "duck": true,
     "cleanAudio": true,
     "sfx": false,
     "sfxVolume": 0.45,
@@ -67,7 +82,10 @@
     "sfxPrompts": {
       "zoom": "short fast cinematic whoosh swoosh transition, clean, no music",
       "hook": "short punchy pop hit, subtle, clean, no music"
-    }
+    },
+    "sounds": false,
+    "soundsVolume": 0.3,
+    "soundMarkers": false
   },
   "render": {
     "quality": "looks",
@@ -79,9 +97,60 @@
     "last": 3,
     "start": null,
     "duration": null,
-    "position": 0.62,
+    "position": 0.48,
     "style": "pill",
     "fontSizeFrac": 0.036,
     "uppercase": true
+  },
+  "graphics": {
+    "enabled": false,
+    "mode": "overlay",
+    "max": 6,
+    "every": 10,
+    "gap": 3
+  },
+  "broll": {
+    "enabled": false,
+    "max": 3,
+    "maxWithGraphics": 2,
+    "every": 12,
+    "duration": 2,
+    "gap": 4,
+    "style": "",
+    "grade": {
+      "preset": "muted-editorial",
+      "intensity": 0.55,
+      "adjust": {
+        "contrast": 0.05,
+        "highlights": -0.08,
+        "shadows": 0.05,
+        "saturation": -0.06
+      },
+      "details": {
+        "vignette": 0.14,
+        "vignetteFeather": 0.7,
+        "grain": 0.12,
+        "grainSize": 0.2,
+        "grainRoughness": 0.6
+      }
+    },
+    "focusPull": 0.3,
+    "cut": "hard"
+  },
+  "carousel": {
+    "slides": 6,
+    "newImages": 2,
+    "handle": "",
+    "style": ""
+  },
+  "slams": {
+    "enabled": false,
+    "max": 5,
+    "minSpacing": 8,
+    "hold": 1.1
+  },
+  "coldOpen": {
+    "enabled": false,
+    "duration": 0.6
   }
 }

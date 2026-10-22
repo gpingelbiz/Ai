@@ -83,20 +83,99 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 `presets/pingel-brand.json` is the default and carries the brand look. `presets/clean.json` is plain subtitles. Any key in `presets/_defaults.json` can be overridden in a preset or passed as a path: `--preset my-look.json`.
 
-### Dictionary
+### One long recording into several reels
+
+`reel clips <long video> [--count 5] [--plan-only] [--replan]` transcribes the whole recording once, has headless Claude pick up to `count` windows of 30-90 s (each starting where a thought begins and ending on its payoff, scored 0-100 for how well it would hold a cold viewer, with a hook written for each), cuts each window out of the source with the hardware encoder and runs the normal edit on it with its slice of the transcript. `clips.json` in the work dir lists the windows, scores and outputs; `--plan-only` stops after the pick, `--replan` picks again, `--auto-hook` uses the opening line instead of Claude's hook. Every edit option applies to each clip.
+
+## Hook A/B
+
+`reel hooks <workdir> "hook A" "hook B"` renders the first 4 s of a finished reel once per hook (draft quality, same cuts, captions and music) into `<workdir>/hooks/`. The drop folders do this with hook ideas 2 and 3 from `caption.txt` into a `Hook options` folder next to the reel; drop the clip again as `clip__Chosen hook.mov` to re-edit with the winner. `REEL_WATCH_HOOKS=0` turns it off.
+
+## Wide shots
+
+A source wider than the canvas (a landscape or wide clip into 9:16) is reframed: Apple Vision samples the face every half second, the x centre is smoothed with a dead band, and the crop window follows the speaker (an object-position lane on the footage) instead of staying on the middle of the frame. `reframe.enabled: false` in a preset keeps the centre crop.
+
+## Voice and speed
+
+The clean pass sums the phone's stereo to mono, then high-pass, spectral denoise, de-ess, gentle compression, a limiter and -16 LUFS, encoded with the Apple hardware encoder at the canvas size (never upscaled; a wider source keeps its width for the reframe). The two transcripts and the level scan run side by side, the final render uses GPU encoding, and the lint/layout check is opt-in (`--check`). A 1-minute phone clip now edits in about 1.5 minutes with cards and music. `REEL_SW_ENCODE=1` / `REEL_SW_RENDER=1` force software; `REEL_DEEPFILTER=<path>` is reserved for a DeepFilterNet denoiser.
+
+Sign-offs ("thanks for watching", "see you in the next one", "link in bio"...) inside the last 10 s are cut, so a reel ends on its last point.
+
+## Publishing
+
+`scripts/publish.mjs <work dir> --media-url <public link> [--trial] [--date <iso>] [--reviewer you@x.com]` writes `post.json` (caption and 5 hashtags from `caption.json`, cover frame at the hook, `isAiGenerated` when the reel has AI stills, as Instagram requires) and sends the reel to Metricool for your approval through headless Claude with only the Metricool review tool allowed. Metricool needs the video as a public link (Dropbox or Google Drive links are uploaded by it), so upload the MP4 first. It never auto-posts: a reviewer approves in Metricool.
+
+## Punch-ins, caption lines and the cover
+
+Punch-ins fire only on lines that carry a gold word (the claims), at least 10 s apart and at most 3 per 30 s, never under a card or a cutaway, never in the hook or the last second; each one is released at the next line start. A tight frame (the head fills more than 40% of the height) gets gentle zooms (1.07 / 1.10) instead of 1.14 / 1.22, so the chin stays off the captions.
+
+Two punch-in styles (`zooms.style`, `--zoom-style`): `camera` (the brand default) is the creator move from the HyperFrames camera recipe: the frame pushes in over half a second with a slight lift and tilt while the edges defocus for a beat, then returns slowly; `snap` is the hard cut-in zoom.
+
+Cut cadence (`zooms.cadence`, on in the brand preset, `--no-cadence`): between the punch-ins the frame still changes every 2.5-4.5 s, the way fast talking-head edits alternate between two framings at sentence boundaries (after cutroom's jump-cut zoom). Each cut is instant, at a caption line start, between the base frame and one 8% tighter with a small sideways shift that alternates; at least 2.5 s after the last move and 1.5 s before the next punch-in, never under a still or the hook (the footage keeps moving under a card), never in the last 1.5 s. A tight frame steps 5%.
+
+Cold open (`coldOpen`, on in the brand preset, `--cold-open` / `--no-cold-open`): with b-roll, frame 0 is the first still under the hook text for 0.6 s with a slow push while the voice starts, then a white flash on the cut to the speaker. No still, no cold open.
+
+Sounds (`audio.sounds`, on in the brand preset, `--sounds` / `--no-sounds`): the editor's own edits get small CC0 sounds vendored in `assets/sfx` (Kenney interface packs and Remotion's whoosh and whip; sources in `assets/sfx/NOTICE.md`): a soft drop when a card lands, a whip on a word slam, a whoosh leading each camera punch-in and the cold-open flash. The marker strokes are silent (`audio.soundMarkers: true` adds a scratch per gold word; it was too chirpy). Each cue is its own track at `audio.soundsVolume` (0.3) under the voice, mixed by HyperFrames with the music ducking and the true-peak master. Jump cuts are silent. `--sfx` (ElevenLabs-generated whoosh and pop) still exists for anyone without the vendored files.
+
+`--slams` (on in the brand preset): climax words. The strongest gold word in a stretch (a power word, a number or amount, a framework name) stamps in big in the top third as it is said, in gold Anton: it slams down from 1.6x with a three-frame impact shake, holds about a second and whips up out of frame. At most 5 per reel, 8 s apart, never under a card, a cutaway or the hook; nothing new is written, the words are the ones the captions already highlight. Saved in `plan.json` as `slams`.
+
+`--annotate` (on in the brand preset): a hand-drawn marker on the gold word in each caption line as it is spoken: a squiggle underline for a word, a loose circle for a number or amount. The stroke draws on over 0.4 s and the word gives one small pop as the ink lands. The classic drop folder runs with `--no-slams --no-annotate` so its captions stay as they were.
+
+Caption lines keep phrases whole: a line can't be made only of glue words ("or a") or end on one; the glue moves to the next line, which may grow one word past `wordsPerLine`.
+
+Every reel gets three covers (`<workdir>/covers/Cover 1-3.png`, copied into the reel folder), built on the real frame the way the top-performing talking-head reels in this niche are: `scripts/person.swift` scores frames across the reel (expression x3: a mouth not mid-word; light x2; sharpness x2; angle; face size) and the best one is zoomed a little around the face, darkened a touch with a vignette; headless Claude writes 10 title candidates from the transcript and scores them (specificity, charge, brevity, stakes); the top 3 that fit become the variants: 2-4 words, ALL CAPS Anton measured with the real font metrics so a line never wraps, one accent word, placed under the chin on a close-up or in the top third when the face sits low, always inside the 3:4 grid crop. Three text treatments: outline (white, thick black stroke, shadow), bar (a near-black band with gold rules) and box (the accent word on a gold or red block). No username on the cover. Upload Cover 1 when posting; `reel cover <workdir>` remakes them. `cover.enabled: false` in a preset skips it.
+
+Research (Oct 2026): covers get a marginal share of views (most come from recommendations) but custom covers lift profile-grid taps. The covers that perform in the sales-coach lane (Sandcastles top outliers, the grids of Andy Elliott, Jeremy Miner, Matt Ryder) keep the real room, put the face big, and use 3-6 heavy caps with a thick outline or a solid bar and one accent word; cut-outs on flat designed plates are the YouTube-tool look, not what wins on Reels. The grid crops to 3:4.
+
+B-roll remembers the last 24 scenes it drew (`~/.cache/reel-editor/broll-recent.json`) and asks Codex for something different each time.
+
+## Layout and safe zones
+
+Captions are placed from the face: just under the chin, with the block never lower than 0.76 (where the caption overlay starts to cover it) and never higher than 0.56 (Meta's safe box ends at 65%: the username, caption and audio bar cover the bottom 35%). A close-up selfie gets them under the chin at about 0.75; a wide shot gets them at the safe line. `--caption-position` overrides; without a face the preset's 0.60 is used. A 7% left and 12% right margin keeps them off the action buttons on the right. The hook goes above the head or under the chin and the cards keep to the top 54%. The CTA pill sits at 0.48. The hook is on screen at full strength from frame 0 with a slow push-in on the footage (reels that spread show text by frame 4 and motion in the first half second).
+
+## Dictionary
 
 `dictionary.json` has four lists:
 
 - `terms`: phrases that always get the gold highlight (framework names, money words). Also fed to Whisper as the initial prompt so it spells them right.
 - `phrases`: extra phrases that always get the gold highlight but are NOT sent to Whisper. Use this for everyday phrases (`show up`): a hint can change what Whisper hears, and it once dropped a clipped opening "Don't".
 - `corrections`: fixes for how Whisper hears a term (`"ghost p and l"` becomes `Ghost P&L`).
+- `candidates`: everyday business words (close, sales, pipeline, money...) that get gold at most once per clip and never on two lines in a row, so gold keeps meaning something.
 - `powerWords`: single words that get highlighted when no term is in the line.
 
 With `autoKeywords` on (the brand preset), lines with none of the above get an automatic pick: a number with its unit (`three minutes`), a number word, or a strong 6+ letter word. A word gets automatic gold only once per clip and never on two automatic lines in a row. `--no-auto-keywords` turns it off; `--hook-position 0.40` drops the hook to chest height for wide shots.
 
 ## Post copy (caption, hashtags, hook options)
 
+When the clip carries no written hook (`clip__Your hook here.mov`), the drop folders run two passes: a first `reel edit --no-render` for the transcript, cards and stills, then the post copy writes three hooks strongest first (never the opening words, never a greeting), and the finished reel is edited with the first one on screen. All three stay in `caption.txt`; to use another, drop the clip again with that hook in the file name. The "Hook options" folder of 4-second variants is gone; `reel hooks` still renders variants by hand.
+
 `scripts/write-caption.mjs <work dir> [out.txt]` writes the Instagram post copy for a finished reel: a 1-2 line caption in the speaker's words, 3 hashtags, and 3 hook-text options, each tied to a hook pattern Sandcastles shows winning for the reel's topic (with the example creator, views and outlier score). It runs `claude -p` with only the Sandcastles `top_hooks` and `top_formats` tools allowed, so it can't touch files or run commands. Voice comes from `REEL_CAPTION_VOICE`, else `voice/greg.md` for the brand preset, else `voice/default.md`. The drop folder runs it after every reel (`REEL_WATCH_CAPTION=0` turns it off). Needs the Claude Code CLI signed in and the Sandcastles connector added on claude.ai; without them the reel is delivered without a caption file.
+
+## Music
+
+`--music-dir <folder>` picks the bed from a folder of `<Mood> - Title - Artist.mp3` files by the mood of what is said: headless Claude reads the transcript and names 2-3 moods from the ones on disk (or none, for a raw confrontation), and a track is drawn inside them; files named `Signature ...` are the brand sound and weigh 3; a `Bench/` subfolder is parked. `--music-want <text>` (the drop folders' `#music:<name>`) forces the track whose name contains it; `--music <file>` is a fixed file. The bed is normalized to -16 LUFS, then plays at `--music-volume` (0.10, about 20 dB under the voice) from 0.5 s in, with a 1 s fade in, 1.5 s fade out and a swell to about double in pauses of 0.9 s or more (`--no-duck` for a flat level). `music.txt` in the work dir and the reel folder names the track. The drop folders use `~/Reels/music` (Desktop/Reels/Music; `REEL_WATCH_MUSIC`); `#nomusic` skips. The mix runs through a true-peak ceiling of -1.5 dBTP and the delivered file is normalized to -14 LUFS / -1 dBTP in two passes (`render.deliveryLoudness: false` to skip).
+
+Research behind the defaults (Oct 2026): an active pool of 30-40 tracks with 5-8 signature ones beats a big random one, 8-10% under the voice is safer than 12% on phone speakers, Instagram turns loud uploads down toward -14 LUFS, and no mainstream editor matches music to the words.
+
+## Graphic cards and reveal captions
+
+The brand look is modeled on explainer reels: designed cards cut in to show what is being said, and captions that light up word by word.
+
+`--graphics` (on in the brand preset): Claude Code, headless with no tools, reads the timed transcript and picks up to one moment per 10 seconds after the hook (at most 6) where a card makes the point land: `stat` (a number the speaker says, qualifiers kept: "Almost 8 years"), `list` (2-4 items, checked or struck through as they appear), `quote` (a paper card with one phrase highlighted), `headline` (the key line, one phrase in gold) and `steps` (2-4 connected nodes). Every word on a card comes from the speaker; the editor sets the cards in the preset colors with Inter and animates them (rise in, strike-through, highlight sweep, line draw). Two modes (`graphics.mode`): `overlay` (the default) is a compact glass panel in the top third while the footage keeps playing, the way explainer reels drop a payroll card or a checklist over the speaker; the footage slides down about 7% while a card is up so it never sits on the forehead. `full` takes the whole screen with a slow push. The voice keeps playing and the captions stay on top; nothing covers the hook, the last 1.5 seconds or the CTA. The plan is saved in `<work dir>/graphics.json` and reused while the transcript lines are the same (`--new-graphics` replans). With cards on, `--broll` adds at most 2 photos, only in the gaps at least 1.5 seconds from a card. A `stat` card counts: the number accelerates up from 0 and decelerates onto the exact value (one integer per frame, tabular figures, the words around it stay put: "Almost 8 years" counts the 8), a gold bar sweeps under it in sync (a ring fills for a percentage) and the line lands with one small pulse.
+
+Four more card types, modeled on the HyperFrames registry: `compare` (two things set against each other: the muted left panel is the base, the accent right panel wipes over from the divider, a VS badge pops, bars fill when both sides have a number), `bars` (2-4 numbers that belong together as horizontal bars that grow in reading order with counting values, the one that matters in the accent), `message` (a text exchange the speaker reads out or acts out, as an iMessage thread: typing dots, then each bubble pops from its tail; their words only, nothing is read from Messages) and `post` (the speaker's own strongest line as a social post card under the preset's handle, the like lands a beat after the text). List rows also carry a line icon (phone, dollar, clock, people, chart, calendar, target, trophy, flag and 15 more) that draws on with the row; Claude picks it per item, or the item's words do. HyperFrames ships no icon pack and Lottie files carry their own licenses, so the icons are the editor's own stroke paths.
+
+`--caption-style reveal` (the brand default): heavy Inter, no outline, a soft shadow; each 2-3 word phrase appears dimmed and every word lights up as it is spoken, highlights in gold. `--caption-style pop` is the earlier Anton look with the black outline.
+
+## B-roll and carousel (Codex)
+
+Both use the [Codex CLI](https://developers.openai.com/codex) signed in with a ChatGPT plan: `codex exec` headless, with its built-in image tool. No API key and no per-image bill, but the plan's rate limits apply.
+
+`--broll` adds 1-3 generated stills (about one per 12 seconds after the hook; at most 2 when cards are on; a clip of 8 s or more always gets one, and one card from 9 s). In one session, Codex reads the finished transcript, picks the caption lines a picture would land on, and draws a vertical still for each: a literal object or process shot tied to the thing being said (a phone face-down on a tailgate, a whiteboard with one smudged number), never an empty conference room, dinner table or skyline, and never a scene drawn for a recent reel. The look is a candid documentary photo: one named practical light, mixed colour temperatures, worn surfaces, grain and halation, no retouching; the known AI tells (golden glow, symmetry, a centred subject, plastic surfaces, invented text) are banned, and the bottom third stays plain for the captions. The render hard-cuts to each still for 2 seconds (1.6-2.4) with a 6% ease-out push or a 3% pan, graded toward the phone footage with a vignette and moving grain, while the voice keeps playing and the captions stay on top. Never during the hook, never in the last second, never over the CTA. The drop folders split the work: `Raw - Reel` makes the edited reel, `Raw - Reel with B-roll` makes it with b-roll (plus the stills), `Raw - Carousel` makes only the carousel. The stills and their plan are saved in `<work dir>/broll/` and reused while the transcript lines are unchanged (`--new-broll` redraws). `broll.style` in a preset replaces the style line. The finish is HyperFrames' own media grade on the still (`broll.grade`: muted-editorial at 0.55 with a vignette and deterministic film grain, the values from the Film Memory recipe), the cut lands with a short focus pull (`broll.focusPull`, 0.3 to sharp over 0.32 s), and the moves follow the Ken Burns recipe: a 6% ease-out push, or a steady 3% drift with a little scale and no ease. The cut itself is hard by default (`broll.cut`, `--broll-cut`); `flash` adds the Social Flash recipe (a white wash with a warm core on the frame of each cut, 0.04 s in, 0.18 s out) and `blur` brings the still in from and out through a blur.
+
+`reel carousel <work dir> [--out dir] [--slides 6]` turns a finished reel into an Instagram carousel: 1080x1350 PNGs and a `carousel.txt` with the slide text. Codex writes the slides from the transcript (a cover, the reel's points in order, a closing line) in the voice from `voice/`, and picks an image for each slide: one of the reel's b-roll stills when it fits, else a new one (at most 2 new, `carousel.newImages`; the rest are set as text cards). The words are set by the editor in Anton and Inter with one gold phrase per title, never drawn by the image model, so they are spelled right. The handle on each slide comes from `carousel.handle`. No CTA unless `REEL_WATCH_CTA` is set.
+
+Rate limits: the first 429 from Codex pauses every Codex call from the editor for 20 minutes (saved in `~/.cache/reel-editor/codex-cooldown`, so the next drop waits too). Each reel uses at most two Codex sessions: one picks the b-roll moments and draws every still, one writes the carousel and draws its new images (every session carries a large setup prompt, and many sessions back to back trip the limit). A reel never fails because of b-roll: without Codex, or while it is paused, it renders without it. Headless Codex refuses some config-default models on a ChatGPT login; the editor then retries with `gpt-5.6-sol`, or set `REEL_CODEX_MODEL`.
 
 ## Hook title and CTA
 

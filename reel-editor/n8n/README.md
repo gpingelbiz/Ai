@@ -25,6 +25,8 @@ The watcher reads the filename so you can steer an edit from your phone without 
 | `clip #landscape.mov` | 16:9 canvas for YouTube |
 | `clip #low.mov` | force the hook to chest height (it normally places itself around your face) |
 | `clip #top.mov` | force the hook above your head |
+| `clip #music:calm.mov` | the track in the music folder whose name contains "calm" (default: a random one) |
+| `clip #nomusic.mov` | no music bed |
 | `clip__The *10 minutes* after a bad number.mov` | asterisks pick the gold phrase in the hook |
 
 Tags combine: `objections__Stop explaining the price #nocta.mov`.
@@ -34,8 +36,13 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `REEL_WATCH_ROOT` | `~/Reels` | work folder (renders in `videos/<name>/`) |
-| `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per reel (`<date> Reel <n>`, with the MP4, `caption.txt` and `check these words.txt`); on the Mini this is `~/Desktop/Reels` |
+| `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per drop: `<date> Reel <n>` (from `REEL_WATCH_RAW`), `<date> Reel <n> with B-roll` (from `REEL_WATCH_RAW_BROLL`, default `~/Reels/raw-broll`) or `<date> Carousel <n>` (from `REEL_WATCH_RAW_CAROUSEL`, default `~/Reels/raw-carousel`), each with `caption.txt`; on the Mini this is `~/Desktop/Reels` |
 | `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set it to an empty string (`export REEL_WATCH_CTA=""`) for no CTA |
+| `REEL_WATCH_MUSIC` | `~/Reels/music` | music folder (`<Mood> - Title - Artist.mp3`): a track picked by the mood of the transcript plays under every reel; empty means no music |
+| `REEL_WATCH_MUSIC_VOLUME` | preset (0.10) | music level under the voice |
+| `REEL_WATCH_CAPTION` | `1` | `0` skips the post copy; with it on, a clip with no written hook gets its hook from the post copy (the strongest of three, never the opening words) |
+| `REEL_WATCH_PRUNE_DAYS` | `30` | work folders under `videos/` older than this are removed; `0` keeps them |
+| `REEL_WATCH_CAROUSEL_IMAGES` | `3` | new Codex images per carousel from `raw-carousel` |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 
 The script also pulls `REEL_*`, `ELEVENLABS_*` and `PRODUCER_*` exports from `~/.zshrc`, so the key you set for Terminal works here too.
@@ -50,12 +57,14 @@ n8n is not installed on the Mini, and a Docker n8n can't see `~/Reels` or run `r
 ~/Ai/reel-editor/scripts/install-watcher.sh --uninstall # turn it off
 ```
 
-The agent runs `scripts/watch-folder.sh` whenever `~/Reels/raw` changes.
+`raw` makes the classic look (outlined pop captions, no cards); `raw-broll` makes the full look (graphic cards with count-up numbers, reveal captions with hand-drawn markers, climax-word slams, graded b-roll photos). The agent runs `scripts/watch-folder.sh` whenever `~/Reels/raw`, `~/Reels/raw-broll` or `~/Reels/raw-carousel` changes. n8n calls `watch-reel.sh <clip> [reel|broll|carousel]` directly.
 
 **Keep the drop folder out of the Desktop, Documents and Downloads.** macOS privacy protection stops background jobs from listing those folders: the watcher fires, sees an empty folder, and exits cleanly, so nothing happens and nothing errors. To drop from the Desktop, make a shortcut to the real folder:
 
 ```bash
-ln -s ~/Reels/raw ~/Desktop/Reels/Raw
+ln -s ~/Reels/raw ~/Desktop/Reels/"Raw - Reel"
+ln -s ~/Reels/raw-broll ~/Desktop/Reels/"Raw - Reel with B-roll"
+ln -s ~/Reels/raw-carousel ~/Desktop/Reels/"Raw - Carousel"
 ```
 
 Writing finished reels to the Desktop (`REEL_WATCH_DONE=~/Desktop/Reels`) works fine. Granting /bin/bash Full Disk Access would also work, but it opens far more than this needs. That script edits each new clip once through `watch-reel.sh`, leaves a `.done` or `.failed` marker in `~/Reels/videos/.seen`, and keeps scanning until nothing new is left. Rename a failed clip to retry it. Its own output goes to `~/Reels/watch-launchd.log`; each edit still logs to `~/Reels/watch.log`.

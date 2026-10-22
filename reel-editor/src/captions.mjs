@@ -1,6 +1,6 @@
 import { r3 } from "./util.mjs";
 
-const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9&$']/g, "");
+import { norm } from "./text.mjs";
 
 /** Strip emojis and trailing commas/periods. Keeps ? and ! because they carry tone. */
 export function cleanText(t, { emojis = false } = {}) {
@@ -29,6 +29,33 @@ export function balancedSplit(run, per) {
   return out;
 }
 
+// Words a line should not start or end on: a line that reads "OR A" or ends on "the" is a fragment, not a thought.
+const GLUE = new Set(["a", "an", "the", "or", "and", "but", "of", "to", "in", "on", "at", "for", "with", "from", "by", "as", "than", "so", "if", "that", "your", "my", "our", "their", "his", "her", "its"]);
+const isGlue = (w) => GLUE.has(norm(w.text));
+
+/**
+ * Keep phrases whole: a line made only of glue words joins the next line, and a line ending on a glue word hands
+ * that word to the next line ("a bad number or | a bad month" becomes "a bad number | or a bad month"). A line may
+ * grow to `max` + 1 words rather than leave a dangling word. Runs until nothing moves.
+ */
+export function tidyLines(lines, max = 4) {
+  let out = lines.map((l) => [...l]);
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (let i = 0; i < out.length; i++) {
+      const cur = out[i];
+      if (!cur.length) continue;
+      const next = out[i + 1];
+      if (!next) continue;
+      if (cur.every(isGlue) && cur.length + next.length <= max + 2) { out[i + 1] = [...cur, ...next]; out[i] = []; moved = true; continue; }
+      if (isGlue(cur[cur.length - 1]) && cur.length > 1 && next.length + 1 <= max + 1) { next.unshift(cur.pop()); moved = true; }
+    }
+    out = out.filter((l) => l.length);
+    if (!moved) break;
+  }
+  return out;
+}
+
 /**
  * Group words into caption lines. A run ends at a sentence end or a pause longer than maxGap;
  * each run is split into balanced lines of at most wordsPerLine words.
@@ -51,7 +78,7 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
     }
   }
   if (run.length) runs.push(run);
-  const groups = runs.flatMap((r) => balancedSplit(r, Math.max(1, wordsPerLine))).map((ws) => ({ words: ws }));
+  const groups = runs.flatMap((r) => tidyLines(balancedSplit(r, Math.max(1, wordsPerLine)), Math.max(2, wordsPerLine + 1))).map((ws) => ({ words: ws }));
 
   groups.forEach((g, i) => {
     const next = groups[i + 1];
@@ -60,6 +87,8 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
     g.start = r3(Math.max(0, first.start - 0.05));
     const limit = next ? Math.max(0, next.words[0].start - 0.05) : duration;
     g.end = r3(Math.min(limit, last.end + 0.6));
+    // A hold that would end just before the next line leaves blank frames between them: run straight into it.
+    if (next && limit - g.end < 0.3) g.end = r3(limit);
     if (g.end - g.start < 0.3) g.end = r3(Math.min(limit, g.start + 0.3));
     g.text = g.words.map((w) => w.text).join(" ");
   });
@@ -68,8 +97,10 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
 }
 
 /**
- * Mark highlight words per line: dictionary terms first (multi-word terms highlight every word),
- * then numbers / dollar amounts / power words. At most maxPerLine highlights unless a term is longer.
+ * Mark highlight words per line: dictionary terms first (framework names, always gold; multi-word terms highlight
+ * every word), then numbers / dollar amounts / power words, then dictionary candidates and automatic picks under
+ * the rarity rule (once per clip, never on two lines in a row), so gold keeps meaning something.
+ * At most maxPerLine highlights unless a term is longer.
  */
 
 // Fallback keyword picker for lines with no dictionary term, number or power word. Real speech rarely
@@ -114,6 +145,7 @@ export function markKeywords(groups, dict = {}, { maxPerLine = 1, auto = false }
   // phrases highlight like terms but are not sent to Whisper as spelling hints (a hint can change what it hears).
   const terms = [...(dict.terms || []), ...(dict.phrases || [])].map((t) => t.toLowerCase().split(/\s+/).map(norm)).filter((t) => t.length && t[0]).sort((a, b) => b.length - a.length);
   const power = new Set((dict.powerWords || []).map(norm));
+  const candidates = new Set((dict.candidates || []).map(norm));
   const usedAuto = new Set();
   let prevAuto = false;
   for (const g of groups) {
@@ -145,7 +177,16 @@ export function markKeywords(groups, dict = {}, { maxPerLine = 1, auto = false }
         break;
       }
     }
-    if (marked || !auto) continue;
+    if (marked) continue;
+    // Candidates (everyday business words) are gold once per clip and never on two lines in a row.
+    const ci = toks.findIndex((t) => candidates.has(t) && !usedAuto.has(t));
+    if (ci >= 0 && !wasAuto) {
+      g.words[ci].key = true;
+      usedAuto.add(toks[ci]);
+      prevAuto = true;
+      continue;
+    }
+    if (!auto) continue;
     const pick = autoKeyword(g.words);
     if (!pick || pick.score < 2) continue;
     const word = toks.slice(pick.i, pick.i + pick.len).join(" ");
