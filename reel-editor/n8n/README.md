@@ -43,6 +43,9 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | `REEL_WATCH_CAPTION` | `1` | `0` skips the post copy; with it on, a clip with no written hook gets its hook from the post copy (the strongest of three, never the opening words) |
 | `REEL_WATCH_PRUNE_DAYS` | `30` | work folders under `videos/` older than this are removed; `0` keeps them |
 | `REEL_WATCH_CAROUSEL_IMAGES` | `3` | new Codex images per carousel from `raw-carousel` |
+| `REEL_WATCH_RAW_LONG` | `~/Reels/raw-long` | Raw - Clips from Long Video: a long recording cut into reels (`<date> Clips <n>`) |
+| `REEL_WATCH_CLIPS` | `5` | how many clips a long recording is cut into |
+| `REEL_WATCH_RAW_YOUTUBE` | `~/Reels/raw-youtube` | Raw - Full YouTube Edit: the whole video edited for YouTube (`<date> YouTube <n>`) |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 
 The script also pulls `REEL_*`, `ELEVENLABS_*` and `PRODUCER_*` exports from `~/.zshrc`, so the key you set for Terminal works here too.
@@ -65,6 +68,8 @@ n8n is not installed on the Mini, and a Docker n8n can't see `~/Reels` or run `r
 ln -s ~/Reels/raw ~/Desktop/Reels/"Raw - Reel"
 ln -s ~/Reels/raw-broll ~/Desktop/Reels/"Raw - Reel with B-roll"
 ln -s ~/Reels/raw-carousel ~/Desktop/Reels/"Raw - Carousel"
+ln -s ~/Reels/raw-long ~/Desktop/Reels/"Raw - Clips from Long Video"
+ln -s ~/Reels/raw-youtube ~/Desktop/Reels/"Raw - Full YouTube Edit"
 ```
 
 Writing finished reels to the Desktop (`REEL_WATCH_DONE=~/Desktop/Reels`) works fine. Granting /bin/bash Full Disk Access would also work, but it opens far more than this needs. That script edits each new clip once through `watch-reel.sh`, leaves a `.done` or `.failed` marker in `~/Reels/videos/.seen`, and keeps scanning until nothing new is left. Rename a failed clip to retry it. Its own output goes to `~/Reels/watch-launchd.log`; each edit still logs to `~/Reels/watch.log`.

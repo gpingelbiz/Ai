@@ -76,7 +76,7 @@ export const PICKS_SCHEMA = {
   additionalProperties: false,
 };
 
-export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4, style = "", recent = [] }) {
+export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4, style = "", recent = [], aspect = "9:16" }) {
   return [
     "You are a reel editor adding b-roll to a talking-head Instagram reel.",
     `First pick ${count} caption lines where cutting away to a still image would make the point land harder, spread across the reel, at least ${spacing} seconds apart.`,
@@ -85,7 +85,7 @@ export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4
     "Skip lines where the speaker is talking about themself in a way only their face can carry.",
     recent.length ? `Recent reels already used these scenes; pick something clearly different (another object, place or moment):\n${recent.map((s) => `- ${s}`).join("\n")}` : "",
     `Name the images broll-1.png, broll-2.png and so on, in time order.`,
-    imageInstructions({ aspect: "9:16", style }),
+    imageInstructions({ aspect, style }),
     "",
     `Hook on screen at the start: ${hook || "(none)"}`,
     "",
@@ -104,7 +104,7 @@ export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4
  * broll-<n>.png and returns the shots with `file` set. Reuses the saved stills when the transcript lines are
  * unchanged. Never throws: any failure returns [] and the reel renders without b-roll.
  */
-export async function makeBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [] }) {
+export async function makeBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [], tail = 1 }) {
   const dir = ensureDir(path.join(workDir, "broll"));
   const planPath = path.join(dir, "broll.json");
   const len = Math.max(1.6, Math.min(2.4, settings.duration ?? 2));
@@ -112,7 +112,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   // With graphic cards in the reel, photos are an accent: fewer of them, in the gaps.
   const max = brollCount(duration, { max: busy.length ? settings.maxWithGraphics ?? 2 : settings.max ?? 3, every: settings.every ?? 12 });
   if (!max) { log("b-roll: reel too short, skipped"); return []; }
-  const candidates = brollCandidates(groups, duration, { hook, cta, len, busy });
+  const candidates = brollCandidates(groups, duration, { hook, cta, len, busy, tail });
   if (!candidates.length) { log("b-roll: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
 
@@ -135,7 +135,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   try {
     log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"} and drawing the stills…`);
     const transcript = groups.map((g) => g.text).join(" ");
-    const reply = await codexExec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: len + gap, style: settings.style || "", recent: readRecent() }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
+    const reply = await codexExec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: len + gap, style: settings.style || "", recent: readRecent(), aspect: settings.aspect || "9:16" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
     picks = JSON.parse(reply).picks || [];
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);

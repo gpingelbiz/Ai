@@ -45,7 +45,7 @@ test("one prompt picks the lines and draws the stills; faces and text are banned
   assert.doesNotMatch(p, /^0: /m);
   assert.match(p, /at least 6\.4 seconds apart/);
   assert.match(p, /broll-1\.png/);
-  assert.match(p, /vertical 9:16 image/);
+  assert.match(p, /vertical 9:16 \(1080x1920\) image/);
   assert.match(p, /Look for every image: moody/);
   assert.match(imageInstructions(), /No people/);
   assert.match(imageInstructions(), /No text, letters/);

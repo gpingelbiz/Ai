@@ -14,7 +14,7 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
  * phrase highlighted), headline (the key statement), steps (2-4 connected nodes: a flow or a before -> after).
  */
 
-export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post"];
+export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter"];
 
 /**
  * Line icons for list rows (24x24 stroke paths, drawn on as the row appears). Claude picks one per row from
@@ -87,6 +87,7 @@ export function sceneDuration(s) {
   if (s.type === "list" || s.type === "steps" || s.type === "bars") return r3(Math.min(8, 4.5 + 0.7 * n));
   if (s.type === "message") return r3(Math.min(8, 4 + 1.2 * n));
   if (s.type === "quote" || s.type === "compare") return 6;
+  if (s.type === "chapter") return 3.5;
   if (s.type === "headline") return 5.5;
   return 5.5;
 }
@@ -143,6 +144,10 @@ export function normalizeScene(raw) {
     if (!s.items.length) return null;
   } else if (s.type === "post") {
     s.text = clean(raw.text, 150);
+    if (!s.text) return null;
+  } else if (s.type === "chapter") {
+    s.text = clean(raw.text, 48);
+    s.number = Number.isInteger(raw.number) ? raw.number : 0;
     if (!s.text) return null;
   } else {
     s.text = clean(raw.text, s.type === "quote" ? 140 : 60);
@@ -227,11 +232,11 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "" }
  * Plan the graphic scenes for one reel. Saves <workDir>/graphics.json and reuses it while the transcript lines
  * are unchanged (`force` replans). Never throws: any failure returns [] and the reel renders without cards.
  */
-export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false, handle = "" }) {
+export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false, handle = "", tail = 1.5 }) {
   const planPath = path.join(workDir, "graphics.json");
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
   if (!max) { log("graphics: reel too short, skipped"); return []; }
-  const candidates = sceneCandidates(groups, duration, { hook, cta });
+  const candidates = sceneCandidates(groups, duration, { hook, cta, tail });
   if (!candidates.length) { log("graphics: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
   if (!force && fs.existsSync(planPath)) {
@@ -242,7 +247,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.every(byStart);
     if ((saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
-      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max });
+      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath}`);
       return scenes;
     }
@@ -255,7 +260,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const transcript = groups.map((g) => g.text).join(" ");
     const reply = await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice }), { timeoutMs: 240000 });
     const raw = firstJSON(reply).scenes || [];
-    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => (s.type === "post" ? { ...s, handle } : s)), candidates, { duration, cta, gap: settings.gap ?? 3, max });
+    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => (s.type === "post" ? { ...s, handle } : s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
   } catch (e) {
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
     return [];
@@ -319,6 +324,10 @@ export function sceneHTML(s) {
   }
   if (s.type === "headline") {
     return `<div class="g-box g-center">${eyebrow}<div class="g-headline g-in">${marked(s.text, "g-gold")}</div><div class="g-rule g-in"></div></div>`;
+  }
+  if (s.type === "chapter") {
+    // A chapter title card: the number as the eyebrow, the title, a rule that draws under it.
+    return `<div class="g-box g-center g-chapter"><div class="g-eyebrow g-in"><span class="g-dot"></span>${esc(s.eyebrow || (s.number ? `Chapter ${s.number}` : "Next"))}</div><div class="g-headline g-in">${marked(s.text, "g-gold")}</div><div class="g-rule g-in"></div></div>`;
   }
   if (s.type === "compare") {
     // Two panels: the muted left side is the base, the accent right side wipes over from the divider.
@@ -398,6 +407,45 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-bubble { font-size: ${px(32)}; padding: ${px(16)} ${px(24)}; }
       .g-post { padding: ${px(24)} ${px(28)} ${px(22)}; }
       .g-post-text { font-size: ${px(36)}; }` : "";
+  const band = mode === "band" ? `
+      .gfx { background: none; }
+      .gfx::after { background: linear-gradient(0deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0) 44%); }
+      .g-box { left: 4%; right: 4%; top: auto; bottom: 7%; max-height: 36%; justify-content: flex-start; gap: ${px(18)}; padding: ${px(28)} ${px(36)} ${px(30)}; border-radius: ${px(22)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55); border-left: ${px(8)} solid ${c.accent}; }
+      .g-center { align-items: flex-start; text-align: left; }
+      .g-eyebrow { font-size: ${px(26)}; }
+      .g-stat { line-height: 1; }
+      .g-sub { font-size: ${px(36)}; max-width: 100%; }
+      .g-fill { width: 60%; height: ${px(10)}; }
+      .g-title { font-size: ${px(48)}; }
+      .g-rows { display: grid; grid-template-columns: 1fr 1fr; gap: ${px(10)} ${px(18)}; }
+      .g-row { padding: ${px(14)} ${px(18)}; font-size: ${px(34)}; border-radius: ${px(14)}; gap: ${px(14)}; }
+      .g-mark { width: ${px(40)}; }
+      .g-num { font-size: ${px(24)}; }
+      .g-tag { font-size: ${px(20)}; }
+      .g-icon { width: ${px(36)}; height: ${px(36)}; }
+      .g-paper { width: 100%; padding: ${px(26)} ${px(30)} ${px(28)}; transform: none; }
+      .g-paper-eyebrow { font-size: ${px(20)}; margin-bottom: ${px(10)}; }
+      .g-quote { font-size: ${px(40)}; line-height: 1.2; }
+      .g-headline { font-size: ${px(64)}; text-align: left; }
+      .g-rule { width: ${px(110)}; height: ${px(8)}; }
+      .g-steps { flex-direction: row; align-items: stretch; gap: ${px(12)}; width: 100%; }
+      .g-node { flex: 1; justify-content: center; padding: ${px(16)} ${px(12)}; font-size: ${px(28)}; text-align: center; gap: ${px(8)}; flex-direction: column; }
+      .g-node-num { font-size: ${px(20)}; }
+      .g-link { width: ${px(26)}; height: ${px(4)}; align-self: center; background: linear-gradient(90deg, ${c.accent}, ${c.accent}55); }
+      .g-compare { grid-template-columns: 1fr 1fr; }
+      .g-side { padding: ${px(16)} ${px(18)}; min-height: ${px(100)}; }
+      .g-side-label { font-size: ${px(30)}; }
+      .g-side-value { font-size: ${px(46)}; }
+      .g-side-note { font-size: ${px(22)}; }
+      .g-bar-label { font-size: ${px(26)}; }
+      .g-bar-value { font-size: ${px(30)}; }
+      .g-bars { gap: ${px(10)}; }
+      .g-bar-track { height: ${px(16)}; }
+      .g-bubble { font-size: ${px(28)}; padding: ${px(12)} ${px(20)}; max-width: 70%; }
+      .g-post { padding: ${px(20)} ${px(24)} ${px(18)}; }
+      .g-post-text { font-size: ${px(30)}; }
+      .g-chapter { left: 6%; right: auto; bottom: 12%; max-width: 56%; }
+      .g-chapter .g-headline { font-size: ${px(72)}; }` : "";
   return `
       .gfx { --u: ${u}px; position: absolute; inset: 0; overflow: hidden; opacity: 0; background: radial-gradient(120% 62% at 50% 34%, ${c.accent}2e 0%, ${c.accent}00 60%), ${c.bg}; color: ${c.text}; font-family: "Inter", sans-serif; }
       .gfx::after { content: ""; position: absolute; inset: 0; background: radial-gradient(90% 60% at 50% 40%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 100%); pointer-events: none; }
@@ -482,7 +530,7 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-post-text { font-size: ${px(40)}; font-weight: 600; line-height: 1.25; color: #e7e9ea; }
       .g-post-foot { display: flex; align-items: center; gap: ${px(10)}; margin-top: ${px(18)}; font-size: ${px(30)}; color: #8b98a5; }
       .g-post-heart { display: inline-block; transform-origin: 50% 50%; }
-      .g-post-heart.lit { color: #f91880; }${overlay}`;
+      .g-post-heart.lit { color: #f91880; }${overlay}${band}`;
 }
 
 /** GSAP for the cards (runs inside the composition's timeline script; expects PLAN.graphics and tl). */
@@ -492,7 +540,8 @@ export const GRAPHICS_JS = `
           const box = el.querySelector(".g-box");
           const ins = el.querySelectorAll(".g-in");
           tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
-          if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
+          if (PLAN.graphicsMode === "band") tl.fromTo(box, { y: 28, scale: 0.985 }, { y: 0, scale: 1, duration: 0.32, ease: "power3.out" }, g.start);
+          else if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
           else {
             tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: 0.3, ease: "power3.out" }, g.start);
             // The footage slides down a little while the card is up, so the card never sits on the forehead.

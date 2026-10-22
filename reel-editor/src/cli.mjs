@@ -20,7 +20,11 @@ Usage
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
   reel batch <folder> [options]     edit every video in a folder that has no render yet
-  reel clips <long video> [--count 5] [--plan-only] [--replan] [edit options]
+  reel youtube <long video> [edit options]  the whole video for YouTube: cuts, chapters with title cards, re-hooks,
+                                    sparse cards and b-roll, 112% punch-ins, end-screen-safe ending, and the package
+                                    (description with chapters, titles, captions.srt, thumbnails, endscreen.json,
+                                    edit.v3.json). Captions off by default (--captions burns them in)
+  reel clips <long video> [--count 5] [--plan-only] [--replan] [--no-layout] [edit options]
                                     one long recording into several reels: Claude picks 30-90 s windows with a
                                     hook and a score, each is cut out and edited (clips.json lists them)
   reel hooks <workdir> "hook A" "hook B"  the first 4 s rendered once per hook, into <workdir>/hooks/
@@ -116,6 +120,7 @@ const EDIT_OPTIONS = {
   "no-cuts": { type: "boolean" },
   "no-zooms": { type: "boolean" },
   "no-captions": { type: "boolean" },
+  captions: { type: "boolean" },
   "active-word": { type: "boolean" },
   "words-per-line": { type: "string" },
   canvas: { type: "string" },
@@ -197,8 +202,16 @@ export async function main(argv) {
       console.log(path.dirname(files[0]));
       return;
     }
+    case "youtube": {
+      const { opts, positionals } = parse(rest);
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const { makeYouTube } = await import("./youtube.mjs");
+      const r = await makeYouTube(positionals[0], opts);
+      if (r.output) console.log(r.output);
+      return;
+    }
     case "clips": {
-      const { opts, positionals } = parse(rest, { ...EDIT_OPTIONS, count: { type: "string" }, "plan-only": { type: "boolean" }, replan: { type: "boolean" }, "auto-hook": { type: "boolean" } });
+      const { opts, positionals } = parse(rest, { ...EDIT_OPTIONS, count: { type: "string" }, "plan-only": { type: "boolean" }, replan: { type: "boolean" }, "auto-hook": { type: "boolean" }, "no-layout": { type: "boolean" } });
       if (opts.help || !positionals[0]) return console.log(USAGE);
       const r = await makeClips(positionals[0], opts);
       for (const c of r.clips) if (c.output) console.log(c.output);

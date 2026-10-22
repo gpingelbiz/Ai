@@ -4,6 +4,10 @@
 #   reel      the edited reel, classic look (Anton pop captions, no cards)        -> "<date> Reel <n>/"
 #   broll     the full look: graphic cards, reveal captions, Codex b-roll photos -> "<date> Reel <n> with B-roll/"
 #   carousel  an IG carousel from the video     -> "<date> Carousel <n>/"
+#   long      a long recording (a podcast, a live, a training) cut into several reels with the full look, the
+#             crop following whoever is talking, split screen when two people trade lines -> "<date> Clips <n>/"
+#   youtube   the whole long video for YouTube: chapters with title cards, re-hooks, sparse cards and b-roll,
+#             112% punch-ins, a clean last 20 s, and the package (description, titles, srt, thumbnails) -> "<date> YouTube <n>/"
 # watch-folder.sh picks the mode from the drop folder (Raw - Reel, Raw - Reel with B-roll, Raw - Carousel).
 # Hook from the filename: "clip__You don't have a sales problem.mov" -> --hook "You don't have a sales problem"
 # Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9,
@@ -21,7 +25,7 @@ FILE="${1:-}"
 MODE="${2:-reel}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
-case "$MODE" in reel|broll|carousel) ;; *) echo '{"ok":false,"error":"mode must be reel, broll or carousel"}'; exit 1;; esac
+case "$MODE" in reel|broll|carousel|long|youtube) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long or youtube"}'; exit 1;; esac
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
@@ -118,7 +122,7 @@ fi
 # The b-roll folder gets the full look (the preset's cards and reveal captions plus photos); the plain folder keeps
 # the classic captions with no cards.
 case "$MODE" in
-  broll) flags+=(--broll --graphics --caption-style reveal);;
+  broll|long) flags+=(--broll --graphics --caption-style reveal);;
   reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate);;
 esac
 # A carousel needs the transcript and plan, not a render.
@@ -126,7 +130,7 @@ esac
 name=$(echo "$stem" | sed -E 's/#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 # Each mode has its own work folder, so the same clip can go through two drop folders.
-case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; esac
+case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; esac
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
@@ -139,6 +143,69 @@ if [ "$prune" -gt 0 ] 2>/dev/null; then
 fi
 echo "$(date '+%F %T') start $base ($MODE) -> $work ${flags[*]:-}" >> "$log"
 cd "$REELS"
+# YouTube: the whole video. Its own preset (16:9, no burned-in captions, chapters), then the package next to it.
+if [ "$MODE" = youtube ]; then
+  ytflags=()
+  [ -n "$hook" ] && ytflags+=(--hook "$hook")
+  case "$base" in *"#captions"*) ytflags+=(--captions);; esac
+  [ -d "$MUSIC_DIR" ] && case "$base" in *"#nomusic"*) ;; *) ytflags+=(--music-dir "$MUSIC_DIR");; esac
+  # shellcheck disable=SC2086
+  if ! reel youtube "$FILE" --out "$work" --title "$name" ${ytflags[@]+"${ytflags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
+    echo "$(date '+%F %T') FAIL  $base youtube (see above)" >> "$log"
+    notify "YouTube edit failed" "$base. Rename it to retry; details in ~/Reels/watch.log"
+    printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
+    exit 1
+  fi
+  mkdir -p "$DONE"
+  folder="$(create_reel_folder "$DONE" "$REELS/videos" YouTube)"
+  label="$(basename "$folder")"
+  used_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
+  pretty=$(printf '%s' "$used_hook" | sed -E 's/\*//g; s/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
+  cp "$work/renders/$name.mp4" "$folder/${pretty:-$name}.mp4"
+  for f in description.txt titles.txt captions.srt pinned_comment.txt endscreen.json edit.v3.json youtube.txt; do [ -f "$work/youtube/$f" ] && cp -f "$work/youtube/$f" "$folder/$f"; done
+  for t in "$work"/youtube/thumbnails/Thumbnail*.png; do [ -f "$t" ] && cp -f "$t" "$folder/$(basename "$t")"; done
+  [ -s "$work/review.txt" ] && cp -f "$work/review.txt" "$folder/check these words.txt"
+  [ -s "$work/music.txt" ] && cp -f "$work/music.txt" "$folder/music.txt"
+  echo "$(date '+%F %T') done  $folder" >> "$log"
+  notify "$label ready" "${pretty:-$name}"
+  printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$folder" "$name" "$used_hook"
+  exit 0
+fi
+
+# Long form: one recording into several reels. Claude picks the moments and writes each hook, so there is no
+# two-pass hook step; each clip lands in "<date> Clips <n>/" with its cover, caption and the words to check.
+if [ "$MODE" = long ]; then
+  # shellcheck disable=SC2086
+  if ! reel clips "$FILE" --out "$work" --title "$name" --count "${REEL_WATCH_CLIPS:-5}" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
+    echo "$(date '+%F %T') FAIL  $base clips (see above)" >> "$log"
+    notify "Clips failed" "$base. Rename it to retry; details in ~/Reels/watch.log"
+    printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
+    exit 1
+  fi
+  mkdir -p "$DONE"
+  folder="$(create_reel_folder "$DONE" "$REELS/videos" Clips)"
+  label="$(basename "$folder")"
+  made=0
+  while IFS=$'\t' read -r k out hooktxt score range why; do
+    [ -f "$out" ] || continue
+    pretty=$(printf '%s' "$hooktxt" | sed -E 's/\*//g; s/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
+    cp "$out" "$folder/Clip $k - ${pretty:-clip}.mp4"
+    cdir="$(dirname "$(dirname "$out")")"
+    [ -f "$cdir/covers/Cover.png" ] && cp -f "$cdir/covers/Cover.png" "$folder/Clip $k - Cover.png"
+    [ -s "$cdir/review.txt" ] && cp -f "$cdir/review.txt" "$folder/Clip $k - check these words.txt"
+    [ -s "$cdir/music.txt" ] && cp -f "$cdir/music.txt" "$folder/Clip $k - music.txt"
+    printf 'Clip %s  (%s, score %s)\n  %s\n  %s\n\n' "$k" "$range" "$score" "$hooktxt" "$why" >> "$folder/clips.txt"
+    if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
+      node "$HERE/write-caption.mjs" "$cdir" "$folder/Clip $k - caption.txt" >> "$log" 2>&1 || true
+    fi
+    made=$((made + 1))
+  done < <(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const f=(s)=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");(j.clips||[]).forEach((c,i)=>{if(c.output)console.log([i+1,c.output,(c.hook||"").replace(/\t/g," "),c.score,f(c.start)+"-"+f(c.end),(c.why||"").replace(/\t|\n/g," ")].join("\t"))})' "$work/clips.json" 2>/dev/null || true)
+  echo "$(date '+%F %T') done  $folder ($made clips)" >> "$log"
+  notify "$label ready" "$made clip$([ "$made" = 1 ] || echo s) from $base"
+  printf '{"ok":true,"input":"%s","output":"%s","name":"%s","clips":%s}\n' "$FILE" "$folder" "$name" "$made"
+  exit 0
+fi
+
 # No written hook in the file name: a first pass (no render) gets the transcript, the cards and the stills, then
 # the post copy writes three hooks, strongest first, and the finished reel is edited with that one on screen.
 # The opening words are never the hook. Carousels have no on-screen hook.
@@ -215,8 +282,8 @@ else
     fi
   fi
   [ -s "$work/review.txt" ] && cp -f "$work/review.txt" "$folder/check these words.txt"
-  # Covers: three variants (titles x palettes), the thumbnail-system way; Cover 1 is the pick.
-  for c in "$work"/covers/Cover\ *.png; do [ -f "$c" ] && cp -f "$c" "$folder/$(basename "$c")"; done
+  # Cover: the reel's first frame (Cover.png); the designed set only when the preset asks for it.
+  for c in "$work"/covers/Cover*.png; do [ -f "$c" ] && cp -f "$c" "$folder/$(basename "$c")"; done
   [ -s "$work/music.txt" ] && cp -f "$work/music.txt" "$folder/music.txt"
   echo "$(date '+%F %T') done  $dest" >> "$log"
   if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder."; else notify "$label ready" "$title"; fi

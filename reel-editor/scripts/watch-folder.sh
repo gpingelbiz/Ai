@@ -4,6 +4,8 @@
 #   REEL_WATCH_RAW           Raw - Reel: the edited reel                (default ~/Reels/raw)
 #   REEL_WATCH_RAW_BROLL     Raw - Reel with B-roll                     (default ~/Reels/raw-broll)
 #   REEL_WATCH_RAW_CAROUSEL  Raw - Carousel: an IG carousel from the video (default ~/Reels/raw-carousel)
+#   REEL_WATCH_RAW_LONG      Raw - Clips from Long Video: a long recording cut into several reels (default ~/Reels/raw-long)
+#   REEL_WATCH_RAW_YOUTUBE   Raw - Full YouTube Edit: the whole long video edited for YouTube (default ~/Reels/raw-youtube)
 #   REEL_WATCH_ROOT          work folder (default ~/Reels); markers live in videos/.seen
 # A clip is skipped once it has a .done or .failed marker. Rename a failed clip to retry it.
 set -uo pipefail
@@ -11,9 +13,11 @@ set -uo pipefail
 RAW="${REEL_WATCH_RAW:-$HOME/Reels/raw}"
 RAW_BROLL="${REEL_WATCH_RAW_BROLL:-$HOME/Reels/raw-broll}"
 RAW_CAROUSEL="${REEL_WATCH_RAW_CAROUSEL:-$HOME/Reels/raw-carousel}"
+RAW_LONG="${REEL_WATCH_RAW_LONG:-$HOME/Reels/raw-long}"
+RAW_YOUTUBE="${REEL_WATCH_RAW_YOUTUBE:-$HOME/Reels/raw-youtube}"
 SEEN="${REEL_WATCH_ROOT:-$HOME/Reels}/videos/.seen"
 JOB="$(cd "$(dirname "$0")" && pwd)/watch-reel.sh"
-mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$SEEN"
+mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$RAW_LONG" "$RAW_YOUTUBE" "$SEEN"
 shopt -s nullglob nocaseglob
 filesize() { if stat -c %s "$1" >/dev/null 2>&1; then stat -c %s "$1"; else stat -f %z "$1"; fi; }
 filemtime() { if stat -c %Y "$1" >/dev/null 2>&1; then stat -c %Y "$1"; else stat -f %m "$1"; fi; }
@@ -29,7 +33,7 @@ trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 # Keep scanning until a pass finds nothing new, so clips dropped mid-render are not missed.
 while :; do
   did=0
-  for pair in "reel|$RAW" "broll|$RAW_BROLL" "carousel|$RAW_CAROUSEL"; do
+  for pair in "reel|$RAW" "broll|$RAW_BROLL" "carousel|$RAW_CAROUSEL" "long|$RAW_LONG" "youtube|$RAW_YOUTUBE"; do
     mode="${pair%%|*}"; dir="${pair#*|}"
     for f in "$dir"/*.{mov,mp4,m4v}; do
       # A marker names the clip by name, size and modified time, so a new file with an old name is edited again.

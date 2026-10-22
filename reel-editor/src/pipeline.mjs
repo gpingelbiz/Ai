@@ -10,6 +10,7 @@ import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
+import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { makeBroll } from "./broll.mjs";
 import { makeGraphics } from "./graphics.mjs";
@@ -179,7 +180,10 @@ export async function runEdit(input, opts = {}) {
   const cleanWords = remapWords(cuts.words, cuts.segments).filter((w) => w.start < duration);
 
   // 4. Captions, hook, zooms
-  const groups = preset.captions.enabled ? markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords }) : [];
+  // The caption lines are the timing backbone for everything (cards, stills, punch-ins, callouts, chapters, the
+  // srt), so they are always built; whether they show on screen is captions.enabled.
+  const groups = markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
+  const showCaptions = !!preset.captions.enabled;
   const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: Math.min(preset.hook.duration, duration) }) : null;
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
@@ -190,14 +194,14 @@ export async function runEdit(input, opts = {}) {
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
     const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
     detection = await detectFaces(videoSrc, times);
   }
   let captionTop = preset.captions.position - 0.04;
-  if (preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
+  if (showCaptions && preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
     const head = headExtent(detection);
     const spot = placeCaptions(head, { fontSizeFrac: preset.captions.fontSizeFrac, defaultPosition: preset.captions.position });
     preset.captions.position = spot.position;
@@ -248,18 +252,36 @@ export async function runEdit(input, opts = {}) {
   // them. Either one failing leaves the reel without it. Punch-ins come last: on gold lines, clear of both.
   const headForZoom = headExtent(detection);
   const tightFrame = !!(headForZoom && headForZoom.bottom - headForZoom.top > 0.4);
+  // Long form: the last `endSafe` seconds stay clean for YouTube's end screen; the structure (chapters, re-hooks)
+  // comes first so its title cards take their slots before the other cards are planned around them.
+  const endSafe = preset.youtube?.endSafe || 0;
+  const tail = Math.max(1.5, endSafe);
+  let structure = null;
+  let structureCards = [];
+  if (preset.youtube?.chapters && shownGroups.length) {
+    structure = await makeStructure({ workDir, groups: shownGroups, duration, handle: preset.carousel?.handle || "", voice: readVoice({ style: preset }), force: !!opts.newGraphics, endSafe });
+    if (structure) {
+      if (hook && structure.promise && hook.auto) { Object.assign(hook, { text: structure.promise.replace(/\*/g, ""), auto: false }, hookWords(structure.promise, dict)); log(`hook: "${hook.text}" (the promise, from the structure)`); }
+      structureCards = [
+        ...structure.chapters.slice(1).map((c, i) => ({ type: "chapter", text: c.title, number: i + 2, eyebrow: "", start: r3(c.start), duration: 3.5 })),
+        ...structure.rehooks.filter((h) => !structure.chapters.some((c) => Math.abs(c.start - h.start) < 8)).map((h) => ({ type: "headline", text: h.text, eyebrow: "", start: r3(h.start), duration: 4.5 })),
+      ].filter((c) => c.start > (hook ? hook.start + hook.duration + 0.5 : 3) && c.start + c.duration < duration - tail).sort((a, b) => a.start - b.start);
+    }
+  }
   const graphics = preset.graphics?.enabled && shownGroups.length
-    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "" })
+    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
+  // Structure cards win their slots: a planned card within 6 s of one is dropped.
+  const allCards = [...structureCards, ...graphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2)))].sort((a, b) => a.start - b.start);
   const broll = preset.broll?.enabled && shownGroups.length
     // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
-    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : graphics })
+    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail })
     : [];
   if (preset.zooms.enabled) {
-    zooms = planZooms(shownGroups, duration, { ...preset.zooms, busy: [...graphics, ...broll], hook, tight: tightFrame });
+    zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
     if (preset.zooms.cadence?.enabled) {
-      zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: broll, hook, tight: tightFrame });
+      zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: broll, hook, tight: tightFrame, tail });
       log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
     }
   }
@@ -267,12 +289,13 @@ export async function runEdit(input, opts = {}) {
   const coldOpen = preset.coldOpen?.enabled && broll.length ? { duration: r3(Math.min(preset.coldOpen.duration || 0.6, Math.max(0.3, duration / 20))), src: broll[0].src, file: broll[0].file } : null;
   if (preset.coldOpen?.enabled) log(coldOpen ? `cold open: ${coldOpen.duration}s on the first still` : "cold open: no still to open on");
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
-  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...graphics, ...broll], zooms }) : [];
+  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll], zooms, tail }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics, slams, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
 
   const plan = {
     version: 1,
@@ -284,12 +307,15 @@ export async function runEdit(input, opts = {}) {
     style: preset,
     hook,
     cta,
-    captions: shownGroups,
+    captions: showCaptions ? shownGroups : [],
+    lines: shownGroups,
     zooms,
-    graphics,
+    graphics: allCards,
     broll,
     slams,
     coldOpen,
+    lowerThird,
+    structure,
     reframe,
     audio,
     words: cleanWords,
@@ -301,9 +327,26 @@ export async function runEdit(input, opts = {}) {
   const output = await renderProject(workDir, opts);
   let cover = null;
   if (preset.cover?.enabled !== false && hook) {
-    try { cover = await makeCover(workDir, plan, { handle: preset.carousel?.handle || "" }); } catch (e) { warn(`cover skipped: ${String(e.message).split("\n")[0]}`); }
+    // The cover is the reel's own first frame (the cold-open still with the hook on it, or the speaker under the
+    // hook); the designed Cover 1-3 set is behind cover.style "designed" (Greg: they were not turning out right).
+    try {
+      cover = preset.cover?.style === "designed"
+        ? await makeCover(workDir, plan, { handle: preset.carousel?.handle || "" })
+        : await frameCover(workDir, output, { at: preset.cover?.at ?? 0.05 });
+    } catch (e) { warn(`cover skipped: ${String(e.message).split("\n")[0]}`); }
   }
   return { workDir, plan, output, cover };
+}
+
+/** Cover from the finished render: its first frame as covers/Cover.png and cover.png. */
+async function frameCover(workDir, output, { at = 0.05 } = {}) {
+  const dir = ensureDir(path.join(workDir, "covers"));
+  for (const f of fs.readdirSync(dir)) if (/^Cover( \d+)?\.png$/.test(f)) fs.rmSync(path.join(dir, f), { force: true });
+  const png = path.join(dir, "Cover.png");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(at), "-i", output, "-frames:v", "1", png], { quiet: true });
+  fs.copyFileSync(png, path.join(workDir, "cover.png"));
+  log(`cover: the first frame (${at}s) → ${png}`);
+  return [png];
 }
 
 function readVoice(plan) {
