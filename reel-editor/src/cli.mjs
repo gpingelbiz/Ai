@@ -53,6 +53,11 @@ Options (edit / batch)
   --broll                  Codex b-roll: 1-3 generated stills cut in after the hook, slow push-in, voice and captions
                            keep going (needs the Codex CLI signed in). --no-broll turns a preset's b-roll off,
                            --new-broll draws fresh stills instead of reusing the saved ones
+  --graphics               designed cards cut in to show what you say: a number, a checklist, a highlighted
+                           quote, the key line, a step diagram. Claude writes them from the transcript, the
+                           editor sets them in the brand colors (needs the Claude Code CLI). --no-graphics off,
+                           --new-graphics replans them. With cards on, --broll adds at most 2 photos in the gaps
+  --caption-style <s>      pop (Anton, black outline) | reveal (heavy Inter, each word lights up as it is said)
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -102,6 +107,10 @@ const EDIT_OPTIONS = {
   broll: { type: "boolean" },
   "no-broll": { type: "boolean" },
   "new-broll": { type: "boolean" },
+  graphics: { type: "boolean" },
+  "no-graphics": { type: "boolean" },
+  "new-graphics": { type: "boolean" },
+  "caption-style": { type: "string" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   force: { type: "boolean" },

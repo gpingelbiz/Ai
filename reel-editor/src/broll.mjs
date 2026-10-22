@@ -14,13 +14,17 @@ export function brollCount(duration, { max = 3, every = 12 } = {}) {
   return Math.max(0, Math.min(max, Math.floor((duration - 4) / every)));
 }
 
-/** Caption lines a cutaway may start on: after the hook, with room to finish before the end and the CTA. */
-export function brollCandidates(groups, duration, { hook, cta, len = 2.4, lead = 0.5, tail = 1 } = {}) {
+/**
+ * Caption lines a cutaway may start on: after the hook, with room to finish before the end and the CTA, and
+ * at least `clear` seconds away from anything already cut in (`busy`: the graphic cards).
+ */
+export function brollCandidates(groups, duration, { hook, cta, len = 2.4, lead = 0.5, tail = 1, busy = [], clear = 1.5 } = {}) {
   const from = hook ? hook.start + hook.duration + lead : 2.5;
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   return groups
     .map((g, i) => ({ i, start: g.start, text: g.text }))
-    .filter((c) => c.start >= from && c.start + len <= until);
+    .filter((c) => c.start >= from && c.start + len <= until)
+    .filter((c) => !busy.some((b) => c.start < b.start + b.duration + clear && c.start + len > b.start - clear));
 }
 
 /** Turn Codex's picks into timed shots: real candidates only, in order, at least `gap` seconds apart. */
@@ -85,14 +89,15 @@ export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4
  * broll-<n>.png and returns the shots with `file` set. Reuses the saved stills when the transcript lines are
  * unchanged. Never throws: any failure returns [] and the reel renders without b-roll.
  */
-export async function makeBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false }) {
+export async function makeBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [] }) {
   const dir = ensureDir(path.join(workDir, "broll"));
   const planPath = path.join(dir, "broll.json");
   const len = settings.duration ?? 2.4;
   const gap = settings.gap ?? 4;
-  const max = brollCount(duration, { max: settings.max ?? 3, every: settings.every ?? 12 });
+  // With graphic cards in the reel, photos are an accent: fewer of them, in the gaps.
+  const max = brollCount(duration, { max: busy.length ? settings.maxWithGraphics ?? 2 : settings.max ?? 3, every: settings.every ?? 12 });
   if (!max) { log("b-roll: reel too short, skipped"); return []; }
-  const candidates = brollCandidates(groups, duration, { hook, cta, len });
+  const candidates = brollCandidates(groups, duration, { hook, cta, len, busy });
   if (!candidates.length) { log("b-roll: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
 

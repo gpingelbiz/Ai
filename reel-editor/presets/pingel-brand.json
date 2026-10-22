@@ -17,6 +17,7 @@
     "fontSizeFrac": 0.04,
     "uppercase": true,
     "animation": "pop",
+    "style": "reveal",
     "activeWord": false,
     "emojis": false,
     "autoKeywords": true
@@ -57,6 +58,9 @@
     "position": 0.62,
     "style": "pill",
     "fontSizeFrac": 0.036
+  },
+  "graphics": {
+    "enabled": true
   },
   "broll": {
     "style": "moody low-key light, deep blacks, warm gold and amber highlights, muted colors, a little film grain; no neon, no purple, no pastel"

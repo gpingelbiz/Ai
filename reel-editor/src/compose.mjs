@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT } from "./util.mjs";
+import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -81,6 +82,9 @@ export function renderHTML(plan, footage) {
         ? `color: ${c.text}; background: ${hexA(c.bg || "#0B0B0D", 0.92)}; border: 0.08em solid ${c.accent}; padding: 0.32em 0.8em; border-radius: 0.18em; box-shadow: 0 0.25em 0.9em rgba(0,0,0,0.45);`
         : `color: ${c.bg || "#0B0B0D"}; background: ${c.accent}; padding: 0.34em 0.9em; border-radius: 10em; box-shadow: 0 0.25em 0.9em rgba(0,0,0,0.45);`;
 
+  // Caption looks: "pop" (Anton with a black outline, the line pops in) or "reveal" (heavy Inter, no outline; the
+  // whole phrase shows dimmed and each word lights up as it is spoken).
+  const reveal = cap.style === "reveal";
   const capsHTML = captions
     .map((g, i) => {
       const len = g.text.length;
@@ -109,6 +113,10 @@ export function renderHTML(plan, footage) {
     .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><img src="${esc(b.src)}" alt="" /><div class="broll-shade"></div></div>`)
     .join("\n");
 
+  // Graphic scenes: designed full-screen cards over the footage, under the captions.
+  const gfxList = plan.graphics || [];
+  const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(g)}</div>`).join("\n");
+
   const tracks = plan.audio?.tracks || [];
   const audioHTML = tracks
     .map((t) => {
@@ -131,6 +139,8 @@ export function renderHTML(plan, footage) {
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
     broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.motion || "in" })),
+    graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration })),
+    reveal,
   };
 
   return `<!doctype html>
@@ -150,6 +160,7 @@ export function renderHTML(plan, footage) {
       .broll { position: absolute; inset: 0; overflow: hidden; opacity: 0; background: #000; }
       .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 50%; will-change: transform; }
       .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 52%, rgba(0,0,0,0.42) 100%); }
+${gfxList.length ? graphicsCSS({ W, H, colors: c }) : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
         position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3(cap.sideMarginFrac * 100)}%; top: ${r3(cap.position * 100)}%;
@@ -164,6 +175,8 @@ export function renderHTML(plan, footage) {
       }
       .cap .w { display: inline-block; transform-origin: 50% 50%; }
       .cap .w.k { color: ${c.accent}; }
+${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850; line-height: 1.04; letter-spacing: -0.01em; -webkit-text-stroke: 0; text-shadow: 0 0.04em 0.28em rgba(0,0,0,0.6), 0 0 0.8em rgba(0,0,0,0.3); gap: 0.02em 0.24em; max-width: 86%; }
+      .cap .w { opacity: 0.38; }` : ""}
       #hook {
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
         padding: ${Math.max(0, Math.round(hk.position * H - hookFont * 1.2))}px 7% 0; box-sizing: border-box;
@@ -193,6 +206,7 @@ export function renderHTML(plan, footage) {
         <video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>
       </div>
 ${brollHTML}
+${gfxHTML}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
 ${capsHTML}
       </div>
@@ -230,7 +244,12 @@ ${audioHTML}
           const el = document.getElementById("cap-" + i);
           const line = el.firstElementChild;
           tl.set(el, { opacity: 1 }, g.start);
-          tl.fromTo(line, { scale: 0.8 }, { scale: 1, duration: 0.16, ease: "back.out(2.5)" }, g.start);
+          if (PLAN.reveal) {
+            tl.fromTo(line, { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.12, ease: "power2.out" }, g.start);
+            g.words.forEach((w, j) => tl.fromTo("#cap-" + i + "-w" + j, { opacity: 0.38 }, { opacity: 1, duration: 0.07, ease: "none", immediateRender: false }, Math.max(g.start, w[0])));
+          } else {
+            tl.fromTo(line, { scale: 0.8 }, { scale: 1, duration: 0.16, ease: "back.out(2.5)" }, g.start);
+          }
           if (PLAN.activeWord) {
             g.words.forEach((w, j) => {
               const we = document.getElementById("cap-" + i + "-w" + j);
@@ -240,6 +259,7 @@ ${audioHTML}
           tl.set(el, { opacity: 0 }, g.end);
         });
         PLAN.zooms.forEach((z) => tl.to("#video-wrap", { scale: z.scale, duration: z.snap, ease: "power3.out" }, z.t));
+${gfxList.length ? GRAPHICS_JS : ""}
         // B-roll: quick dissolve in and out, slow push or pan while it holds.
         const MOVES = { in: [{ scale: 1.04 }, { scale: 1.14 }], out: [{ scale: 1.16 }, { scale: 1.04 }], left: [{ scale: 1.14, xPercent: 3 }, { scale: 1.14, xPercent: -3 }], right: [{ scale: 1.14, xPercent: -3 }, { scale: 1.14, xPercent: 3 }] };
         PLAN.broll.forEach((b, i) => {

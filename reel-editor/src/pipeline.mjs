@@ -11,6 +11,8 @@ import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms } from "./zooms.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { makeBroll } from "./broll.mjs";
+import { makeGraphics } from "./graphics.mjs";
+import { voiceFile } from "../scripts/write-caption.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
@@ -192,9 +194,13 @@ export async function runEdit(input, opts = {}) {
     log(spots.length ? `review: ${spots.length} spot${spots.length === 1 ? "" : "s"} to check, see ${path.join(workDir, "review.txt")}` : `review: both engines agree, nothing to check`);
   }
 
-  // 4b. B-roll: Codex picks the moments and draws the stills; any failure leaves the reel without it.
+  // 4b. Graphic cards (Claude writes them from the transcript), then b-roll photos (Codex) in the gaps between
+  // them. Either one failing leaves the reel without it.
+  const graphics = preset.graphics?.enabled && shownGroups.length
+    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics })
+    : [];
   const broll = preset.broll?.enabled && shownGroups.length
-    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll })
+    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: graphics })
     : [];
 
   // 5. Audio extras
@@ -213,6 +219,7 @@ export async function runEdit(input, opts = {}) {
     cta,
     captions: shownGroups,
     zooms,
+    graphics,
     broll,
     audio,
     words: cleanWords,
@@ -223,6 +230,10 @@ export async function runEdit(input, opts = {}) {
   if (opts.noRender) return { workDir, plan };
   const output = await renderProject(workDir, opts);
   return { workDir, plan, output };
+}
+
+function readVoice(plan) {
+  try { return fs.readFileSync(voiceFile(plan), "utf8"); } catch { return ""; }
 }
 
 async function prepareAudio({ projectDir, preset, opts, duration, hook, zooms }) {

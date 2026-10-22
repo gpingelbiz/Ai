@@ -58,6 +58,9 @@ export function mergeOverrides(preset, o = {}) {
   if (o.quality) p.render.quality = o.quality;
   if (o.fps) p.render.fps = parseFloat(o.fps);
   if (o.broll) p.broll.enabled = true;
+  if (o.graphics) p.graphics.enabled = true;
+  if (o.noGraphics) p.graphics.enabled = false;
+  if (o.captionStyle) p.captions.style = o.captionStyle;
   if (o.noBroll) p.broll.enabled = false;
   return p;
 }

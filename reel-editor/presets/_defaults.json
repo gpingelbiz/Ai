@@ -26,6 +26,7 @@
     "strokeWidthFrac": 0.0055,
     "shadow": "0 0.06em 0 #000, 0 0.12em 0.35em rgba(0,0,0,0.7)",
     "animation": "pop",
+    "style": "pop",
     "activeWord": false,
     "maxKeywordsPerLine": 1,
     "shrinkAfterChars": 24,
@@ -84,9 +85,16 @@
     "fontSizeFrac": 0.036,
     "uppercase": true
   },
+  "graphics": {
+    "enabled": false,
+    "max": 6,
+    "every": 10,
+    "gap": 3
+  },
   "broll": {
     "enabled": false,
     "max": 3,
+    "maxWithGraphics": 2,
     "every": 12,
     "duration": 2.4,
     "gap": 4,
