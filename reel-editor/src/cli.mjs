@@ -77,6 +77,7 @@ Options (edit / batch)
   --annotate               a hand-drawn marker underlines (circles a number) the gold word in each caption line
                            as it is spoken. --no-annotate off
   --zoom-style <s>         camera (creator punch-in: push, slight tilt, edge defocus) | snap (hard cut-in zoom)
+  --broll-cut <s>          hard (default) | flash (a white editorial flash on the cut) | blur (the still arrives from a blur)
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -139,6 +140,7 @@ const EDIT_OPTIONS = {
   annotate: { type: "boolean" },
   "no-annotate": { type: "boolean" },
   "zoom-style": { type: "string" },
+  "broll-cut": { type: "string" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   check: { type: "boolean" },

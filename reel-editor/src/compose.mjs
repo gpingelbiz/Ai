@@ -124,8 +124,11 @@ export function renderHTML(plan, footage) {
   const grade = s.broll?.grade ? ` data-color-grading="${esc(JSON.stringify(s.broll.grade))}"` : "";
   const focusPull = Math.max(0, Math.min(1, s.broll?.focusPull ?? 0));
   const pullStyle = focusPull ? ` style="--hf-color-grading-blur: ${focusPull}"` : "";
+  // The cut: hard (the default from the b-roll research), flash (the Social Flash recipe: a white wash with a warm
+  // core on the frame of the cut, in and out), or blur (the still arrives from and leaves into a blur).
+  const brollCut = ["flash", "blur"].includes(s.broll?.cut) ? s.broll.cut : "hard";
   const brollHTML = brollList
-    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move"><img src="${esc(b.src)}" alt=""${grade}${pullStyle} /></div><div class="broll-shade"></div></div>`)
+    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move"><img src="${esc(b.src)}" alt=""${grade}${pullStyle} /></div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`)
     .join("\n");
 
   // Climax words: a gold word stamps in big in the top third as it is said.
@@ -168,6 +171,7 @@ export function renderHTML(plan, footage) {
     slams: slamList.map((sl) => ({ t: sl.t, end: sl.end })),
     zoomStyle: s.zooms?.style || "snap",
     focusPull,
+    brollCut,
     annotate,
     width: W,
     height: H,
@@ -197,6 +201,8 @@ export function renderHTML(plan, footage) {
       .broll-move { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
       .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%); }
+      .broll-flash { position: absolute; inset: -12%; opacity: 0; background: rgb(255,253,250); pointer-events: none; }
+      .broll-flash-core { position: absolute; inset: -18%; opacity: 0; background: radial-gradient(ellipse 68% 92% at 37% 47%, rgb(255,255,255) 0%, rgba(255,255,255,0.98) 20%, rgba(255,253,250,0.86) 45%, rgba(255,174,105,0.32) 67%, rgba(255,174,105,0) 100%); }
       .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
       .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
       .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
@@ -354,10 +360,29 @@ ${gfxList.length ? GRAPHICS_JS : ""}
         PLAN.broll.forEach((b, i) => {
           const el = document.getElementById("broll-" + i);
           const m = MOVES[b.motion] || MOVES.in;
-          tl.set(el, { opacity: 1 }, b.start);
+          const img = el.querySelector("img");
+          const bEnd = b.start + b.duration;
+          if (PLAN.brollCut === "blur") {
+            tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" }, b.start);
+            tl.fromTo(img, { "--hf-color-grading-blur": 1 }, { "--hf-color-grading-blur": 0, duration: 0.45, ease: "power3.out", immediateRender: false }, b.start);
+            tl.to(img, { "--hf-color-grading-blur": 1, duration: 0.35, ease: "power2.in" }, bEnd - 0.35);
+            tl.to(el, { opacity: 0, duration: 0.25, ease: "power2.in" }, bEnd - 0.25);
+          } else {
+            tl.set(el, { opacity: 1 }, b.start);
+            if (PLAN.focusPull) tl.fromTo(img, { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
+            tl.set(el, { opacity: 0 }, bEnd);
+          }
           tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: b.duration * 0.92 }, b.start);
-          if (PLAN.focusPull) tl.fromTo(el.querySelector("img"), { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
-          tl.set(el, { opacity: 0 }, b.start + b.duration);
+          if (PLAN.brollCut === "flash") {
+            // Flash on both cuts: the wash hits in 0.04 s and clears in 0.18 s; the warm core blooms and drifts out.
+            const wash = el.querySelector(".broll-flash"), core = el.querySelector(".broll-flash-core");
+            [b.start, bEnd - 0.24].forEach((at) => {
+              tl.fromTo(wash, { opacity: 0 }, { opacity: 0.92, duration: 0.04, ease: "power4.in", immediateRender: false }, at);
+              tl.fromTo(core, { opacity: 0, scale: 0.86 }, { opacity: 1, scale: 1, duration: 0.05, ease: "power4.in", immediateRender: false }, at);
+              tl.to(wash, { opacity: 0, duration: 0.18, ease: "power3.out" }, at + 0.04);
+              tl.to(core, { opacity: 0, scale: 1.18, duration: 0.3, ease: "power2.out" }, at + 0.05);
+            });
+          }
         });
         // Climax words: slam down from 1.6x with expo weight, a three-frame impact shake, a quiet drift, a whip up and out.
         const frame = 1 / (PLAN.fps || 30);

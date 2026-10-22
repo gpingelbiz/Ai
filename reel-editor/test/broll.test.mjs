@@ -118,3 +118,16 @@ test("recent scenes are remembered (last 24) and shown to Codex as things to avo
   const cands = brollCandidates(groups.slice(0, 6), 14, { hook: { start: 0, duration: 3 } });
   assert.match(picksPrompt({ candidates: cands, transcript: "x", hook: "h", count: 1, recent: ["an empty conference room"] }), /already used these scenes[\s\S]*- an empty conference room/);
 });
+
+test("render: the b-roll cut is hard by default, flash adds the wash layer, blur fades through the grade", () => {
+  const base = { name: "t", canvas: { width: 1080, height: 1920 }, video: { duration: 20, hasAudio: true }, captions: [], broll: [{ start: 6, duration: 2, motion: "in", src: "assets/broll/broll-1.png" }] };
+  const style = (cut) => ({ colors: { text: "#fff", accent: "#fc0", stroke: "#000" }, captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72, shadow: "none" }, hook: { fontSizeFrac: 0.05, position: 0.2 }, zooms: {}, cta: {}, broll: { cut } });
+  const hard = renderHTML({ ...base, style: style(undefined) }, "assets/footage.mp4");
+  assert.match(hard, /"brollCut":"hard"/);
+  assert.ok(!hard.includes('class="broll-flash"'));
+  const flash = renderHTML({ ...base, style: style("flash") }, "assets/footage.mp4");
+  assert.match(flash, /"brollCut":"flash"/);
+  assert.match(flash, /<div class="broll-flash"><div class="broll-flash-core"><\/div><\/div>/);
+  assert.match(renderHTML({ ...base, style: style("blur") }, "assets/footage.mp4"), /"brollCut":"blur"/);
+  assert.match(renderHTML({ ...base, style: style("nope") }, "assets/footage.mp4"), /"brollCut":"hard"/, "unknown falls back to hard");
+});

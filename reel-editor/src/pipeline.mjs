@@ -248,7 +248,7 @@ export async function runEdit(input, opts = {}) {
   const headForZoom = headExtent(detection);
   const tightFrame = !!(headForZoom && headForZoom.bottom - headForZoom.top > 0.4);
   const graphics = preset.graphics?.enabled && shownGroups.length
-    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics })
+    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "" })
     : [];
   const broll = preset.broll?.enabled && shownGroups.length
     ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: graphics })

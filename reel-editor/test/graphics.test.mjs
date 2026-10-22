@@ -106,3 +106,32 @@ test("stat cards count up: the number is split from its words, a bar or a ring s
   const words = sceneHTML({ type: "stat", eyebrow: "", value: "Zero" });
   assert.ok(!words.includes("g-count"), "no number, no count");
 });
+
+test("compare, bars, message and post cards: fields are checked, list rows get icons, post carries the handle", async () => {
+  const { iconFor, ICONS } = await import("../src/graphics.mjs");
+  assert.equal(normalizeScene({ type: "compare", line: 1, a: { label: "Old way" }, b: {} }), null, "both sides need a label");
+  const cmp = normalizeScene({ type: "compare", line: 1, eyebrow: "TWO REPS", a: { label: "Rep A", value: "12 calls" }, b: { label: "Rep B", value: "forty" } });
+  assert.deepEqual([cmp.a.value, cmp.b.value], ["", ""], "values show only when both sides have a number");
+  const cmpHTML = sceneHTML(normalizeScene({ type: "compare", line: 1, eyebrow: "", a: { label: "Rep A", value: "12" }, b: { label: "Rep B", value: "48" } }));
+  assert.match(cmpHTML, /g-side-a.*--w:25%.*g-vs.*g-side-b.*--w:100%/s, "bars scale to the bigger side");
+  const bars = normalizeScene({ type: "bars", line: 2, eyebrow: "", unit: "k", items: [{ label: "Jan", value: "12" }, { label: "Feb", value: "x" }, { label: "Mar", value: "45" }], emphasize: 7 });
+  assert.equal(bars.items.length, 2, "rows without a number are dropped");
+  assert.equal(bars.emphasize, 1, "emphasize is clamped");
+  assert.match(sceneHTML(bars), /g-bar-row g-in g-bar-hi.*data-to="45".*>45<\/span>k</s);
+  assert.equal(normalizeScene({ type: "bars", line: 2, items: [{ label: "Jan", value: "12" }] }), null);
+  const msg = normalizeScene({ type: "message", line: 3, eyebrow: "THE TEXT", contact: "Rep", items: [{ from: "them", text: "Can we push the call?" }, { from: "me", text: "No. What happened?" }, { from: "bot", text: "x" }, { text: "" }] });
+  assert.deepEqual(msg.items.map((i) => i.from), ["them", "me", "them"]);
+  assert.match(sceneHTML(msg), /g-avatar">R<.*g-typing.*g-bubble g-in g-them.*g-bubble g-in g-me/s);
+  assert.equal(normalizeScene({ type: "post", line: 4, text: "" }), null);
+  const post = sceneHTML({ ...normalizeScene({ type: "post", line: 4, text: "Your team remembers what it cost you." }), handle: "@officialgregpingel" });
+  assert.match(post, /g-post-name">gregpingel<svg.*g-post-handle">@officialgregpingel<.*g-post-text">Your team remembers/s);
+  assert.ok(!sceneHTML(normalizeScene({ type: "post", line: 4, text: "No handle" })).includes("g-post-handle"));
+  assert.equal(iconFor("Make the calls"), "phone");
+  assert.equal(iconFor("Make the calls", "dollar"), "dollar", "Claude's pick wins");
+  assert.equal(iconFor("Breathe", "nope"), "", "unknown pick and no keyword: no icon");
+  const list = normalizeScene({ type: "list", line: 5, items: [{ text: "Make the calls", icon: "PHONE" }, { text: "Own the number" }] });
+  assert.deepEqual(list.items.map((i) => i.icon), ["phone", "chart"]);
+  assert.match(sceneHTML(list), new RegExp(`<svg class="g-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS.phone.slice(0, 12)}`));
+  const steps = normalizeScene({ type: "steps", line: 5, items: [{ text: "Make the calls" }, { text: "Own the number" }] });
+  assert.ok(!sceneHTML(steps).includes("g-icon"), "icons are for list rows only");
+});

@@ -14,14 +14,79 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
  * phrase highlighted), headline (the key statement), steps (2-4 connected nodes: a flow or a before -> after).
  */
 
-export const TYPES = ["stat", "list", "quote", "headline", "steps"];
+export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post"];
+
+/**
+ * Line icons for list rows (24x24 stroke paths, drawn on as the row appears). Claude picks one per row from
+ * this list; a row without a pick gets one from its words, or none. Nothing is downloaded: HyperFrames ships no
+ * icon pack, and Lottie files would have to come from LottieFiles with their own licenses.
+ */
+export const ICONS = {
+  dollar: "M12 2v20 M17 6.5a4 4 0 0 0-4-2.5h-2a3.5 3.5 0 0 0 0 7h2a3.5 3.5 0 0 1 0 7h-2a4 4 0 0 1-4-2.5",
+  clock: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M12 7v5l3 2",
+  phone: "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2",
+  people: "M9 11a4 4 0 1 0 0-8a4 4 0 0 0 0 8 M3 21v-1a6 6 0 0 1 12 0v1 M16 3.5a4 4 0 0 1 0 7.5 M21 21v-1a6 6 0 0 0-4-5.7",
+  chart: "M4 20V10 M10 20V4 M16 20v-7 M22 20H2",
+  growth: "M3 17l6-6 4 4 8-8 M15 7h6v6",
+  calendar: "M4 6h16v15H4z M4 11h16 M8 3v5 M16 3v5",
+  check: "M4 12.5l5 5L20 7",
+  x: "M6 6l12 12 M18 6L6 18",
+  fire: "M12 22a7 7 0 0 0 7-7c0-4-3-6-4-9-1 2-2 3-4 4 0-3-1-5-3-7-1 4-3 5-3 12a7 7 0 0 0 7 7z",
+  target: "M12 21a9 9 0 1 0 0-18a9 9 0 0 0 0 18 M12 16a4 4 0 1 0 0-8a4 4 0 0 0 0 8",
+  message: "M4 5h16v11H9l-5 4z",
+  trophy: "M7 4h10v5a5 5 0 0 1-10 0z M7 6H4a3 3 0 0 0 3 4 M17 6h3a3 3 0 0 1-3 4 M12 14v4 M8 21h8",
+  lock: "M6 11h12v10H6z M9 11V7a3 3 0 0 1 6 0v4",
+  heart: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z",
+  brain: "M10 4a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h1V4z M14 4a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-1V4z",
+  home: "M4 11l8-7 8 7 M6 10v10h12V10",
+  shield: "M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z",
+  mic: "M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z M6 11a6 6 0 0 0 12 0 M12 17v4",
+  doc: "M6 3h8l4 4v14H6z M14 3v4h4 M9 12h6 M9 16h6",
+  flag: "M5 21V4 M5 4h12l-2 4 2 4H5",
+  star: "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z",
+  bolt: "M13 2L4 14h7l-1 8 9-12h-7z",
+  eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6",
+  repeat: "M4 10a8 8 0 0 1 14-4l2 2 M20 4v4h-4 M20 14a8 8 0 0 1-14 4l-2-2 M4 20v-4h4",
+};
+const ICON_WORDS = [
+  ["dollar", /\b(money|dollar|pay|paid|cash|revenue|price|profit|income|cost)\b|\$/i],
+  ["clock", /\b(time|minute|minutes|hour|hours|day|days|week|weeks|wait|late|early)\b/i],
+  ["phone", /\b(call|calls|phone|dial|ring)\b/i],
+  ["people", /\b(team|people|rep|reps|closer|closers|client|clients|staff|hire|setter|setters|customer|customers)\b/i],
+  ["chart", /\b(number|numbers|data|report|metrics|stats|scoreboard)\b/i],
+  ["growth", /\b(grow|growth|scale|increase|more|double)\b/i],
+  ["calendar", /\b(calendar|schedule|book|booked|monday|friday|month|quarter)\b/i],
+  ["x", /\b(stop|never|quit|cut|kill|no)\b/i],
+  ["fire", /\b(fire|burn|hot|urgent)\b/i],
+  ["target", /\b(goal|goals|target|aim|focus)\b/i],
+  ["message", /\b(text|texts|message|messages|dm|dms|say|tell|ask|reply)\b/i],
+  ["trophy", /\b(win|wins|winner|close|closed|closes|deal|deals)\b/i],
+  ["lock", /\b(lock|secure|locked)\b/i],
+  ["heart", /\b(love|heart|care|family|wife|kids)\b/i],
+  ["brain", /\b(think|mind|mindset|brain|decide|decision)\b/i],
+  ["home", /\b(home|house)\b/i],
+  ["shield", /\b(protect|safe|guard|defend|own|owned)\b/i],
+  ["mic", /\b(speak|talk|speech|voice|pitch)\b/i],
+  ["doc", /\b(plan|script|sheet|list|notes|contract|offer)\b/i],
+  ["flag", /\b(standard|standards|rule|rules|lead|leader)\b/i],
+  ["star", /\b(best|star|elite|top)\b/i],
+  ["bolt", /\b(fast|quick|energy|push|now)\b/i],
+  ["eye", /\b(see|watch|watching|look|show|showed)\b/i],
+  ["repeat", /\b(repeat|again|reps|habit|daily|every)\b/i],
+];
+export function iconFor(text, pick) {
+  if (pick && ICONS[pick]) return pick;
+  const hit = ICON_WORDS.find(([, re]) => re.test(String(text || "")));
+  return hit ? hit[0] : "";
+}
 
 /** How long each kind of card holds, from how much there is to read. */
 export function sceneDuration(s) {
   const n = (s.items || []).length;
   // Cards hold long enough to be read twice: the speaker is still on screen, so a card is never a cut.
-  if (s.type === "list" || s.type === "steps") return r3(Math.min(8, 4.5 + 0.7 * n));
-  if (s.type === "quote") return 6;
+  if (s.type === "list" || s.type === "steps" || s.type === "bars") return r3(Math.min(8, 4.5 + 0.7 * n));
+  if (s.type === "message") return r3(Math.min(8, 4 + 1.2 * n));
+  if (s.type === "quote" || s.type === "compare") return 6;
   if (s.type === "headline") return 5.5;
   return 5.5;
 }
@@ -47,10 +112,37 @@ export function normalizeScene(raw) {
     s.title = clean(raw.title, 48);
     s.items = (Array.isArray(raw.items) ? raw.items : [])
       .map((it) => (typeof it === "string" ? { text: it } : it || {}))
-      .map((it) => ({ text: clean(it.text, 32), tag: clean(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain" }))
+      .map((it) => ({ text: clean(it.text, 32), tag: clean(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain", icon: s.type === "list" ? iconFor(it.text, clean(it.icon, 12).toLowerCase()) : "" }))
       .filter((it) => it.text)
       .slice(0, 4);
     if (s.items.length < 2) return null;
+  } else if (s.type === "bars") {
+    s.title = clean(raw.title, 48);
+    s.unit = clean(raw.unit, 8);
+    s.items = (Array.isArray(raw.items) ? raw.items : [])
+      .map((it) => ({ label: clean(it?.label, 24), value: clean(it?.value, 12) }))
+      .filter((it) => it.label && splitStat(it.value))
+      .slice(0, 4);
+    if (s.items.length < 2) return null;
+    const hi = Number.isInteger(raw.emphasize) ? raw.emphasize : s.items.length - 1;
+    s.emphasize = Math.max(0, Math.min(s.items.length - 1, hi));
+  } else if (s.type === "compare") {
+    s.title = clean(raw.title, 40);
+    const side = (x) => ({ label: clean(x?.label, 22), value: clean(x?.value, 12), note: clean(x?.note, 28) });
+    s.a = side(raw.a);
+    s.b = side(raw.b);
+    if (!s.a.label || !s.b.label) return null;
+    if (!(splitStat(s.a.value) && splitStat(s.b.value))) { s.a.value = ""; s.b.value = ""; }
+  } else if (s.type === "message") {
+    s.contact = clean(raw.contact, 18);
+    s.items = (Array.isArray(raw.items) ? raw.items : [])
+      .map((it) => ({ from: it?.from === "me" ? "me" : "them", text: clean(it?.text, 90) }))
+      .filter((it) => it.text)
+      .slice(0, 3);
+    if (!s.items.length) return null;
+  } else if (s.type === "post") {
+    s.text = clean(raw.text, 150);
+    if (!s.text) return null;
   } else {
     s.text = clean(raw.text, s.type === "quote" ? 140 : 60);
     if (!s.text) return null;
@@ -102,6 +194,11 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "" }
     "- quote: a line worth reading, either something the speaker quotes (eyebrow = where it is from, as they say it) or their own strongest line (eyebrow = a 2-4 word label). text, with the one phrase that matters in *asterisks* (it is highlighted).",
     "- headline: the key statement in at most 7 words, with the one phrase that matters in *asterisks* (it is set in gold).",
     "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text}].",
+    "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
+    "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most.",
+    "- message: a text exchange the speaker reads out or acts out (a client text, a rep\u2019s reply, what they typed). contact (who it is from, as the speaker names them, else empty), items [{from: \"them\" | \"me\", text}] 1-3 bubbles, their words only.",
+    "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
+    `- list items may carry icon: one of ${Object.keys(ICONS).join(", ")} (pick the one that fits the item, else leave empty).`,
     "Every card has an eyebrow: a 2-5 word label in caps over it (\"AFTER A BAD NUMBER\", \"THE STANDARD\", \"WHAT YOU OWN\").",
     "",
     "Rules:",
@@ -121,7 +218,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "" }
     "Lines a card may start on (number: start time, text). A card starts when that line is spoken, so pick the line where the idea begins:",
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
-    'Reply with JSON only: {"scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps","eyebrow":"...","value":"","value2":"","sub":"","title":"","text":"","items":[{"text":"","tag":"","state":"plain"}]}]}',
+    'Reply with JSON only: {"scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
   ].join("\n");
 }
 
@@ -129,7 +226,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "" }
  * Plan the graphic scenes for one reel. Saves <workDir>/graphics.json and reuses it while the transcript lines
  * are unchanged (`force` replans). Never throws: any failure returns [] and the reel renders without cards.
  */
-export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false }) {
+export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false, handle = "" }) {
   const planPath = path.join(workDir, "graphics.json");
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
   if (!max) { log("graphics: reel too short, skipped"); return []; }
@@ -140,7 +237,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const saved = readJSON(planPath);
     if (saved.key === key && Array.isArray(saved.scenes)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
-      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, duration: sceneDuration(s) })), candidates, { duration, cta, gap: settings.gap ?? 3, max });
+      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, duration: sceneDuration(s), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max });
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath}`);
       return scenes;
     }
@@ -153,7 +250,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const transcript = groups.map((g) => g.text).join(" ");
     const reply = await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice }), { timeoutMs: 240000 });
     const raw = firstJSON(reply).scenes || [];
-    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean), candidates, { duration, cta, gap: settings.gap ?? 3, max });
+    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => (s.type === "post" ? { ...s, handle } : s)), candidates, { duration, cta, gap: settings.gap ?? 3, max });
   } catch (e) {
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
     return [];
@@ -206,7 +303,8 @@ export function sceneHTML(s) {
     const rows = s.items
       .map((it, k) => {
         const mark = it.state === "check" ? `<span class="g-mark g-check">&#10003;</span>` : it.state === "strike" ? `<span class="g-mark g-x">&#10005;</span>` : `<span class="g-mark g-num">${String(k + 1).padStart(2, "0")}</span>`;
-        return `<div class="g-row g-in g-${it.state}">${mark}<span class="g-row-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span>${it.tag ? `<span class="g-tag">${esc(it.tag)}</span>` : ""}</div>`;
+        const icon = it.icon && ICONS[it.icon] ? `<svg class="g-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[it.icon]}"/></svg>` : "";
+        return `<div class="g-row g-in g-${it.state}">${mark}<span class="g-row-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span>${it.tag ? `<span class="g-tag">${esc(it.tag)}</span>` : ""}${icon}</div>`;
       })
       .join("");
     return `<div class="g-box">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-rows">${rows}</div></div>`;
@@ -216,6 +314,34 @@ export function sceneHTML(s) {
   }
   if (s.type === "headline") {
     return `<div class="g-box g-center">${eyebrow}<div class="g-headline g-in">${marked(s.text, "g-gold")}</div><div class="g-rule g-in"></div></div>`;
+  }
+  if (s.type === "compare") {
+    // Two panels: the muted left side is the base, the accent right side wipes over from the divider.
+    const max = Math.max(1, ...[s.a, s.b].map((x) => (splitStat(x.value) || { to: 0 }).to));
+    const side = (x, cls) => {
+      const v = splitStat(x.value);
+      return `<div class="g-side ${cls}"><div class="g-side-label">${esc(x.label)}</div>${v ? `<div class="g-side-value">${esc(x.value)}</div><div class="g-side-bar"><div class="g-side-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div>` : ""}${x.note ? `<div class="g-side-note">${esc(x.note)}</div>` : ""}</div>`;
+    };
+    return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-compare g-in">${side(s.a, "g-side-a")}<div class="g-vs">VS</div>${side(s.b, "g-side-b")}</div></div>`;
+  }
+  if (s.type === "bars") {
+    const max = Math.max(1, ...s.items.map((it) => splitStat(it.value).to));
+    const rows = s.items
+      .map((it, k) => {
+        const v = splitStat(it.value);
+        return `<div class="g-bar-row g-in${k === s.emphasize ? " g-bar-hi" : ""}"><div class="g-bar-head"><span class="g-bar-label">${esc(it.label)}</span><span class="g-bar-value"><span class="g-count" data-to="${v.to}" data-dec="${v.dec}" data-commas="${v.commas ? 1 : 0}">${esc(v.number)}</span>${esc(v.suffix || s.unit || "")}</span></div><div class="g-bar-track"><div class="g-bar-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div></div>`;
+      })
+      .join("");
+    return `<div class="g-box">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-bars">${rows}</div></div>`;
+  }
+  if (s.type === "message") {
+    const bubbles = s.items.map((it) => `<div class="g-bubble g-in g-${it.from}">${esc(it.text)}</div>`).join("");
+    return `<div class="g-box">${eyebrow}<div class="g-thread">${s.contact ? `<div class="g-thread-head g-in"><span class="g-avatar">${esc(s.contact.slice(0, 1).toUpperCase())}</span>${esc(s.contact)}</div>` : ""}<div class="g-typing"><i></i><i></i><i></i></div>${bubbles}</div></div>`;
+  }
+  if (s.type === "post") {
+    const handle = s.handle ? `<span class="g-post-handle">${esc(s.handle)}</span>` : "";
+    const name = s.handle ? esc(s.handle.replace(/^@/, "").replace(/^official/i, "")) : "";
+    return `<div class="g-box g-center"><div class="g-post g-in"><div class="g-post-head"><span class="g-post-avatar"></span><span class="g-post-who"><span class="g-post-name">${name}<svg class="g-post-badge" viewBox="0 0 24 24"><path d="M12 2l2.4 2.2 3.2-.5 1 3.1 2.9 1.5-1.3 3 1.3 3-2.9 1.5-1 3.1-3.2-.5L12 22l-2.4-2.2-3.2.5-1-3.1-2.9-1.5 1.3-3-1.3-3 2.9-1.5 1-3.1 3.2.5z"/><path class="g-post-tick" d="M8 12.5l2.6 2.5L16 9.5"/></svg></span>${handle}</span></div><div class="g-post-text">${esc(s.text)}</div><div class="g-post-foot"><span class="g-post-heart">&#9829;</span></div></div></div>`;
   }
   // steps
   const nodes = s.items.map((it, k) => `${k ? '<div class="g-link"></div>' : ""}<div class="g-node g-in${k === s.items.length - 1 ? " g-node-last" : ""}"><span class="g-node-num">${String(k + 1).padStart(2, "0")}</span>${esc(it.text)}</div>`).join("");
@@ -255,7 +381,18 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-steps { flex-direction: row; align-items: stretch; gap: ${px(12)}; width: 100%; }
       .g-node { flex: 1; justify-content: center; padding: ${px(22)} ${px(12)}; font-size: ${px(34)}; text-align: center; gap: ${px(10)}; flex-direction: column; }
       .g-node-num { font-size: ${px(22)}; }
-      .g-link { width: ${px(26)}; height: ${px(4)}; align-self: center; background: linear-gradient(90deg, ${c.accent}, ${c.accent}55); }` : "";
+      .g-link { width: ${px(26)}; height: ${px(4)}; align-self: center; background: linear-gradient(90deg, ${c.accent}, ${c.accent}55); }
+      .g-icon { width: ${px(44)}; height: ${px(44)}; }
+      .g-side { padding: ${px(20)} ${px(20)}; min-height: ${px(120)}; }
+      .g-side-label { font-size: ${px(34)}; }
+      .g-side-value { font-size: ${px(54)}; }
+      .g-side-note { font-size: ${px(24)}; }
+      .g-bar-label { font-size: ${px(30)}; }
+      .g-bar-value { font-size: ${px(36)}; }
+      .g-bars { gap: ${px(12)}; }
+      .g-bubble { font-size: ${px(32)}; padding: ${px(16)} ${px(24)}; }
+      .g-post { padding: ${px(24)} ${px(28)} ${px(22)}; }
+      .g-post-text { font-size: ${px(36)}; }` : "";
   return `
       .gfx { --u: ${u}px; position: absolute; inset: 0; overflow: hidden; opacity: 0; background: radial-gradient(120% 62% at 50% 34%, ${c.accent}2e 0%, ${c.accent}00 60%), ${c.bg}; color: ${c.text}; font-family: "Inter", sans-serif; }
       .gfx::after { content: ""; position: absolute; inset: 0; background: radial-gradient(90% 60% at 50% 40%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 100%); pointer-events: none; }
@@ -298,7 +435,49 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-node { display: inline-flex; align-items: center; gap: ${px(20)}; padding: ${px(26)} ${px(40)}; border-radius: ${px(18)}; background: rgba(255,255,255,0.06); border: ${px(2)} solid rgba(255,255,255,0.14); font-size: ${px(50)}; font-weight: 800; text-transform: uppercase; box-shadow: 0 ${px(18)} ${px(50)} rgba(0,0,0,0.45); }
       .g-node-last { border-color: ${c.accent}; box-shadow: 0 0 ${px(50)} ${c.accent}33, 0 ${px(18)} ${px(50)} rgba(0,0,0,0.45); }
       .g-node-num { font-size: ${px(28)}; color: ${c.accent}; letter-spacing: 0.08em; }
-      .g-link { width: ${px(4)}; height: ${px(70)}; background: linear-gradient(${c.accent}, ${c.accent}55); transform-origin: 50% 0; }${overlay}`;
+      .g-link { width: ${px(4)}; height: ${px(70)}; background: linear-gradient(${c.accent}, ${c.accent}55); transform-origin: 50% 0; }
+      .g-icon { flex: none; width: ${px(52)}; height: ${px(52)}; transform-origin: 50% 50%; }
+      .g-icon path { fill: none; stroke: ${c.accent}; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+      .g-compare { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: ${px(18)}; width: 100%; }
+      .g-side { position: relative; padding: ${px(28)} ${px(26)}; border-radius: ${px(20)}; background: rgba(255,255,255,0.06); border: ${px(2)} solid rgba(255,255,255,0.12); text-align: left; min-height: ${px(150)}; }
+      .g-side-b { background: linear-gradient(180deg, ${c.accent}2a, ${c.accent}14); border-color: ${c.accent}aa; clip-path: inset(0 100% 0 0); }
+      .g-side-label { font-size: ${px(40)}; font-weight: 900; text-transform: uppercase; line-height: 1.05; }
+      .g-side-a .g-side-label { opacity: 0.7; }
+      .g-side-b .g-side-label { color: ${c.accent}; }
+      .g-side-value { margin-top: ${px(10)}; font-size: ${px(64)}; font-weight: 900; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+      .g-side-bar { margin-top: ${px(12)}; height: ${px(10)}; border-radius: ${px(5)}; background: rgba(255,255,255,0.12); overflow: hidden; }
+      .g-side-fill { width: var(--w); height: 100%; background: ${c.text}; transform-origin: 0 50%; transform: scaleX(0); opacity: 0.6; }
+      .g-side-b .g-side-fill { background: ${c.accent}; opacity: 1; }
+      .g-side-note { margin-top: ${px(10)}; font-size: ${px(26)}; font-weight: 600; opacity: 0.75; }
+      .g-vs { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0); width: ${px(74)}; height: ${px(74)}; border-radius: 50%; display: grid; place-items: center; background: ${c.bg}; border: ${px(3)} solid ${c.accent}; color: ${c.accent}; font-size: ${px(26)}; font-weight: 900; letter-spacing: 0.08em; z-index: 1; }
+      .g-bars { display: flex; flex-direction: column; gap: ${px(16)}; width: 100%; }
+      .g-bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: ${px(16)}; margin-bottom: ${px(8)}; }
+      .g-bar-label { font-size: ${px(34)}; font-weight: 800; text-transform: uppercase; opacity: 0.8; }
+      .g-bar-value { display: inline-block; transform-origin: 100% 50%; font-size: ${px(40)}; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+      .g-bar-track { height: ${px(22)}; border-radius: ${px(11)}; background: rgba(255,255,255,0.12); overflow: hidden; }
+      .g-bar-fill { width: var(--w); height: 100%; border-radius: ${px(11)}; background: rgba(255,255,255,0.55); transform-origin: 0 50%; transform: scaleX(0); }
+      .g-bar-hi .g-bar-fill { background: ${c.accent}; }
+      .g-bar-hi .g-bar-label, .g-bar-hi .g-bar-value { color: ${c.accent}; opacity: 1; }
+      .g-thread { position: relative; display: flex; flex-direction: column; gap: ${px(12)}; width: 100%; font-family: -apple-system, "Inter", sans-serif; }
+      .g-thread-head { display: flex; align-items: center; gap: ${px(14)}; font-size: ${px(28)}; font-weight: 600; opacity: 0.85; margin-bottom: ${px(6)}; }
+      .g-avatar { width: ${px(48)}; height: ${px(48)}; border-radius: 50%; background: #8e8e93; color: #fff; display: grid; place-items: center; font-size: ${px(26)}; font-weight: 700; }
+      .g-bubble { position: relative; max-width: 82%; padding: ${px(18)} ${px(26)}; border-radius: ${px(30)}; font-size: ${px(34)}; font-weight: 500; line-height: 1.25; text-transform: none; letter-spacing: 0; transform-origin: 0 100%; }
+      .g-bubble.g-them { align-self: flex-start; background: #2a2a2e; color: #fff; border-bottom-left-radius: ${px(8)}; }
+      .g-bubble.g-me { align-self: flex-end; background: #0a80f8; color: #fff; border-bottom-right-radius: ${px(8)}; transform-origin: 100% 100%; }
+      .g-typing { position: absolute; left: 0; top: 0; display: flex; gap: ${px(8)}; padding: ${px(18)} ${px(24)}; border-radius: ${px(30)}; background: #2a2a2e; opacity: 0; }
+      .g-typing i { width: ${px(14)}; height: ${px(14)}; border-radius: 50%; background: #8e8e93; }
+      .g-post { width: 100%; padding: ${px(30)} ${px(32)} ${px(26)}; border-radius: ${px(24)}; background: #15202b; border: ${px(2)} solid #38444d; box-shadow: 0 ${px(18)} ${px(50)} rgba(0,0,0,0.5); text-align: left; text-transform: none; }
+      .g-post-head { display: flex; align-items: center; gap: ${px(16)}; margin-bottom: ${px(18)}; }
+      .g-post-avatar { width: ${px(64)}; height: ${px(64)}; border-radius: 50%; background: linear-gradient(135deg, ${c.accent}, ${c.accent}55); }
+      .g-post-who { display: flex; flex-direction: column; line-height: 1.1; }
+      .g-post-name { display: inline-flex; align-items: center; gap: ${px(6)}; font-size: ${px(30)}; font-weight: 800; color: #e7e9ea; }
+      .g-post-badge { width: ${px(30)}; height: ${px(30)}; fill: #1d9bf0; }
+      .g-post-tick { fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+      .g-post-handle { font-size: ${px(24)}; color: #8b98a5; font-weight: 500; }
+      .g-post-text { font-size: ${px(40)}; font-weight: 600; line-height: 1.25; color: #e7e9ea; }
+      .g-post-foot { display: flex; align-items: center; gap: ${px(10)}; margin-top: ${px(18)}; font-size: ${px(30)}; color: #8b98a5; }
+      .g-post-heart { display: inline-block; transform-origin: 50% 50%; }
+      .g-post-heart.lit { color: #f91880; }${overlay}`;
 }
 
 /** GSAP for the cards (runs inside the composition's timeline script; expects PLAN.graphics and tl). */
@@ -317,11 +496,42 @@ export const GRAPHICS_JS = `
             tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
           }
           tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: Math.min(0.22, 1.1 / Math.max(1, ins.length)) }, g.start + 0.06);
+          // Bubbles run on their own clock (typing, then pop), so take them out of the stagger.
+          el.querySelectorAll(".g-bubble.g-in").forEach((b) => tl.set(b, { opacity: 0 }, g.start + 0.06));
           const t1 = g.start + 0.06 + 0.42 + Math.min(0.22, 1.1 / Math.max(1, ins.length)) * Math.max(0, ins.length - 1);
           el.querySelectorAll(".g-strike-line").forEach((s, k) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.3, ease: "power2.inOut" }, t1 + 0.1 + k * 0.18));
           el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, PLAN.graphicsMode === "overlay" ? { scaleX: 0 } : { scaleY: 0 }, PLAN.graphicsMode === "overlay" ? { scaleX: 1, duration: 0.25, ease: "power2.out" } : { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
           el.querySelectorAll(".g-hl").forEach((s) => tl.fromTo(s, { backgroundSize: "0% 46%" }, { backgroundSize: "100% 46%", duration: 0.5, ease: "power2.inOut" }, t1 + 0.05));
           el.querySelectorAll(".g-rule").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power3.inOut" }, t1));
+          // List icons draw on with their row, then settle with a small pop.
+          el.querySelectorAll(".g-icon path").forEach((p, k) => {
+            const L = p.getTotalLength();
+            p.style.strokeDasharray = L + " " + L;
+            const at = g.start + 0.2 + k * Math.min(0.22, 1.1 / Math.max(1, ins.length));
+            tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.45, ease: "power2.inOut", immediateRender: false }, at);
+            tl.fromTo(p.closest(".g-icon"), { scale: 1 }, { scale: 1.12, duration: 0.1, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.4);
+          });
+          // Compare: the accent side wipes over from the divider, the VS badge pops, the bars fill.
+          el.querySelectorAll(".g-side-b").forEach((b) => tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: "sine.inOut", immediateRender: false }, g.start + 0.45));
+          el.querySelectorAll(".g-vs").forEach((v) => tl.to(v, { scale: 1, duration: 0.35, ease: "back.out(2)" }, g.start + 0.95));
+          el.querySelectorAll(".g-side-fill, .g-bar-fill").forEach((f, k) => tl.fromTo(f, { scaleX: 0 }, { scaleX: 1, duration: 0.85, ease: "power3.out", immediateRender: false }, g.start + 0.5 + k * 0.18));
+          // Message thread: typing dots before each incoming bubble, bubbles pop from their tail.
+          const bubbles = el.querySelectorAll(".g-bubble");
+          const dots = el.querySelector(".g-typing");
+          bubbles.forEach((b, k) => {
+            const at = g.start + 0.3 + k * 1.15;
+            if (dots && b.classList.contains("g-them")) {
+              tl.set(dots, { opacity: 1, y: b.offsetTop }, at - 0.55);
+              dots.querySelectorAll("i").forEach((d, j) => tl.fromTo(d, { y: 0 }, { y: -6, duration: 0.18, ease: "sine.inOut", yoyo: true, repeat: 1, immediateRender: false }, at - 0.5 + j * 0.12));
+              tl.set(dots, { opacity: 0 }, at);
+            }
+            tl.fromTo(b, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.32, ease: "back.out(1.8)", immediateRender: false }, at);
+          });
+          // Post card: the like lands a beat after the text.
+          el.querySelectorAll(".g-post-heart").forEach((h) => {
+            tl.fromTo(h, { scale: 1 }, { scale: 1.5, duration: 0.14, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, t1 + 0.5);
+            tl.set(h, { className: "g-post-heart lit" }, t1 + 0.5);
+          });
           // Stat: the number accelerates up from 0 and decelerates onto the exact value (one integer per frame, so
           // a seek shows the same digits), the fill sweeps with it, and the line lands with one small pulse.
           const COUNT = Math.min(1.3, Math.max(0.6, g.duration * 0.25));
@@ -333,7 +543,7 @@ export const GRAPHICS_JS = `
             const at = g.start + 0.16 + k * (COUNT + 0.25);
             const last = Math.max(1, Math.round(COUNT * fps));
             for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(to * countEase(f / last)) }, at + COUNT * (f / last));
-            const stat = n.closest(".g-stat");
+            const stat = n.closest(".g-stat") || n.closest(".g-bar-value");
             tl.to(stat, { scale: 1.07, duration: 0.165, ease: "power3.out" }, at + COUNT);
             tl.to(stat, { scale: 1, duration: 0.165, ease: "power2.out" }, at + COUNT + 0.165);
             const ring = stat.querySelector(".g-ring");
