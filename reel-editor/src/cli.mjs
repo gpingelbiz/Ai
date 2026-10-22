@@ -72,6 +72,11 @@ Options (edit / batch)
                            editor sets them in the brand colors (needs the Claude Code CLI). --no-graphics off,
                            --new-graphics replans them. With cards on, --broll adds at most 2 photos in the gaps
   --caption-style <s>      pop (Anton, black outline) | reveal (heavy Inter, each word lights up as it is said)
+  --slams                  climax words: a gold word slams in big in the top third for a second as it is said
+                           (at most 5, 8 s apart, never under a card). --no-slams off
+  --annotate               a hand-drawn marker underlines (circles a number) the gold word in each caption line
+                           as it is spoken. --no-annotate off
+  --zoom-style <s>         camera (creator punch-in: push, slight tilt, edge defocus) | snap (hard cut-in zoom)
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -129,6 +134,11 @@ const EDIT_OPTIONS = {
   "no-graphics": { type: "boolean" },
   "new-graphics": { type: "boolean" },
   "caption-style": { type: "string" },
+  slams: { type: "boolean" },
+  "no-slams": { type: "boolean" },
+  annotate: { type: "boolean" },
+  "no-annotate": { type: "boolean" },
+  "zoom-style": { type: "string" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   check: { type: "boolean" },

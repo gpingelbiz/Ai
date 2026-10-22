@@ -12,6 +12,7 @@ import { planZooms } from "./zooms.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { makeBroll } from "./broll.mjs";
 import { makeGraphics } from "./graphics.mjs";
+import { planSlams } from "./slams.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
@@ -254,8 +255,11 @@ export async function runEdit(input, opts = {}) {
     : [];
   if (preset.zooms.enabled) {
     zooms = planZooms(shownGroups, duration, { ...preset.zooms, busy: [...graphics, ...broll], hook, tight: tightFrame });
-    log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}`);
+    log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
   }
+  // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
+  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...graphics, ...broll], zooms }) : [];
+  if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
@@ -275,6 +279,7 @@ export async function runEdit(input, opts = {}) {
     zooms,
     graphics,
     broll,
+    slams,
     reframe,
     audio,
     words: cleanWords,
@@ -381,6 +386,7 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
     plan.zooms = (plan.zooms || []).filter((z) => z.t < D);
     plan.graphics = (plan.graphics || []).filter((g) => g.start < D);
     plan.broll = (plan.broll || []).filter((b) => b.start < D);
+    plan.slams = (plan.slams || []).filter((sl) => sl.t < D);
     plan.cta = null;
     plan.audio = { ...(plan.audio || {}), tracks: (plan.audio?.tracks || []).filter((t) => t.start < D).map((t) => ({ ...t, duration: Math.min(t.duration || D, D - t.start), lane: t.lane ? t.lane.filter((p) => p.t <= D) : t.lane })) };
     const projectDir = path.join(outDir, `project-${i + 1}`);

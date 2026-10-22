@@ -20,7 +20,8 @@
     "style": "reveal",
     "activeWord": false,
     "emojis": false,
-    "autoKeywords": true
+    "autoKeywords": true,
+    "annotate": true
   },
   "hook": {
     "enabled": true,
@@ -39,7 +40,8 @@
       1.22
     ],
     "origin": "50% 38%",
-    "snap": 0.12
+    "snap": 0.12,
+    "style": "camera"
   },
   "cuts": {
     "silence": "fast",
@@ -68,5 +70,8 @@
   "carousel": {
     "handle": "@officialgregpingel",
     "style": "moody low-key light, deep blacks, warm gold and amber highlights, muted colors, a little film grain; no neon, no purple, no pastel"
+  },
+  "slams": {
+    "enabled": true
   }
 }

@@ -85,11 +85,21 @@ export function renderHTML(plan, footage) {
   // Caption looks: "pop" (Anton with a black outline, the line pops in) or "reveal" (heavy Inter, no outline; the
   // whole phrase shows dimmed and each word lights up as it is spoken).
   const reveal = cap.style === "reveal";
+  // Hand-drawn marker on the gold word: a squiggle underline, or a loose circle around a number or amount. The
+  // stroke draws on as the word is spoken (stroke-dashoffset, measured at runtime).
+  const annotate = !!cap.annotate;
+  const marker = (w, first) => {
+    if (!annotate || !w.key || !first) return "";
+    return /\d|\$/.test(w.text)
+      ? `<svg class="an an-circle" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true"><path d="M8 31 C 9 11, 36 3, 58 6 C 84 9, 98 19, 96 33 C 94 49, 70 58, 46 56 C 22 54, 4 45, 6 31 C 8 19, 24 11, 44 9"/></svg>`
+      : `<svg class="an an-underline" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><path d="M3 9 C 20 3, 36 14, 54 8 S 84 3, 97 10"/></svg>`;
+  };
   const capsHTML = captions
     .map((g, i) => {
       const len = g.text.length;
       const scale = cap.shrinkAfterChars && len > cap.shrinkAfterChars ? Math.max(0.7, cap.shrinkAfterChars / len) : 1;
-      const spans = g.words.map((w, j) => `<span class="w${w.key ? " k" : ""}" id="cap-${i}-w${j}">${esc(w.text)}</span>`).join("");
+      const firstKey = g.words.findIndex((w) => w.key);
+      const spans = g.words.map((w, j) => `<span class="w${w.key ? " k" : ""}" id="cap-${i}-w${j}">${esc(w.text)}${marker(w, j === firstKey)}</span>`).join("");
       return `      <div class="cap" id="cap-${i}" style="font-size:${Math.round(capFont * scale)}px"><div class="cap-line">${spans}</div></div>`;
     })
     .join("\n");
@@ -109,8 +119,20 @@ export function renderHTML(plan, footage) {
 
   // B-roll stills: full-frame cutaways over the footage, under the captions. The voice keeps playing underneath.
   const brollList = (plan.broll || []).filter((b) => b.src);
+  // The finish is HyperFrames' own grade on the image (preset, vignette and film grain from the preset's
+  // broll.grade), with a short focus pull on the cut; the push or pan runs on a wrapper so the grade stays put.
+  const grade = s.broll?.grade ? ` data-color-grading="${esc(JSON.stringify(s.broll.grade))}"` : "";
+  const focusPull = Math.max(0, Math.min(1, s.broll?.focusPull ?? 0));
+  const pullStyle = focusPull ? ` style="--hf-color-grading-blur: ${focusPull}"` : "";
   const brollHTML = brollList
-    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><img src="${esc(b.src)}" alt="" /><div class="broll-shade"></div><div class="broll-grain"></div></div>`)
+    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move"><img src="${esc(b.src)}" alt=""${grade}${pullStyle} /></div><div class="broll-shade"></div></div>`)
+    .join("\n");
+
+  // Climax words: a gold word stamps in big in the top third as it is said.
+  const slamList = plan.slams || [];
+  const slamFont = (t) => Math.round(Math.min(0.115 * H, (0.86 * W) / Math.max(3, t.length * 0.52)));
+  const slamHTML = slamList
+    .map((sl, i) => `      <div id="slam-${i}" class="slam clip" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"><div class="slam-word" style="font-size:${slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`)
     .join("\n");
 
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
@@ -143,6 +165,11 @@ export function renderHTML(plan, footage) {
     broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.motion || "in" })),
     graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration })),
     graphicsMode: s.graphics?.mode || "overlay",
+    slams: slamList.map((sl) => ({ t: sl.t, end: sl.end })),
+    zoomStyle: s.zooms?.style || "snap",
+    focusPull,
+    annotate,
+    width: W,
     height: H,
     reveal,
     reframe: plan.reframe || [],
@@ -163,11 +190,21 @@ export function renderHTML(plan, footage) {
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
       #video-wrap { position: absolute; inset: 0; transform-origin: ${s.zooms.origin || "50% 40%"}; will-change: transform; }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      /* Creator punch-in: the frame edges defocus for a beat while the camera moves (the centre stays sharp). */
+      #defocus { position: absolute; inset: 0; opacity: 0; pointer-events: none; backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px); -webkit-mask-image: radial-gradient(ellipse 62% 58% at 50% 45%, transparent 58%, rgba(0,0,0,0.85) 92%); mask-image: radial-gradient(ellipse 62% 58% at 50% 45%, transparent 58%, rgba(0,0,0,0.85) 92%); }
       .broll { position: absolute; inset: 0; overflow: hidden; opacity: 0; background: #000; }
-      /* Finish: graded toward the phone footage (a touch more contrast, less saturation, slightly darker), a soft vignette and moving grain, so a still does not read as a clean render. */
-      .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 50%; will-change: transform; filter: contrast(1.06) saturate(0.82) brightness(0.97); }
-      .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 50%, rgba(0,0,0,0.5) 100%), radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.38) 100%); }
-      .broll-grain { position: absolute; inset: -4%; opacity: 0.07; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='300' height='300' filter='url(%23n)'/></svg>"); background-size: 300px 300px; }
+      /* Finish: HyperFrames grades the still (muted editorial, vignette, film grain); the bottom keeps a scrim for the captions. */
+      .broll-move { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
+      .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%); }
+      .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+      .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
+      .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
+      .cap .w { position: relative; }
+      .an { position: absolute; opacity: 0; overflow: visible; pointer-events: none; }
+      .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+      .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
+      .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
 ${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay" }) : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
@@ -213,8 +250,10 @@ ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850
       <div id="video-wrap" data-layout-allow-overflow>
         <video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>
       </div>
+${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div id="defocus"></div>` : ""}
 ${brollHTML}
 ${gfxHTML}
+${slamHTML}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
 ${capsHTML}
       </div>
@@ -250,10 +289,23 @@ ${audioHTML}
           tl.to("#cta-text", { scale: 1.06, duration: 0.18, ease: "power1.inOut", yoyo: true, repeat: 1 }, k.start + 0.9);
           if (k.duration > 1.2) tl.to("#cta-text", { opacity: 0, scale: 0.9, duration: 0.18, ease: "power2.in" }, k.start + k.duration - 0.22);
         }
+        // Hand-drawn markers: measure each stroke once so the draw-on is a plain dash offset (seek-safe).
+        if (PLAN.annotate) document.querySelectorAll(".an path").forEach((p) => { const L = p.getTotalLength(); p.style.strokeDasharray = L + " " + L; p.style.strokeDashoffset = L; });
         PLAN.captions.forEach((g, i) => {
           const el = document.getElementById("cap-" + i);
           const line = el.firstElementChild;
           tl.set(el, { opacity: 1 }, g.start);
+          if (PLAN.annotate) g.words.forEach((w, j) => {
+            const we = document.getElementById("cap-" + i + "-w" + j);
+            const svg = we && we.querySelector(".an");
+            if (!svg) return;
+            const p = svg.querySelector("path");
+            const L = parseFloat(p.style.strokeDashoffset);
+            const at = Math.max(g.start, w[0]) + 0.04;
+            tl.set(svg, { opacity: 1 }, at);
+            tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.38, ease: "power2.inOut", immediateRender: false }, at);
+            tl.fromTo(we, { scale: 1 }, { scale: 1.06, duration: 0.09, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.28);
+          });
           if (PLAN.reveal) {
             tl.fromTo(line, { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.12, ease: "power2.out" }, g.start);
             g.words.forEach((w, j) => tl.fromTo("#cap-" + i + "-w" + j, { opacity: 0.38 }, { opacity: 1, duration: 0.07, ease: "none", immediateRender: false }, Math.max(g.start, w[0])));
@@ -279,20 +331,51 @@ ${audioHTML}
         }
         // Motion from the first frame: a slow push-in under the hook (a static face in frame 1 reads as a still).
         if (PLAN.hook) tl.fromTo("#video-wrap", { scale: 1 }, { scale: 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
-        PLAN.zooms.forEach((z) => tl.to("#video-wrap", { scale: z.scale, duration: z.snap, ease: "power3.out" }, z.t));
+        // Punch-ins. "camera": the creator move (push with a slight tilt and lift, the edges defocus for a beat, a slow
+        // return); "snap": the hard cut-in zoom.
+        if (PLAN.zoomStyle === "camera") {
+          gsap.set("#video-wrap", { transformPerspective: 1200 });
+          let n = 0;
+          PLAN.zooms.forEach((z) => {
+            if (z.scale > 1) {
+              const dir = n++ % 2 ? 1 : -1;
+              tl.to("#video-wrap", { scale: z.scale, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
+              tl.to("#defocus", { opacity: 1, duration: 0.3, ease: "power2.out" }, z.t);
+              tl.to("#defocus", { opacity: 0, duration: 0.45, ease: "power2.in" }, z.t + 0.3);
+            } else {
+              tl.to("#video-wrap", { scale: 1, yPercent: 0, rotationX: 0, rotationY: 0, duration: 0.9, ease: "power2.inOut" }, z.t);
+            }
+          });
+        } else PLAN.zooms.forEach((z) => tl.to("#video-wrap", { scale: z.scale, duration: z.snap, ease: "power3.out" }, z.t));
 ${gfxList.length ? GRAPHICS_JS : ""}
-        // B-roll: hard cut in and out; a 6% push (ease-out, settles before the end) or a 3% pan while it holds; the
-        // grain shifts every frame so it reads as film, not a print.
-        const MOVES = { in: [{ scale: 1.0 }, { scale: 1.06 }], out: [{ scale: 1.06 }, { scale: 1.0 }], left: [{ scale: 1.05, xPercent: 1.5 }, { scale: 1.05, xPercent: -1.5 }], right: [{ scale: 1.05, xPercent: -1.5 }, { scale: 1.05, xPercent: 1.5 }] };
+        // B-roll: hard cut in and out. The push (6%, ease-out, settles before the end) and the Ken Burns pans (a
+        // steady drift with a little scale, no ease) run on the wrapper; the cut lands with a short focus pull.
+        const MOVES = { in: [{ scale: 1.0 }, { scale: 1.06, ease: "power2.out" }], out: [{ scale: 1.06 }, { scale: 1.0, ease: "power2.out" }], left: [{ scale: 1.04, xPercent: 1.6 }, { scale: 1.07, xPercent: -1.6, ease: "none" }], right: [{ scale: 1.04, xPercent: -1.6 }, { scale: 1.07, xPercent: 1.6, ease: "none" }] };
         PLAN.broll.forEach((b, i) => {
           const el = document.getElementById("broll-" + i);
           const m = MOVES[b.motion] || MOVES.in;
           tl.set(el, { opacity: 1 }, b.start);
-          tl.fromTo(el.querySelector("img"), m[0], { ...m[1], duration: b.duration * 0.92, ease: "power2.out" }, b.start);
-          const grain = el.querySelector(".broll-grain");
-          const frames = Math.round(b.duration * (PLAN.fps || 30));
-          for (let f = 0; f < frames; f++) { const s = (f * 7919) % 97, u = (f * 104729) % 89; tl.set(grain, { backgroundPosition: s + "px " + u + "px" }, b.start + f / (PLAN.fps || 30)); }
+          tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: b.duration * 0.92 }, b.start);
+          if (PLAN.focusPull) tl.fromTo(el.querySelector("img"), { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
           tl.set(el, { opacity: 0 }, b.start + b.duration);
+        });
+        // Climax words: slam down from 1.6x with expo weight, a three-frame impact shake, a quiet drift, a whip up and out.
+        const frame = 1 / (PLAN.fps || 30);
+        PLAN.slams.forEach((sl, i) => {
+          const el = document.getElementById("slam-" + i);
+          const stage = el.querySelector(".slam-stage");
+          const word = el.querySelector(".slam-word");
+          const land = 0.42;
+          const outAt = Math.max(sl.t + land + 3 * frame, sl.end - 0.28);
+          tl.set(el, { opacity: 1 }, sl.t);
+          tl.fromTo(word, { scale: 1.6, opacity: 0, y: 0 }, { scale: 1, opacity: 1, y: 0, duration: land, ease: "expo.out" }, sl.t);
+          tl.to(stage, { x: PLAN.width * 0.0055, y: -PLAN.height * 0.003, duration: frame, ease: "power2.out" }, sl.t + land);
+          tl.to(stage, { x: -PLAN.width * 0.0038, y: PLAN.height * 0.002, duration: frame, ease: "power2.out" }, sl.t + land + frame);
+          tl.to(stage, { x: 0, y: 0, duration: frame, ease: "power2.out" }, sl.t + land + 2 * frame);
+          const hold = outAt - (sl.t + land + 3 * frame);
+          if (hold > 0.2) tl.to(word, { y: -PLAN.height * 0.0055, duration: hold / 2, ease: "sine.inOut", yoyo: true, repeat: 1 }, sl.t + land + 3 * frame);
+          tl.to(word, { y: -PLAN.height * 0.3, opacity: 0, duration: 0.28, ease: "power4.in" }, outAt);
+          tl.set(el, { opacity: 0 }, sl.end);
         });
         window.__timelines["reel"] = tl;
       })();

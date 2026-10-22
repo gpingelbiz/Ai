@@ -57,7 +57,7 @@ n8n is not installed on the Mini, and a Docker n8n can't see `~/Reels` or run `r
 ~/Ai/reel-editor/scripts/install-watcher.sh --uninstall # turn it off
 ```
 
-`raw` makes the classic look (outlined pop captions, no cards); `raw-broll` makes the full look (graphic cards, reveal captions, b-roll photos). The agent runs `scripts/watch-folder.sh` whenever `~/Reels/raw`, `~/Reels/raw-broll` or `~/Reels/raw-carousel` changes. n8n calls `watch-reel.sh <clip> [reel|broll|carousel]` directly.
+`raw` makes the classic look (outlined pop captions, no cards); `raw-broll` makes the full look (graphic cards with count-up numbers, reveal captions with hand-drawn markers, climax-word slams, graded b-roll photos). The agent runs `scripts/watch-folder.sh` whenever `~/Reels/raw`, `~/Reels/raw-broll` or `~/Reels/raw-carousel` changes. n8n calls `watch-reel.sh <clip> [reel|broll|carousel]` directly.
 
 **Keep the drop folder out of the Desktop, Documents and Downloads.** macOS privacy protection stops background jobs from listing those folders: the watcher fires, sees an empty folder, and exits cleanly, so nothing happens and nothing errors. To drop from the Desktop, make a shortcut to the real folder:
 

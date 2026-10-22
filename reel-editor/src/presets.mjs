@@ -68,5 +68,10 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noGraphics) p.graphics.enabled = false;
   if (o.captionStyle) p.captions.style = o.captionStyle;
   if (o.noBroll) p.broll.enabled = false;
+  if (o.slams) p.slams.enabled = true;
+  if (o.noSlams) p.slams.enabled = false;
+  if (o.annotate) p.captions.annotate = true;
+  if (o.noAnnotate) p.captions.annotate = false;
+  if (o.zoomStyle) p.zooms.style = o.zoomStyle;
   return p;
 }

@@ -89,3 +89,20 @@ test("a close next card shortens the previous one instead of being dropped; neve
   const placed = placeScenes([mk(5), mk(9), mk(11), mk(20)], cands, { duration: 80, gap: 3 });
   assert.deepEqual(placed.map((s) => [s.line, s.duration]), [[5, 5], [9, 6], [20, 6]], "line 9 shortens line 5 to 5 s; line 11 would leave line 9 under 4 s, so it is dropped");
 });
+
+test("stat cards count up: the number is split from its words, a bar or a ring sweeps with it", async () => {
+  const { splitStat } = await import("../src/graphics.mjs");
+  assert.deepEqual(splitStat("$10,000"), { prefix: "$", number: "10,000", suffix: "", to: 10000, dec: 0, commas: true, percent: false });
+  assert.deepEqual(splitStat("Almost 8 years"), { prefix: "Almost ", number: "8", suffix: " years", to: 8, dec: 0, commas: false, percent: false });
+  assert.equal(splitStat("40%").percent, true);
+  assert.equal(splitStat("2.5x").dec, 1);
+  assert.equal(splitStat("Zero"), null);
+  const money = sceneHTML({ type: "stat", eyebrow: "THE COST", value: "$10,000", sub: "a month" });
+  assert.match(money, /<span class="g-affix g-sym">\$<\/span><span class="g-count" data-to="10000" data-dec="0" data-commas="1">10,000<\/span>/);
+  assert.match(money, /g-fill-bar/, "a bar under a plain number");
+  const pct = sceneHTML({ type: "stat", eyebrow: "", value: "40%" });
+  assert.match(pct, /class="g-ring" style="--ring:0%" data-pct="40"/);
+  assert.ok(!pct.includes("g-fill-bar"), "a percentage gets the ring, not the bar");
+  const words = sceneHTML({ type: "stat", eyebrow: "", value: "Zero" });
+  assert.ok(!words.includes("g-count"), "no number, no count");
+});

@@ -33,7 +33,8 @@
     "maxKeywordsPerLine": 1,
     "shrinkAfterChars": 24,
     "emojis": false,
-    "autoKeywords": false
+    "autoKeywords": false,
+    "annotate": false
   },
   "hook": {
     "enabled": true,
@@ -52,7 +53,8 @@
       1.22
     ],
     "origin": "50% 38%",
-    "snap": 0.12
+    "snap": 0.12,
+    "style": "snap"
   },
   "cuts": {
     "silence": "medium",
@@ -104,12 +106,36 @@
     "every": 12,
     "duration": 2,
     "gap": 4,
-    "style": ""
+    "style": "",
+    "grade": {
+      "preset": "muted-editorial",
+      "intensity": 0.55,
+      "adjust": {
+        "contrast": 0.05,
+        "highlights": -0.08,
+        "shadows": 0.05,
+        "saturation": -0.06
+      },
+      "details": {
+        "vignette": 0.14,
+        "vignetteFeather": 0.7,
+        "grain": 0.12,
+        "grainSize": 0.2,
+        "grainRoughness": 0.6
+      }
+    },
+    "focusPull": 0.3
   },
   "carousel": {
     "slides": 6,
     "newImages": 2,
     "handle": "",
     "style": ""
+  },
+  "slams": {
+    "enabled": false,
+    "max": 5,
+    "minSpacing": 8,
+    "hold": 1.1
   }
 }

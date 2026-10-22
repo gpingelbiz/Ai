@@ -168,15 +168,39 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
 import { esc } from "./text.mjs";
 const marked = (s, cls) => esc(s).replace(/\*([^*]+)\*/g, `<span class="${cls}">$1</span>`).replace(/\*/g, "");
 
+/**
+ * Split a stat value into the part that counts up and the text around it: "$10,000" -> {prefix:"$", number:"10,000",
+ * suffix:""}, "Almost 8 years" -> {prefix:"Almost ", number:"8", suffix:" years"}. null when there is no number.
+ */
+export function splitStat(value) {
+  const m = /^(.*?)(-?\d[\d,]*(?:\.\d+)?)(.*)$/.exec(String(value ?? ""));
+  if (!m) return null;
+  const number = m[2];
+  const to = parseFloat(number.replace(/,/g, ""));
+  if (!Number.isFinite(to)) return null;
+  const dec = (number.split(".")[1] || "").length;
+  return { prefix: m[1], number, suffix: m[3], to, dec, commas: number.includes(","), percent: /^\s*%/.test(m[3]) };
+}
+
+/** The stat line: the number counts up from 0 as the card lands (tabular figures so nothing shifts). */
+function statHTML(value, size, extraClass = "") {
+  const p = splitStat(value);
+  if (!p) return `<div class="g-stat g-in${extraClass}" style="font-size:calc(var(--u) * ${size})">${esc(value)}</div>`;
+  const affix = (t) => (!t ? "" : /^[\s$€£%+x×~-]+$/.test(t) ? `<span class="g-affix g-sym">${esc(t)}</span>` : `<span class="g-affix">${esc(t)}</span>`);
+  const ring = p.percent ? `<span class="g-ring" style="--ring:0%" data-pct="${Math.max(0, Math.min(100, p.to))}"></span>` : "";
+  return `<div class="g-stat g-in${extraClass}" style="font-size:calc(var(--u) * ${size})">${ring}${affix(p.prefix)}<span class="g-count" data-to="${p.to}" data-dec="${p.dec}" data-commas="${p.commas ? 1 : 0}">${esc(p.number)}</span>${affix(p.suffix)}</div>`;
+}
+
 /** Inner HTML of one card. Elements with g-in animate in, in document order. */
 export function sceneHTML(s) {
   const eyebrow = s.eyebrow ? `<div class="g-eyebrow g-in"><span class="g-dot"></span>${esc(s.eyebrow)}</div>` : "";
   if (s.type === "stat") {
-    // Long values ("10 minutes") step down from 190px so they stay on one line.
     // Sized by length so a long value ("Almost 8 years") stays inside the card; short ones go big.
     const size = (v) => Math.round(Math.min(170, 1250 / Math.max(1, String(v).length)));
-    const range = s.value2 ? `<div class="g-arrow g-in">to</div><div class="g-stat g-stat2 g-in" style="font-size:calc(var(--u) * ${size(s.value2)})">${esc(s.value2)}</div>` : "";
-    return `<div class="g-box g-center">${eyebrow}<div class="g-stat g-in" style="font-size:calc(var(--u) * ${size(s.value)})">${esc(s.value)}</div>${range}${s.sub ? `<div class="g-sub g-in">${esc(s.sub)}</div>` : ""}</div>`;
+    const range = s.value2 ? `<div class="g-arrow g-in">to</div>${statHTML(s.value2, size(s.value2), " g-stat2")}` : "";
+    // Every number gets a fill that sweeps with the count (a ring for a percentage, a bar for anything else).
+    const fill = splitStat(s.value) && !splitStat(s.value).percent ? `<div class="g-fill g-in"><div class="g-fill-bar"></div></div>` : "";
+    return `<div class="g-box g-center">${eyebrow}${statHTML(s.value, size(s.value))}${range}${fill}${s.sub ? `<div class="g-sub g-in">${esc(s.sub)}</div>` : ""}</div>`;
   }
   if (s.type === "list") {
     const rows = s.items
@@ -216,6 +240,7 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-stat { line-height: 1; }
       .g-arrow { font-size: ${px(28)}; margin: ${px(-6)} 0; }
       .g-sub { font-size: ${px(44)}; max-width: 100%; }
+      .g-fill { width: 100%; height: ${px(10)}; }
       .g-title { font-size: ${px(64)}; }
       .g-rows { gap: ${px(14)}; }
       .g-row { padding: ${px(20)} ${px(24)}; font-size: ${px(48)}; border-radius: ${px(18)}; gap: ${px(18)}; }
@@ -240,6 +265,13 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-dot { width: ${px(12)}; height: ${px(12)}; border-radius: 50%; background: ${c.accent}; box-shadow: 0 0 ${px(18)} ${c.accent}; }
       .g-stat { font-weight: 900; white-space: nowrap; line-height: 0.95; letter-spacing: -0.03em; color: ${c.text}; text-shadow: 0 0 ${px(60)} ${c.accent}66; }
       .g-stat2 { color: ${c.accent}; text-shadow: 0 0 ${px(70)} ${c.accent}88; }
+      .g-stat { display: inline-flex; align-items: baseline; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; transform-origin: 50% 58%; }
+      .g-count { display: inline-block; min-width: 1ch; }
+      .g-affix { white-space: pre; }
+      .g-sym { font-size: 0.6em; align-self: center; margin: 0 0.06em; opacity: 0.9; }
+      .g-fill { width: 60%; height: ${px(12)}; border-radius: ${px(6)}; background: rgba(255,255,255,0.12); overflow: hidden; }
+      .g-fill-bar { width: 100%; height: 100%; background: ${c.accent}; transform-origin: 0 50%; transform: scaleX(0); }
+      .g-ring { --ring: 0%; display: inline-block; width: 0.9em; height: 0.9em; margin-right: 0.18em; align-self: center; border-radius: 50%; background: conic-gradient(from -90deg, ${c.accent} 0 var(--ring), rgba(255,255,255,0.14) var(--ring) 100%); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 16%), #000 0); mask: radial-gradient(farthest-side, transparent calc(100% - 16%), #000 0); }
       .g-arrow { font-size: ${px(34)}; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.6; margin: ${px(-14)} 0; }
       .g-sub { font-size: ${px(46)}; font-weight: 600; line-height: 1.25; opacity: 0.85; max-width: 90%; }
       .g-title { font-weight: 900; font-size: ${px(84)}; line-height: 1.02; letter-spacing: -0.02em; text-transform: uppercase; text-wrap: balance; }
@@ -290,5 +322,23 @@ export const GRAPHICS_JS = `
           el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, PLAN.graphicsMode === "overlay" ? { scaleX: 0 } : { scaleY: 0 }, PLAN.graphicsMode === "overlay" ? { scaleX: 1, duration: 0.25, ease: "power2.out" } : { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
           el.querySelectorAll(".g-hl").forEach((s) => tl.fromTo(s, { backgroundSize: "0% 46%" }, { backgroundSize: "100% 46%", duration: 0.5, ease: "power2.inOut" }, t1 + 0.05));
           el.querySelectorAll(".g-rule").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power3.inOut" }, t1));
+          // Stat: the number accelerates up from 0 and decelerates onto the exact value (one integer per frame, so
+          // a seek shows the same digits), the fill sweeps with it, and the line lands with one small pulse.
+          const COUNT = Math.min(1.3, Math.max(0.6, g.duration * 0.25));
+          const fps = PLAN.fps || 30;
+          const countEase = gsap.parseEase("sine.inOut");
+          el.querySelectorAll(".g-count").forEach((n, k) => {
+            const to = parseFloat(n.dataset.to), dec = parseInt(n.dataset.dec || "0", 10), commas = n.dataset.commas === "1";
+            const fmt = (v) => (commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec));
+            const at = g.start + 0.16 + k * (COUNT + 0.25);
+            const last = Math.max(1, Math.round(COUNT * fps));
+            for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(to * countEase(f / last)) }, at + COUNT * (f / last));
+            const stat = n.closest(".g-stat");
+            tl.to(stat, { scale: 1.07, duration: 0.165, ease: "power3.out" }, at + COUNT);
+            tl.to(stat, { scale: 1, duration: 0.165, ease: "power2.out" }, at + COUNT + 0.165);
+            const ring = stat.querySelector(".g-ring");
+            if (ring) for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * countEase(f / last)).toFixed(2) + "%" }, at + COUNT * (f / last));
+            if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
+          });
           tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
         });`;

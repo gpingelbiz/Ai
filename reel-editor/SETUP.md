@@ -85,7 +85,7 @@ If you said yes to the drop folder, it is already on. Desktop/Reels has three dr
 | Drop into | You get, in a new folder in Desktop/Reels |
 | --- | --- |
 | `Raw - Reel` | `2026-10-21 Reel 1`: the edited reel in the classic look (bold outlined captions, no cards) |
-| `Raw - Reel with B-roll` | `2026-10-21 Reel 2 with B-roll`: the full look: graphic cards in the top third while you keep talking (numbers, checklists, quotes, key lines, steps), captions that light up word by word, and 1-2 generated b-roll photos in the gaps, plus the pictures (`B-roll 1.png`...) |
+| `Raw - Reel with B-roll` | `2026-10-21 Reel 2 with B-roll`: the full look: graphic cards in the top third while you keep talking (numbers, checklists, quotes, key lines, steps), captions that light up word by word with a hand-drawn marker on the gold word, climax words that stamp in big as you say them, creator punch-ins, and 1-2 generated b-roll photos (graded, with a focus pull on the cut) in the gaps, plus the pictures (`B-roll 1.png`...) |
 | `Raw - Carousel` | `2026-10-21 Carousel 1`: Instagram carousel slides made from the video, plus `carousel.txt` with the slide text |
 
 Every folder also gets `caption.txt` (a caption, 3 hashtags and 3 hook ideas), reels get three covers, `Cover 1.png` to `Cover 3.png` (your best frame with a short bold title: outlined, on a dark bar, or with one word boxed; upload Cover 1 when you post, or whichever you like), a `Hook options` folder (the first 4 seconds rendered with hook ideas 2 and 3, so you can pick; drop the clip again as `clip__Your hook.mov` to use one) and `check these words.txt` when there is something to check. Wide or landscape clips are reframed to follow your face. A closing "thanks for watching" is cut so the reel ends on the point.

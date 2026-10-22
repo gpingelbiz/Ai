@@ -119,7 +119,7 @@ fi
 # the classic captions with no cards.
 case "$MODE" in
   broll) flags+=(--broll --graphics --caption-style reveal);;
-  reel) flags+=(--no-graphics --caption-style pop);;
+  reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate);;
 esac
 # A carousel needs the transcript and plan, not a render.
 [ "$MODE" = carousel ] && flags+=(--no-render)
