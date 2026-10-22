@@ -95,7 +95,7 @@ export function normalizeTitles(raw, { hook = "" } = {}) {
 }
 
 /** A title fits when it sets at a cap height of 150 px or more (overflow means a shorter title, never cramming). */
-export const titleFits = (t) => layoutTitle(t.title, { teaser: "", chinY: 820 }).T >= 150;
+export const titleFits = (t) => fitLines(t.title).T >= 130;
 
 /**
  * Title block: cap height T from the longest line so the block fits 82-94% of the width (two lines max), then
@@ -124,56 +124,75 @@ export function layoutTitle(title, { teaser = "", chinY = 0 } = {}) {
   return { lines: lines.map((l) => l.join(" ")), T, fontPx: Math.round(T / antonFont().cap), teaser: withTeaser ? teaser : "", teaserCap: withTeaser ? teaserCap(T) : 0, blockH: height(T, withTeaser), blockTop: Math.round(1400 - height(T, withTeaser)) };
 }
 
-/** Where the person goes: scaled so the face (hairline to chin) is about 560 px tall, chin at y=820, centred. */
-export function placePerson({ W = 1080, H = 1920, face, personBox }) {
-  const faceH = (face?.h || 0.28) * H;
-  const scale = Math.max(0.8, Math.min(1.8, 560 / faceH));
-  const chinFrac = face ? face.y + face.h : (personBox ? personBox.y + 0.3 : 0.55);
-  const ty = Math.round(820 - chinFrac * H * scale);
-  const faceCx = face ? face.x + face.w / 2 : 0.5;
-  const tx = Math.round(W / 2 - faceCx * W * scale);
-  return { scale, tx, ty, chinY: 820 };
+/**
+ * Where the text goes: under the chin when the face sits in the upper half (the usual close-up), else in the top
+ * third. The frame is zoomed a little around the face so it reads at tile size. Returns the text block's top and
+ * the frame transform.
+ */
+export function placeOnFrame({ W = 1080, H = 1920, face, blockH }) {
+  const f = face || { x: 0.25, y: 0.25, w: 0.5, h: 0.28 };
+  const faceCy = (f.y + f.h / 2) * H;
+  const faceCx = (f.x + f.w / 2) * W;
+  const scale = Math.max(1, Math.min(1.35, 0.42 / Math.max(0.2, f.w)));
+  const chin = (f.y + f.h) * H * scale - (faceCy * scale - faceCy) * 0 ;
+  // Zoom around the face centre, then slide so the face centre stays where it was (kept inside the frame).
+  const tx = Math.round(Math.min(0, Math.max(W - W * scale, faceCx - faceCx * scale)));
+  const ty = Math.round(Math.min(0, Math.max(H - H * scale, faceCy - faceCy * scale)));
+  const chinY = (f.y + f.h) * H * scale + ty;
+  const headY = f.y * H * scale + ty;
+  const below = chinY + 60;
+  const fitsBelow = below + blockH <= 1620;
+  const fitsAbove = headY - 50 - blockH >= 250;
+  const top = fitsBelow ? Math.round(Math.max(below, Math.min(1620 - blockH, 1180))) : fitsAbove ? Math.round(headY - 50 - blockH) : Math.round(1620 - blockH);
+  return { scale, tx, ty, blockTop: top, zone: fitsBelow ? "below" : fitsAbove ? "above" : "low" };
 }
 
-export function coverHTML({ W = 1080, H = 1920, person, personBox, face, title, teaser = "", palette, variant = 0 }) {
+/** Title lines sized to 92% of the width with the real font; 2 lines max; cap height 120-200 px. */
+export function fitLines(title) {
+  const words = title.split(" ");
+  const plain = (w) => w.replace(/\*/g, "");
+  let lines;
+  if (words.length <= 2) lines = [words];
+  else if (words.length === 3) lines = plain(words[0]).length + plain(words[1]).length + 1 <= 12 ? [[words[0], words[1]], [words[2]]] : [[words[0]], [words[1], words[2]]];
+  else lines = [words.slice(0, Math.ceil(words.length / 2)), words.slice(Math.ceil(words.length / 2))];
+  const widest = Math.max(...lines.map((l) => lineWidthPx(l.join(" "), 100)));
+  const T = Math.max(120, Math.min(200, Math.floor((1080 * 0.9) / (widest / 100))));
+  return { lines: lines.map((l) => l.join(" ")), T, fontPx: Math.round(T / antonFont().cap), lineH: Math.round(1.12 * T), blockH: Math.round(lines.length * 1.12 * T) };
+}
+
+export const STYLES = ["outline", "bar", "box"];
+
+/**
+ * Cover on the real frame: the room stays, darkened a touch with a vignette; the title in Anton caps with one
+ * word in the accent. Styles: outline (white, thick black stroke, shadow), bar (a solid near-black band with an
+ * accent rule), box (the accent word on its own accent block). Grain over everything.
+ */
+export function coverHTML({ W = 1080, H = 1920, frame, face, title, palette, style = "outline" }) {
   const p = palette;
-  const pos = placePerson({ W, H, face, personBox });
-  const lay = layoutTitle(title, { teaser, chinY: pos.chinY });
-  const { lines, T, fontPx, blockTop } = lay;
-  teaser = lay.teaser;
-  const teaserPx = Math.round(lay.teaserCap / antonFont().cap);
-  const lineH = 1.18 * T;
-  const { scale, tx, ty } = pos;
+  const lay = fitLines(title);
+  const pos = placeOnFrame({ W, H, face, blockH: lay.blockH + (style === "bar" ? 70 : 0) });
+  const stroke = Math.round(0.07 * lay.T);
   const mark = (s) => esc(s).replace(/\*([^*]+)\*/g, '<span class="k">$1</span>');
+  const lines = lay.lines.map((l) => `<div class="line">${mark(l)}</div>`).join("");
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${W}, height=${H}" /><title>cover</title>
 <script src="assets/vendor/gsap.min.js"></script>
 <style>
   @font-face { font-family: "Anton"; src: url("assets/fonts/Anton-Regular.ttf") format("truetype"); font-display: block; }
-  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter.ttf") format("truetype"); font-weight: 100 900; font-display: block; }
-  html, body { margin: 0; background: ${p.bg}; }
-  #root { position: relative; width: ${W}px; height: ${H}px; overflow: hidden; background: ${p.bg}; }
-  #bg { position: absolute; inset: 0; background: radial-gradient(ellipse 80% 55% at 50% 30%, ${p.accent}2e 0%, ${p.accent}00 60%), linear-gradient(180deg, ${p.bg} 0%, ${p.bg2} 100%); }
-  #rays { position: absolute; inset: 0; background: conic-gradient(from 200deg at 50% 24%, transparent 0deg, ${p.accent}10 8deg, transparent 16deg, transparent 40deg, ${p.accent}0c 48deg, transparent 56deg, transparent 300deg, ${p.accent}0e 310deg, transparent 320deg); }
-  #person { position: absolute; left: ${tx}px; top: ${ty}px; width: ${Math.round(W * scale)}px; height: ${Math.round(H * scale)}px; filter: contrast(1.06) brightness(1.04) saturate(1.02) drop-shadow(0 30px 60px rgba(0,0,0,0.6)); }
-  #floor { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; background: linear-gradient(180deg, ${p.bg}00 0%, ${p.bg}d9 48%, ${p.bg2} 100%); }
-  #block { position: absolute; left: 3%; right: 3%; top: ${Math.round(blockTop)}px; text-align: center; }
-  .line { white-space: nowrap; font-family: "Anton", sans-serif; font-size: ${fontPx}px; line-height: ${lineH}px; letter-spacing: 0.012em; text-transform: uppercase; color: #fff;
-    background: linear-gradient(180deg, #ffffff 0%, #e6e6e6 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 ${Math.round(0.06 * T)}px ${Math.round(0.06 * T)}px rgba(0,0,0,0.75)) drop-shadow(0 0 ${Math.round(0.08 * T)}px ${p.accent}66); paint-order: stroke fill; -webkit-text-stroke: ${Math.round(0.05 * T)}px #000; }
-  .line .k { background: linear-gradient(180deg, ${p.accent2} 0%, ${p.accent} 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.18em; }
-  #teaser { white-space: nowrap; margin-top: ${Math.round(0.45 * T)}px; font-family: "Anton", sans-serif; font-size: ${teaserPx}px; line-height: ${Math.round(lay.teaserCap * 1.18)}px; letter-spacing: 0.04em; text-transform: uppercase; color: #fff; -webkit-text-stroke: ${Math.max(4, Math.round(0.05 * 0.42 * T))}px #000; paint-order: stroke fill; text-shadow: 0 6px 12px rgba(0,0,0,0.7); opacity: 0.95; }
-  #mark { position: absolute; left: 480px; top: 1470px; width: 120px; height: 6px; border-radius: 3px; background: ${p.accent}; opacity: 0.9; }
-  #grain { position: absolute; inset: 0; opacity: 0.06; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='300' height='300' filter='url(%23n)'/></svg>"); background-size: 300px 300px; }
-  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.5) 100%); }
+  html, body { margin: 0; background: #000; }
+  #root { position: relative; width: ${W}px; height: ${H}px; overflow: hidden; background: #000; }
+  #frame { position: absolute; left: ${pos.tx}px; top: ${pos.ty}px; width: ${Math.round(W * pos.scale)}px; height: ${Math.round(H * pos.scale)}px; filter: contrast(1.08) saturate(1.05) brightness(0.86); }
+  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 38%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%); }
+  #block { position: absolute; left: 4%; right: 4%; top: ${pos.blockTop}px; text-align: center; ${style === "bar" ? `padding: 28px 24px 34px; background: rgba(8,8,10,0.86); border-top: 10px solid ${p.accent}; border-bottom: 10px solid ${p.accent};` : ""} }
+  .line { white-space: nowrap; font-family: "Anton", sans-serif; font-size: ${lay.fontPx}px; line-height: ${lay.lineH}px; letter-spacing: 0.012em; text-transform: uppercase; color: #fff; ${style === "outline" ? `-webkit-text-stroke: ${stroke}px #000; paint-order: stroke fill; text-shadow: 0 ${Math.round(0.08 * lay.T)}px ${Math.round(0.1 * lay.T)}px rgba(0,0,0,0.85), 0 0 ${Math.round(0.2 * lay.T)}px rgba(0,0,0,0.6);` : `text-shadow: 0 6px 14px rgba(0,0,0,0.7);`} }
+  .line .k { color: ${p.accent}; ${style === "box" ? `display: inline-block; line-height: 1.02; color: #0b0b0d; background: ${p.accent}; padding: 0.02em 0.14em 0; margin: 0 0.04em; border-radius: 0.06em; -webkit-text-stroke: 0; text-shadow: none; vertical-align: baseline;` : ""} }
+  #grain { position: absolute; inset: 0; opacity: 0.05; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='300' height='300' filter='url(%23n)'/></svg>"); background-size: 300px 300px; }
 </style></head>
 <body><div id="root" data-composition-id="cover" data-start="0" data-width="${W}" data-height="${H}" data-duration="1" data-fps="30">
-  <div id="bg"></div><div id="rays"></div>
-  <img id="person" src="${esc(person)}" alt="" />
-  <div id="floor"></div>
-  <div id="block" class="clip" data-start="0" data-duration="1">${lines.map((l) => `<div class="line">${mark(l)}</div>`).join("")}${teaser ? `<div id="teaser">${esc(teaser)}</div>` : ""}</div>
-  <div id="mark"></div>
-  <div id="vig"></div><div id="grain"></div>
+  <img id="frame" src="${esc(frame)}" alt="" />
+  <div id="vig"></div>
+  <div id="block" class="clip" data-start="0" data-duration="1">${lines}</div>
+  <div id="grain"></div>
 </div>
 <script>window.__timelines = window.__timelines || {}; window.__timelines["cover"] = gsap.timeline({ paused: true });</script>
 </body></html>
@@ -236,8 +255,8 @@ export async function makeCover(workDir, plan, { handle = "", variants = 3, voic
   ensureDir(path.join(dir, "assets", "fonts")); ensureDir(path.join(dir, "assets", "vendor"));
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(dir, "assets", "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(dir, "assets", "vendor", "gsap.min.js"));
-  fs.copyFileSync(personPng, path.join(dir, "assets", "person.png"));
-  const pals = [PALETTES.brand, PALETTES.navy, PALETTES.red];
+  fs.copyFileSync(framePng, path.join(dir, "assets", "frame.png"));
+  const pals = [PALETTES.brand, PALETTES.brand, PALETTES.red];
   const outs = [];
   const bin2 = hyperframesBin();
   for (let v = 0; v < Math.min(variants, 3); v++) {
@@ -245,7 +264,7 @@ export async function makeCover(workDir, plan, { handle = "", variants = 3, voic
     const pdir = ensureDir(path.join(dir, `variant-${v + 1}`));
     fs.rmSync(path.join(pdir, "assets"), { recursive: true, force: true });
     fs.symlinkSync(path.join(dir, "assets"), path.join(pdir, "assets"));
-    fs.writeFileSync(path.join(pdir, "index.html"), coverHTML({ person: "assets/person.png", personBox: pick.best.person, face: pick.best.face, title: t.title, teaser: t.teaser, palette: pals[v], variant: v }));
+    fs.writeFileSync(path.join(pdir, "index.html"), coverHTML({ frame: "assets/frame.png", face: pick.best.face, title: t.title, palette: pals[v], style: STYLES[v] }));
     const shots = ensureDir(path.join(pdir, "shots"));
     for (const f of fs.readdirSync(shots)) fs.rmSync(path.join(shots, f), { force: true });
     await run(bin2[0], [...bin2.slice(1), "snapshot", pdir, "--at", "0.5", "--no-end", "--keep", "-o", shots, "--describe", "false"], { capture: true, env: renderEnv() });
@@ -254,7 +273,7 @@ export async function makeCover(workDir, plan, { handle = "", variants = 3, voic
     const outPath = path.join(dir, `Cover ${v + 1}.png`);
     fs.copyFileSync(src, outPath);
     outs.push(outPath);
-    log(`cover ${v + 1}: "${t.title.replace(/\*/g, "")}"${t.teaser ? ` / ${t.teaser}` : ""} on ${pals[v].name}`);
+    log(`cover ${v + 1}: "${t.title.replace(/\*/g, "")}" (${STYLES[v]}, ${pals[v].name})`);
   }
   if (outs[0]) fs.copyFileSync(outs[0], path.join(workDir, "cover.png"));
   return outs;
