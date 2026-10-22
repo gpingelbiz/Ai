@@ -83,5 +83,20 @@
     "style": "pill",
     "fontSizeFrac": 0.036,
     "uppercase": true
+  },
+  "broll": {
+    "enabled": false,
+    "max": 3,
+    "every": 12,
+    "duration": 2.4,
+    "gap": 4,
+    "parallel": 1,
+    "style": ""
+  },
+  "carousel": {
+    "slides": 6,
+    "newImages": 2,
+    "handle": "",
+    "style": ""
   }
 }

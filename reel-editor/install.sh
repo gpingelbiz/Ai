@@ -3,7 +3,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash
 #
-# Asks three questions (look, ElevenLabs key, drop folder), installs everything, proves it with a test reel.
+# Asks four questions (look, ElevenLabs key, drop folder, Codex for b-roll and carousels), installs everything,
+# proves it with a test reel.
 # Safe to run again: it updates the code and keeps your settings.
 #
 # Options (for re-runs and automation):
@@ -151,6 +152,25 @@ else
   KEY="$REPLY"
 fi
 [ -n "$WATCH" ] || { ask "Turn on the drop folder (drop a clip, get a reel)? [Y/n]:" y; case "$REPLY" in n*|N*) WATCH=n ;; *) WATCH=y ;; esac; }
+
+# Codex makes the b-roll stills and carousels, on the person's own ChatGPT plan. Optional: without it, reels
+# come with no b-roll and no carousel.
+if command -v codex >/dev/null 2>&1; then
+  if codex login status >/dev/null 2>&1; then ok "Codex signed in: b-roll and carousels on"
+  else note "Codex is installed but not signed in. Run  codex login  once to turn on b-roll and carousels."; fi
+else
+  ask "Make b-roll and carousels with Codex (needs a ChatGPT account)? [Y/n]:" y
+  case "$REPLY" in
+    n*|N*) note "Codex skipped: reels come without b-roll and carousels" ;;
+    *)
+      if npm install -g @openai/codex --silent --no-audit --no-fund >/dev/null 2>&1; then ok "Codex installed"
+      else note "Codex did not install; reels come without b-roll and carousels"; fi
+      if command -v codex >/dev/null 2>&1 && [ "$YES" != 1 ] && [ -r /dev/tty ]; then
+        note "Sign in with your ChatGPT account in the browser window that opens."
+        codex login < /dev/tty > /dev/tty 2>&1 || note "Sign-in skipped. Run  codex login  later to turn on b-roll and carousels."
+      fi ;;
+  esac
+fi
 
 touch "$ZSHRC"
 # Keep a call-to-action someone set by hand; a re-run must not wipe it.

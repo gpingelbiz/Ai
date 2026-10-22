@@ -1,7 +1,7 @@
 #!/bin/bash
 # Reel Editor: double-click to install or update (macOS, Apple Silicon).
-# It downloads the latest installer from GitHub and asks three questions: your look, your ElevenLabs key
-# (optional) and whether to turn on the drop folder. Running it again later updates everything.
+# It downloads the latest installer from GitHub and asks four questions: your look, your ElevenLabs key
+# (optional), whether to turn on the drop folder, and Codex for b-roll and carousels (optional). Running it again later updates everything.
 clear
 printf '\n\033[1mReel Editor\033[0m\n\n'
 printf 'This installs Reel Editor on this Mac. It takes about 10 minutes.\n'

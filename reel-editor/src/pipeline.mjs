@@ -10,6 +10,7 @@ import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms } from "./zooms.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
+import { makeBroll } from "./broll.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
@@ -191,6 +192,11 @@ export async function runEdit(input, opts = {}) {
     log(spots.length ? `review: ${spots.length} spot${spots.length === 1 ? "" : "s"} to check, see ${path.join(workDir, "review.txt")}` : `review: both engines agree, nothing to check`);
   }
 
+  // 4b. B-roll: Codex picks the moments and draws the stills; any failure leaves the reel without it.
+  const broll = preset.broll?.enabled && shownGroups.length
+    ? await makeBroll({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll })
+    : [];
+
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
   const audio = await prepareAudio({ projectDir, preset, opts, duration, hook, zooms });
@@ -207,6 +213,7 @@ export async function runEdit(input, opts = {}) {
     cta,
     captions: shownGroups,
     zooms,
+    broll,
     audio,
     words: cleanWords,
   };

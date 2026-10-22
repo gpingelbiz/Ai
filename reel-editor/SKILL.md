@@ -49,9 +49,13 @@ node scripts/write-caption.mjs videos/<name> "<where the reel is> - caption.txt"
 
 It runs Claude Code headless with only the Sandcastles hook and format lookups allowed, in the voice from `voice/greg.md`. No CTA unless `REEL_WATCH_CTA` is set. The drop folder does this on its own after every reel.
 
+## B-roll and carousel
+
+`--broll` on `reel edit` adds 1-3 Codex stills after the hook (no faces, no readable text); `reel carousel videos/<name> --out "<reel folder>/Carousel"` makes the IG carousel from the finished reel, reusing those stills. Both need the Codex CLI signed in and stop for 30 minutes after a rate limit. Check every still before posting: describe what is in it, and never present an AI image as real footage of Greg, a client or a real event.
+
 ## Deliver
 
-Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> Reel <n>`, numbered through the day (the drop folder keeps the count in `~/Reels/videos/reel-count-<date>`; bump it when you add one by hand). Inside: the MP4 named after its hook, `caption.txt`, and `check these words.txt` when review.txt has spots.
+Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> Reel <n>`, numbered through the day (the drop folder keeps the count in `~/Reels/videos/reel-count-<date>`; bump it when you add one by hand). Inside: the MP4 named after its hook, `caption.txt`, `B-roll/` and `Carousel/` when made, and `check these words.txt` when review.txt has spots.
 
 
 Give Greg the render path, the before/after duration, and anything that looked off (a mis-heard word, a caption on the face, a weak auto hook). Offer thumbnail-agent as the optional next step.

@@ -36,12 +36,13 @@
   <h2>1. Install (about 10 minutes)</h2>
   <ol>
     <li>Double-click <b>Install Reel Editor.command</b> in this folder. A Terminal window opens and does the work.</li>
-    <li>Answer three questions:
+    <li>Answer four questions:
       <table>
         <tr><th>Question</th><th>What to pick</th></tr>
         <tr><td>Your look</td><td><b>2</b> for plain white captions, or <b>3</b> for your own colors (two hex codes, like <code>#00AAFF</code>). Pick <b>1</b> only if you make content for Greg Pingel.</td></tr>
         <tr><td>ElevenLabs key</td><td>Paste it, or press Return to skip. Get one at elevenlabs.io, under Developers, API Keys.</td></tr>
         <tr><td>Drop folder</td><td>Press Return for yes.</td></tr>
+        <tr><td>Codex</td><td>Press Return for yes if you have a ChatGPT account, then sign in in the browser window. It adds b-roll and a carousel to every reel.</td></tr>
       </table>
     </li>
     <li>It finishes by playing a short test reel. That means it worked.</li>
@@ -70,6 +71,8 @@
     <tr><td>the .mp4</td><td>The finished reel, named after its hook</td></tr>
     <tr><td>check these words.txt</td><td>Only when the two transcription engines disagreed on a word, with its time in the reel. Check those spots before posting.</td></tr>
     <tr><td>caption.txt</td><td>A caption, 3 hashtags and 3 hook ideas based on what is working for that topic right now. Needs Claude Code and the Sandcastles connector; otherwise it is skipped.</td></tr>
+    <tr><td>Carousel</td><td>Slides for an Instagram carousel made from the reel, plus the slide text. Needs Codex (below).</td></tr>
+    <tr><td>B-roll</td><td>The generated pictures cut into the reel for a couple of seconds each. Needs Codex (below).</td></tr>
   </table>
 
   <p>The filename is the brief:</p>
@@ -81,7 +84,9 @@
     <tr><td><code>clip #nozoom.mov</code></td><td>No punch-in zooms</td></tr>
     <tr><td><code>clip #landscape.mov</code></td><td>16:9 for YouTube</td></tr>
     <tr><td><code>clip #low.mov</code> / <code>clip #top.mov</code></td><td>Force the hook low or high (it normally places itself around your face)</td></tr>
+    <tr><td><code>clip #nobroll.mov</code> / <code>clip #nocarousel.mov</code></td><td>Skip the b-roll pictures or the carousel</td></tr>
   </table>
+  <p class="muted">B-roll and carousels use Codex: say yes when the installer offers it, and sign in with your ChatGPT account. Without it you still get the reel and caption. Codex has usage limits; when it hits one, the next half hour of reels come without b-roll.</p>
 
   <h2>3. Make it yours</h2>
   <ul>

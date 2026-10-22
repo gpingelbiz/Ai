@@ -5,6 +5,8 @@
 # Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9,
 # "#low" drops the hook to chest height (wide shots where the default sits on your head),
 # "#top" lifts it above the head (close-up selfies where your face fills the middle).
+# "#nobroll" skips the Codex b-roll stills, "#nocarousel" skips the carousel (REEL_WATCH_BROLL=0 and
+# REEL_WATCH_CAROUSEL=0 turn them off for every drop). Both need the Codex CLI signed in, else they are skipped.
 # After the reel lands, write-caption.mjs adds "<name> - caption.txt" (Sandcastles-backed post copy) when the
 # Claude Code CLI is installed; REEL_WATCH_CAPTION=0 turns that off.
 # The finished MP4 in the done folder is named after the hook when there is one.
@@ -74,6 +76,12 @@ case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
+broll=1; carousel=1
+{ [ "${REEL_WATCH_BROLL:-1}" = 0 ] || ! command -v codex >/dev/null 2>&1; } && broll=0
+{ [ "${REEL_WATCH_CAROUSEL:-1}" = 0 ] || ! command -v codex >/dev/null 2>&1; } && carousel=0
+case "$base" in *"#nobroll"*) broll=0;; esac
+case "$base" in *"#nocarousel"*) carousel=0;; esac
+[ "$broll" = 1 ] && flags+=(--broll)
 name=$(echo "$stem" | sed -E 's/#[a-z]+//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 
@@ -99,13 +107,25 @@ if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EX
   if [ -s "$work/review.txt" ]; then cp -f "$work/review.txt" "$folder/check these words.txt"; fi
   echo "$(date '+%F %T') done  $dest" >> "$log"
   if [ -s "$work/review.txt" ]; then notify "$reel_label ready: check a few words" "$(basename "$dest" .mp4). See the note in its folder."; else notify "$reel_label ready" "$(basename "$dest" .mp4)"; fi
-  # Post copy (caption, hashtags, hook options) from Sandcastles via headless Claude. Never holds up the reel.
+  # The b-roll stills, for reuse in posts and stories.
+  if [ -f "$work/broll/broll.json" ] && ls "$work"/broll/broll-*.png >/dev/null 2>&1; then
+    mkdir "$folder/B-roll" 2>/dev/null && cp "$work"/broll/broll-*.png "$folder/B-roll/" || true
+  fi
+  # The carousel (Codex) runs alongside the post copy (Claude + Sandcastles). Neither holds up the reel.
+  if [ "$carousel" = 1 ]; then
+    (
+      if reel carousel "$work" --out "$folder/Carousel" >> "$log" 2>&1; then notify "$reel_label carousel ready" "$(basename "$dest" .mp4)"
+      else echo "$(date '+%F %T') carousel failed for $name (reel is fine)" >> "$log"; fi
+    ) &
+  fi
+  # Post copy (caption, hashtags, hook options) from Sandcastles via headless Claude.
   if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
     caption="$folder/caption.txt"
     if node "$HERE/write-caption.mjs" "$work" "$caption" >> "$log" 2>&1 && [ -s "$caption" ]; then
       notify "$reel_label caption ready" "$(basename "$dest" .mp4)"
     fi
   fi
+  wait
   printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"
 else
   echo "$(date '+%F %T') FAIL  $base (see above)" >> "$log"

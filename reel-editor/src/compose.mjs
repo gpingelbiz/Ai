@@ -47,6 +47,10 @@ export function composeProject(plan, projectDir) {
   const ext = path.extname(plan.video.src) || ".mp4";
   const footage = `assets/footage${ext}`;
   copyOrLink(plan.video.src, path.join(projectDir, footage));
+  (plan.broll || []).forEach((b, i) => {
+    b.src = `assets/broll/broll-${i + 1}${path.extname(b.file) || ".png"}`;
+    copyOrLink(b.file, path.join(projectDir, b.src));
+  });
   fs.writeFileSync(path.join(projectDir, "index.html"), renderHTML(plan, footage));
   return projectDir;
 }
@@ -99,6 +103,12 @@ export function renderHTML(plan, footage) {
     ? `      <div id="cta" class="clip" data-start="${plan.cta.start}" data-duration="${plan.cta.duration}" data-track-index="4" data-layout-allow-overflow><span id="cta-text">${esc(plan.cta.text)}</span></div>`
     : "";
 
+  // B-roll stills: full-frame cutaways over the footage, under the captions. The voice keeps playing underneath.
+  const brollList = (plan.broll || []).filter((b) => b.src);
+  const brollHTML = brollList
+    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><img src="${esc(b.src)}" alt="" /><div class="broll-shade"></div></div>`)
+    .join("\n");
+
   const tracks = plan.audio?.tracks || [];
   const audioHTML = tracks
     .map((t) => {
@@ -120,6 +130,7 @@ export function renderHTML(plan, footage) {
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
+    broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.motion || "in" })),
   };
 
   return `<!doctype html>
@@ -136,6 +147,9 @@ export function renderHTML(plan, footage) {
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
       #video-wrap { position: absolute; inset: 0; transform-origin: ${s.zooms.origin || "50% 40%"}; will-change: transform; }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .broll { position: absolute; inset: 0; overflow: hidden; opacity: 0; background: #000; }
+      .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 50%; will-change: transform; }
+      .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 52%, rgba(0,0,0,0.42) 100%); }
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
         position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3(cap.sideMarginFrac * 100)}%; top: ${r3(cap.position * 100)}%;
@@ -178,6 +192,7 @@ export function renderHTML(plan, footage) {
       <div id="video-wrap" data-layout-allow-overflow>
         <video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>
       </div>
+${brollHTML}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
 ${capsHTML}
       </div>
@@ -225,6 +240,15 @@ ${audioHTML}
           tl.set(el, { opacity: 0 }, g.end);
         });
         PLAN.zooms.forEach((z) => tl.to("#video-wrap", { scale: z.scale, duration: z.snap, ease: "power3.out" }, z.t));
+        // B-roll: quick dissolve in and out, slow push or pan while it holds.
+        const MOVES = { in: [{ scale: 1.04 }, { scale: 1.14 }], out: [{ scale: 1.16 }, { scale: 1.04 }], left: [{ scale: 1.14, xPercent: 3 }, { scale: 1.14, xPercent: -3 }], right: [{ scale: 1.14, xPercent: -3 }, { scale: 1.14, xPercent: 3 }] };
+        PLAN.broll.forEach((b, i) => {
+          const el = document.getElementById("broll-" + i);
+          const m = MOVES[b.motion] || MOVES.in;
+          tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.14, ease: "power1.out" }, b.start);
+          tl.fromTo(el.querySelector("img"), m[0], { ...m[1], duration: b.duration, ease: "none" }, b.start);
+          tl.to(el, { opacity: 0, duration: 0.14, ease: "power1.in" }, b.start + b.duration - 0.14);
+        });
         window.__timelines["reel"] = tl;
       })();
     </script>

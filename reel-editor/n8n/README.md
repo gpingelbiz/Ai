@@ -25,6 +25,8 @@ The watcher reads the filename so you can steer an edit from your phone without 
 | `clip #landscape.mov` | 16:9 canvas for YouTube |
 | `clip #low.mov` | force the hook to chest height (it normally places itself around your face) |
 | `clip #top.mov` | force the hook above your head |
+| `clip #nobroll.mov` | no Codex b-roll stills |
+| `clip #nocarousel.mov` | no carousel |
 | `clip__The *10 minutes* after a bad number.mov` | asterisks pick the gold phrase in the hook |
 
 Tags combine: `objections__Stop explaining the price #nocta.mov`.
@@ -34,8 +36,10 @@ Defaults you can change with environment variables on the n8n process (or edit t
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `REEL_WATCH_ROOT` | `~/Reels` | work folder (renders in `videos/<name>/`) |
-| `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per reel (`<date> Reel <n>`, with the MP4, `caption.txt` and `check these words.txt`); on the Mini this is `~/Desktop/Reels` |
+| `REEL_WATCH_DONE` | `~/Reels/done` | where finished reels go, one folder per reel (`<date> Reel <n>`, with the MP4, `caption.txt`, `B-roll/`, `Carousel/` and `check these words.txt`); on the Mini this is `~/Desktop/Reels` |
 | `REEL_WATCH_CTA` | `Comment GHOST` | CTA text; set it to an empty string (`export REEL_WATCH_CTA=""`) for no CTA |
+| `REEL_WATCH_BROLL` | `1` | `0` turns off the Codex b-roll for every drop |
+| `REEL_WATCH_CAROUSEL` | `1` | `0` turns off the carousel for every drop |
 | `REEL_WATCH_ARGS` | | extra flags for every edit, e.g. `--sfx --quality delivery` |
 
 The script also pulls `REEL_*`, `ELEVENLABS_*` and `PRODUCER_*` exports from `~/.zshrc`, so the key you set for Terminal works here too.

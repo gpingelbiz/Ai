@@ -5,6 +5,7 @@ import { transcribe, applyCorrections } from "./transcribe.mjs";
 import { listPresets, loadPreset, loadDictionary } from "./presets.mjs";
 import { hyperframesBin } from "./render.mjs";
 import { doctor } from "./doctor.mjs";
+import { makeCarousel } from "./carousel.mjs";
 import { writeJSON, log } from "./util.mjs";
 
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
@@ -15,6 +16,9 @@ Usage
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
   reel batch <folder> [options]     edit every video in a folder that has no render yet
+  reel carousel <workdir> [--out <dir>] [--slides 6] [--force]
+                                    IG carousel from a finished reel: Codex writes the slides and draws the images
+                                    (reusing the reel's b-roll), the editor sets the words; 1080x1350 PNGs
   reel presets                      list presets
   reel doctor                       check ffmpeg, whisper, hyperframes, chrome, keys
 
@@ -46,6 +50,9 @@ Options (edit / batch)
   --sfx                    ElevenLabs whoosh on zoom-ins and pop on the hook (needs ELEVENLABS_API_KEY)
   --voiceover <script.txt> ElevenLabs narration track      --voice <id>    --replace-audio (mute footage)
   --quality <q>            draft | looks (default) | delivery        --fps <n>  default 30
+  --broll                  Codex b-roll: 1-3 generated stills cut in after the hook, slow push-in, voice and captions
+                           keep going (needs the Codex CLI signed in). --no-broll turns a preset's b-roll off,
+                           --new-broll draws fresh stills instead of reusing the saved ones
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -92,6 +99,9 @@ const EDIT_OPTIONS = {
   "replace-audio": { type: "boolean" },
   quality: { type: "string" },
   fps: { type: "string" },
+  broll: { type: "boolean" },
+  "no-broll": { type: "boolean" },
+  "new-broll": { type: "boolean" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   force: { type: "boolean" },
@@ -130,6 +140,13 @@ export async function main(argv) {
       const { opts, positionals } = parse(rest);
       const r = await buildProject(positionals[0] || ".", opts);
       if (r.output) console.log(r.output);
+      return;
+    }
+    case "carousel": {
+      const { opts, positionals } = parse(rest, { out: { type: "string" }, slides: { type: "string" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const files = await makeCarousel(positionals[0], opts);
+      console.log(path.dirname(files[0]));
       return;
     }
     case "render": {

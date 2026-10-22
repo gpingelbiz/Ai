@@ -57,5 +57,12 @@
     "position": 0.62,
     "style": "pill",
     "fontSizeFrac": 0.036
+  },
+  "broll": {
+    "style": "moody low-key light, deep blacks, warm gold and amber highlights, muted colors, a little film grain; no neon, no purple, no pastel"
+  },
+  "carousel": {
+    "handle": "@officialgregpingel",
+    "style": "moody low-key light, deep blacks, warm gold and amber highlights, muted colors, a little film grain; no neon, no purple, no pastel"
   }
 }

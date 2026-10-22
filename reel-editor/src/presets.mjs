@@ -57,5 +57,7 @@ export function mergeOverrides(preset, o = {}) {
   if (o.language) p.transcribe.language = o.language;
   if (o.quality) p.render.quality = o.quality;
   if (o.fps) p.render.fps = parseFloat(o.fps);
+  if (o.broll) p.broll.enabled = true;
+  if (o.noBroll) p.broll.enabled = false;
   return p;
 }

@@ -16,23 +16,24 @@ A Mac with Apple Silicon, about 4 GB of free disk, and an internet connection. T
 
 ## Install: one command
 
-Open Terminal, paste this line, and answer three questions. It takes about 10 minutes and ends by playing a test reel.
+Open Terminal, paste this line, and answer four questions. It takes about 10 minutes and ends by playing a test reel.
 
 ```
 curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash
 ```
 
-The three questions:
+The four questions:
 
 1. **Your look:** Greg Pingel's brand, plain white captions, or your own colors (two hex codes).
 2. **Your ElevenLabs key:** paste it, or press Return to skip. It is typed hidden and saved only on your Mac.
 3. **Drop folder:** yes to get a Reels folder on your Desktop that edits any clip you drop in.
+4. **Codex:** yes to add generated b-roll and an Instagram carousel to every reel. It installs the Codex CLI and opens a browser to sign in with your ChatGPT account (it runs on your plan; no API key). Skipped when Codex is already set up.
 
 If an Apple installer window pops up first, click Install, wait for it, and paste the line again. If Homebrew is missing, the installer adds it and asks for your Mac password once.
 
 Run the same line again any time to update. It keeps your settings and only installs what is missing.
 
-Run it in Terminal, not inside Claude Code: the questions need a keyboard, and without one it quietly takes the defaults (Greg's look, no key, drop folder on). For a scripted install, pass the answers as options: `curl -fsSL <the URL above> | bash -s -- --yes --look custom --accent "#00AAFF" --text "#FFFFFF" --no-watch`.
+Run it in Terminal, not inside Claude Code: the questions need a keyboard, and without one it quietly takes the defaults (Greg's look, no key, drop folder on, Codex installed but not signed in). For a scripted install, pass the answers as options: `curl -fsSL <the URL above> | bash -s -- --yes --look custom --accent "#00AAFF" --text "#FFFFFF" --no-watch`.
 
 ## Make it yours
 
@@ -81,7 +82,7 @@ To fix a caption, edit its `text` in `videos/my-clip/plan.json` and run `reel bu
 
 If you said yes to the drop folder, it is already on: drop a clip into **Desktop/Reels/Raw**, and a Mac notification tells you when it is done. A 1-minute clip takes about 3 minutes.
 
-Each reel gets its own folder in Desktop/Reels, named by date and number: `2026-10-21 Reel 1`, `2026-10-21 Reel 2`, and so on, starting again at Reel 1 each day. Inside are the reel (named after its hook), `caption.txt`, and `check these words.txt` when there is something to check.
+Each reel gets its own folder in Desktop/Reels, named by date and number: `2026-10-21 Reel 1`, `2026-10-21 Reel 2`, and so on, starting again at Reel 1 each day. Inside are the reel (named after its hook), `caption.txt`, a `Carousel` folder (slides for an Instagram carousel), a `B-roll` folder (the generated stills cut into the reel), and `check these words.txt` when there is something to check.
 
 Raw is a shortcut to `~/Reels/raw`. macOS stops background jobs from reading Desktop folders, so leave it as a shortcut.
 
@@ -95,8 +96,10 @@ The filename is the brief:
 | `clip #nozoom.mov` | No punch-in zooms |
 | `clip #landscape.mov` | 16:9 for YouTube |
 | `clip #low.mov` or `clip #top.mov` | Force the hook low or high |
+| `clip #nobroll.mov` | No generated b-roll |
+| `clip #nocarousel.mov` | No carousel |
 
-`caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
+`caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. B-roll and the carousel need the Codex CLI signed in with a ChatGPT plan (the installer offers it; by hand: `npm install -g @openai/codex`, then `codex login`); without it the reel is made without them. Codex has usage limits: when it hits one, the editor skips b-roll and carousel images for 30 minutes and the reel still arrives. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
 
 ## Troubleshooting
 
