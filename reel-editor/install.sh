@@ -116,7 +116,7 @@ if [ -z "$LOOK" ]; then
   ask "Pick 1, 2 or 3 [1]:" 1
   case "$REPLY" in 2) LOOK=clean ;; 3) LOOK=custom ;; *) LOOK=greg ;; esac
 fi
-DICT=""
+DICT=""; VOICE=""
 case "$LOOK" in
   greg) PRESET=pingel-brand ;;
   clean) PRESET=clean ;;
@@ -134,6 +134,9 @@ if [ "$LOOK" != greg ]; then
   DICT="$CONF/dictionary.json"
   [ -f "$DICT" ] || node -e 'const fs=require("fs");const [src,out]=process.argv.slice(1);const d=JSON.parse(fs.readFileSync(src,"utf8"));fs.writeFileSync(out,JSON.stringify({terms:[],phrases:[],corrections:[],powerWords:d.powerWords||[]},null,2)+"\n")' "$APP/dictionary.json" "$DICT"
   ok "your word list: $DICT (add your program and framework names to \"terms\")"
+  VOICE="$CONF/voice.md"
+  [ -f "$VOICE" ] || cp "$APP/voice/default.md" "$VOICE"
+  ok "your caption voice: $VOICE (how you talk, words you never use)"
 fi
 ok "look: $LOOK"
 
@@ -150,6 +153,9 @@ fi
 [ -n "$WATCH" ] || { ask "Turn on the drop folder (drop a clip, get a reel)? [Y/n]:" y; case "$REPLY" in n*|N*) WATCH=n ;; *) WATCH=y ;; esac; }
 
 touch "$ZSHRC"
+# Keep a call-to-action someone set by hand; a re-run must not wipe it.
+CTA_LINE="$(grep '^export REEL_WATCH_CTA=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
+[ -n "$CTA_LINE" ] || CTA_LINE='export REEL_WATCH_CTA=""   # call-to-action for drop-folder reels, e.g. "Comment WORD"'
 # Replace our block (and loose reel lines from older setups); leave everything else in ~/.zshrc alone.
 tmp="$(mktemp)"
 awk '/^# >>> reel-editor >>>/{skip=1} !skip && !/^export (REEL_[A-Z_]+|PRODUCER_BROWSER_GPU_MODE)=/{print} /^# <<< reel-editor <<</{skip=0}' "$ZSHRC" > "$tmp"
@@ -159,7 +165,8 @@ awk '/^# >>> reel-editor >>>/{skip=1} !skip && !/^export (REEL_[A-Z_]+|PRODUCER_
   echo "export PRODUCER_BROWSER_GPU_MODE=hardware"
   echo "export REEL_PRESET=\"$PRESET\""
   [ -z "$DICT" ] || echo "export REEL_DICTIONARY=\"$DICT\""
-  echo "export REEL_WATCH_CTA=\"\"   # call-to-action for drop-folder reels, e.g. \"Comment WORD\""
+  echo "$CTA_LINE"
+  [ -z "$VOICE" ] || echo "export REEL_CAPTION_VOICE=\"$VOICE\""
   if [ "$WATCH" = y ]; then
     echo "export REEL_WATCH_RAW=\"$HOME/Reels/raw\""
     echo "export REEL_WATCH_DONE=\"$HOME/Desktop/Reels\""
