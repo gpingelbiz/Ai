@@ -39,7 +39,7 @@ test("render: slams, markers, camera punch-ins and the b-roll grade are in the c
   assert.match(html, /class="slam-word"[^>]*>Accountability</);
   assert.match(html, /id="defocus"/);
   assert.match(html, /"zoomStyle":"camera"/);
-  assert.match(html, /<img src="assets\/broll\/broll-1.png" alt="" data-color-grading="\{&quot;preset&quot;:&quot;muted-editorial&quot;[^"]*" style="--hf-color-grading-blur: 0.3"/);
+  assert.match(html, /<img class="broll-media" src="assets\/broll\/broll-1.png" alt="" data-color-grading="\{&quot;preset&quot;:&quot;muted-editorial&quot;[^"]*" style="--hf-color-grading-blur: 0.3"/);
   assert.ok(!html.includes("broll-grain"), "the CSS grain is gone; the grade carries grain and vignette");
   assert.match(html, /id="cap-0-w0">own<svg class="an an-underline"/, "a word gets the underline");
   assert.ok(!html.includes('id="cap-0-w2">$10,000<svg'), "one marker per line: the first gold word");

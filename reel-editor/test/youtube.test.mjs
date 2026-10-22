@@ -51,7 +51,7 @@ test("long form: cards and cadence stay out of the last 20 s, cadence is denser 
   const gap = (xs) => xs.slice(1).map((k, i) => k.t - xs[i].t);
   assert.ok(Math.min(...gap(early)) >= 12 && Math.max(...gap(early)) < 20, `early gaps 12-20: ${gap(early).slice(0, 4)}`);
   assert.ok(Math.min(...gap(late)) >= 20, "late gaps at least 20 s");
-  assert.match(graphicsCSS({ W: 1920, H: 1080, colors: {}, mode: "band" }), /\.g-box \{ left: 4%; right: 4%; top: auto; bottom: 7%/);
+  assert.match(graphicsCSS({ W: 1920, H: 1080, colors: {}, mode: "band" }), /\.g-box \{ left: var\(--gx, 56%\); right: auto; width: var\(--gw, 40%\); top: var\(--gy, 20%\)/);
 });
 
 test("packaging writes the description, titles, srt, end screen and v3 timeline", async () => {

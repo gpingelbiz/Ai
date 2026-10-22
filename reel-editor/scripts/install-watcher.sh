@@ -16,6 +16,7 @@ RAW_BROLL="${REEL_WATCH_RAW_BROLL:-$HOME/Reels/raw-broll}"
 RAW_CAROUSEL="${REEL_WATCH_RAW_CAROUSEL:-$HOME/Reels/raw-carousel}"
 RAW_LONG="${REEL_WATCH_RAW_LONG:-$HOME/Reels/raw-long}"
 RAW_YOUTUBE="${REEL_WATCH_RAW_YOUTUBE:-$HOME/Reels/raw-youtube}"
+RAW_RUNWAY="${REEL_WATCH_RAW_RUNWAY:-$HOME/Reels/raw-runway}"
 MUSIC="${REEL_WATCH_MUSIC:-$HOME/Reels/music}"
 DONE="${REEL_WATCH_DONE:-$HOME/Reels/done}"
 LOG="${REEL_WATCH_ROOT:-$HOME/Reels}/watch-launchd.log"
@@ -46,11 +47,12 @@ render() {
     <key>REEL_WATCH_RAW_CAROUSEL</key><string>$RAW_CAROUSEL</string>
     <key>REEL_WATCH_RAW_LONG</key><string>$RAW_LONG</string>
     <key>REEL_WATCH_RAW_YOUTUBE</key><string>$RAW_YOUTUBE</string>
+    <key>REEL_WATCH_RAW_RUNWAY</key><string>$RAW_RUNWAY</string>
     <key>REEL_WATCH_MUSIC</key><string>$MUSIC</string>
     <key>REEL_WATCH_DONE</key><string>$DONE</string>
   </dict>
   <key>WatchPaths</key>
-  <array><string>$RAW</string><string>$RAW_BROLL</string><string>$RAW_CAROUSEL</string><string>$RAW_LONG</string><string>$RAW_YOUTUBE</string></array>
+  <array><string>$RAW</string><string>$RAW_BROLL</string><string>$RAW_CAROUSEL</string><string>$RAW_LONG</string><string>$RAW_YOUTUBE</string><string>$RAW_RUNWAY</string></array>
   <key>RunAtLoad</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>$LOG</string>
@@ -70,7 +72,7 @@ if [ "${1:-}" = "--dry-run" ]; then
   exit 0
 fi
 
-mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$RAW_LONG" "$RAW_YOUTUBE" "$MUSIC" "$(dirname "$PLIST")"
+mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$RAW_LONG" "$RAW_YOUTUBE" "$RAW_RUNWAY" "$MUSIC" "$(dirname "$PLIST")"
 mv "$tmp" "$PLIST"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"

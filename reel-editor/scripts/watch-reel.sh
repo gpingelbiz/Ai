@@ -6,6 +6,8 @@
 #   carousel  an IG carousel from the video     -> "<date> Carousel <n>/"
 #   long      a long recording (a podcast, a live, a training) cut into several reels with the full look, the
 #             crop following whoever is talking, split screen when two people trade lines -> "<date> Clips <n>/"
+#   runway    the full look with Runway video clips as the b-roll (RUNWAY_API_KEY; ~30 credits a clip, usage in
+#             the reel folder's "runway usage.txt" and `reel usage`) -> "<date> Reel <n> with Runway/"
 #   youtube   the whole long video for YouTube: chapters with title cards, re-hooks, sparse cards and b-roll,
 #             112% punch-ins, a clean last 20 s, and the package (description, titles, srt, thumbnails) -> "<date> YouTube <n>/"
 # watch-folder.sh picks the mode from the drop folder (Raw - Reel, Raw - Reel with B-roll, Raw - Carousel).
@@ -25,7 +27,7 @@ FILE="${1:-}"
 MODE="${2:-reel}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
-case "$MODE" in reel|broll|carousel|long|youtube) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long or youtube"}'; exit 1;; esac
+case "$MODE" in reel|broll|carousel|long|youtube|runway) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube or runway"}'; exit 1;; esac
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
@@ -39,7 +41,7 @@ if [ -f "$HOME/.zshrc" ]; then
       *'$('*|*'`'*|*'${('*) ;;
       *) eval "$line" || true;;
     esac
-  done < <(grep -E '^export (REEL_|ELEVENLABS_|PRODUCER_|PATH=)' "$HOME/.zshrc" 2>/dev/null || true)
+  done < <(grep -E '^export (REEL_|ELEVENLABS_|RUNWAY_|PRODUCER_|PATH=)' "$HOME/.zshrc" 2>/dev/null || true)
 fi
 export PRODUCER_BROWSER_GPU_MODE="${PRODUCER_BROWSER_GPU_MODE:-hardware}"
 
@@ -123,6 +125,7 @@ fi
 # the classic captions with no cards.
 case "$MODE" in
   broll|long) flags+=(--broll --graphics --caption-style reveal);;
+  runway) flags+=(--preset pingel-runway --broll --graphics --caption-style reveal);;
   reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate);;
 esac
 # A carousel needs the transcript and plan, not a render.
@@ -130,7 +133,7 @@ esac
 name=$(echo "$stem" | sed -E 's/#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 # Each mode has its own work folder, so the same clip can go through two drop folders.
-case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; esac
+case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; runway) name="$name-runway";; esac
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
@@ -254,10 +257,10 @@ if [ "$MODE" = carousel ]; then
   notify "$label ready" "$title"
 else
   shots=""
-  if [ "$MODE" = broll ]; then
-    # The stills this reel used, from its plan (one path per line).
+  if [ "$MODE" = broll ] || [ "$MODE" = runway ]; then
+    # The stills (or clips) this reel used, from its plan (one path per line).
     shots=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const b of p.broll||[])if(b.file)console.log(b.file)}catch(e){}' "$work/plan.json" 2>/dev/null || true)
-    folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel " with B-roll")"
+    if [ "$MODE" = runway ]; then folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel " with Runway")"; else folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel " with B-roll")"; fi
   else
     folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel)"
   fi
@@ -267,8 +270,11 @@ else
   if [ -n "$shots" ]; then
     i=1
     while IFS= read -r still; do
-      [ -f "$still" ] && cp "$still" "$folder/B-roll $i.png" && i=$((i + 1))
+      [ -f "$still" ] && cp "$still" "$folder/B-roll $i.${still##*.}" && i=$((i + 1))
     done <<< "$shots"
+    [ -s "$work/runway usage.txt" ] && cp -f "$work/runway usage.txt" "$folder/runway usage.txt"
+  elif [ "$MODE" = runway ]; then
+    printf 'No b-roll this time: Runway made nothing for this clip (balance, cap or a failed generation; see ~/Reels/watch.log and run: reel usage).\n' > "$folder/No b-roll this time.txt"
   elif [ "$MODE" = broll ]; then
     # Say why, from the editor's own lines for this run, instead of guessing at Codex.
     if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then

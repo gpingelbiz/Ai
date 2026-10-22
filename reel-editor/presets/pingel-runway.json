@@ -1,0 +1,15 @@
+{
+  "name": "pingel-runway",
+  "extends": "pingel-brand",
+  "broll": {
+    "enabled": true,
+    "engine": "runway",
+    "duration": 4,
+    "gap": 6,
+    "max": 3,
+    "maxWithGraphics": 2,
+    "every": 12,
+    "videoSeconds": 5,
+    "maxCreditsPerReel": 150
+  }
+}

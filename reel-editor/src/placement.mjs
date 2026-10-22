@@ -52,6 +52,30 @@ export function zoomDuring(zooms = [], t0 = 0, t1 = 3) {
 }
 
 /** Head extent (top of hair to chin) across frames, with the zoom applied around its origin. Null when nobody is found. */
+/** The speaker's face box as fractions of the frame: median centre and size over the sampled frames, or null. */
+export function faceBox(detection) {
+  const faces = (detection?.frames || []).flatMap((f) => (f.faces || []).length ? [(f.faces || []).reduce((a, c) => (c.w * c.h > a.w * a.h ? c : a))] : []);
+  if (!faces.length) return null;
+  const med = (k) => { const s = faces.map((f) => f[k]).sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+  const w = med("w"), h = med("h");
+  return { cx: round(med("x") + w / 2), cy: round(med("y") + h / 2), w: round(w), h: round(h) };
+}
+
+/**
+ * Base framing for a wide talking-head shot: scale the footage so the face is about `target` of the frame height
+ * (the podcast close framing), anchored on the face, never past `max` (an upscale past that goes soft).
+ */
+export function baseFraming(face, { target = 0.27, max = 1.3, min = 1, eyeLine = 0.42 } = {}) {
+  if (!face || !face.h) return { scale: 1, origin: "50% 40%", shift: 0 };
+  const scale = round(Math.max(min, Math.min(max, target / face.h)));
+  // With the origin on the face, the face stays where it was; slide the frame so the face centre sits near the
+  // eye line, as far as the scaled footage has slack without showing an edge.
+  const roomUp = face.cy + (1 - face.cy) * scale - 1; // slack at the bottom (fraction of the frame)
+  const roomDown = face.cy * scale - face.cy; // slack at the top
+  const shift = round(Math.max(-roomUp, Math.min(roomDown, eyeLine - face.cy)));
+  return { scale, origin: `${Math.round(face.cx * 100)}% ${Math.round(face.cy * 100)}%`, shift };
+}
+
 export function headExtent(detection, { zoom = 1, originY = 0.38 } = {}) {
   if (!detection?.frames?.length) return null;
   const zy = (y) => originY + (y - originY) * zoom;

@@ -86,7 +86,7 @@ test("render: b-roll sits between the footage and the captions", () => {
   const iVideo = html.indexOf('id="video-wrap"'), iBroll = html.indexOf('id="broll-0"'), iCaps = html.indexOf('id="captions"');
   assert.ok(iVideo < iBroll && iBroll < iCaps);
   assert.match(html, /data-start="6" data-duration="2.4"/);
-  assert.match(html, /"broll":\[\{"start":6,"duration":2.4,"motion":"left"\}\]/);
+  assert.match(html, /"broll":\[\{"start":6,"duration":2.4,"motion":"left","video":false\}\]/);
 });
 
 test("a 429 pauses Codex for everyone; refusals and other errors do not", async () => {
