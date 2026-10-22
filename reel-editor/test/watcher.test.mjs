@@ -30,3 +30,28 @@ test("notify() survives quotes and apostrophes in titles", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /ok$/m);
 });
+
+test("each reel gets a brand-new '<date> Reel <n>' folder without listing the parent (macOS blocks that on the Desktop)", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const fn = script.match(/create_reel_folder\(\) \{[\s\S]*?\n\}/);
+  assert.ok(fn, "watch-reel.sh defines create_reel_folder");
+  assert.doesNotMatch(fn[0], /"\$1\/\$day Reel "\*/, "never globs the done folder");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-folders-"));
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "reel-state-"));
+  const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
+  const next = () => bash(`${fn[0]}\ncreate_reel_folder "${dir}" "${state}"`).stdout.trim();
+  // Folders made by hand (no count saved yet) are skipped, never reused.
+  fs.mkdirSync(path.join(dir, `${day} Reel 1`));
+  fs.mkdirSync(path.join(dir, `${day} Reel 2`));
+  fs.writeFileSync(path.join(dir, `${day} Reel 1`, "caption.txt"), "keep me");
+  assert.equal(next(), `${dir}/${day} Reel 3`);
+  assert.equal(next(), `${dir}/${day} Reel 4`);
+  assert.equal(fs.readFileSync(path.join(dir, `${day} Reel 1`, "caption.txt"), "utf8"), "keep me", "existing folders untouched");
+  // A deleted folder's number is not reused: the saved count moves forward.
+  fs.rmdirSync(path.join(dir, `${day} Reel 4`));
+  assert.equal(next(), `${dir}/${day} Reel 5`);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(state, { recursive: true, force: true });
+});

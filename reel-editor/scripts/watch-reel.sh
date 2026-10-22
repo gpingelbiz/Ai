@@ -46,6 +46,22 @@ done
 # Mac notification (shows on the Mini; harmless when there is no GUI session).
 notify() { local t m; t=$(printf '%s' "$1" | tr '"' "'"); m=$(printf '%s' "$2" | tr '"' "'"); osascript -e "display notification \"$m\" with title \"$t\"" >/dev/null 2>&1 || true; }
 
+# Create and print a brand-new "<today> Reel <n>" folder under $1, keeping today's count in $2.
+# Background jobs cannot list Desktop folders (macOS privacy), so this never globs $1: it starts one past the
+# count it saved, and `mkdir` (no -p) fails on a folder that already exists, so it moves on to the next number.
+# A reel can never land in, or overwrite, an existing folder.
+create_reel_folder() {
+  local day n count tries
+  day="$(date +%F)"; count="$2/reel-count-$day"; n=1; tries=0
+  if [ -f "$count" ]; then n=$(( $(cat "$count" 2>/dev/null || echo 0) + 1 )); fi
+  until mkdir "$1/$day Reel $n" 2>/dev/null; do
+    n=$((n + 1)); tries=$((tries + 1))
+    [ "$tries" -lt 500 ] || return 1
+  done
+  echo "$n" > "$count"
+  printf '%s/%s Reel %d' "$1" "$day" "$n"
+}
+
 base=$(basename "$FILE")
 stem="${base%.*}"
 hook=""
@@ -73,20 +89,21 @@ if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EX
   used_hook="$hook"
   [ -n "$used_hook" ] || used_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
   pretty=$(printf '%s' "$used_hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
-  dest="$DONE/${pretty:-$name}.mp4"
-  # Never overwrite a finished reel (macOS also refuses it for background jobs on the Desktop): add (2), (3), ...
-  if [ -e "$dest" ]; then n=2; while [ -e "$DONE/${pretty:-$name} ($n).mp4" ]; do n=$((n + 1)); done; dest="$DONE/${pretty:-$name} ($n).mp4"; fi
+  # Each reel gets its own folder: "<YYYY-MM-DD> Reel <n>", numbered through the day. Inside: the reel (named after its hook), caption.txt, and
+  # "check these words.txt" when the engines disagreed. A new folder also means a reel is never overwritten.
+  mkdir -p "$DONE"
+  folder="$(create_reel_folder "$DONE" "$REELS/videos")"
+  reel_label="$(basename "$folder")"
+  dest="$folder/${pretty:-$name}.mp4"
   cp "$out" "$dest"
-  # Words the two transcription engines disagreed on, or were unsure of, go next to the reel.
-  note="${dest%.mp4} - check these words.txt"
-  if [ -s "$work/review.txt" ]; then cp -f "$work/review.txt" "$note"; else rm -f "$note"; fi
+  if [ -s "$work/review.txt" ]; then cp -f "$work/review.txt" "$folder/check these words.txt"; fi
   echo "$(date '+%F %T') done  $dest" >> "$log"
-  if [ -s "$work/review.txt" ]; then notify "Reel ready: check a few words" "$(basename "$dest" .mp4). See the note next to it."; else notify "Reel ready" "$(basename "$dest" .mp4)"; fi
+  if [ -s "$work/review.txt" ]; then notify "$reel_label ready: check a few words" "$(basename "$dest" .mp4). See the note in its folder."; else notify "$reel_label ready" "$(basename "$dest" .mp4)"; fi
   # Post copy (caption, hashtags, hook options) from Sandcastles via headless Claude. Never holds up the reel.
   if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
-    caption="${dest%.mp4} - caption.txt"
+    caption="$folder/caption.txt"
     if node "$HERE/write-caption.mjs" "$work" "$caption" >> "$log" 2>&1 && [ -s "$caption" ]; then
-      notify "Caption ready" "$(basename "$caption" .txt)"
+      notify "$reel_label caption ready" "$(basename "$dest" .mp4)"
     fi
   fi
   printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"
