@@ -97,6 +97,20 @@ export function hookBlockHeight(words, { W = 1080, H = 1920, fontPx, widthFrac =
  * Choose { position, fontScale, zone } for the hook.
  * zone: "above" (over the head), "below" (between chin and captions), "fallback" (nobody found, or no gap fits).
  */
+/**
+ * Caption height from the face: the block sits just under the chin (with a little air), as high as the Instagram
+ * safe zone on a wide shot (`min`) and never lower than `max`, where the caption overlay starts to cover it. Without a
+ * face, the preset position. Returns the block's centre as a fraction of the height, plus the top of the block
+ * (what the hook placement must stay above).
+ */
+export function placeCaptions(head, { fontSizeFrac = 0.04, lines = 2, lineHeight = 1.08, gap = 0.03, min = 0.56, max = 0.76, defaultPosition = 0.6 } = {}) {
+  const half = (fontSizeFrac * lineHeight * lines) / 2;
+  if (!head) return { position: defaultPosition, top: round(defaultPosition - half), zone: "default" };
+  const wanted = head.bottom + gap + half;
+  const position = round(Math.min(max, Math.max(min, wanted)));
+  return { position, top: round(position - half), zone: wanted > max ? "capped" : wanted < min ? "safe-zone" : "below-chin" };
+}
+
 export function placeHook(head, { words, W = 1080, H = 1920, fontPx, topSafe = 0.07, captionTop = 0.68, gap = 0.025, defaultPosition = 0.22, minScale = 0.7 } = {}) {
   if (!head) return { position: defaultPosition, fontScale: 1, zone: "fallback" };
   for (const scale of [1, 0.9, 0.8, minScale]) {

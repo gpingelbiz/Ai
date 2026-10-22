@@ -5,7 +5,7 @@ import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs
 import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments } from "./cuts.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, zoomDuring, captionsRepeatingHook } from "./placement.mjs";
+import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms } from "./zooms.mjs";
@@ -182,22 +182,37 @@ export async function runEdit(input, opts = {}) {
   const zooms = preset.zooms.enabled ? planZooms(groups.length ? groups : cleanWords, duration, preset.zooms) : [];
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
 
-  // Hook: never repeat it in the captions, and keep it off the speaker's head.
+  // Face: captions sit just under the chin (never over the mouth), the hook stays off the head.
   let shownGroups = groups;
+  const canvas0 = canvasFor(preset.canvas, cleanMeta);
+  const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
+  let detection = null;
+  const wantFace = sameShape && ((preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null));
+  if (wantFace) {
+    const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
+    const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
+    detection = await detectFaces(videoSrc, times);
+  }
+  let captionTop = preset.captions.position - 0.04;
+  if (preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
+    const head = headExtent(detection);
+    const spot = placeCaptions(head, { fontSizeFrac: preset.captions.fontSizeFrac, defaultPosition: preset.captions.position });
+    preset.captions.position = spot.position;
+    captionTop = spot.top - 0.02;
+    const where = { "below-chin": "just under the chin", capped: "as low as the caption overlay allows (chin is low in the frame)", "safe-zone": "at the safe-zone line (wide shot)", default: "at the preset height (no face found)" }[spot.zone];
+    log(`captions: ${where}, ${Math.round(spot.position * 100)}% from the top`);
+  }
   if (hook) {
     const hide = captionsRepeatingHook(groups, hook);
     if (hide.size) {
       shownGroups = groups.filter((_, i) => !hide.has(i));
       log(`captions: ${hide.size} line${hide.size === 1 ? "" : "s"} hidden while the hook shows the same words`);
     }
-    const canvas0 = canvasFor(preset.canvas, cleanMeta);
-    const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
     if (preset.hook.autoPlace && opts.hookPosition == null && sameShape) {
       const t0 = hook.start, t1 = hook.start + hook.duration;
-      const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
-      const head = headExtent(await detectFaces(videoSrc, times), { zoom: zoomDuring(zooms, t0, t1) });
+      const head = headExtent(detection, { zoom: zoomDuring(zooms, t0, t1) });
       const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
-      const spot = placeHook(head, { words: hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), W: canvas0.width, H: canvas0.height, fontPx, captionTop: preset.captions.position - 0.04, defaultPosition: preset.hook.position });
+      const spot = placeHook(head, { words: hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), W: canvas0.width, H: canvas0.height, fontPx, captionTop, defaultPosition: preset.hook.position });
       if (head) {
         preset.hook.position = spot.position;
         preset.hook.fontSizeFrac = r3(preset.hook.fontSizeFrac * spot.fontScale);

@@ -103,7 +103,7 @@ The filename is the brief:
 | `clip__Stop *explaining* the price.mov` | Asterisks pick the gold word |
 | `clip #nozoom.mov` | No punch-in zooms |
 | `clip #landscape.mov` | 16:9 for YouTube |
-| `clip #low.mov` or `clip #top.mov` | Force the hook low or high |
+| `clip #low.mov` or `clip #top.mov` | Force the hook low or high (captions place themselves under your chin) |
 | `clip #music:calm.mov` or `clip #nomusic.mov` | Use the Music track whose name has "calm", or no music |
 
 `caption.txt` (a caption, 3 hashtags and 3 hook ideas based on what is winning for that topic right now) needs [Claude Code](https://claude.com/claude-code) and the Sandcastles connector on claude.ai; without them the folder has the reel and the note only. B-roll and the carousel need the Codex CLI signed in with a ChatGPT plan (the installer offers it; by hand: `npm install -g @openai/codex`, then `codex login`); without it, the b-roll folder gives a plain reel and the carousel folder gives nothing. Codex has usage limits: when it hits one, Codex is skipped for 20 minutes; a b-roll reel still arrives (with a note, and without b-roll) and a carousel leaves a note to drop it again. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
