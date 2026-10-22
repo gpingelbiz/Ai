@@ -29,9 +29,11 @@ if [ -f "$HOME/.zshrc" ]; then
   while IFS= read -r line; do
     var="${line#export }"; var="${var%%=*}"
     [ "$var" != "PATH" ] && [ -n "${!var+x}" ] && continue
-    # Only a plain assignment is run; a zsh-only expansion would abort the job under set -e.
+    # A command substitution or a zsh-only expansion would abort the job under set -e; plain values (with or
+    # without a trailing comment) are read as they are.
     case "$line" in
-      export\ [A-Z_]*=\"*\"|export\ [A-Z_]*=\'*\'|export\ [A-Z_]*=[A-Za-z0-9_./:~-]*) eval "$line" || true;;
+      *'$('*|*'`'*|*'${('*) ;;
+      *) eval "$line" || true;;
     esac
   done < <(grep -E '^export (REEL_|ELEVENLABS_|PRODUCER_|PATH=)' "$HOME/.zshrc" 2>/dev/null || true)
 fi

@@ -81,12 +81,14 @@ esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > "$work/plan.json"`);
   const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel") };
   for (const [mode, d] of Object.entries(dirs)) { fs.mkdirSync(d); for (const c of clips[mode] || []) fs.writeFileSync(path.join(d, c), "video"); }
+  // A .zshrc like Greg's: the CTA is set to empty with a trailing comment, and one line uses a zsh-only expansion.
+  fs.writeFileSync(path.join(home, ".zshrc"), 'export REEL_WATCH_CTA=""   # no CTA for now\nexport REEL_NOPE="$(zsh-only)"\nexport PRODUCER_BROWSER_GPU_MODE=hardware\n');
   const musicDir = path.join(home, "music");
   fs.mkdirSync(musicDir);
   for (const m of music) fs.writeFileSync(path.join(musicDir, m), "audio");
   const done = path.join(home, "Done");
   spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], {
-    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: "0", REEL_WATCH_CTA: "" },
+    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: "0" },
     stdio: "pipe",
   });
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
@@ -138,4 +140,9 @@ test("music: a random track from the folder, #music:name picks one, #nomusic ski
 test("music: an empty folder means no music.txt, no error", () => {
   const r = fakeDrops({ brollShots: 0, music: [] });
   assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4"]);
+});
+
+test("an empty CTA with a trailing comment in .zshrc still means no CTA; a command substitution is skipped", () => {
+  const r = fakeDrops({ brollShots: 0 });
+  assert.doesNotMatch(r.calls, /--cta/, "no Comment GHOST pill when REEL_WATCH_CTA is set empty in .zshrc");
 });
