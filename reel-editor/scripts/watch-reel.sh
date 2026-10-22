@@ -1,22 +1,24 @@
 #!/bin/bash
-# One drop-folder job: wait for the file to finish copying, run `reel edit`, copy the render to the done folder.
-# Usage: watch-reel.sh /path/to/clip.mov
+# One drop-folder job: wait for the file to finish copying, make what its folder asks for, deliver it.
+# Usage: watch-reel.sh /path/to/clip.mov [reel|broll|carousel]
+#   reel      the edited reel                  -> "<date> Reel <n>/"
+#   broll     the edited reel with Codex b-roll -> "<date> Reel <n> with B-roll/" (plus the stills)
+#   carousel  an IG carousel from the video     -> "<date> Carousel <n>/"
+# watch-folder.sh picks the mode from the drop folder (Raw - Reel, Raw - Reel with B-roll, Raw - Carousel).
 # Hook from the filename: "clip__You don't have a sales problem.mov" -> --hook "You don't have a sales problem"
 # Tags in the filename: "#nocta" skips the CTA, "#nozoom" skips zooms, "#landscape" renders 16:9,
 # "#low" drops the hook to chest height (wide shots where the default sits on your head),
 # "#top" lifts it above the head (close-up selfies where your face fills the middle).
-# "#nobroll" skips the Codex b-roll stills, "#nocarousel" skips the carousel (REEL_WATCH_BROLL=0 and
-# REEL_WATCH_CAROUSEL=0 turn them off for every drop). Both need the Codex CLI signed in, else they are skipped.
-# After the reel lands, write-caption.mjs adds "<name> - caption.txt" (Sandcastles-backed post copy) when the
-# Claude Code CLI is installed; REEL_WATCH_CAPTION=0 turns that off.
-# The finished MP4 in the done folder is named after the hook when there is one.
+# Every folder also gets caption.txt (Sandcastles-backed post copy via write-caption.mjs) when the Claude Code
+# CLI is installed; REEL_WATCH_CAPTION=0 turns that off. B-roll and carousels need the Codex CLI signed in.
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
 set -euo pipefail
 
 FILE="${1:-}"
+MODE="${2:-reel}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
-
+case "$MODE" in reel|broll|carousel) ;; *) echo '{"ok":false,"error":"mode must be reel, broll or carousel"}'; exit 1;; esac
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
@@ -48,20 +50,22 @@ done
 # Mac notification (shows on the Mini; harmless when there is no GUI session).
 notify() { local t m; t=$(printf '%s' "$1" | tr '"' "'"); m=$(printf '%s' "$2" | tr '"' "'"); osascript -e "display notification \"$m\" with title \"$t\"" >/dev/null 2>&1 || true; }
 
-# Create and print a brand-new "<today> Reel <n>" folder under $1, keeping today's count in $2.
+# Create and print a brand-new "<today> <kind> <n><suffix>" folder under $1 ("2026-10-21 Reel 3",
+# "2026-10-21 Reel 4 with B-roll", "2026-10-21 Carousel 1"), keeping today's count per kind in $2.
 # Background jobs cannot list Desktop folders (macOS privacy), so this never globs $1: it starts one past the
 # count it saved, and `mkdir` (no -p) fails on a folder that already exists, so it moves on to the next number.
-# A reel can never land in, or overwrite, an existing folder.
+# Nothing can ever land in, or overwrite, an existing folder.
 create_reel_folder() {
-  local day n count tries
-  day="$(date +%F)"; count="$2/reel-count-$day"; n=1; tries=0
+  local day n count tries kind suffix
+  kind="${3:-Reel}"; suffix="${4:-}"
+  day="$(date +%F)"; count="$2/$(printf '%s' "$kind" | tr 'A-Z' 'a-z')-count-$day"; n=1; tries=0
   if [ -f "$count" ]; then n=$(( $(cat "$count" 2>/dev/null || echo 0) + 1 )); fi
-  until mkdir "$1/$day Reel $n" 2>/dev/null; do
+  until mkdir "$1/$day $kind $n$suffix" 2>/dev/null; do
     n=$((n + 1)); tries=$((tries + 1))
     [ "$tries" -lt 500 ] || return 1
   done
   echo "$n" > "$count"
-  printf '%s/%s Reel %d' "$1" "$day" "$n"
+  printf '%s/%s %s %d%s' "$1" "$day" "$kind" "$n" "$suffix"
 }
 
 base=$(basename "$FILE")
@@ -76,79 +80,76 @@ case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
-broll=1; carousel=1
-{ [ "${REEL_WATCH_BROLL:-1}" = 0 ] || ! command -v codex >/dev/null 2>&1; } && broll=0
-{ [ "${REEL_WATCH_CAROUSEL:-1}" = 0 ] || ! command -v codex >/dev/null 2>&1; } && carousel=0
-case "$base" in *"#nobroll"*) broll=0;; esac
-case "$base" in *"#nocarousel"*) carousel=0;; esac
-[ "$broll" = 1 ] && flags+=(--broll --both)
+[ "$MODE" = broll ] && flags+=(--broll)
+# A carousel needs the transcript and plan, not a render.
+[ "$MODE" = carousel ] && flags+=(--no-render)
 name=$(echo "$stem" | sed -E 's/#[a-z]+//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
+# Each mode has its own work folder, so the same clip can go through two drop folders.
+case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; esac
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
-echo "$(date '+%F %T') start $base -> $work ${flags[*]:-}" >> "$log"
+echo "$(date '+%F %T') start $base ($MODE) -> $work ${flags[*]:-}" >> "$log"
 cd "$REELS"
 # shellcheck disable=SC2086
 # ${flags[@]+...}: macOS bash 3.2 treats an empty array as unbound under set -u (a plain drop has no flags).
-if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
-  out="$work/renders/$name.mp4"
-  # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
-  used_hook="$hook"
-  [ -n "$used_hook" ] || used_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
-  pretty=$(printf '%s' "$used_hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
-  # Each reel gets its own folder: "<YYYY-MM-DD> Reel <n>", numbered through the day. A new folder also means a
-  # reel is never overwritten. Inside:
-  #   Reel with B-roll/     the reel with the Codex cutaways, plus the stills on their own
-  #   Reel with no B-roll/  the same reel without them
-  #   Carousel/             the IG slides made from the video, plus their text
-  #   caption.txt, and "check these words.txt" when the engines disagreed
-  mkdir -p "$DONE"
-  folder="$(create_reel_folder "$DONE" "$REELS/videos")"
-  reel_label="$(basename "$folder")"
-  file="${pretty:-$name}.mp4"
-  plain="$out"
-  [ "$broll" = 1 ] && [ -f "$work/renders/$name-no-broll.mp4" ] && plain="$work/renders/$name-no-broll.mp4"
-  mkdir "$folder/Reel with no B-roll"
-  dest="$folder/Reel with no B-roll/$file"
-  cp "$plain" "$dest"
-  if [ "$broll" = 1 ]; then
-    mkdir "$folder/Reel with B-roll"
-    # The stills this reel used, from its plan (one path per line).
-    stills=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const b of p.broll||[])if(b.file)console.log(b.file)}catch(e){}' "$work/plan.json" 2>/dev/null || true)
-    if [ -n "$stills" ]; then
-      dest="$folder/Reel with B-roll/$file"
-      cp "$out" "$dest"
-      i=1
-      while IFS= read -r still; do
-        [ -f "$still" ] && cp "$still" "$folder/Reel with B-roll/B-roll $i.png" && i=$((i + 1))
-      done <<< "$stills"
-    else
-      printf 'No b-roll this time: Codex was busy or rate-limited, so this reel has only the version without b-roll.\nTo get it, rename the clip in Raw (any new name) and drop it again in 20 minutes.\n' > "$folder/Reel with B-roll/No b-roll this time.txt"
-    fi
-  fi
-  if [ -s "$work/review.txt" ]; then cp -f "$work/review.txt" "$folder/check these words.txt"; fi
-  echo "$(date '+%F %T') done  $dest" >> "$log"
-  if [ -s "$work/review.txt" ]; then notify "$reel_label ready: check a few words" "$(basename "$dest" .mp4). See the note in its folder."; else notify "$reel_label ready" "$(basename "$dest" .mp4)"; fi
-  # The carousel (Codex) runs alongside the post copy (Claude + Sandcastles). Neither holds up the reel.
-  if [ "$carousel" = 1 ]; then
-    (
-      if reel carousel "$work" --out "$folder/Carousel" >> "$log" 2>&1; then notify "$reel_label carousel ready" "$(basename "$dest" .mp4)"
-      else echo "$(date '+%F %T') carousel failed for $name (reel is fine)" >> "$log"; fi
-    ) &
-  fi
-  # Post copy (caption, hashtags, hook options) from Sandcastles via headless Claude.
-  if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
-    caption="$folder/caption.txt"
-    if node "$HERE/write-caption.mjs" "$work" "$caption" >> "$log" 2>&1 && [ -s "$caption" ]; then
-      notify "$reel_label caption ready" "$(basename "$dest" .mp4)"
-    fi
-  fi
-  wait
-  printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"
-else
+if ! reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
   echo "$(date '+%F %T') FAIL  $base (see above)" >> "$log"
   notify "Reel failed" "$base. Rename it to retry; details in ~/Reels/watch.log"
   printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
   exit 1
 fi
+
+# Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
+used_hook="$hook"
+[ -n "$used_hook" ] || used_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
+pretty=$(printf '%s' "$used_hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//')
+title="${pretty:-$name}"
+mkdir -p "$DONE"
+
+if [ "$MODE" = carousel ]; then
+  folder="$(create_reel_folder "$DONE" "$REELS/videos" Carousel)"
+  label="$(basename "$folder")"
+  if ! reel carousel "$work" --out "$folder" --images "${REEL_WATCH_CAROUSEL_IMAGES:-3}" >> "$log" 2>&1; then
+    echo "$(date '+%F %T') FAIL  $base carousel (see above)" >> "$log"
+    printf 'The carousel could not be made this time (usually Codex was busy or rate-limited).\nRename the clip in Raw - Carousel (any new name) and drop it again in 20 minutes. Details: ~/Reels/watch.log\n' > "$folder/Carousel failed.txt"
+    notify "Carousel failed" "$base. Try again in 20 minutes; see the note in $label"
+    printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
+    exit 1
+  fi
+  dest="$folder"
+  echo "$(date '+%F %T') done  $dest" >> "$log"
+  notify "$label ready" "$title"
+else
+  shots=""
+  if [ "$MODE" = broll ]; then
+    # The stills this reel used, from its plan (one path per line).
+    shots=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const b of p.broll||[])if(b.file)console.log(b.file)}catch(e){}' "$work/plan.json" 2>/dev/null || true)
+    folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel " with B-roll")"
+  else
+    folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel)"
+  fi
+  label="$(basename "$folder")"
+  dest="$folder/$title.mp4"
+  cp "$work/renders/$name.mp4" "$dest"
+  if [ -n "$shots" ]; then
+    i=1
+    while IFS= read -r still; do
+      [ -f "$still" ] && cp "$still" "$folder/B-roll $i.png" && i=$((i + 1))
+    done <<< "$shots"
+  elif [ "$MODE" = broll ]; then
+    printf 'No b-roll this time: Codex was busy or rate-limited, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$folder/No b-roll this time.txt"
+  fi
+  [ -s "$work/review.txt" ] && cp -f "$work/review.txt" "$folder/check these words.txt"
+  echo "$(date '+%F %T') done  $dest" >> "$log"
+  if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder."; else notify "$label ready" "$title"; fi
+fi
+
+# Post copy (caption, hashtags, hook options) from Sandcastles via headless Claude. Never holds up the delivery.
+if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
+  if node "$HERE/write-caption.mjs" "$work" "$folder/caption.txt" >> "$log" 2>&1 && [ -s "$folder/caption.txt" ]; then
+    notify "$label caption ready" "$title"
+  fi
+fi
+printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"

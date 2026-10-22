@@ -201,11 +201,16 @@ export REEL_PYTHON="$VENV/bin/python" PRODUCER_BROWSER_GPU_MODE=hardware REEL_PR
 [ -z "$KEY" ] || export ELEVENLABS_API_KEY="$KEY"
 
 if [ "$WATCH" = y ]; then
-  mkdir -p "$HOME/Reels/raw" "$HOME/Desktop/Reels"
-  # macOS blocks background jobs from reading the Desktop, so the real drop folder lives in ~/Reels/raw.
-  [ -e "$HOME/Desktop/Reels/Raw" ] || ln -s "$HOME/Reels/raw" "$HOME/Desktop/Reels/Raw"
-  REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$HOME/Desktop/Reels" "$APP/scripts/install-watcher.sh" >/dev/null
-  ok "drop folder on: drop clips in Desktop/Reels/Raw, reels appear in Desktop/Reels"
+  mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-carousel" "$HOME/Desktop/Reels"
+  # macOS blocks background jobs from reading the Desktop, so the real drop folders live in ~/Reels and the
+  # Desktop gets shortcuts. An older single "Raw" shortcut becomes "Raw - Reel".
+  D="$HOME/Desktop/Reels"
+  if [ -L "$D/Raw" ] && [ ! -e "$D/Raw - Reel" ]; then mv "$D/Raw" "$D/Raw - Reel"; fi
+  [ -e "$D/Raw - Reel" ] || ln -s "$HOME/Reels/raw" "$D/Raw - Reel"
+  [ -e "$D/Raw - Reel with B-roll" ] || ln -s "$HOME/Reels/raw-broll" "$D/Raw - Reel with B-roll"
+  [ -e "$D/Raw - Carousel" ] || ln -s "$HOME/Reels/raw-carousel" "$D/Raw - Carousel"
+  REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh" >/dev/null
+  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it
@@ -221,7 +226,7 @@ ok "test reel: $out"
 
 bold "Done."
 note "Open a new Terminal window, then:  reel edit my-clip.mov --hook \"Your *hook* here\""
-[ "$WATCH" != y ] || note "Or drop a clip into Desktop/Reels/Raw and wait for the notification."
+[ "$WATCH" != y ] || note "Or drop a clip into one of the Raw folders in Desktop/Reels and wait for the notification."
 note "Run this installer again any time to update."
 }
 

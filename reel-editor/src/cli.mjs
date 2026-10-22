@@ -16,7 +16,7 @@ Usage
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
   reel batch <folder> [options]     edit every video in a folder that has no render yet
-  reel carousel <workdir> [--out <dir>] [--slides 6] [--force]
+  reel carousel <workdir> [--out <dir>] [--slides 6] [--images 2] [--force]
                                     IG carousel from a finished reel: Codex writes the slides and draws the images
                                     (reusing the reel's b-roll), the editor sets the words; 1080x1350 PNGs
   reel presets                      list presets
@@ -53,8 +53,6 @@ Options (edit / batch)
   --broll                  Codex b-roll: 1-3 generated stills cut in after the hook, slow push-in, voice and captions
                            keep going (needs the Codex CLI signed in). --no-broll turns a preset's b-roll off,
                            --new-broll draws fresh stills instead of reusing the saved ones
-  --both                   with --broll, also render the reel without b-roll (renders/<name>-no-broll.mp4),
-                           while Codex draws the stills
   --no-render              stop after writing the project  --force    redo the transcript
   --title <name>           output name
   --dictionary <file>      terms / corrections / power words json (default: dictionary.json)
@@ -104,7 +102,6 @@ const EDIT_OPTIONS = {
   broll: { type: "boolean" },
   "no-broll": { type: "boolean" },
   "new-broll": { type: "boolean" },
-  both: { type: "boolean" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   force: { type: "boolean" },
@@ -146,7 +143,7 @@ export async function main(argv) {
       return;
     }
     case "carousel": {
-      const { opts, positionals } = parse(rest, { out: { type: "string" }, slides: { type: "string" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts, positionals } = parse(rest, { out: { type: "string" }, slides: { type: "string" }, images: { type: "string" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" } });
       if (opts.help || !positionals[0]) return console.log(USAGE);
       const files = await makeCarousel(positionals[0], opts);
       console.log(path.dirname(files[0]));

@@ -212,7 +212,7 @@ export function carouselText(slides, { hook }) {
  * Make the carousel for a finished reel's work dir. Writes <workDir>/carousel/ (slides.json, images, project)
  * and the PNGs plus carousel.txt into `out` (default <workDir>/carousel/slides). Returns the PNG paths.
  */
-export async function makeCarousel(workDir, { out, force = false, slides: count } = {}) {
+export async function makeCarousel(workDir, { out, force = false, slides: count, images } = {}) {
   workDir = path.resolve(workDir);
   const plan = readJSON(path.join(workDir, "plan.json"));
   const preset = plan.style?.name ? safePreset(plan.style.name) : null;
@@ -230,7 +230,7 @@ export async function makeCarousel(workDir, { out, force = false, slides: count 
   const slidesPath = path.join(dir, "slides.json");
   // One Codex session writes the slides and draws the new images into images/ (files slide-<n>.png).
   const imgDir = ensureDir(path.join(dir, "images"));
-  const maxNew = settings.newImages ?? 2;
+  const maxNew = Math.max(0, Math.min(6, parseInt(images ?? settings.newImages ?? 2, 10)));
   let slides;
   if (!force && fs.existsSync(slidesPath) && readJSON(slidesPath).transcript === transcript) {
     slides = readJSON(slidesPath).slides;

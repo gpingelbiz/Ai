@@ -58,52 +58,57 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
   fs.rmSync(state, { recursive: true, force: true });
 });
 
-// Full drop with stand-ins for reel, codex and osascript: checks the three folders a reel gets.
-function fakeDrop({ brollShots, tag = "" }) {
+// Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
+// watch-folder.sh and watch-reel.sh.
+function fakeDrops({ brollShots = 2, carouselFails = false } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
   const stub = (name, body) => { fs.writeFileSync(path.join(bin, name), `#!/bin/bash\n${body}\n`); fs.chmodSync(path.join(bin, name), 0o755); };
   stub("osascript", "exit 0");
   stub("codex", "exit 0");
-  // reel edit <file> --out <work> --title <name> ...: writes both renders and a plan with b-roll stills.
+  // reel edit <file> --out <work> --title <name> ...  /  reel carousel <work> --out <folder> ...
   stub("reel", `
-if [ "$1" = carousel ]; then mkdir -p "$4"; echo slide > "$4/Slide 1.png"; exit 0; fi
+echo "$*" >> "$HOME/reel-calls"
+if [ "$1" = carousel ]; then ${carouselFails ? "exit 1" : 'mkdir -p "$4"; echo slide > "$4/Slide 1.png"; exit 0'}; fi
 work="$4"; name="$6"; mkdir -p "$work/renders" "$work/broll"
-echo with > "$work/renders/$name.mp4"
-case "$*" in *--both*) echo plain > "$work/renders/$name-no-broll.mp4";; esac
+case "$*" in *--no-render*) ;; *) echo "$name" > "$work/renders/$name.mp4";; esac
 files=""
-i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done
+case "$*" in *--broll*)
+  i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
+esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > "$work/plan.json"`);
-  const raw = path.join(home, "raw");
-  fs.mkdirSync(raw);
-  const clip = path.join(raw, `clip${tag}.mov`);
-  fs.writeFileSync(clip, "video");
-  execFileSync("/bin/bash", [new URL("../scripts/watch-reel.sh", import.meta.url).pathname, clip], {
-    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: path.join(home, "Done"), REEL_WATCH_CAPTION: "0", REEL_WATCH_CTA: "" },
+  const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel") };
+  for (const d of Object.values(dirs)) { fs.mkdirSync(d); fs.writeFileSync(path.join(d, "clip.mov"), "video"); }
+  const done = path.join(home, "Done");
+  spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], {
+    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_CAPTION: "0", REEL_WATCH_CTA: "" },
     stdio: "pipe",
   });
-  const done = path.join(home, "Done");
-  const folder = path.join(done, fs.readdirSync(done)[0]);
-  const list = (d) => (fs.existsSync(path.join(folder, d)) ? fs.readdirSync(path.join(folder, d)).sort() : null);
-  const read = (p) => fs.readFileSync(path.join(folder, p), "utf8").trim();
-  return { folder, list, read, top: fs.readdirSync(folder).sort() };
+  const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
+  const list = (d) => (fs.existsSync(path.join(done, d)) ? fs.readdirSync(path.join(done, d)).sort() : null);
+  return { home, day, done, list, top: fs.readdirSync(done).sort(), calls: fs.readFileSync(path.join(home, "reel-calls"), "utf8"), seen: fs.readdirSync(path.join(home, "Reels", "videos", ".seen")).sort() };
 }
 
-test("a drop gets Reel with B-roll, Reel with no B-roll and Carousel", () => {
-  const r = fakeDrop({ brollShots: 2 });
-  assert.deepEqual(r.top, ["Carousel", "Reel with B-roll", "Reel with no B-roll"]);
-  assert.deepEqual(r.list("Reel with B-roll"), ["B-roll 1.png", "B-roll 2.png", "Own it first.mp4"]);
-  assert.deepEqual(r.list("Reel with no B-roll"), ["Own it first.mp4"]);
-  assert.equal(r.read("Reel with B-roll/Own it first.mp4"), "with");
-  assert.equal(r.read("Reel with no B-roll/Own it first.mp4"), "plain");
-  assert.deepEqual(r.list("Carousel"), ["Slide 1.png"]);
+test("each drop folder makes its own thing: reel, reel with b-roll, carousel", () => {
+  const r = fakeDrops({ brollShots: 2 });
+  assert.deepEqual(r.top, [`${r.day} Carousel 1`, `${r.day} Reel 1`, `${r.day} Reel 2 with B-roll`]);
+  assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4"]);
+  assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["B-roll 1.png", "B-roll 2.png", "Own it first.mp4"]);
+  assert.equal(fs.readFileSync(path.join(r.done, `${r.day} Reel 2 with B-roll`, "Own it first.mp4"), "utf8").trim(), "clip-broll");
+  assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Slide 1.png"]);
+  // The plain reel never asks for b-roll; the carousel never renders a reel.
+  const lines = r.calls.trim().split("\n");
+  assert.ok(lines.some((l) => /^edit .*\/raw\/clip\.mov /.test(l) && !/--broll/.test(l)));
+  assert.ok(lines.some((l) => /^edit .*raw-broll\/clip\.mov .*--broll/.test(l)));
+  assert.ok(lines.some((l) => /^edit .*raw-carousel\/clip\.mov .*--no-render/.test(l)));
+  assert.ok(lines.some((l) => /^carousel .*clip-carousel --out .*Carousel 1 --images 3$/.test(l)));
+  assert.deepEqual(r.seen, ["broll-clip.mov.done", "carousel-clip.mov.done", "clip.mov.done"]);
 });
 
-test("no b-roll back from Codex: a note instead of a duplicate reel; #nobroll: no b-roll folder", () => {
-  const r = fakeDrop({ brollShots: 0 });
-  assert.deepEqual(r.list("Reel with B-roll"), ["No b-roll this time.txt"]);
-  const n = fakeDrop({ brollShots: 0, tag: " #nobroll" });
-  assert.deepEqual(n.top, ["Carousel", "Reel with no B-roll"]);
-  assert.equal(n.read("Reel with no B-roll/Own it first.mp4"), "with");
+test("no b-roll back from Codex leaves a note; a failed carousel leaves a note and is marked failed", () => {
+  const r = fakeDrops({ brollShots: 0, carouselFails: true });
+  assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["No b-roll this time.txt", "Own it first.mp4"]);
+  assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Carousel failed.txt"]);
+  assert.ok(r.seen.includes("carousel-clip.mov.failed"));
 });

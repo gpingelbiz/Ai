@@ -1,16 +1,19 @@
 #!/bin/bash
-# Turn the drop folder on without n8n: a launchd agent that runs watch-folder.sh whenever ~/Reels/raw changes.
+# Turn the drop folders on without n8n: a launchd agent that runs watch-folder.sh whenever ~/Reels/raw,
+# ~/Reels/raw-broll or ~/Reels/raw-carousel changes.
 #   install-watcher.sh             write the agent and load it
 #   install-watcher.sh --dry-run   print the agent plist and validate it, change nothing
 #   install-watcher.sh --uninstall unload and remove it
-# REEL_WATCH_RAW / REEL_WATCH_DONE pick the folders; they are written into the agent so the
-# script scans the same folder launchd watches.
+# REEL_WATCH_RAW / REEL_WATCH_RAW_BROLL / REEL_WATCH_RAW_CAROUSEL / REEL_WATCH_DONE pick the folders; they are
+# written into the agent so the script scans the same folders launchd watches.
 set -euo pipefail
 
 LABEL="com.pingel.reel-watch"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RAW="${REEL_WATCH_RAW:-$HOME/Reels/raw}"
+RAW_BROLL="${REEL_WATCH_RAW_BROLL:-$HOME/Reels/raw-broll}"
+RAW_CAROUSEL="${REEL_WATCH_RAW_CAROUSEL:-$HOME/Reels/raw-carousel}"
 DONE="${REEL_WATCH_DONE:-$HOME/Reels/done}"
 LOG="${REEL_WATCH_ROOT:-$HOME/Reels}/watch-launchd.log"
 
@@ -36,10 +39,12 @@ render() {
   <key>EnvironmentVariables</key>
   <dict>
     <key>REEL_WATCH_RAW</key><string>$RAW</string>
+    <key>REEL_WATCH_RAW_BROLL</key><string>$RAW_BROLL</string>
+    <key>REEL_WATCH_RAW_CAROUSEL</key><string>$RAW_CAROUSEL</string>
     <key>REEL_WATCH_DONE</key><string>$DONE</string>
   </dict>
   <key>WatchPaths</key>
-  <array><string>$RAW</string></array>
+  <array><string>$RAW</string><string>$RAW_BROLL</string><string>$RAW_CAROUSEL</string></array>
   <key>RunAtLoad</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>$LOG</string>
@@ -59,8 +64,8 @@ if [ "${1:-}" = "--dry-run" ]; then
   exit 0
 fi
 
-mkdir -p "$RAW" "$(dirname "$PLIST")"
+mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$(dirname "$PLIST")"
 mv "$tmp" "$PLIST"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
-echo "installed $LABEL: drop clips in $RAW, finished reels go to $DONE"
+echo "installed $LABEL: drop clips in $RAW (reel), $RAW_BROLL (reel with b-roll) or $RAW_CAROUSEL (carousel); results go to $DONE"

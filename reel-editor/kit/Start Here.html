@@ -62,17 +62,21 @@
 
   <h2>2. Make a reel</h2>
   <ol>
-    <li>Drop a clip into <b>Desktop/Reels/Raw</b>.</li>
+    <li>Drop a clip into one of the three Raw folders in <b>Desktop/Reels</b>. The folder decides what you get.</li>
     <li>Wait for the notification. A 1-minute clip takes about 3 minutes.</li>
-    <li>Open the new folder in <b>Desktop/Reels</b>. Each reel gets its own, named by date and number: <code>2026-10-21 Reel 1</code>, <code>Reel 2</code>, and so on.</li>
+    <li>Open the new folder in <b>Desktop/Reels</b>, named by date and number.</li>
   </ol>
   <table>
-    <tr><th>In each folder</th><th>What it is</th></tr>
-    <tr><td>Reel with B-roll</td><td>The finished reel with generated pictures cut in for a couple of seconds each, plus those pictures on their own. Needs Codex (below).</td></tr>
-    <tr><td>Reel with no B-roll</td><td>The same reel without the pictures. Reels are named after their hook.</td></tr>
+    <tr><th>Drop into</th><th>You get</th></tr>
+    <tr><td>Raw - Reel</td><td><code>2026-10-21 Reel 1</code>: the edited reel, named after its hook</td></tr>
+    <tr><td>Raw - Reel with B-roll</td><td><code>2026-10-21 Reel 2 with B-roll</code>: the edited reel with generated pictures cut in for a couple of seconds each, plus those pictures. Needs Codex (below).</td></tr>
+    <tr><td>Raw - Carousel</td><td><code>2026-10-21 Carousel 1</code>: Instagram carousel slides made from the video, plus the slide text. Needs Codex (below).</td></tr>
+  </table>
+  <p>To get two of them from one clip, drop it into both folders. Every folder also gets:</p>
+  <table>
+    <tr><th>File</th><th>What it is</th></tr>
     <tr><td>check these words.txt</td><td>Only when the two transcription engines disagreed on a word, with its time in the reel. Check those spots before posting.</td></tr>
     <tr><td>caption.txt</td><td>A caption, 3 hashtags and 3 hook ideas based on what is working for that topic right now. Needs Claude Code and the Sandcastles connector; otherwise it is skipped.</td></tr>
-    <tr><td>Carousel</td><td>Slides for an Instagram carousel made from the video, plus the slide text. Needs Codex (below).</td></tr>
   </table>
 
   <p>The filename is the brief:</p>
@@ -84,9 +88,8 @@
     <tr><td><code>clip #nozoom.mov</code></td><td>No punch-in zooms</td></tr>
     <tr><td><code>clip #landscape.mov</code></td><td>16:9 for YouTube</td></tr>
     <tr><td><code>clip #low.mov</code> / <code>clip #top.mov</code></td><td>Force the hook low or high (it normally places itself around your face)</td></tr>
-    <tr><td><code>clip #nobroll.mov</code> / <code>clip #nocarousel.mov</code></td><td>Skip the b-roll pictures or the carousel</td></tr>
   </table>
-  <p class="muted">B-roll and carousels use Codex: say yes when the installer offers it, and sign in with your ChatGPT account. Without it you still get the reel and caption. Codex has usage limits; when it hits one, the next 20 minutes of reels come without b-roll.</p>
+  <p class="muted">B-roll and carousels use Codex: say yes when the installer offers it, and sign in with your ChatGPT account. Without it, Raw - Reel still works. Codex has usage limits; when it hits one, b-roll reels come without b-roll for 20 minutes and a carousel leaves a note to drop it again.</p>
 
   <h2>3. Make it yours</h2>
   <ul>
@@ -99,7 +102,7 @@
   <h2>Fix a problem</h2>
   <table>
     <tr><th>What you see</th><th>Fix</th></tr>
-    <tr><td>Nothing happens after a drop</td><td>Make sure you dropped into <b>Raw</b>, not the Reels folder. A "Reel failed" notification means: rename the clip (any new name) to try again.</td></tr>
+    <tr><td>Nothing happens after a drop</td><td>Make sure you dropped into one of the <b>Raw</b> folders, not the Reels folder. A "Reel failed" notification means: rename the clip (any new name) to try again.</td></tr>
     <tr><td>A word in the captions is wrong</td><td>Check <b>check these words.txt</b>. To fix it for good, add the word under <code>corrections</code> in <code>~/.reel/dictionary.json</code>.</td></tr>
     <tr><td>The hook covers your face</td><td>Add <code>#top</code> or <code>#low</code> to the clip's name and drop it again.</td></tr>
     <tr><td>Anything else, or to update</td><td>Double-click the installer again. It updates and repairs, and keeps your settings.</td></tr>
