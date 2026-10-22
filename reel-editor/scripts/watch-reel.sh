@@ -1,8 +1,8 @@
 #!/bin/bash
 # One drop-folder job: wait for the file to finish copying, make what its folder asks for, deliver it.
 # Usage: watch-reel.sh /path/to/clip.mov [reel|broll|carousel]
-#   reel      the edited reel                  -> "<date> Reel <n>/"
-#   broll     the edited reel with Codex b-roll -> "<date> Reel <n> with B-roll/" (plus the stills)
+#   reel      the edited reel, classic look (Anton pop captions, no cards)        -> "<date> Reel <n>/"
+#   broll     the full look: graphic cards, reveal captions, Codex b-roll photos -> "<date> Reel <n> with B-roll/"
 #   carousel  an IG carousel from the video     -> "<date> Carousel <n>/"
 # watch-folder.sh picks the mode from the drop folder (Raw - Reel, Raw - Reel with B-roll, Raw - Carousel).
 # Hook from the filename: "clip__You don't have a sales problem.mov" -> --hook "You don't have a sales problem"
@@ -80,7 +80,12 @@ case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
-[ "$MODE" = broll ] && flags+=(--broll)
+# The b-roll folder gets the full look (the preset's cards and reveal captions plus photos); the plain folder keeps
+# the classic captions with no cards.
+case "$MODE" in
+  broll) flags+=(--broll --graphics --caption-style reveal);;
+  reel) flags+=(--no-graphics --caption-style pop);;
+esac
 # A carousel needs the transcript and plan, not a render.
 [ "$MODE" = carousel ] && flags+=(--no-render)
 name=$(echo "$stem" | sed -E 's/#[a-z]+//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')

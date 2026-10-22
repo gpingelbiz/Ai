@@ -51,7 +51,7 @@ It runs Claude Code headless with only the Sandcastles hook and format lookups a
 
 ## Look
 
-The brand preset now cuts in graphic cards (`--graphics`: stats, checklists, highlighted quotes, headlines, step diagrams, written by headless Claude from the transcript) and uses word-by-word reveal captions (`--caption-style reveal`). Read `graphics.json` after an edit and check every card says only what Greg said (numbers with their qualifiers). `--no-graphics` / `--caption-style pop` give the earlier look.
+The drop folders split the looks: `Raw - Reel` is the classic look (`--no-graphics --caption-style pop`), `Raw - Reel with B-roll` is the full look. By hand, the brand preset cuts in graphic cards (`--graphics`: stats, checklists, highlighted quotes, headlines, step diagrams, written by headless Claude from the transcript) and uses word-by-word reveal captions (`--caption-style reveal`). Read `graphics.json` after an edit and check every card says only what Greg said (numbers with their qualifiers). `--no-graphics` / `--caption-style pop` give the earlier look.
 
 ## B-roll and carousel
 

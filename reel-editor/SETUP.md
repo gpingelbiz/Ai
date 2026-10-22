@@ -84,8 +84,8 @@ If you said yes to the drop folder, it is already on. Desktop/Reels has three dr
 
 | Drop into | You get, in a new folder in Desktop/Reels |
 | --- | --- |
-| `Raw - Reel` | `2026-10-21 Reel 1`: the edited reel, with graphic cards that show what you say (numbers, checklists, quotes, key lines) and captions that light up word by word |
-| `Raw - Reel with B-roll` | `2026-10-21 Reel 2 with B-roll`: the same reel plus 1-2 generated b-roll photos in the gaps between the cards, plus the pictures (`B-roll 1.png`...) |
+| `Raw - Reel` | `2026-10-21 Reel 1`: the edited reel in the classic look (bold outlined captions, no cards) |
+| `Raw - Reel with B-roll` | `2026-10-21 Reel 2 with B-roll`: the full look: graphic cards that show what you say (numbers, checklists, quotes, key lines), captions that light up word by word, and 1-2 generated b-roll photos in the gaps, plus the pictures (`B-roll 1.png`...) |
 | `Raw - Carousel` | `2026-10-21 Carousel 1`: Instagram carousel slides made from the video, plus `carousel.txt` with the slide text |
 
 Every folder also gets `caption.txt` (a caption, 3 hashtags and 3 hook ideas), and reels get `check these words.txt` when there is something to check. Reels are named after their hook, and the numbers start again at 1 each day. To get two of them from one clip, drop it into both folders.

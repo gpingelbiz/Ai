@@ -99,8 +99,8 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Slide 1.png"]);
   // The plain reel never asks for b-roll; the carousel never renders a reel.
   const lines = r.calls.trim().split("\n");
-  assert.ok(lines.some((l) => /^edit .*\/raw\/clip\.mov /.test(l) && !/--broll/.test(l)));
-  assert.ok(lines.some((l) => /^edit .*raw-broll\/clip\.mov .*--broll/.test(l)));
+  assert.ok(lines.some((l) => /^edit .*\/raw\/clip\.mov .*--no-graphics --caption-style pop/.test(l) && !/--broll/.test(l)), "plain reel: classic captions, no cards");
+  assert.ok(lines.some((l) => /^edit .*raw-broll\/clip\.mov .*--broll --graphics --caption-style reveal/.test(l)), "b-roll reel: the full look");
   assert.ok(lines.some((l) => /^edit .*raw-carousel\/clip\.mov .*--no-render/.test(l)));
   assert.ok(lines.some((l) => /^carousel .*clip-carousel --out .*Carousel 1 --images 3$/.test(l)));
   assert.deepEqual(r.seen, ["broll-clip.mov.done", "carousel-clip.mov.done", "clip.mov.done"]);
