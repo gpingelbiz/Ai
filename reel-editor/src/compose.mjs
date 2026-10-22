@@ -110,7 +110,7 @@ export function renderHTML(plan, footage) {
   // B-roll stills: full-frame cutaways over the footage, under the captions. The voice keeps playing underneath.
   const brollList = (plan.broll || []).filter((b) => b.src);
   const brollHTML = brollList
-    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><img src="${esc(b.src)}" alt="" /><div class="broll-shade"></div></div>`)
+    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><img src="${esc(b.src)}" alt="" /><div class="broll-shade"></div><div class="broll-grain"></div></div>`)
     .join("\n");
 
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
@@ -144,6 +144,7 @@ export function renderHTML(plan, footage) {
     graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration })),
     reveal,
     reframe: plan.reframe || [],
+    fps: s.render?.fps || 30,
   };
 
   return `<!doctype html>
@@ -161,8 +162,10 @@ export function renderHTML(plan, footage) {
       #video-wrap { position: absolute; inset: 0; transform-origin: ${s.zooms.origin || "50% 40%"}; will-change: transform; }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       .broll { position: absolute; inset: 0; overflow: hidden; opacity: 0; background: #000; }
-      .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 50%; will-change: transform; }
-      .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 52%, rgba(0,0,0,0.42) 100%); }
+      /* Finish: graded toward the phone footage (a touch more contrast, less saturation, slightly darker), a soft vignette and moving grain, so a still does not read as a clean render. */
+      .broll img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 50%; will-change: transform; filter: contrast(1.06) saturate(0.82) brightness(0.97); }
+      .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 50%, rgba(0,0,0,0.5) 100%), radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.38) 100%); }
+      .broll-grain { position: absolute; inset: -4%; opacity: 0.07; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='300' height='300' filter='url(%23n)'/></svg>"); background-size: 300px 300px; }
 ${gfxList.length ? graphicsCSS({ W, H, colors: c }) : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
@@ -276,14 +279,18 @@ ${audioHTML}
         if (PLAN.hook) tl.fromTo("#video-wrap", { scale: 1 }, { scale: 1.06, duration: Math.max(1, PLAN.hook.duration), ease: "power1.out" }, 0);
         PLAN.zooms.forEach((z) => tl.to("#video-wrap", { scale: z.scale, duration: z.snap, ease: "power3.out" }, z.t));
 ${gfxList.length ? GRAPHICS_JS : ""}
-        // B-roll: quick dissolve in and out, slow push or pan while it holds.
-        const MOVES = { in: [{ scale: 1.04 }, { scale: 1.14 }], out: [{ scale: 1.16 }, { scale: 1.04 }], left: [{ scale: 1.14, xPercent: 3 }, { scale: 1.14, xPercent: -3 }], right: [{ scale: 1.14, xPercent: -3 }, { scale: 1.14, xPercent: 3 }] };
+        // B-roll: hard cut in and out; a 6% push (ease-out, settles before the end) or a 3% pan while it holds; the
+        // grain shifts every frame so it reads as film, not a print.
+        const MOVES = { in: [{ scale: 1.0 }, { scale: 1.06 }], out: [{ scale: 1.06 }, { scale: 1.0 }], left: [{ scale: 1.05, xPercent: 1.5 }, { scale: 1.05, xPercent: -1.5 }], right: [{ scale: 1.05, xPercent: -1.5 }, { scale: 1.05, xPercent: 1.5 }] };
         PLAN.broll.forEach((b, i) => {
           const el = document.getElementById("broll-" + i);
           const m = MOVES[b.motion] || MOVES.in;
-          tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.14, ease: "power1.out" }, b.start);
-          tl.fromTo(el.querySelector("img"), m[0], { ...m[1], duration: b.duration, ease: "none" }, b.start);
-          tl.to(el, { opacity: 0, duration: 0.14, ease: "power1.in" }, b.start + b.duration - 0.14);
+          tl.set(el, { opacity: 1 }, b.start);
+          tl.fromTo(el.querySelector("img"), m[0], { ...m[1], duration: b.duration * 0.92, ease: "power2.out" }, b.start);
+          const grain = el.querySelector(".broll-grain");
+          const frames = Math.round(b.duration * (PLAN.fps || 30));
+          for (let f = 0; f < frames; f++) { const s = (f * 7919) % 97, u = (f * 104729) % 89; tl.set(grain, { backgroundPosition: s + "px " + u + "px" }, b.start + f / (PLAN.fps || 30)); }
+          tl.set(el, { opacity: 0 }, b.start + b.duration);
         });
         window.__timelines["reel"] = tl;
       })();

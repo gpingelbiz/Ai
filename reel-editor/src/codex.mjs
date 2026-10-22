@@ -111,11 +111,19 @@ export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}
   }
 }
 
-/** Rules every generated still follows: nothing that reads as a real person, no text the eye tries to read. */
+/**
+ * Rules every generated still follows. The look is a candid documentary photo, not a render: one named practical
+ * light, mixed colour temperatures, worn surfaces, grain and halation, nothing retouched. The known AI tells (a
+ * uniform golden glow, plastic surfaces, symmetry, a centred subject, invented text) are banned outright, and the
+ * bottom third stays plain and dark for the captions.
+ */
+export const IMAGE_STYLE = "Candid documentary photograph, 35mm feel, handheld, as if shot on a phone. One practical light source, named and placed (an overhead shop fluorescent, a dash light at dusk, a single window from camera left); mixed warm and cool colour temperatures; deep shadows that fall off naturally; muted, desaturated colour; worn, scuffed, slightly dusty surfaces; fine film grain; soft halation on the highlights; no retouching, no stylization.";
 export const IMAGE_RULES = [
-  "Photorealistic, cinematic, shallow depth of field, natural light, like a frame from a well-shot documentary.",
-  "No people. Objects, places and moments carry the shot; hands are allowed only when the scene cannot work without them, and never a face, a silhouette or anyone who could read as the speaker (AI people lower trust).",
-  "No readable text, letters, numbers, logos, brand names or UI labels anywhere in the image; screens and papers show only blurred or abstract shapes.",
+  "No people, no faces, no hands with visible fingers, no silhouettes, nobody who could read as the speaker.",
+  "No text, letters, numbers, logos, signage or UI labels anywhere; screens and papers show only blurred or abstract shapes.",
+  "No symmetry, no centred subject, no golden glow, no clean studio lighting, no neon, no purple, no pastel, no plastic-smooth surfaces.",
+  "The subject sits in the upper two thirds of the frame; the bottom third stays plain and dark (captions go there). Vertical 9:16.",
+  "Kill test: if the result could be captioned \"stock photo of X\", it is wrong; make it a specific, lived-in object or process shot instead.",
 ];
 
 /**
@@ -127,7 +135,7 @@ export function imageInstructions({ aspect = "9:16", style = "" } = {}) {
   const shape = aspect === "9:16" ? "vertical 9:16" : aspect === "4:5" ? "portrait 4:5" : aspect;
   return [
     `Then make the images: for each scene, use your image generation tool once to make a ${shape} image of it, one at a time, and save it in the current folder under the file name given. If one image fails, skip it and keep going; never retry more than once.`,
-    style ? `Look for every image: ${style}` : "",
+    `Look for every image: ${style || IMAGE_STYLE}`,
     "Rules for every image:",
     ...IMAGE_RULES.map((r) => `- ${r}`),
     "Do not write any other files and do not run anything else.",

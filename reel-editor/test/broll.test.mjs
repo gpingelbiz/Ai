@@ -47,7 +47,10 @@ test("one prompt picks the lines and draws the stills; faces and text are banned
   assert.match(p, /vertical 9:16 image/);
   assert.match(p, /Look for every image: moody/);
   assert.match(imageInstructions(), /No people/);
-  assert.match(imageInstructions(), /No readable text/);
+  assert.match(imageInstructions(), /No text, letters/);
+  assert.match(imageInstructions(), /Candid documentary photograph/);
+  assert.match(imageInstructions(), /no golden glow/);
+  assert.match(imageInstructions(), /stock photo of X/);
 });
 
 test("codex model: env wins, else config default then the fallback", () => {

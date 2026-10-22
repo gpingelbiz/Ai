@@ -78,8 +78,8 @@ export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4
   return [
     "You are a reel editor adding b-roll to a talking-head Instagram reel.",
     `First pick ${count} caption lines where cutting away to a still image would make the point land harder, spread across the reel, at least ${spacing} seconds apart.`,
-    "For each, describe the image in one or two sentences: a concrete, literal, cinematic scene that shows what the line says (an object, a place, a moment). Prefer things you can photograph: a phone face-down on a desk, an empty conference room at night, a hand on a door handle.",
-    "Scenes never show faces or anyone who could read as the speaker, readable text, numbers, logos or brands, or clip-art metaphors (lightbulbs, chess pieces, rockets, puzzle pieces, mountains, arrows).",
+    "For each, describe the image in one or two sentences: a literal object or process shot tied to the thing being said at that moment, lived-in and specific (a phone face-down on a truck tailgate, a whiteboard with one smudged number, a work boot on a job-site step, a Bible open on a passenger seat, a cold coffee beside a closed laptop). Say what the light is and where it comes from.",
+    "Never: empty conference rooms, dinner tables, skylines, empty offices, generic desks (they read as stock photos); faces or anyone who could read as the speaker; readable text, numbers, logos or brands; clip-art metaphors (lightbulbs, chess pieces, rockets, puzzle pieces, mountains, arrows).",
     "Skip lines where the speaker is talking about themself in a way only their face can carry.",
     recent.length ? `Recent reels already used these scenes; pick something clearly different (another object, place or moment):\n${recent.map((s) => `- ${s}`).join("\n")}` : "",
     `Name the images broll-1.png, broll-2.png and so on, in time order.`,
@@ -105,7 +105,7 @@ export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4
 export async function makeBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [] }) {
   const dir = ensureDir(path.join(workDir, "broll"));
   const planPath = path.join(dir, "broll.json");
-  const len = settings.duration ?? 2.4;
+  const len = Math.max(1.6, Math.min(2.4, settings.duration ?? 2));
   const gap = settings.gap ?? 4;
   // With graphic cards in the reel, photos are an accent: fewer of them, in the gaps.
   const max = brollCount(duration, { max: busy.length ? settings.maxWithGraphics ?? 2 : settings.max ?? 3, every: settings.every ?? 12 });

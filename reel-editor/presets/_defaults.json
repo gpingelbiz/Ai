@@ -101,7 +101,7 @@
     "max": 3,
     "maxWithGraphics": 2,
     "every": 12,
-    "duration": 2.4,
+    "duration": 2,
     "gap": 4,
     "style": ""
   },
