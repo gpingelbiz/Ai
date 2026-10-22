@@ -33,7 +33,7 @@ export async function packageYouTube(workDir, plan, output) {
   fs.writeFileSync(files.titles, titles.map((t, i) => `${i + 1}. ${t}`).join("\n") + "\n");
   // Captions for the CC track, from the caption lines (burned in or not, the words are timed in the finished video).
   files.srt = path.join(dir, "captions.srt");
-  fs.writeFileSync(files.srt, srtText(plan.captions || []));
+  fs.writeFileSync(files.srt, srtText(plan.lines || plan.captions || []));
   // Pinned comment.
   if (structure.pinned) { files.pinned = path.join(dir, "pinned_comment.txt"); fs.writeFileSync(files.pinned, structure.pinned + "\n"); }
   // End screen plan.

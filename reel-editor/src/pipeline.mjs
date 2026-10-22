@@ -180,7 +180,10 @@ export async function runEdit(input, opts = {}) {
   const cleanWords = remapWords(cuts.words, cuts.segments).filter((w) => w.start < duration);
 
   // 4. Captions, hook, zooms
-  const groups = preset.captions.enabled ? markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords }) : [];
+  // The caption lines are the timing backbone for everything (cards, stills, punch-ins, callouts, chapters, the
+  // srt), so they are always built; whether they show on screen is captions.enabled.
+  const groups = markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
+  const showCaptions = !!preset.captions.enabled;
   const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: Math.min(preset.hook.duration, duration) }) : null;
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
@@ -191,14 +194,14 @@ export async function runEdit(input, opts = {}) {
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
     const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
     detection = await detectFaces(videoSrc, times);
   }
   let captionTop = preset.captions.position - 0.04;
-  if (preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
+  if (showCaptions && preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
     const head = headExtent(detection);
     const spot = placeCaptions(head, { fontSizeFrac: preset.captions.fontSizeFrac, defaultPosition: preset.captions.position });
     preset.captions.position = spot.position;
@@ -304,7 +307,8 @@ export async function runEdit(input, opts = {}) {
     style: preset,
     hook,
     cta,
-    captions: shownGroups,
+    captions: showCaptions ? shownGroups : [],
+    lines: shownGroups,
     zooms,
     graphics: allCards,
     broll,
