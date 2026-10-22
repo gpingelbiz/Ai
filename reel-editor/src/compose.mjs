@@ -56,7 +56,13 @@ export function composeProject(plan, projectDir) {
     b.video = /\.(mp4|mov|webm|m4v)$/i.test(b.file || "");
     copyOrLink(b.file, path.join(projectDir, b.src));
   });
-  if (plan.coldOpen && plan.broll?.[0]?.src) plan.coldOpen.src = plan.broll[0].src;
+  // The cold open is a still: the first b-roll image, or a generated clip's own still frame.
+  if (plan.coldOpen && plan.broll?.[0]) {
+    const b = plan.broll[0];
+    if (b.video && b.still && fs.existsSync(b.still)) { copyOrLink(b.still, path.join(projectDir, "assets", "broll", "open.png")); plan.coldOpen.src = "assets/broll/open.png"; }
+    else if (!b.video) plan.coldOpen.src = b.src;
+    else plan.coldOpen.src = null;
+  }
   fs.writeFileSync(path.join(projectDir, "index.html"), renderHTML(plan, footage));
   return projectDir;
 }

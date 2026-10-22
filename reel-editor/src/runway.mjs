@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { log, r3 } from "./util.mjs";
+import { log, r3, run } from "./util.mjs";
 
 /**
  * Runway developer API (docs.dev.runwayml.com, version 2024-11-06): text to image, image to video, task polling,
@@ -94,7 +94,15 @@ export function estimateClip({ seconds = 5, imageModel = "gen4_image", imageRati
 }
 
 /** Make one clip: still, then video from it. Downloads both; returns {png, mp4, items:[usage lines]}. */
-export async function makeClip({ scene, motion, dir, name, seconds = 5, ratio = "720:1280", imageRatio = "720:1280", imageModel = "gen4_image", videoModel = "gen4_turbo", fetchFn, sleepFn } = {}) {
+/** Runway clips come at 24 fps with a keyframe every 5 s, which makes the renderer's seeks freeze; conform to 30 fps, a keyframe a second. */
+export async function conformClip(file, { fps = 30, runFn = run } = {}) {
+  const tmp = file.replace(/\.mp4$/, ".conform.mp4");
+  await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-r", String(fps), "-g", String(fps), "-keyint_min", String(fps), "-pix_fmt", "yuv420p", "-movflags", "+faststart", tmp], { quiet: true });
+  fs.renameSync(tmp, file);
+  return file;
+}
+
+export async function makeClip({ scene, motion, dir, name, seconds = 5, ratio = "720:1280", imageRatio = "720:1280", imageModel = "gen4_image", videoModel = "gen4_turbo", fps = 30, fetchFn, sleepFn } = {}) {
   const items = [];
   const png = `${dir}/${name}.png`, mp4 = `${dir}/${name}.mp4`;
   const img = await createImage({ prompt: scene, ratio: imageRatio, model: imageModel, fetchFn });
@@ -117,6 +125,7 @@ export async function makeClip({ scene, motion, dir, name, seconds = 5, ratio = 
   }
   items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: vtask.cost?.credits ?? vid.estimatedCredits ?? 0, dollars: r3((vtask.cost?.credits ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: true });
   await download(vtask.output[0], mp4, { fetchFn });
+  await conformClip(mp4, { fps });
   log(`runway: ${name} ready (${items.reduce((s, i) => s + i.credits, 0)} credits)`);
   return { png, mp4, items };
 }
