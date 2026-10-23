@@ -98,9 +98,9 @@ echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > 
     stdio: "pipe",
   });
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
-  const list = (d) => (fs.existsSync(path.join(done, d)) ? fs.readdirSync(path.join(done, d)).sort() : null);
+  const list = (d) => (fs.existsSync(path.join(done, d)) ? fs.readdirSync(path.join(done, d)).filter((f) => !f.startsWith(".")).sort() : null);
   const read = (p) => fs.readFileSync(path.join(done, p), "utf8").trim();
-  return { home, day, done, list, read, top: fs.readdirSync(done).sort(), calls: fs.readFileSync(path.join(home, "reel-calls"), "utf8"), seen: fs.readdirSync(path.join(home, "Reels", "videos", ".seen")).sort() };
+  return { home, day, done, list, read, top: fs.readdirSync(done).filter((f) => !f.startsWith(".")).sort(), calls: fs.readFileSync(path.join(home, "reel-calls"), "utf8"), seen: fs.readdirSync(path.join(home, "Reels", "videos", ".seen")).filter((f) => !f.startsWith(".")).sort() };
 }
 
 test("each drop folder makes its own thing: reel, reel with b-roll, carousel", () => {
