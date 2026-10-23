@@ -133,7 +133,9 @@ fi
 # the classic captions with no cards.
 case "$MODE" in
   broll|long) flags+=(--broll --graphics --caption-style reveal);;
-  runway) flags+=(--preset pingel-runway --broll --graphics --caption-style reveal);;
+  # Greg's Runway look is pingel-runway; anyone else keeps their own look with Runway clips as the b-roll.
+  runway) case "${REEL_PRESET:-pingel-brand}" in pingel-*) flags+=(--preset pingel-runway);; *) flags+=(--broll-engine runway);; esac
+    flags+=(--broll --graphics --caption-style reveal);;
   reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate --no-behind);;
 esac
 # A carousel needs the transcript and plan, not a render.

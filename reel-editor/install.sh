@@ -10,6 +10,7 @@
 # Options (for re-runs and automation):
 #   --yes            take the defaults, ask nothing (Greg's look unless --look is given; no key; drop folder on)
 #   --look greg|clean|custom   --accent "#hex" --text "#hex" (custom colors)
+#   --brand <folder> a brand kit's Brand folder (scripts/brand-kit.mjs): their look, fonts, words, voice; no look question
 #   --no-watch       do not turn on the drop folder
 #   --no-link        do not link the `reel` command globally (testing)
 #   --dir <path>     where the code goes (default ~/Ai)
@@ -24,7 +25,7 @@ DIR="$HOME/Ai"
 VENV="$HOME/.reel-venv"
 CONF="$HOME/.reel"
 ZSHRC="$HOME/.zshrc"
-YES=0; LINK=1; WATCH=""; LOOK=""; ACCENT=""; TEXTC=""
+YES=0; LINK=1; WATCH=""; LOOK=""; ACCENT=""; TEXTC=""; BRAND=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
     --look) LOOK="$2"; shift ;;
     --accent) ACCENT="$2"; shift ;;
     --text) TEXTC="$2"; shift ;;
+    --brand) BRAND="$2"; LOOK=brand; shift ;;
     --dir) DIR="$2"; shift ;;
     *) echo "unknown option: $1"; exit 2 ;;
   esac
@@ -122,20 +124,35 @@ if [ -z "$LOOK" ]; then
   ask "Pick 1, 2 or 3 [1]:" 1
   case "$REPLY" in 2) LOOK=clean ;; 3) LOOK=custom ;; *) LOOK=greg ;; esac
 fi
-DICT=""; VOICE=""
+DICT=""; VOICE=""; YTPRESET=""
 case "$LOOK" in
+  brand)
+    # A brand kit (scripts/brand-kit.mjs): their look, YouTube look, fonts, words and voice, ready made.
+    [ -f "$BRAND/my-brand.json" ] || die "No brand in $BRAND (my-brand.json is missing)."
+    mkdir -p "$CONF/fonts"
+    cp -f "$BRAND/my-brand.json" "$CONF/my-brand.json"
+    [ -f "$BRAND/my-youtube.json" ] && cp -f "$BRAND/my-youtube.json" "$CONF/my-youtube.json" && YTPRESET="$CONF/my-youtube.json"
+    [ -f "$BRAND/brand.json" ] && cp -f "$BRAND/brand.json" "$CONF/brand.json"
+    for f in "$BRAND"/fonts/*; do [ -f "$f" ] && cp -f "$f" "$CONF/fonts/"; done
+    # Their word list and voice are theirs to edit: a re-run keeps the edited copies.
+    [ -f "$CONF/dictionary.json" ] || cp "$BRAND/dictionary.json" "$CONF/dictionary.json"
+    [ -f "$CONF/voice.md" ] || cp "$BRAND/voice.md" "$CONF/voice.md"
+    PRESET="$CONF/my-brand.json"; DICT="$CONF/dictionary.json"; VOICE="$CONF/voice.md"
+    ok "your brand: colors, fonts, words and caption voice from the kit (in $CONF)"
+    ;;
   greg) PRESET=pingel-brand ;;
   clean) PRESET=clean ;;
   custom)
     [ -n "$ACCENT" ] || { ask "Highlight color, as a hex code [#F5C518]:" "#F5C518"; ACCENT="$REPLY"; }
     [ -n "$TEXTC" ] || { ask "Caption text color [#FFFFFF]:" "#FFFFFF"; TEXTC="$REPLY"; }
     PRESET="$CONF/my-brand.json"
-    node -e 'const fs=require("fs");const [src,out,a,t]=process.argv.slice(1);const p=JSON.parse(fs.readFileSync(src,"utf8"));p.name="my-brand";p.colors={...(p.colors||{}),accent:a,text:t};fs.writeFileSync(out,JSON.stringify(p,null,2)+"\n")' \
-      "$APP/presets/pingel-brand.json" "$PRESET" "$ACCENT" "$TEXTC"
+    # Greg's full look with your two colors; his b-roll world, @handle and carousel style are cleared.
+    node -e 'const fs=require("fs");const [out,a,t]=process.argv.slice(1);const p={name:"my-brand",extends:"pingel-brand",colors:{text:t,accent:a,stroke:"#000000",bg:"#0B0B0D"},broll:{world:"",style:""},carousel:{handle:"",style:""},lowerThird:{name:"",handle:""}};fs.writeFileSync(out,JSON.stringify(p,null,2)+"\n")' \
+      "$PRESET" "$ACCENT" "$TEXTC"
     ;;
   *) die "unknown look: $LOOK (greg, clean or custom)" ;;
 esac
-if [ "$LOOK" != greg ]; then
+if [ "$LOOK" != greg ] && [ "$LOOK" != brand ]; then
   # A starter word list of your own (Greg's framework names stay out of your captions).
   DICT="$CONF/dictionary.json"
   [ -f "$DICT" ] || node -e 'const fs=require("fs");const [src,out]=process.argv.slice(1);const d=JSON.parse(fs.readFileSync(src,"utf8"));fs.writeFileSync(out,JSON.stringify({terms:[],phrases:[],corrections:[],powerWords:d.powerWords||[]},null,2)+"\n")' "$APP/dictionary.json" "$DICT"
@@ -192,6 +209,7 @@ awk '/^# >>> reel-editor >>>/{skip=1} !skip && !/^export (REEL_[A-Z_]+|PRODUCER_
   [ -z "$DICT" ] || echo "export REEL_DICTIONARY=\"$DICT\""
   echo "$CTA_LINE"
   [ -z "$VOICE" ] || echo "export REEL_CAPTION_VOICE=\"$VOICE\""
+  [ -z "$YTPRESET" ] || echo "export REEL_YOUTUBE_PRESET=\"$YTPRESET\""
   if [ "$WATCH" = y ]; then
     echo "export REEL_WATCH_RAW=\"$HOME/Reels/raw\""
     echo "export REEL_WATCH_DONE=\"$HOME/Desktop/Reels\""
@@ -202,6 +220,7 @@ awk '/^# >>> reel-editor >>>/{skip=1} !skip && !/^export (REEL_[A-Z_]+|PRODUCER_
 cat "$tmp" > "$ZSHRC" && rm -f "$tmp"
 ok "settings saved in ~/.zshrc"
 export REEL_PYTHON="$VENV/bin/python" PRODUCER_BROWSER_GPU_MODE=hardware REEL_PRESET="$PRESET" REEL_WATCH_CTA=""
+[ -z "$YTPRESET" ] || export REEL_YOUTUBE_PRESET="$YTPRESET"
 [ -z "$DICT" ] || export REEL_DICTIONARY="$DICT"
 [ -z "$KEY" ] || export ELEVENLABS_API_KEY="$KEY"
 

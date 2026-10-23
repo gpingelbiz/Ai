@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ensureDir, copyOrLink, r3, PKG_ROOT } from "./util.mjs";
+import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
 import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
 
 export function canvasFor(mode, meta) {
@@ -43,7 +43,7 @@ export function composeProject(plan, projectDir) {
   const assets = ensureDir(path.join(projectDir, "assets"));
   ensureDir(path.join(assets, "fonts"));
   ensureDir(path.join(assets, "vendor"));
-  for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
+  for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(fontFile(plan.style, f), path.join(assets, "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(assets, "vendor", "gsap.min.js"));
   const sfxUsed = new Set((plan.audio?.tracks || []).map((t) => t.src).filter((s) => s.startsWith("assets/sfx/")));
   if (sfxUsed.size) ensureDir(path.join(assets, "sfx"));

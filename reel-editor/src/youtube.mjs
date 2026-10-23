@@ -12,7 +12,8 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
  * a pinned comment, and auto-editor's v3 timeline so a human can finish in Resolve or Premiere.
  */
 export async function makeYouTube(input, opts = {}) {
-  const r = await runEdit(input, { ...opts, preset: opts.preset || "youtube" });
+  // REEL_YOUTUBE_PRESET: a brand kit's own YouTube look (its name tag, colors and fonts on the youtube preset).
+  const r = await runEdit(input, { ...opts, preset: opts.preset || process.env.REEL_YOUTUBE_PRESET || "youtube" });
   const { workDir, plan, output } = r;
   if (!output) return r;
   const pkg = await packageYouTube(workDir, plan, output);

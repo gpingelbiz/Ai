@@ -4,7 +4,7 @@ import { codexExec, hasCodex, codexPausedUntil, imageInstructions, savedImage } 
 import { loadPreset } from "./presets.mjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
-import { log, warn, readJSON, writeJSON, ensureDir, run, PKG_ROOT } from "./util.mjs";
+import { log, warn, readJSON, writeJSON, ensureDir, run, PKG_ROOT, fontFile } from "./util.mjs";
 
 /**
  * An Instagram carousel from a finished reel: Codex writes the slides from the transcript (cover, one point per
@@ -252,7 +252,7 @@ export async function makeCarousel(workDir, { out, force = false, slides: count,
   ensureDir(path.join(projectDir, "assets", "fonts"));
   ensureDir(path.join(projectDir, "assets", "vendor"));
   ensureDir(path.join(projectDir, "assets", "img"));
-  for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(projectDir, "assets", "fonts", f));
+  for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(fontFile(plan?.style || preset, f), path.join(projectDir, "assets", "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(projectDir, "assets", "vendor", "gsap.min.js"));
   const placed = slides.map((s, k) => {
     const file = s.reuse ? stills[s.reuse - 1]?.file : s.scene ? savedImage(imgDir, `slide-${k + 1}.png`) : null;

@@ -101,7 +101,7 @@ export async function makeClips(input, opts = {}) {
     if (!hasClaude()) throw new Error("picking windows needs the Claude Code CLI (claude) signed in");
     log(`clips: Claude is picking up to ${count} moments…`);
     let voice = "";
-    try { voice = fs.readFileSync(opts.voice || path.join(path.dirname(new URL(import.meta.url).pathname), "..", "voice", preset.name === "pingel-brand" ? "greg.md" : "default.md"), "utf8"); } catch {}
+    try { voice = fs.readFileSync(opts.voice || process.env.REEL_CAPTION_VOICE || path.join(path.dirname(new URL(import.meta.url).pathname), "..", "voice", /^pingel-/.test(preset.name) ? "greg.md" : "default.md"), "utf8"); } catch {}
     if (opts.picker === "legacy") {
       const reply = await claudeText(clipsPrompt({ words, duration: meta.duration, count, voice }), { timeoutMs: 300000 });
       clips = tidyWindows(firstJSON(reply).clips, words, meta.duration);

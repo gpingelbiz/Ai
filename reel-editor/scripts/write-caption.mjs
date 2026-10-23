@@ -22,7 +22,8 @@ const DENY = ["Bash", "Edit", "Write", "Read", "Glob", "Grep", "WebFetch", "WebS
 
 export function voiceFile(plan, env = process.env) {
   if (env.REEL_CAPTION_VOICE && fs.existsSync(env.REEL_CAPTION_VOICE)) return env.REEL_CAPTION_VOICE;
-  return path.join(ROOT, "voice", plan?.style?.name === "pingel-brand" ? "greg.md" : "default.md");
+  // Greg's voice for every look of his (pingel-brand, pingel-runway); anyone else's comes from REEL_CAPTION_VOICE.
+  return path.join(ROOT, "voice", /^pingel-/.test(plan?.style?.name || "") ? "greg.md" : "default.md");
 }
 
 /** The prompt Claude gets. Pure, so it can be tested. */
