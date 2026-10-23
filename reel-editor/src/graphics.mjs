@@ -252,6 +252,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
       const look = settings.look && LOOKS[settings.look] ? settings.look : saved.look || "glass";
       const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look})`);
+      scenes.look = look;
       return scenes;
     }
   }
@@ -275,6 +276,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   writeJSON(planPath, { key, look: lookPicked?.look || "glass", lookWhy: lookPicked?.why || "", scenes });
   if (lookPicked && !settings.look) rememberLook(lookPicked.look);
   log(`graphics: look "${LOOKS[lookPicked?.look || "glass"].label}"${lookPicked?.why ? ` (${lookPicked.why})` : ""}`);
+  scenes.look = lookPicked?.look || "glass";
   log(`graphics: ${scenes.length} card${scenes.length === 1 ? "" : "s"} in ${Math.round((Date.now() - t0) / 1000)}s${scenes.map((s) => `\n  ${s.start}s ${s.type}: ${s.eyebrow} | ${s.value || s.text || s.title || ""}${s.items ? " " + s.items.map((i) => i.text).join(" / ") : ""}`).join("")}`);
   return scenes;
 }

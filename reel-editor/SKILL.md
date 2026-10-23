@@ -57,7 +57,7 @@ Every reel also goes through four quality stages (README "Studio sound, the capt
 
 ## Card looks
 
-Cards take a per-reel look picked by Claude from the topic (`src/looks.mjs`: receipts, phone, fieldnotes, gregcard, briefing, press, shopfloor, blueprint, casefile, redline, glass), never one of the last three; `--look <id>` / `#look:<id>` sets it. `node scripts/looks-preview.mjs --footage <video>` shows them all.
+Cards take a per-reel look picked by Claude from the topic (`src/looks.mjs`: receipts, phone, fieldnotes, gregcard, briefing, press, shopfloor, blueprint, casefile, redline, glass), never one of the last three; `--look <id>` / `#look:<id>` sets it. `node scripts/looks-preview.mjs --footage <video>` shows them all. The look also sets the hook treatment, the gold-word marker, the slam style, the b-roll grade and cut, and the camera move (`THEMES` / `applyTheme`; glass keeps the preset's own); captions never change, and `--zoom-style` / `--broll-cut` win. `node scripts/themes-preview.mjs --footage <video> --still <broll.png>` shows every look's whole theme.
 
 ## Brand kits
 

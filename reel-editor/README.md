@@ -195,6 +195,26 @@ The overlay cards change look per reel (`src/looks.mjs`). In the same Claude cal
 
 Every look draws its colors from the brand (text, accent, card background) and keeps one accent per card, so brand kits get all eleven in their own colors. The fonts the looks add (Courier Prime, Permanent Marker, DM Serif Display; SIL OFL / Apache 2.0, from github.com/google/fonts) are in `assets/fonts` and only copied into a reel that uses them. The direction came from ten Codex researchers on overlay styles (press sheet, instrument panel, schematic, case file and redline were their strongest brand-safe recommendations; branded UI clones, neon and unlicensed packs were ruled out). `node scripts/looks-preview.mjs --footage <video>` renders the same five cards in every look on one sheet.
 
+### The look drives the whole reel
+
+The look is not only the cards. Once Claude picks it, the same look sets the rest of the reel's design (`THEMES` and `applyTheme` in `src/looks.mjs`, applied right after the cards are planned), so two reels in a row never share a hook, a marker, a slam and a b-roll grade:
+
+| Look | Hook (frame 0) | Gold-word marker | Slam | B-roll grade | B-roll cut | Camera |
+| --- | --- | --- | --- | --- | --- | --- |
+| `receipts` | typed Courier on a black block, one cursor | box | typed | bright-pop | flash | snap |
+| `phone` | headline | underline | text bubble | soft-boost | blur | camera |
+| `fieldnotes` | Permanent Marker | scribble | marker | vintage-wash, grain | blur | camera |
+| `gregcard` | typed Courier on a black block | underline | typed | mono-fade | hard | snap |
+| `briefing` | DM Serif with accent blocks | box | serif | muted-editorial, vignette | hard | camera |
+| `press` | stamped down on a paper block | box | Anton with an accent ghost | mono-clean, grain | flash | snap |
+| `shopfloor` | instrument panel | bracket | panel | deep-contrast | hard | snap |
+| `blueprint` | headline | bracket | outline | muted-editorial | blur | camera |
+| `casefile` | typed Courier on a black block | box | stamp | mono-fade, grain | hard | snap |
+| `redline` | headline with the key words hand-circled | circle | redline | deep-contrast | flash | snap |
+| `glass` | the preset's own hook, markers, slams, grade, cut and camera | | | | | |
+
+Caption type, size, words per line and timing never change with the look, so captions read the same in every reel. Every hook stays fully on screen on frame 0, because frame 0 is the cover. `--zoom-style` and `--broll-cut` on the command line win over the look. `node scripts/themes-preview.mjs --footage <video> --still <broll.png>` renders one row per look: the hook, a caption with its marker, a slam and a graded b-roll still (on the GPU: the grades are WebGL, and the b-roll frame is captured in its own snapshot run because a multi-time snapshot skips the grade).
+
 ## Brand kits: the editor for someone else, in their own brand
 
 `node scripts/brand-kit.mjs their-brand.json` makes `dist/<Name> Reel Editor Kit.zip` to hand to someone. Start from `kit/brand-template.json`: their name and @handle, colors (text, accent, stroke, card background), fonts (a Google Fonts family name such as "Bebas Neue" or "Montserrat ExtraBold", fetched from github.com/google/fonts and only when open-licensed, or a .ttf path), the look (hook headline | gold | box, captions reveal | pop, markers, slams, hook behind the head), their world for the b-roll, their carousel picture style, their caption voice, their terms, names and spelling fixes. A brand guide from the pingel-hq brand-guide-builder has everything this file needs.

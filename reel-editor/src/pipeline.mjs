@@ -19,6 +19,7 @@ import { soundCues, describeCues } from "./sounds.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
+import { THEMES, applyTheme } from "./looks.mjs";
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { makeGraphics } from "./graphics.mjs";
@@ -372,6 +373,14 @@ export async function runEdit(input, opts = {}) {
   let graphics = preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
+  // The reel's look (picked with the cards) themes the rest of it: hook treatment, caption marker, slam style,
+  // b-roll grade and cut, camera move. A reel without cards keeps its preset's look.
+  const look = graphics.look;
+  if (look && THEMES[look]) {
+    Object.assign(preset, applyTheme(preset, look, { keep: { zoomStyle: !!opts.zoomStyle, brollCut: !!opts.brollCut } }));
+    const t = THEMES[look];
+    log(`look: ${look} also sets the hook (${t.hook}), the caption marker (${t.marker}), the slams (${t.slam}), the b-roll grade (${t.grade.preset}) and cut (${preset.broll.cut}), and the camera (${preset.zooms.style})`);
+  }
   // A card that only restates the hook title shows the same line twice in a row (the render reviewer caught one).
   if (hook && graphics.length) {
     const toks = (t) => String(t || "").toLowerCase().replace(/[*"“”'’.,!?:]/g, "").split(/\s+/).filter(Boolean);

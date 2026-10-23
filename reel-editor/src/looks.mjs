@@ -70,6 +70,68 @@ export const LOOKS = {
 
 export const LOOK_IDS = Object.keys(LOOKS);
 
+/**
+ * The rest of a reel's design follows its look: the hook title's treatment, the caption marker shape, the climax
+ * slam style, the b-roll grade and cut, and the camera move. Caption type and timing never change (readability).
+ * grade: a HyperFrames color-grading preset for the b-roll (with intensity and film details).
+ */
+export const THEMES = {
+  receipts: { hook: "type", marker: "box", slam: "type", grade: { preset: "bright-pop", intensity: 0.5 }, cut: "flash", zoom: "snap" },
+  phone: { hook: "headline", marker: "underline", slam: "bubble", grade: { preset: "soft-boost", intensity: 0.55 }, cut: "blur", zoom: "camera" },
+  fieldnotes: { hook: "marker", marker: "scribble", slam: "marker", grade: { preset: "vintage-wash", intensity: 0.6, details: { grain: 0.14, grainSize: 0.2, grainRoughness: 0.6 } }, cut: "blur", zoom: "camera" },
+  gregcard: { hook: "type", marker: "underline", slam: "type", grade: { preset: "mono-fade", intensity: 0.75 }, cut: "hard", zoom: "snap" },
+  briefing: { hook: "serif", marker: "box", slam: "serif", grade: { preset: "muted-editorial", intensity: 0.55, details: { vignette: 0.14, vignetteFeather: 0.7 } }, cut: "hard", zoom: "camera" },
+  press: { hook: "stamp", marker: "box", slam: "ghost", grade: { preset: "mono-clean", intensity: 0.7, details: { grain: 0.18, grainSize: 0.24, grainRoughness: 0.7 } }, cut: "flash", zoom: "snap" },
+  shopfloor: { hook: "panel", marker: "bracket", slam: "panel", grade: { preset: "deep-contrast", intensity: 0.6 }, cut: "hard", zoom: "snap" },
+  blueprint: { hook: "headline", marker: "bracket", slam: "outline", grade: { preset: "muted-editorial", intensity: 0.5 }, cut: "blur", zoom: "camera" },
+  casefile: { hook: "type", marker: "box", slam: "stamp", grade: { preset: "mono-fade", intensity: 0.6, details: { grain: 0.1 } }, cut: "hard", zoom: "snap" },
+  redline: { hook: "redline", marker: "circle", slam: "redline", grade: { preset: "deep-contrast", intensity: 0.55 }, cut: "flash", zoom: "snap" },
+  glass: null,
+};
+
+/** The font files a theme needs beyond the house fonts (the hook and slam treatments that use them). */
+export function themeFontSkins(theme) {
+  if (!theme) return [];
+  const want = new Set();
+  for (const k of [theme.hook, theme.slam]) {
+    if (k === "type") want.add("type");
+    if (k === "marker") want.add("paper");
+    if (k === "serif") want.add("editorial");
+    if (k === "panel") want.add("panel");
+  }
+  return [...want];
+}
+
+/**
+ * Apply a look's theme to a reel's settings (a copy). Settings the user passed on the command line win: `keep`
+ * names the ones to leave alone (zoomStyle, brollCut).
+ */
+export function applyTheme(style, look, { keep = {} } = {}) {
+  const t = THEMES[look];
+  if (!t) return style;
+  const s = structuredClone(style);
+  s.look = look;
+  s.hook = { ...s.hook, treat: t.hook };
+  s.captions = { ...s.captions, marker: t.marker };
+  s.slams = { ...s.slams, style: t.slam };
+  if (s.broll) {
+    const base = s.broll.grade || {};
+    s.broll.grade = { preset: t.grade.preset, intensity: t.grade.intensity, adjust: {}, details: { ...(base.details || {}), ...(t.grade.details || {}) } };
+    if (!keep.brollCut) s.broll.cut = t.cut;
+  }
+  if (!keep.zoomStyle && s.zooms) s.zooms.style = t.zoom;
+  return s;
+}
+
+/** Caption marker shapes (SVG path, viewBox) for the gold word, by theme. */
+export const MARKERS = {
+  underline: { box: "0 0 100 20", d: "M3 9 C 20 3, 36 14, 54 8 S 84 3, 97 10", cls: "an-underline" },
+  scribble: { box: "0 0 100 24", d: "M3 8 C 22 2, 40 13, 60 7 S 88 4, 97 9 M8 18 C 28 13, 52 21, 92 15", cls: "an-underline" },
+  box: { box: "0 0 100 60", d: "M4 8 L 96 5 L 97 54 L 3 56 Z", cls: "an-circle" },
+  bracket: { box: "0 0 100 60", d: "M14 4 L 4 4 L 4 56 L 14 56 M86 4 L 96 4 L 96 56 L 86 56", cls: "an-circle" },
+  circle: { box: "0 0 100 60", d: "M8 31 C 9 11, 36 3, 58 6 C 84 9, 98 19, 96 33 C 94 49, 70 58, 46 56 C 22 54, 4 45, 6 31 C 8 19, 24 11, 44 9", cls: "an-circle" },
+};
+
 /** The skin a card gets in a look. */
 export const skinFor = (look, type) => (LOOKS[look]?.skins?.[type]) || "glass";
 
@@ -380,6 +442,48 @@ export function skinsCSS({ H, colors, skins = [] }) {
       .gfx.skin-phone .g-bubble.g-them, .gfx.skin-phone .g-typing { background: #E9E9EB; color: #111; }
       .gfx.skin-phone .g-bubble.g-me { background: ${c.accent}; color: ${c.bg}; }`);
   return out.join("");
+}
+
+/** CSS for the hook treatment and slam style of a theme (layered over the house hook and slam styles). */
+export function themeCSS({ H, colors, theme }) {
+  if (!theme) return "";
+  const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", stroke: "#000000", ...colors };
+  const u = H / 1920;
+  const px = (n) => `${Math.round(n * u)}px`;
+  const hook = {
+    type: `#hook.hook-t-type #hook-lines { display: inline-block; font-family: "Courier Prime", monospace; font-weight: 700; font-size: 0.98em; line-height: 1.14; letter-spacing: -0.01em; text-transform: none; -webkit-text-stroke: 0; color: #F2F0EA; text-shadow: none; background: rgba(0,0,0,0.86); padding: 0.2em 0.34em 0.16em; }
+      #hook.hook-t-type #hook-lines .hw.k { color: ${c.accent}; font-size: 1em; }
+      #hook.hook-t-type #hook-bar, #hook.hook-t-type #hook-scrim { display: none; }`,
+    marker: `#hook.hook-t-marker #hook-lines { font-family: "Permanent Marker", sans-serif; font-weight: 400; font-size: 0.92em; line-height: 1.08; -webkit-text-stroke: 0; color: #FFFFFF; text-shadow: 0 ${px(4)} ${px(16)} rgba(0,0,0,0.8); }
+      #hook.hook-t-marker #hook-lines .hw { transform: rotate(-1.5deg); }
+      #hook.hook-t-marker #hook-lines .hw.k { color: ${c.accent}; }
+      #hook.hook-t-marker #hook-bar { height: ${px(14)}; border-radius: ${px(8)}; transform: rotate(-2deg); }`,
+    serif: `#hook.hook-t-serif #hook-lines { font-family: "DM Serif Display", Georgia, serif; font-weight: 400; font-size: 1em; text-transform: none; line-height: 1.04; letter-spacing: -0.01em; -webkit-text-stroke: 0; text-shadow: 0 ${px(4)} ${px(18)} rgba(0,0,0,0.8); }
+      #hook.hook-t-serif #hook-lines .hw.k { color: #111; background: ${c.accent}; padding: 0 0.12em; font-size: 1em; }
+      #hook.hook-t-serif #hook-bar { width: 40%; height: ${px(4)}; border-radius: 0; }`,
+    stamp: `#hook.hook-t-stamp #hook-lines { color: #111; background: #F1ECDF; padding: 0.18em 0.3em 0.12em; box-decoration-break: clone; -webkit-box-decoration-break: clone; -webkit-text-stroke: 0; text-shadow: ${px(5)} ${px(4)} 0 ${c.accent}b3; display: inline-block; transform: rotate(-1.5deg); }
+      #hook.hook-t-stamp #hook-lines .hw.k { color: ${c.accent}; text-shadow: -${px(4)} ${px(3)} 0 #111; }
+      #hook.hook-t-stamp #hook-scrim, #hook.hook-t-stamp #hook-bar { display: none; }`,
+    panel: `#hook.hook-t-panel #hook-lines { display: inline-block; padding: 0.22em 0.4em; background: #0E0F10; border: ${px(4)} solid #3B3D40; box-shadow: inset 0 0 0 ${px(6)} #0E0F10, inset 0 0 0 ${px(8)} #26282B; -webkit-text-stroke: 0; text-shadow: none; color: #F2F2F2; }
+      #hook.hook-t-panel #hook-lines::before { content: ""; display: block; width: ${px(22)}; height: ${px(22)}; margin: 0 auto 0.12em; border-radius: ${px(3)}; background: ${c.accent}; }
+      #hook.hook-t-panel #hook-scrim, #hook.hook-t-panel #hook-bar { display: none; }`,
+    redline: `#hook.hook-t-redline #hook-lines { -webkit-text-stroke: ${px(4)} #000; paint-order: stroke fill; color: #FFFFFF; }
+      #hook.hook-t-redline #hook-lines .hw.k { color: #FFFFFF; border: ${px(8)} solid ${c.accent}; border-radius: 52% 48% 55% 45% / 60% 55% 45% 40%; padding: 0 0.14em; transform: rotate(-2deg); font-size: 1em; }
+      #hook.hook-t-redline #hook-bar { height: ${px(16)}; border-radius: ${px(8)}; transform: rotate(-1.5deg); }`,
+  }[theme.hook] || "";
+  const slam = {
+    type: `.slam-word.slam-t-type { font-family: "Courier Prime", monospace; font-weight: 700; text-transform: none; color: #F2F0EA; -webkit-text-stroke: 0; background: rgba(0,0,0,0.88); padding: 0.06em 0.3em; font-size: 0.8em; text-shadow: none; }
+      .slam-word.slam-t-type::after { content: ""; display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.1em; vertical-align: -0.08em; background: ${c.accent}; }`,
+    ghost: `.slam-word.slam-t-ghost { color: #111; -webkit-text-stroke: 0; background: #F1ECDF; padding: 0.04em 0.24em; text-shadow: ${px(7)} ${px(6)} 0 ${c.accent}cc; }`,
+    marker: `.slam-word.slam-t-marker { font-family: "Permanent Marker", sans-serif; color: ${c.accent}; -webkit-text-stroke: 0.02em #000; transform: rotate(-3deg); }`,
+    serif: `.slam-word.slam-t-serif { font-family: "DM Serif Display", Georgia, serif; text-transform: none; color: #111; -webkit-text-stroke: 0; background: ${c.accent}; padding: 0 0.2em; text-shadow: none; }`,
+    stamp: `.slam-word.slam-t-stamp { color: ${c.accent}; -webkit-text-stroke: 0; border: 0.07em solid ${c.accent}; padding: 0.02em 0.22em; transform: rotate(-5deg); text-shadow: none; background: rgba(0,0,0,0.35); }`,
+    panel: `.slam-word.slam-t-panel { color: #F2F2F2; -webkit-text-stroke: 0; background: #0E0F10; border: ${px(5)} solid #3B3D40; padding: 0.04em 0.3em; text-shadow: none; box-shadow: inset 0 -0.08em 0 ${c.accent}; }`,
+    outline: `.slam-word.slam-t-outline { color: transparent; -webkit-text-stroke: 0.035em ${c.accent}; text-shadow: none; }`,
+    redline: `.slam-word.slam-t-redline { color: #FFFFFF; -webkit-text-stroke: 0.03em #000; border-bottom: 0.1em solid ${c.accent}; }`,
+    bubble: `.slam-word.slam-t-bubble { color: ${c.bg}; -webkit-text-stroke: 0; background: ${c.accent}; padding: 0.06em 0.36em; border-radius: 0.5em 0.5em 0.5em 0.12em; text-shadow: none; font-size: 0.85em; }`,
+  }[theme.slam] || "";
+  return `\n      ${hook}\n      ${slam}`;
 }
 
 /** @font-face rules and the font files to copy for the skins in use. */
