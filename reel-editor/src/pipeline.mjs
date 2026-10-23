@@ -20,6 +20,14 @@ import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
+
+// Hook treatments drawn on a solid block, with their type metrics (em = size against the preset hook size, charEm =
+// average character width; Courier is monospace at 0.6em).
+const BLOCK_HOOKS = {
+  type: { em: 0.98, charEm: 0.6, lineHeight: 1.14, padEm: 0.5 },
+  stamp: { em: 1, charEm: 0.46, lineHeight: 1.1, padEm: 0.4 },
+  panel: { em: 1, charEm: 0.46, lineHeight: 1.1, padEm: 0.9 },
+};
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { makeGraphics } from "./graphics.mjs";
@@ -312,6 +320,7 @@ export async function runEdit(input, opts = {}) {
   // Text behind you: the person is cut out of the hook window and layered over the headline, so the hook is placed
   // to run behind the top of the head (its lower part hidden by the forehead) instead of clearing it.
   let behindPlan = null;
+  let behindHead = null;
   if (hook && preset.hook.behind && sameShape && opts.hookPosition == null) {
     const head0 = zoomedHead(detection, 1.06);
     if (!head0) log("hook behind you: off (no face found in the hook frames)");
@@ -320,6 +329,7 @@ export async function runEdit(input, opts = {}) {
       if (cut.error) warn(describeCutout(cut));
       else {
         behindPlan = { file: cut.src, start: cut.start, duration: cut.duration, coverage: cut.coverage };
+        behindHead = { top: head0.top, fontSizeFrac: preset.hook.fontSizeFrac };
         preset.hook.fontSizeFrac = r3(preset.hook.fontSizeFrac * (preset.hook.behindScale ?? 1.12));
         const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
         const h = hookBlockHeight(hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), { W: canvas0.width, H: canvas0.height, fontPx });
@@ -380,6 +390,21 @@ export async function runEdit(input, opts = {}) {
     Object.assign(preset, applyTheme(preset, look, { keep: { zoomStyle: !!opts.zoomStyle, brollCut: !!opts.brollCut } }));
     const t = THEMES[look];
     log(`look: ${look} also sets the hook (${t.hook}), the caption marker (${t.marker}), the slams (${t.slam}), the b-roll grade (${t.grade.preset}) and cut (${preset.broll.cut}), and the camera (${preset.zooms.style})`);
+    // A hook on a solid block cannot run behind the head: the cutout would hide whole words of the cover (frame 0).
+    // It sits above the head instead, smaller if that is what it takes to clear it, and the cutout stays under it
+    // (over a cold-open still, the cutout is what keeps the person on the cover).
+    const block = BLOCK_HOOKS[t.hook];
+    if (block && behindPlan && behindHead) {
+      behindPlan.under = true;
+      const words = hook.words || hook.text.split(/\s+/).map((x) => ({ text: x }));
+      const measure = (frac) => hookBlockHeight(words, { W: canvas0.width, H: canvas0.height, fontPx: Math.round(frac * canvas0.height * block.em), charEm: block.charEm, lineHeight: block.lineHeight, padEm: block.padEm, goldScale: 1 });
+      let frac = behindHead.fontSizeFrac;
+      const room = behindHead.top - 0.07;
+      while (frac > behindHead.fontSizeFrac * 0.7 && measure(frac) > room) frac = r3(frac * 0.94);
+      preset.hook.fontSizeFrac = frac;
+      preset.hook.position = r3(Math.max(0.06, behindHead.top - 0.01 - measure(frac)));
+      log(`hook: the ${t.hook} block sits above the head at ${Math.round(preset.hook.position * 100)}% (over the cutout, not behind it, so every word shows on the cover)`);
+    }
   }
   // A card that only restates the hook title shows the same line twice in a row (the render reviewer caught one).
   if (hook && graphics.length) {

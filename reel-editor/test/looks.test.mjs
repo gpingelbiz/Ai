@@ -119,3 +119,11 @@ test("compose: the themed hook, slam and marker reach the page, with the typed h
   assert.match(html, /CourierPrime/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("placement: a Courier hook measures taller than the same words in Anton", async () => {
+  const { hookBlockHeight } = await import("../src/placement.mjs");
+  const words = "Your team doesn't remember your meeting".split(" ").map((text) => ({ text }));
+  const anton = hookBlockHeight(words, { fontPx: 120 });
+  const courier = hookBlockHeight(words, { fontPx: 118, charEm: 0.6, lineHeight: 1.14, padEm: 0.5 });
+  assert.ok(courier > anton);
+});

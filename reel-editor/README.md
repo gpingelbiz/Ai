@@ -213,7 +213,7 @@ The look is not only the cards. Once Claude picks it, the same look sets the res
 | `redline` | headline with the key words hand-circled | circle | redline | deep-contrast | flash | snap |
 | `glass` | the preset's own hook, markers, slams, grade, cut and camera | | | | | |
 
-Caption type, size, words per line and timing never change with the look, so captions read the same in every reel. Every hook stays fully on screen on frame 0, because frame 0 is the cover. `--zoom-style` and `--broll-cut` on the command line win over the look. `node scripts/themes-preview.mjs --footage <video> --still <broll.png>` renders one row per look: the hook, a caption with its marker, a slam and a graded b-roll still (on the GPU: the grades are WebGL, and the b-roll frame is captured in its own snapshot run because a multi-time snapshot skips the grade).
+Caption type, size, words per line and timing never change with the look, so captions read the same in every reel. Every hook stays fully on screen on frame 0, because frame 0 is the cover: the hooks drawn on a solid block (typed, stamp, panel) never run behind the head. They sit above it, smaller if needed, with the person cutout under the block, so a cold-open still keeps the person on the cover. `--zoom-style` and `--broll-cut` on the command line win over the look. `node scripts/themes-preview.mjs --footage <video> --still <broll.png>` renders one row per look: the hook, a caption with its marker, a slam and a graded b-roll still (on the GPU: the grades are WebGL, and the b-roll frame is captured in its own snapshot run because a multi-time snapshot skips the grade).
 
 ## Brand kits: the editor for someone else, in their own brand
 

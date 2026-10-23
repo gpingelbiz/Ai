@@ -268,7 +268,7 @@ export function renderHTML(plan, footage) {
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
       #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
-      #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }
+      #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }${behind?.under ? "\n      #cutout-wrap { z-index: 1; } #hook { z-index: 2; }" : ""}
       #cutout { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       #root { ${sideVars} }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
