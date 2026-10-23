@@ -412,8 +412,7 @@ export function skinsCSS({ H, colors, skins = [] }) {
       .gfx.skin-case .g-side-b { background: ${c.accent}1a; }
       .gfx.skin-case .g-vs { background: #F7F4EC; color: #151515; border-color: #151515; }
       .gfx.skin-case .g-box > .g-eyebrow, .gfx.skin-case .g-box > .g-title, .gfx.skin-case .g-box > .g-headline { padding-right: ${px(200)}; }
-      .gfx.skin-case .g-side-a { padding-right: ${px(52)}; }
-      .gfx.skin-case .g-side-b { padding-left: ${px(52)}; }
+
       .gfx.skin-case .g-post-name { color: #151515; }`);
   if (has.has("redline")) out.push(`
       .gfx.skin-redline::after { background: linear-gradient(180deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.3) 30%, rgba(0,0,0,0) 46%); }

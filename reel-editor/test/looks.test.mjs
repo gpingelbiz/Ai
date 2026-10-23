@@ -127,3 +127,21 @@ test("placement: a Courier hook measures taller than the same words in Anton", a
   const courier = hookBlockHeight(words, { fontPx: 118, charEm: 0.6, lineHeight: 1.14, padEm: 0.5 });
   assert.ok(courier > anton);
 });
+
+test("block hooks: an opaque hook block always ends above the head, shrinking to fit; other hooks are left alone", async () => {
+  const { fitBlockHook, hookBlockHeight, BLOCK_HOOKS } = await import("../src/placement.mjs");
+  const words = "Your team doesn't remember your meeting at all".split(" ").map((text) => ({ text }));
+  for (const treat of Object.keys(BLOCK_HOOKS)) {
+    for (const headTop of [0.22, 0.3, 0.4]) {
+      const fit = fitBlockHook(words, { treat, headTop, fontSizeFrac: 0.07 });
+      const b = BLOCK_HOOKS[treat];
+      const h = hookBlockHeight(words, { fontPx: Math.round(fit.fontSizeFrac * 1920 * b.em), charEm: b.charEm, lineHeight: b.lineHeight, padEm: b.padEm, goldScale: 1 });
+      const top = fit.position - 1.2 * fit.fontSizeFrac;
+      assert.ok(top >= 0.029, `${treat} ${headTop} top`);
+      if (fit.fits) assert.ok(top + h <= headTop, `${treat} at head ${headTop}: block ends at ${top + h}`);
+      assert.ok(fit.fontSizeFrac >= 0.07 * 0.6 - 1e-9);
+    }
+  }
+  assert.equal(fitBlockHook(words, { treat: "headline", headTop: 0.3, fontSizeFrac: 0.07 }), null);
+  assert.ok(fitBlockHook(words, { treat: "panel", headTop: 0.3, fontSizeFrac: 0.07 }).fits);
+});
