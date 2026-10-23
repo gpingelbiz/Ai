@@ -106,6 +106,7 @@ export function mergeOverrides(preset, o = {}) {
   if (o.align) p.transcribe.align = "always";
   if (o.noAlign) p.transcribe.align = false;
   if (o.noPreflight) p.preflight = { ...(p.preflight || {}), enabled: false };
+  if (o.look) p.graphics = { ...(p.graphics || {}), look: o.look === "auto" ? null : o.look };
   if (o.behind) p.hook.behind = true;
   if (o.noBehind) p.hook.behind = false;
   return p;

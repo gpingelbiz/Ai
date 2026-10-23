@@ -160,9 +160,11 @@ function uniquePath(p) {
 
 /**
  * The posting day: the first day from today with no Instagram reel scheduled yet (`taken` = ["YYYY-MM-DD"]), and
- * today only when its best hour is still 2 h out. `best` = [{day, hour}] from Metricool, highest first per day.
+ * today only when its best hour is still 2 h out. `bestByDay` = {day: [hours, best first]} from Metricool.
+ * `busy` = {day: [hours]} of every other post that day (carousels, statics, drafts): a reel never goes within
+ * `minGap` hours of one (Greg 2026-10-22: "dont post them at the same time as other posts").
  */
-export function pickSlot({ now, taken = [], bestByDay = {}, tz = "America/Phoenix", minLead = 2, fallbackHour = 18 }) {
+export function pickSlot({ now, taken = [], bestByDay = {}, busy = {}, tz = "America/Phoenix", minLead = 2, minGap = 2, fallbackHour = 18, dayHours = [8, 21] }) {
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" });
   const parts = (d) => Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
   const p = parts(now);
@@ -172,9 +174,16 @@ export function pickSlot({ now, taken = [], bestByDay = {}, tz = "America/Phoeni
     const q = parts(d);
     const day = `${q.year}-${q.month}-${q.day}`;
     if (taken.includes(day)) continue;
-    const hours = (bestByDay[day] || [fallbackHour]).filter((h) => day !== today || h >= hourNow + minLead);
-    if (!hours.length) continue;
-    return { day, hour: hours[0] };
+    const clear = (h) => (busy[day] || []).every((b) => Math.abs(b - h) >= minGap) && (day !== today || h >= hourNow + minLead);
+    // The best hours first; when every best hour is next to another post, any clear daytime hour nearest the best one.
+    const best = bestByDay[day] || [fallbackHour];
+    let hour = best.find(clear);
+    if (hour == null) {
+      const all = []; for (let h = dayHours[0]; h <= dayHours[1]; h++) all.push(h);
+      hour = all.filter(clear).sort((a, b) => Math.abs(a - best[0]) - Math.abs(b - best[0]))[0];
+    }
+    if (hour == null) continue;
+    return { day, hour };
   }
   return null;
 }

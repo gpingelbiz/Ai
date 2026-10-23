@@ -77,7 +77,7 @@ test("render: cards and reveal captions", () => {
     graphics: [{ type: "headline", eyebrow: "E", text: "Own *it*", start: 6, duration: 2.6 }],
   };
   const html = renderHTML(plan, "assets/footage.mp4");
-  assert.match(html, /id="gfx-0" class="gfx clip gfx-headline" data-start="6" data-duration="2.6"/);
+  assert.match(html, /id="gfx-0" class="gfx clip gfx-headline skin-glass" data-start="6" data-duration="2.6"/);
   assert.ok(html.indexOf('id="gfx-0"') < html.indexOf('id="captions"'), "cards sit under the captions");
   assert.match(html, /"reveal":true/);
   assert.match(html, /\.cap \.w \{ opacity: 0\.38; \}/);
