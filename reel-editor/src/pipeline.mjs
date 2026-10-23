@@ -11,7 +11,7 @@ import { runPreflight, writePreflight, describePreflight } from "./preflight.mjs
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight } from "./placement.mjs";
+import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -21,13 +21,6 @@ import { composeProject, canvasFor } from "./compose.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
 
-// Hook treatments drawn on a solid block, with their type metrics (em = size against the preset hook size, charEm =
-// average character width; Courier is monospace at 0.6em).
-const BLOCK_HOOKS = {
-  type: { em: 0.98, charEm: 0.6, lineHeight: 1.14, padEm: 0.5 },
-  stamp: { em: 1, charEm: 0.46, lineHeight: 1.1, padEm: 0.4 },
-  panel: { em: 1, charEm: 0.46, lineHeight: 1.1, padEm: 0.9 },
-};
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { makeGraphics } from "./graphics.mjs";
@@ -390,20 +383,20 @@ export async function runEdit(input, opts = {}) {
     Object.assign(preset, applyTheme(preset, look, { keep: { zoomStyle: !!opts.zoomStyle, brollCut: !!opts.brollCut } }));
     const t = THEMES[look];
     log(`look: ${look} also sets the hook (${t.hook}), the caption marker (${t.marker}), the slams (${t.slam}), the b-roll grade (${t.grade.preset}) and cut (${preset.broll.cut}), and the camera (${preset.zooms.style})`);
-    // A hook on a solid block cannot run behind the head: the cutout would hide whole words of the cover (frame 0).
-    // It sits above the head instead, smaller if that is what it takes to clear it, and the cutout stays under it
-    // (over a cold-open still, the cutout is what keeps the person on the cover).
-    const block = BLOCK_HOOKS[t.hook];
-    if (block && behindPlan && behindHead) {
-      behindPlan.under = true;
+    // A hook on a solid block is opaque: it cannot run behind the head (the cutout would hide whole words of the
+    // cover, frame 0) or reach the eyes. It is measured in its own type and sits above the head, smaller if that is
+    // what it takes; the cutout stays under it (over a cold-open still, the cutout keeps the person on the cover).
+    const headTop = behindHead?.top ?? (hook && detection ? zoomedHead(detection, 1.06)?.top : null);
+    const above = !behindHead && headTop != null && preset.hook.position <= headTop;
+    if (hook && (behindHead || above)) {
       const words = hook.words || hook.text.split(/\s+/).map((x) => ({ text: x }));
-      const measure = (frac) => hookBlockHeight(words, { W: canvas0.width, H: canvas0.height, fontPx: Math.round(frac * canvas0.height * block.em), charEm: block.charEm, lineHeight: block.lineHeight, padEm: block.padEm, goldScale: 1 });
-      let frac = behindHead.fontSizeFrac;
-      const room = behindHead.top - 0.07;
-      while (frac > behindHead.fontSizeFrac * 0.7 && measure(frac) > room) frac = r3(frac * 0.94);
-      preset.hook.fontSizeFrac = frac;
-      preset.hook.position = r3(Math.max(0.06, behindHead.top - 0.01 - measure(frac)));
-      log(`hook: the ${t.hook} block sits above the head at ${Math.round(preset.hook.position * 100)}% (over the cutout, not behind it, so every word shows on the cover)`);
+      const fit = fitBlockHook(words, { treat: t.hook, headTop, fontSizeFrac: behindHead?.fontSizeFrac ?? preset.hook.fontSizeFrac, W: canvas0.width, H: canvas0.height });
+      if (fit) {
+        if (behindPlan) behindPlan.under = true;
+        preset.hook.fontSizeFrac = fit.fontSizeFrac;
+        preset.hook.position = fit.position;
+        log(`hook: the ${t.hook} block sits above the head${behindPlan ? " over the cutout" : ""} at ${Math.round(preset.hook.position * 100)}%, so every word shows on the cover and the eyes stay clear${fit.fits ? "" : " (it could not fully clear the head at 60% size)"}`);
+      }
     }
   }
   // A card that only restates the hook title shows the same line twice in a row (the render reviewer caught one).

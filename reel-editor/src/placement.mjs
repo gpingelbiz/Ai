@@ -165,3 +165,28 @@ export function captionsRepeatingHook(groups, hook) {
   });
   return hide;
 }
+
+/** Hook treatments drawn on a solid block, with their type metrics (em = size against the preset hook size,
+ *  charEm = average character width; Courier is monospace at 0.6em, the panel adds a lamp and a frame). */
+export const BLOCK_HOOKS = {
+  type: { em: 0.98, charEm: 0.6, lineHeight: 1.14, padEm: 0.5 },
+  stamp: { em: 1, charEm: 0.46, lineHeight: 1.1, padEm: 0.4 },
+  panel: { em: 1, charEm: 0.46, lineHeight: 1.1, padEm: 0.9 },
+};
+
+/**
+ * A solid hook block is opaque, so it must end above the head (above the eyes at the very least): it is measured
+ * in its own type, shrunk (to 60% at most) until it fits between the top of the frame and the head, and placed so
+ * its bottom clears the head. compose puts the block's top 1.2 hook-font-heights above `position`.
+ * Returns { fontSizeFrac, position, fits } or null for a treatment that is not a block.
+ */
+export function fitBlockHook(words, { treat, headTop, fontSizeFrac, W = 1080, H = 1920, top = 0.03, gap = 0.015 } = {}) {
+  const block = BLOCK_HOOKS[treat];
+  if (!block || !(headTop > 0)) return null;
+  const measure = (frac) => hookBlockHeight(words, { W, H, fontPx: Math.round(frac * H * block.em), charEm: block.charEm, lineHeight: block.lineHeight, padEm: block.padEm, goldScale: 1 });
+  let frac = fontSizeFrac;
+  while (frac > fontSizeFrac * 0.6 && measure(frac) > headTop - gap - top) frac = Math.round(frac * 0.94 * 1000) / 1000;
+  const h = measure(frac);
+  const blockTop = Math.max(top, headTop - gap - h);
+  return { fontSizeFrac: frac, position: Math.round((blockTop + 1.2 * frac) * 1000) / 1000, fits: blockTop + h <= headTop - gap + 1e-6 };
+}

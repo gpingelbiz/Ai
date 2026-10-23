@@ -10,6 +10,7 @@ import { loadPreset } from "../src/presets.mjs";
 import { LOOK_IDS, applyTheme } from "../src/looks.mjs";
 import { run, PKG_ROOT } from "../src/util.mjs";
 import { hyperframesBin, renderEnv } from "../src/render.mjs";
+import { detectFaces, headExtent, fitBlockHook } from "../src/placement.mjs";
 
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -25,17 +26,22 @@ await run("ffmpeg", ["-y", "-loglevel", "error", "-loop", "1", "-i", path.join(t
 const words = (text, start, key) => text.split(" ").map((t, i) => ({ text: t, start: +(start + i * 0.3).toFixed(3), end: +(start + i * 0.3 + 0.25).toFixed(3), key: t.toLowerCase() === key }));
 const line = (text, start, key) => { const w = words(text, start, key); return { words: w, start: +(start - 0.05).toFixed(3), end: +(w[w.length - 1].end + 0.4).toFixed(3), text }; };
 const AT = [0.3, 3.2, 5.0, 7.6];
+// The head in the still, so block hooks sit above it the way a real reel places them.
+const head = headExtent(await detectFaces(footage, [0.5, 1, 1.5]), { zoom: 1, originY: 0.4 });
+const HOOK_WORDS = [{ text: "The" }, { text: "10", key: true }, { text: "minutes", key: true }, { text: "after" }, { text: "a" }, { text: "bad" }, { text: "number" }];
 
 const rows = [];
 for (const look of LOOK_IDS) {
   const base = loadPreset("pingel-brand");
   base.audio.sounds = false;
   const style = applyTheme(base, look);
+  const fit = head && fitBlockHook(HOOK_WORDS, { treat: style.hook.treat, headTop: head.top, fontSizeFrac: style.hook.fontSizeFrac });
+  if (fit) Object.assign(style.hook, { fontSizeFrac: fit.fontSizeFrac, position: fit.position });
   const plan = {
     version: 1, name: `theme-${look}`, preset: style.name, style,
     video: { src: footage, duration: 10, width: 1080, height: 1920, fps: 30, hasAudio: false },
     canvas: { width: 1080, height: 1920, mode: "portrait" },
-    hook: { text: "The *10 minutes* after a bad number", start: 0, duration: 2.6, words: [{ text: "The" }, { text: "10", key: true }, { text: "minutes", key: true }, { text: "after" }, { text: "a" }, { text: "bad" }, { text: "number" }] },
+    hook: { text: "The *10 minutes* after a bad number", start: 0, duration: 2.6, words: HOOK_WORDS },
     cta: null,
     captions: [line("they remember how you react", 2.7, "react"), line("every single time", 4.6, "every")],
     zooms: [], graphics: [],
