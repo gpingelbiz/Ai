@@ -4,16 +4,19 @@ import path from "node:path";
 import { esc } from "./text.mjs";
 import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
-import { log, warn, run, ensureDir, readJSON, writeJSON, PKG_ROOT } from "./util.mjs";
+import { log, warn, run, ensureDir, readJSON, writeJSON, PKG_ROOT, fontFile } from "./util.mjs";
 import { createRequire } from "node:module";
 
 // Real Anton metrics (fontkit ships with the renderer): cap height and the width of a string in em.
 let anton = null;
+let antonPath = null;
+/** The display font the covers are measured with (a brand's own when it has one). */
+export function useDisplayFont(file) { if (file !== antonPath) { antonPath = file; anton = null; } }
 function antonFont() {
   if (anton) return anton;
   try {
     const fk = createRequire(import.meta.url)("fontkit");
-    const f = fk.openSync(path.join(PKG_ROOT, "assets", "fonts", "Anton-Regular.ttf"));
+    const f = fk.openSync(antonPath || path.join(PKG_ROOT, "assets", "fonts", "Anton-Regular.ttf"));
     anton = { cap: f.capHeight / f.unitsPerEm, width: (s) => f.layout(String(s)).advanceWidth / f.unitsPerEm };
   } catch {
     anton = { cap: 0.72, width: (s) => String(s).length * 0.45 };
@@ -228,6 +231,7 @@ export function coverTimes(duration) {
  * Titles come from headless Claude (falls back to the hook); the frame comes from the person tool.
  */
 export async function makeCover(workDir, plan, { handle = "", variants = 3, voice = "" } = {}) {
+  useDisplayFont(fontFile(plan.style, "Anton-Regular.ttf"));
   workDir = path.resolve(workDir);
   const dir = ensureDir(path.join(workDir, "covers"));
   const bin = await personBinary();
@@ -257,7 +261,7 @@ export async function makeCover(workDir, plan, { handle = "", variants = 3, voic
 
   // Compose and snapshot each variant.
   ensureDir(path.join(dir, "assets", "fonts")); ensureDir(path.join(dir, "assets", "vendor"));
-  for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(dir, "assets", "fonts", f));
+  for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(fontFile(plan.style, f), path.join(dir, "assets", "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(dir, "assets", "vendor", "gsap.min.js"));
   fs.copyFileSync(framePng, path.join(dir, "assets", "frame.png"));
   const pals = [PALETTES.brand, PALETTES.brand, PALETTES.red];

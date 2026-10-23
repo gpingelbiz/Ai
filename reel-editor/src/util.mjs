@@ -81,4 +81,15 @@ export function deepMerge(base, over) {
   return out;
 }
 
+/**
+ * A brand's fonts stand in for the house fonts: style.fonts.display replaces Anton (hooks, slams, pop captions,
+ * cover titles), style.fonts.body replaces Inter (reveal captions, cards, carousels). The file is copied under the
+ * house name, so every composition picks it up unchanged. Returns the path to copy from.
+ */
+export function fontFile(style, name) {
+  const want = name === "Anton-Regular.ttf" ? style?.fonts?.display : name === "Inter.ttf" ? style?.fonts?.body : null;
+  if (want && fs.existsSync(want)) return want;
+  return path.join(PKG_ROOT, "assets", "fonts", name);
+}
+
 export const VIDEO_EXTS = new Set([".mov", ".mp4", ".m4v", ".webm", ".mkv", ".avi"]);

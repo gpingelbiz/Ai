@@ -322,9 +322,12 @@ export async function runEdit(input, opts = {}) {
         preset.hook.fontSizeFrac = r3(preset.hook.fontSizeFrac * (preset.hook.behindScale ?? 1.12));
         const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
         const h = hookBlockHeight(hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), { W: canvas0.width, H: canvas0.height, fontPx });
-        const behindFrac = preset.hook.behindOverlap ?? 0.4; // share of the text block that sits behind the head
-        preset.hook.position = r3(Math.max(0.06, head0.top - (1 - behindFrac) * h));
-        log(`${describeCutout(cut)}; hook at ${Math.round(preset.hook.position * 100)}%, its lower ${Math.round(behindFrac * 100)}% behind the head (head top ${Math.round(head0.top * 100)}%)`);
+        // The head tucks under the bottom of the block, never more than about half of the last line: with three
+        // lines, 40% of the block was a whole line, and the hook's payoff could not be read (Reel 9).
+        const line = fontPx / canvas0.height;
+        const tuck = Math.min((preset.hook.behindOverlap ?? 0.4) * h, 0.5 * line);
+        preset.hook.position = r3(Math.max(0.06, head0.top - (h - tuck)));
+        log(`${describeCutout(cut)}; hook at ${Math.round(preset.hook.position * 100)}%, the bottom ${Math.round((tuck / line) * 100)}% of its last line behind the head (head top ${Math.round(head0.top * 100)}%)`);
       }
     }
   }

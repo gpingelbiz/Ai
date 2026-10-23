@@ -1,0 +1,33 @@
+{
+  "_how": "Copy this file, fill it in for one person, then run: node scripts/brand-kit.mjs their-brand.json. Fields starting with _ are notes and are ignored.",
+  "name": "Jane Doe",
+  "handle": "@janedoe",
+  "colors": {
+    "_note": "text = caption color, accent = the highlight (hook keyword, gold word, card accents), stroke = outline, bg = card background",
+    "text": "#FFFFFF",
+    "accent": "#E94B8A",
+    "stroke": "#000000",
+    "bg": "#111114"
+  },
+  "fonts": {
+    "_note": "A Google Fonts family name (Bebas Neue, Montserrat ExtraBold, Oswald) or a path to a .ttf. display = hook titles, climax words, pop captions, cover titles; body = reveal captions, cards, carousels. Leave out to keep Anton and Inter.",
+    "display": "Bebas Neue",
+    "body": "Montserrat"
+  },
+  "look": {
+    "_note": "hook: headline | gold | box. captions: reveal (word by word) | pop (bold outlined). annotate: hand-drawn marker on the key word. slams: climax words that stamp in. behind: the hook runs behind their head.",
+    "hook": "headline",
+    "captions": "reveal",
+    "annotate": true,
+    "slams": true,
+    "behind": true
+  },
+  "world": "Who they are and where they live and work, for the b-roll: their business, their city, their setting, the things that show up in their life. One or two sentences, concrete.",
+  "brollStyle": "",
+  "carouselStyle": "The look of their carousel pictures: light, colors, texture. Never another creator's style.",
+  "voice": "How they talk in captions: who they talk to, words they use, words they never use, how long, emojis or not.",
+  "terms": ["Their program name", "Their framework"],
+  "names": ["Their business name"],
+  "phrases": [],
+  "corrections": [{ "from": "how speech-to-text mishears a term", "to": "How it is spelled" }]
+}
