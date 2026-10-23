@@ -1,0 +1,273 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Digital Driver License Mockup</title>
+<style>
+  @page { size: Letter; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 8.5in; height: 11in; background: #ffffff; }
+  body { font-family: "Liberation Sans", Arial, sans-serif; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .page { width: 8.5in; height: 11in; padding: 0.5in 0.7in; display: flex; flex-direction: column; }
+
+  .doc-head { display: flex; align-items: center; gap: 16px; border-bottom: 3px solid #1c3f94; padding-bottom: 14px; }
+  .seal { width: 64px; height: 64px; flex: none; }
+  .doc-head h1 { font-size: 22px; letter-spacing: 1.5px; color: #1c3f94; font-weight: 700; }
+  .doc-head h2 { font-size: 13px; letter-spacing: 3px; color: #444; font-weight: 400; margin-top: 3px; }
+  .doc-meta { margin-left: auto; text-align: right; font-size: 10.5px; color: #444; line-height: 1.6; }
+  .doc-meta b { color: #111; }
+
+  .doc-title { margin: 18px 0 4px; font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #1c3f94; }
+  .doc-sub { font-size: 11px; color: #555; margin-bottom: 18px; }
+
+  .side-label { font-size: 10px; letter-spacing: 2px; color: #777; margin: 0 0 6px 2px; }
+  .card-wrap { zoom: 0.62; margin: 0 auto 30px; }
+
+  /* ---------- Card (856 x 540 = 85.6mm x 54mm at 10px/mm) ---------- */
+  .card {
+    position: relative; width: 856px; height: 540px; border-radius: 34px; overflow: hidden;
+    background: linear-gradient(135deg, #f3efe9 0%, #ece6f0 45%, #e9eef4 100%);
+    box-shadow: 0 0 0 1.5px #c9c4cc;
+  }
+  .card svg.bg { position: absolute; inset: 0; }
+
+  .brand { position: absolute; left: 62px; top: 22px; font-size: 46px; font-weight: 700; letter-spacing: 2px; color: #1c3f94; line-height: 1; }
+  .brand small { display: block; font-size: 15px; letter-spacing: 4px; font-weight: 700; color: #1c3f94; margin-bottom: 4px; }
+  .country { position: absolute; right: 52px; top: 30px; font-size: 18px; font-weight: 700; color: #1c3f94; }
+  .star { position: absolute; right: 52px; top: 58px; width: 58px; height: 58px; }
+  .band { position: absolute; left: 36px; top: 98px; width: 528px; height: 30px; background: #1c3f94; color: #fff; font-size: 23px; font-weight: 700; letter-spacing: 1px; padding-left: 130px; line-height: 30px; }
+
+  .photo { position: absolute; left: 36px; top: 140px; width: 222px; height: 290px; background: #6fc2c9; overflow: hidden; }
+  .photo svg { width: 100%; height: 100%; display: block; }
+
+  .fields { position: absolute; left: 276px; top: 138px; width: 440px; }
+  .f { font-weight: 700; font-size: 21px; line-height: 1.02; white-space: nowrap; }
+  .f .n { font-size: 12px; font-weight: 400; color: #333; margin-right: 3px; }
+  .f .l { font-size: 13px; font-weight: 400; color: #1c3f94; margin-right: 3px; }
+  .f .lr { color: #c2272d; }
+  .gap { height: 12px; }
+  .row { display: flex; gap: 14px; align-items: baseline; }
+  .big { font-size: 29px; }
+
+  .sig { position: absolute; left: 44px; top: 440px; width: 210px; height: 60px; }
+  .ghost { position: absolute; right: 150px; top: 322px; width: 92px; height: 118px; opacity: 0.55; background: #9bd3d8; overflow: hidden; }
+  .ghost svg { width: 100%; height: 100%; display: block; }
+  .dob-small { position: absolute; right: 50px; top: 452px; font-size: 34px; font-weight: 700; color: #222; letter-spacing: 1px; }
+
+  /* ---------- Back ---------- */
+  .card.back { background: linear-gradient(135deg, #eef1f5 0%, #f2eef0 100%); }
+  .pdf417 { position: absolute; left: 50px; top: 40px; width: 756px; height: 200px; background: #fff; padding: 10px 14px; }
+  .pdf417 svg { width: 100%; height: 100%; display: block; }
+  .back-text { position: absolute; left: 56px; top: 262px; width: 744px; font-size: 13.5px; line-height: 1.5; color: #222; }
+  .back-text b { color: #1c3f94; }
+  .back-grid { position: absolute; left: 56px; top: 350px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 40px; font-size: 13px; width: 744px; }
+  .back-grid div span { color: #1c3f94; font-size: 11px; margin-right: 6px; }
+  .code128 { position: absolute; left: 56px; bottom: 34px; width: 420px; height: 52px; }
+  .back-dd { position: absolute; right: 56px; bottom: 40px; font-size: 13px; text-align: right; color: #333; }
+
+  .verify { margin-top: auto; border-top: 1px solid #d5d5d5; padding-top: 12px; display: flex; gap: 22px; font-size: 10.5px; color: #444; line-height: 1.55; }
+  .verify div { flex: 1; }
+  .verify b { color: #1c3f94; display: block; font-size: 10px; letter-spacing: 1.5px; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="doc-head">
+    <svg class="seal" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="47" fill="none" stroke="#1c3f94" stroke-width="3"/>
+      <circle cx="50" cy="50" r="39" fill="none" stroke="#1c3f94" stroke-width="1.2"/>
+      <polygon points="50,22 57,42 78,42 61,54 67,74 50,62 33,74 39,54 22,42 43,42" fill="#c99a2e"/>
+    </svg>
+    <div>
+      <h1>STATE OF EXAMPLE</h1>
+      <h2>DEPARTMENT OF MOTOR VEHICLES</h2>
+    </div>
+    <div class="doc-meta">
+      Document: <b>Digital Driver License</b><br>
+      Generated: <b>01/01/2026 09:00 AM</b><br>
+      Record ID: <b>EX-DDL-0000-0000-0000</b>
+    </div>
+  </div>
+
+  <div class="doc-title">DIGITAL DRIVER LICENSE</div>
+  <div class="doc-sub">Electronic copy of the credential on file. Front and back shown at reduced scale.</div>
+
+  <div class="side-label">FRONT</div>
+  <div class="card-wrap">
+    <div class="card" id="front">
+      <svg class="bg" id="bgFront" viewBox="0 0 856 540" preserveAspectRatio="none"></svg>
+
+      <div class="brand"><small>STATE OF</small>EXAMPLE</div>
+      <div class="country">USA</div>
+      <svg class="star" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="44" fill="none" stroke="#c99a2e" stroke-width="12"/>
+        <polygon points="50,20 58,42 81,42 62,56 69,78 50,64 31,78 38,56 19,42 42,42" fill="none" stroke="#c99a2e" stroke-width="6"/>
+      </svg>
+      <div class="band">DRIVER LICENSE</div>
+
+      <div class="photo">
+        <svg viewBox="0 0 222 290">
+          <rect width="222" height="290" fill="#6fc2c9"/>
+          <circle cx="111" cy="112" r="56" fill="#3f6f78"/>
+          <path d="M18 290 C24 214 66 186 111 186 C156 186 198 214 204 290 Z" fill="#3f6f78"/>
+        </svg>
+      </div>
+
+      <div class="fields">
+        <div class="f"><span class="n">1</span>DOE</div>
+        <div class="f"><span class="n">2</span>JORDAN ALEX</div>
+        <div class="gap"></div>
+        <div class="f"><span class="n">8</span>123 SAMPLE ST</div>
+        <div class="f" style="padding-left:14px">ANYTOWN, EX 00000</div>
+        <div class="gap"></div>
+        <div class="f"><span class="n">4d</span><span class="l">DL No</span><span class="big">000EX0000</span></div>
+        <div class="row">
+          <div class="f"><span class="n">4a</span><span class="l">Iss</span>01/01/2026</div>
+          <div class="f"><span class="n">4b</span><span class="l">Exp</span>01/01/2034</div>
+        </div>
+        <div class="row">
+          <div class="f"><span class="n">15</span><span class="l">Sex</span>M</div>
+          <div class="f"><span class="n">16</span><span class="l">Hgt</span>5'-10"</div>
+          <div class="f"><span class="n">18</span><span class="l">Eyes</span>BRO</div>
+        </div>
+        <div class="row">
+          <div class="f"><span class="n">9</span><span class="l">Class</span>C</div>
+          <div class="f"><span class="n">9a</span><span class="l">End</span>NONE</div>
+        </div>
+        <div class="f"><span class="n">12</span><span class="l">Rest</span>NONE</div>
+      </div>
+
+      <svg class="sig" viewBox="0 0 210 60">
+        <path d="M6 44 C20 10 30 8 34 30 C38 50 44 52 52 24 C56 12 60 14 60 30 C60 44 70 40 78 28 C84 20 90 22 92 32 C96 46 110 40 122 30 C134 22 150 30 160 34 L204 40"
+              fill="none" stroke="#111" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+
+      <div class="fields" style="top:452px">
+        <div class="f"><span class="n">3</span><span class="l lr">DOB</span><span class="big">01/01/1990</span></div>
+        <div class="f" style="font-size:15px"><span class="n">5</span><span class="l">DD</span>0000000000EX0000000000</div>
+      </div>
+
+      <div class="ghost">
+        <svg viewBox="0 0 92 118">
+          <rect width="92" height="118" fill="#9bd3d8"/>
+          <circle cx="46" cy="46" r="23" fill="#4f8a93"/>
+          <path d="M6 118 C9 88 26 76 46 76 C66 76 83 88 86 118 Z" fill="#4f8a93"/>
+        </svg>
+      </div>
+      <div class="dob-small">01/01/90</div>
+    </div>
+  </div>
+
+  <div class="side-label">BACK</div>
+  <div class="card-wrap">
+    <div class="card back" id="back">
+      <svg class="bg" id="bgBack" viewBox="0 0 856 540" preserveAspectRatio="none"></svg>
+      <div class="pdf417"><svg id="pdf417" viewBox="0 0 728 180" preserveAspectRatio="none"></svg></div>
+      <div class="back-text">
+        <b>CLASS C:</b> Any single vehicle or combination under 26,001 lbs GVWR not designed to carry 16 or more passengers, including the driver, or hazardous materials requiring placards.
+      </div>
+      <div class="back-grid">
+        <div><span>ENDORSEMENTS</span>NONE</div>
+        <div><span>RESTRICTIONS</span>NONE</div>
+        <div><span>ORGAN DONOR</span>NO</div>
+        <div><span>VETERAN</span>NO</div>
+      </div>
+      <svg class="code128" id="code128" viewBox="0 0 420 52" preserveAspectRatio="none"></svg>
+      <div class="back-dd">DD 0000000000EX0000000000<br>REV 01/2026</div>
+    </div>
+  </div>
+
+  <div class="verify">
+    <div><b>HOLDER</b>DOE, JORDAN ALEX<br>DL No 000EX0000</div>
+    <div><b>STATUS</b>VALID<br>Expires 01/01/2034</div>
+    <div><b>ISSUING OFFICE</b>State of Example DMV<br>Anytown Service Center</div>
+  </div>
+
+</div>
+
+<script>
+  const NS = "http://www.w3.org/2000/svg";
+  function path(svg, d, stroke, w, op) {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", d); p.setAttribute("fill", "none");
+    p.setAttribute("stroke", stroke); p.setAttribute("stroke-width", w);
+    p.setAttribute("opacity", op); svg.appendChild(p);
+  }
+  // hypotrochoid rosette
+  function rosette(svg, cx, cy, R, r, d, scale, stroke, w, op) {
+    let s = "";
+    const steps = 2400;
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * Math.PI * 2 * r;
+      const x = cx + scale * ((R - r) * Math.cos(t) + d * Math.cos(((R - r) / r) * t));
+      const y = cy + scale * ((R - r) * Math.sin(t) - d * Math.sin(((R - r) / r) * t));
+      s += (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1);
+    }
+    path(svg, s, stroke, w, op);
+  }
+  function waves(svg, color, op, count, amp, freq, y0, gap) {
+    for (let k = 0; k < count; k++) {
+      let s = "";
+      for (let x = 0; x <= 856; x += 4) {
+        const y = y0 + k * gap + amp * Math.sin(x / freq + k * 0.35);
+        s += (x ? "L" : "M") + x + " " + y.toFixed(1);
+      }
+      path(svg, s, color, 0.6, op);
+    }
+  }
+  function background(id) {
+    const svg = document.getElementById(id);
+    waves(svg, "#b49aa8", 0.35, 60, 9, 38, -10, 9.5);
+    rosette(svg, 640, 260, 15, 7, 9, 13, "#9b8fb8", 0.5, 0.45);
+    rosette(svg, 640, 260, 11, 4, 6, 9,  "#c0a080", 0.5, 0.45);
+    rosette(svg, 150, 470, 13, 5, 7, 7,  "#9b8fb8", 0.45, 0.35);
+    for (let r = 40; r < 420; r += 7) {
+      const c = document.createElementNS(NS, "circle");
+      c.setAttribute("cx", 640); c.setAttribute("cy", 260); c.setAttribute("r", r);
+      c.setAttribute("fill", "none"); c.setAttribute("stroke", "#c8b8c4");
+      c.setAttribute("stroke-width", 0.5); c.setAttribute("opacity", 0.35);
+      svg.appendChild(c);
+    }
+  }
+  background("bgFront");
+  background("bgBack");
+
+  // decorative 2D barcode pattern (not encoded data)
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const pdf = document.getElementById("pdf417");
+  const rows = 18, rh = 180 / rows;
+  for (let r = 0; r < rows; r++) {
+    let x = 0;
+    const bar = (w, fill) => {
+      if (fill) {
+        const e = document.createElementNS(NS, "rect");
+        e.setAttribute("x", x); e.setAttribute("y", r * rh);
+        e.setAttribute("width", w); e.setAttribute("height", rh + 0.3);
+        e.setAttribute("fill", "#000"); pdf.appendChild(e);
+      }
+      x += w;
+    };
+    // start pattern
+    [8,1,1,1,1,1,1,3].forEach((w,i) => bar(w*1.6, i % 2 === 0));
+    while (x < 700) { const w = 1.6 * (1 + Math.floor(rnd() * 5)); bar(w, true); bar(1.6 * (1 + Math.floor(rnd() * 4)), false); }
+    x = 700; [7,1,1,3,1,1,1,2,1].forEach((w,i) => bar(w*1.6 > 28 - (x-700) ? 1.6 : w*1.6, i % 2 === 0));
+  }
+
+  // decorative 1D barcode
+  const c128 = document.getElementById("code128");
+  let cx = 0;
+  while (cx < 420) {
+    const w = 1.4 * (1 + Math.floor(rnd() * 3));
+    if (Math.floor(cx / 1.4) % 2 === 0 || rnd() > 0.5) {
+      const e = document.createElementNS(NS, "rect");
+      e.setAttribute("x", cx); e.setAttribute("y", 0); e.setAttribute("width", w);
+      e.setAttribute("height", 52); e.setAttribute("fill", "#000"); c128.appendChild(e);
+    }
+    cx += w + 1.4 * (1 + Math.floor(rnd() * 2));
+  }
+</script>
+</body>
+</html>
