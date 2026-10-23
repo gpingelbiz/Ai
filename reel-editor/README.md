@@ -175,6 +175,26 @@ The gate: a reel whose check note (`check this reel.txt`) shows a failure, whose
 
 By hand: `node scripts/publish-folder.mjs scan` shows what is next; `serve`, `stop`, `done`, `fail` and `slot` are the steps the task runs. `scripts/publish.mjs` (the older review hand-off) needs a public link of your own.
 
+## Card looks: every reel gets its own visual direction
+
+The overlay cards change look per reel (`src/looks.mjs`). In the same Claude call that writes the cards, Claude picks one look for the whole reel from what it is about, and each card type takes that look's skin. A look is never reused within three reels (the last 20 are in `~/.cache/reel-editor/looks-recent.json`). `--look <id>` or `#look:<id>` in a dropped file name sets one; `graphics.look` in a preset fixes it for a brand. Plans saved before looks existed keep their glass cards, and the YouTube band layout stays glass.
+
+| Look | For reels about | The cards |
+| --- | --- | --- |
+| `receipts` | money, pricing, revenue, a P&L | numbers arrive as a phone alert banner; lists and bars print as an itemized receipt with a torn edge; quotes type out |
+| `phone` | calls, DMs, objections, leads | alert banners, a Notes-app list with check circles, a light text thread in the brand accent |
+| `fieldnotes` | discipline, faith, a story | taped lined paper, Permanent Marker handwriting, marker highlights and strikes |
+| `gregcard` | one conviction line | Courier Prime typed out letter by letter on black, sentence case, the label signed in the accent |
+| `briefing` | leadership, systems, frameworks | editorial cream panel, DM Serif Display, a black top rule, accent blocks behind key words |
+| `press` | a hard truth, a contrarian take | one-ink press sheet: halftone paper, torn bottom edge, Anton with an off-register accent ghost, stamped down |
+| `shopfloor` | close rates, KPIs, standards | matte instrument panel with bolts, Courier labels, segmented meters, a status lamp that blinks twice |
+| `blueprint` | a process, a pipeline, cause and effect | dark schematic grid, outlined nodes, dashed connectors, corner marks |
+| `casefile` | proof, a call review, a case study | a document with a margin line, an EXHIBIT A stamp, things to stop shown as redaction bars |
+| `redline` | a mistake, what not to do | no panel: bold outlined type over the video, an accent label, hand-circled key words, thick strikes |
+| `glass` | anything else | the original dark glass card |
+
+Every look draws its colors from the brand (text, accent, card background) and keeps one accent per card, so brand kits get all eleven in their own colors. The fonts the looks add (Courier Prime, Permanent Marker, DM Serif Display; SIL OFL / Apache 2.0, from github.com/google/fonts) are in `assets/fonts` and only copied into a reel that uses them. The direction came from ten Codex researchers on overlay styles (press sheet, instrument panel, schematic, case file and redline were their strongest brand-safe recommendations; branded UI clones, neon and unlicensed packs were ruled out). `node scripts/looks-preview.mjs --footage <video>` renders the same five cards in every look on one sheet.
+
 ## Brand kits: the editor for someone else, in their own brand
 
 `node scripts/brand-kit.mjs their-brand.json` makes `dist/<Name> Reel Editor Kit.zip` to hand to someone. Start from `kit/brand-template.json`: their name and @handle, colors (text, accent, stroke, card background), fonts (a Google Fonts family name such as "Bebas Neue" or "Montserrat ExtraBold", fetched from github.com/google/fonts and only when open-licensed, or a .ttf path), the look (hook headline | gold | box, captions reveal | pop, markers, slams, hook behind the head), their world for the b-roll, their carousel picture style, their caption voice, their terms, names and spelling fixes. A brand guide from the pingel-hq brand-guide-builder has everything this file needs.

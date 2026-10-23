@@ -22,7 +22,7 @@ switch (cmd) {
   case "scan": {
     const items = scan();
     const ready = items.filter((i) => i.video && !i.waiting && !i.problem);
-    out({ folder: ROOT, next: ready[0] || null, waiting: items.filter((i) => i.waiting).map((i) => i.entry), problems: items.filter((i) => i.problem).map((i) => ({ entry: i.entry, problem: i.problem })), queued: ready.length });
+    out({ folder: ROOT, next: ready[0] || null, ready, waiting: items.filter((i) => i.waiting).map((i) => i.entry), problems: items.filter((i) => i.problem).map((i) => ({ entry: i.entry, problem: i.problem })), queued: ready.length });
     break;
   }
   case "slot": {

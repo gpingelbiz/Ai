@@ -100,6 +100,9 @@ Options (edit / batch)
                            and shoulders. --no-behind off (on in the pingel-brand and pingel-runway presets)
   --no-review              skip the render reviewer (Claude looks at frames of the finished reel and notes what
                            looks wrong, with times, in preflight.txt; it never changes the reel)
+  --look <id>              the card look for this reel: receipts | phone | fieldnotes | gregcard | briefing | glass;
+                           auto (default) lets Claude pick it from the topic, never the same as the last reel.
+                           #look:receipts in a dropped file name does the same
   --pace fast              the measured short-form pacing on top of the look: shots of 1.1-1.4 s (never over 2.8),
                            the first cut by 1 s, no dead air over 0.2 s, 1-2 word captions that hard-swap two
                            frames early (presets/pace-fast.json). #fast in a dropped file name does the same
@@ -182,6 +185,7 @@ const EDIT_OPTIONS = {
   "no-preflight": { type: "boolean" },
   behind: { type: "boolean" },
   pace: { type: "string" },
+  look: { type: "string" },
   "no-review": { type: "boolean" },
   "no-behind": { type: "boolean" },
   "no-render": { type: "boolean" },

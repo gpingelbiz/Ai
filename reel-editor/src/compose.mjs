@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
 import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
+import { skinsCSS, skinFonts } from "./looks.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -44,6 +45,8 @@ export function composeProject(plan, projectDir) {
   ensureDir(path.join(assets, "fonts"));
   ensureDir(path.join(assets, "vendor"));
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(fontFile(plan.style, f), path.join(assets, "fonts", f));
+  // The fonts the reel's card look needs (typewriter, marker, serif).
+  for (const f of skinFonts((plan.graphics || []).map((g) => g.skin || "glass")).files) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(assets, "vendor", "gsap.min.js"));
   const sfxUsed = new Set((plan.audio?.tracks || []).map((t) => t.src).filter((s) => s.startsWith("assets/sfx/")));
   if (sfxUsed.size) ensureDir(path.join(assets, "sfx"));
@@ -180,7 +183,12 @@ export function renderHTML(plan, footage) {
 
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
   const gfxList = plan.graphics || [];
-  const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(g)}</div>`).join("\n");
+  // Looks (looks.mjs) restyle the overlay cards; the YouTube band layout keeps the glass cards.
+  const gfxMode = s.graphics?.mode || "overlay";
+  const skinned = (g) => (gfxMode === "overlay" ? g : { ...g, skin: "glass" });
+  const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g))}</div>`).join("\n");
+  const skinsUsed = [...new Set(gfxList.map((g) => skinned(g).skin || "glass"))];
+  const fontsForSkins = skinFonts(skinsUsed);
 
   const tracks = plan.audio?.tracks || [];
   const audioHTML = tracks
@@ -254,6 +262,7 @@ export function renderHTML(plan, footage) {
     <style>
       @font-face { font-family: "Anton"; src: url("assets/fonts/Anton-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: block; }
       @font-face { font-family: "Inter"; src: url("assets/fonts/Inter.ttf") format("truetype"); font-weight: 100 900; font-style: normal; font-display: block; }
+      ${fontsForSkins.css}
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
       #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
@@ -284,7 +293,7 @@ export function renderHTML(plan, footage) {
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
-${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay" }) : ""}
+${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay" }) + skinsCSS({ H, colors: c, skins: skinsUsed }) : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
         position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3((cap.rightMarginFrac ?? cap.sideMarginFrac) * 100)}%; top: ${r3(cap.position * 100)}%;

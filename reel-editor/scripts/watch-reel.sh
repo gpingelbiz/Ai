@@ -117,6 +117,7 @@ case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
 case "$base" in *"#fast"*) flags+=(--pace fast);; esac
+case "$base" in *"#look:"*) lk="${base#*#look:}"; lk="${lk%%[ .#]*}"; flags+=(--look "$lk");; esac
 # Music: the editor picks from the music folder by the mood of what is said; "#music:<name>" asks for a track
 # whose file name contains <name>; "#nomusic" skips it. Carousels never get music.
 if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then

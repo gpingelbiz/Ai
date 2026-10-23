@@ -189,7 +189,7 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
   return out;
 }
 
-export function scenesPrompt({ candidates, transcript, hook, count, voice = "" }) {
+export function scenesPrompt({ candidates, transcript, hook, count, voice = "", looks = "" }) {
   return [
     "You are the motion designer on a talking-head Instagram reel. You pick the moments where a designed graphic card cuts in to show what the speaker is saying, and you write the words on each card. You never use tools; reply with JSON only.",
     `Pick up to ${count} moments, spread across the reel, at least 6 seconds apart. Only pick a moment when a card makes the point clearer or hit harder: the speaker says a number or amount, lists things, describes steps or a before and after, contrasts two things, quotes something, or lands the key line.`,
@@ -224,7 +224,8 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "" }
     "Lines a card may start on (number: start time, text). A card starts when that line is spoken, so pick the line where the idea begins:",
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
-    'Reply with JSON only: {"scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
+    looks ? `\n${looks}\n` : "",
+    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
   ].join("\n");
 }
 
@@ -247,25 +248,33 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.every(byStart);
     if ((saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
-      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
-      log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath}`);
+      // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
+      const look = settings.look && LOOKS[settings.look] ? settings.look : saved.look || "glass";
+      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
+      log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look})`);
       return scenes;
     }
   }
   if (!hasClaude()) { warn("graphics need the Claude Code CLI (claude) signed in; skipped"); return []; }
   const t0 = Date.now();
-  let scenes;
+  let scenes, lookPicked = null;
   try {
     log(`graphics: Claude is designing up to ${max} card${max === 1 ? "" : "s"}…`);
     const transcript = groups.map((g) => g.text).join(" ");
-    const reply = await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice }), { timeoutMs: 240000 });
-    const raw = firstJSON(reply).scenes || [];
-    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => (s.type === "post" ? { ...s, handle } : s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
+    const recent = recentLooks();
+    const fixed = settings.look && LOOKS[settings.look] ? settings.look : null;
+    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent) }), { timeoutMs: 240000 }));
+    const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent });
+    lookPicked = picked;
+    const raw = reply.scenes || [];
+    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
   } catch (e) {
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
     return [];
   }
-  writeJSON(planPath, { key, scenes });
+  writeJSON(planPath, { key, look: lookPicked?.look || "glass", lookWhy: lookPicked?.why || "", scenes });
+  if (lookPicked && !settings.look) rememberLook(lookPicked.look);
+  log(`graphics: look "${LOOKS[lookPicked?.look || "glass"].label}"${lookPicked?.why ? ` (${lookPicked.why})` : ""}`);
   log(`graphics: ${scenes.length} card${scenes.length === 1 ? "" : "s"} in ${Math.round((Date.now() - t0) / 1000)}s${scenes.map((s) => `\n  ${s.start}s ${s.type}: ${s.eyebrow} | ${s.value || s.text || s.title || ""}${s.items ? " " + s.items.map((i) => i.text).join(" / ") : ""}`).join("")}`);
   return scenes;
 }
@@ -273,6 +282,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
 // ---------------------------------------------------------------- rendering
 
 import { esc } from "./text.mjs";
+import { skinHTML, SKINS_JS, looksPrompt, pickLook, recentLooks, rememberLook, skinFor, LOOKS } from "./looks.mjs";
 const marked = (s, cls) => esc(s).replace(/\*([^*]+)\*/g, `<span class="${cls}">$1</span>`).replace(/\*/g, "");
 
 /**
@@ -300,6 +310,9 @@ function statHTML(value, size, extraClass = "") {
 
 /** Inner HTML of one card. Elements with g-in animate in, in document order. */
 export function sceneHTML(s) {
+  // A look can reshape a card into an artifact (notification, Notes list, receipt, typed card); otherwise its skin
+  // only restyles the regular markup below.
+  if (s.skin && s.skin !== "glass") { const h = skinHTML(s, s.skin, { statHTML }); if (h) return h; }
   const eyebrow = s.eyebrow ? `<div class="g-eyebrow g-in"><span class="g-dot"></span>${esc(s.eyebrow)}</div>` : "";
   if (s.type === "stat") {
     // Sized by length so a long value ("Almost 8 years") stays inside the card; short ones go big.
@@ -551,6 +564,7 @@ export const GRAPHICS_JS = `
             tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
             tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
           }
+${SKINS_JS}
           tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: Math.min(0.22, 1.1 / Math.max(1, ins.length)) }, g.start + 0.06);
           // Bubbles run on their own clock (typing, then pop), so take them out of the stagger.
           el.querySelectorAll(".g-bubble.g-in").forEach((b) => tl.set(b, { opacity: 0 }, g.start + 0.06));
