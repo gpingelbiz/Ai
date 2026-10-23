@@ -1,0 +1,55 @@
+#!/usr/bin/env node
+// The Publish folder's commands, run by the hourly "reel-publish" task (and by hand):
+//   node scripts/publish-folder.mjs scan           JSON: the next reel to post, or {"next":null}
+//   node scripts/publish-folder.mjs slot '<json>'  JSON: the posting day/hour from {taken:[days], bestByDay:{day:[hours]}}
+//   node scripts/publish-folder.mjs serve <video>  opens a temporary public link to that one video, prints it
+//   node scripts/publish-folder.mjs stop           closes it
+//   node scripts/publish-folder.mjs done <entry> --planner <url> --date <iso> [--draft] [--why <text>]
+//   node scripts/publish-folder.mjs fail <entry> --why <text>
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { scan, readItem, fileItem, serve, stop, serveChild, pickSlot, ROOT } from "../src/publish-folder.mjs";
+
+const notify = (title, msg) => { try { spawnSync("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title ${JSON.stringify(title)}`]); } catch {} };
+
+const args = process.argv.slice(2);
+const [cmd, a1] = args;
+const opt = (k) => { const i = args.indexOf(k); return i > 0 ? args[i + 1] : ""; };
+const out = (v) => console.log(JSON.stringify(v, null, 1));
+
+switch (cmd) {
+  case "scan": {
+    const items = scan();
+    const ready = items.filter((i) => i.video && !i.waiting && !i.problem);
+    out({ folder: ROOT, next: ready[0] || null, waiting: items.filter((i) => i.waiting).map((i) => i.entry), problems: items.filter((i) => i.problem).map((i) => ({ entry: i.entry, problem: i.problem })), queued: ready.length });
+    break;
+  }
+  case "slot": {
+    const j = JSON.parse(a1 || "{}");
+    out(pickSlot({ now: new Date(), taken: j.taken || [], bestByDay: j.bestByDay || {}, tz: j.tz || "America/Phoenix" }));
+    break;
+  }
+  case "serve": console.log(await serve(path.resolve(a1), { script: fileURLToPath(import.meta.url) })); break;
+  case "serve-child": await serveChild(path.resolve(a1)); break;
+  case "stop": console.log((await stop()) ? "closed" : "nothing open"); break;
+  case "done":
+  case "fail": {
+    const item = readItem(a1, { settle: 0 });
+    if (!item?.video) { console.error(`not found in ${ROOT}: ${a1}`); process.exit(1); }
+    const date = opt("--date");
+    const receipt = cmd === "done"
+      ? [args.includes("--draft") ? `Saved as a DRAFT in Metricool for you to look at (${opt("--why") || "flagged"}); it will not post until you schedule it there.` : `Scheduled to post on Instagram at ${date}.`, `Metricool: ${opt("--planner") || "(no link returned)"}`, "", "Posted text:", item.text, ""].join("\n")
+      : [`Not posted: ${opt("--why") || "unknown error"}`, "Fix it and drop the folder in Publish again.", ""].join("\n");
+    const where = fileItem(item, { status: cmd === "done" ? "scheduled" : "failed", receipt });
+    const name = item.entry.replace(/\.(mp4|mov|m4v)$/i, "");
+    if (cmd === "fail") notify("Reel not posted", `${name}: ${opt("--why") || "error"}`);
+    else if (args.includes("--draft")) notify("Reel saved as a draft", `${name}: ${opt("--why") || "flagged"}. Look at it in Metricool.`);
+    else notify("Reel scheduled", `${name} posts on Instagram ${date.replace("T", " ").slice(0, 16)}`);
+    console.log(where);
+    break;
+  }
+  default:
+    console.error("usage: publish-folder.mjs scan | slot <json> | serve <video> | stop | done <entry> --planner <url> --date <iso> [--draft] | fail <entry> --why <text>");
+    process.exit(2);
+}

@@ -80,6 +80,12 @@ fi
 # Mac notification (shows on the Mini; harmless when there is no GUI session).
 notify() { local t m; t=$(printf '%s' "$1" | tr '"' "'"); m=$(printf '%s' "$2" | tr '"' "'"); osascript -e "display notification \"$m\" with title \"$t\"" >/dev/null 2>&1 || true; }
 
+# Publish metadata next to a delivered reel (read by the Publish folder, src/publish-folder.mjs): whether the reel
+# has AI pictures (Instagram's AI label), the preflight result and anything obvious the reviewer saw.
+reel_meta() { # $1 work dir, $2 output json
+  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{};const hi=(wt.issues||[]).find((i)=>i.severity==="high");fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,obvious:hi?hi.note:null,coverMs:50}))' "$1" "$2" 2>/dev/null || true
+}
+
 # Create and print a brand-new "<today> <kind> <n><suffix>" folder under $1 ("2026-10-21 Reel 3",
 # "2026-10-21 Reel 4 with B-roll", "2026-10-21 Carousel 1"), keeping today's count per kind in $2.
 # Background jobs cannot list Desktop folders (macOS privacy), so this never globs $1: it starts one past the
@@ -195,6 +201,7 @@ if [ "$MODE" = long ]; then
     [ -f "$out" ] || continue
     pretty=$(printf '%s' "$hooktxt" | sed -E 's/\*//g; s/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
     cp "$out" "$folder/Clip $k - ${pretty:-clip}.mp4"
+    reel_meta "$(dirname "$(dirname "$out")")" "$folder/.Clip $k.reel.json"
     cdir="$(dirname "$(dirname "$out")")"
     [ -f "$cdir/covers/Cover.png" ] && cp -f "$cdir/covers/Cover.png" "$folder/Clip $k - Cover.png"
     [ -s "$cdir/review.txt" ] && cp -f "$cdir/review.txt" "$folder/Clip $k - check these words.txt"
@@ -269,6 +276,7 @@ else
   label="$(basename "$folder")"
   dest="$folder/$title.mp4"
   cp "$work/renders/$name.mp4" "$dest"
+  reel_meta "$work" "$folder/.reel.json"
   if [ -n "$shots" ]; then
     i=1
     while IFS= read -r still; do
