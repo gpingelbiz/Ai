@@ -36,7 +36,7 @@ test("render: slams, markers, camera punch-ins and the b-roll grade are in the c
   };
   const html = renderHTML(plan, "assets/footage.mp4");
   assert.match(html, /id="slam-0" class="slam clip" data-start="9" data-duration="1.2"/);
-  assert.match(html, /class="slam-word"[^>]*>Accountability</);
+  assert.match(html, /class="slam-word slam-t-slam"[^>]*>Accountability</);
   assert.match(html, /id="defocus"/);
   assert.match(html, /"zoomStyle":"camera"/);
   assert.match(html, /<img class="broll-media" src="assets\/broll\/broll-1.png" alt="" data-color-grading="\{&quot;preset&quot;:&quot;muted-editorial&quot;[^"]*" style="--hf-color-grading-blur: 0.3"/);

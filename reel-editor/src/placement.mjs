@@ -105,16 +105,16 @@ export function headExtent(detection, { zoom = 1, originY = 0.38 } = {}) {
 
 /** Rough wrapped height of the hook (fraction of canvas height). Anton caps measure about 0.44em per character
  *  (29 characters filled 965 px at 75.6 px on a real render); 0.46 keeps a little slack. */
-export function hookBlockHeight(words, { W = 1080, H = 1920, fontPx, widthFrac = 0.92, lineHeight = 1.0, goldScale = 1.14 } = {}) {
+export function hookBlockHeight(words, { W = 1080, H = 1920, fontPx, widthFrac = 0.92, lineHeight = 1.0, goldScale = 1.14, charEm = 0.46, padEm = 0.42 } = {}) {
   const avail = W * widthFrac;
   let lines = 1, x = 0;
   for (const w of words) {
     const em = (w.key ? goldScale : 1) * fontPx;
-    const width = (String(w.text).length * 0.46 + 0.25) * em;
+    const width = (String(w.text).length * charEm + 0.25) * em;
     if (x > 0 && x + width > avail) { lines++; x = 0; }
     x += width;
   }
-  return (lines * fontPx * lineHeight + 0.42 * fontPx) / H;
+  return (lines * fontPx * lineHeight + padEm * fontPx) / H;
 }
 
 /**

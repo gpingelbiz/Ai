@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
 import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
-import { skinsCSS, skinFonts } from "./looks.mjs";
+import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -46,7 +46,7 @@ export function composeProject(plan, projectDir) {
   ensureDir(path.join(assets, "vendor"));
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(fontFile(plan.style, f), path.join(assets, "fonts", f));
   // The fonts the reel's card look needs (typewriter, marker, serif).
-  for (const f of skinFonts((plan.graphics || []).map((g) => g.skin || "glass")).files) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
+  for (const f of skinFonts([...(plan.graphics || []).map((g) => g.skin || "glass"), ...themeFontSkins(THEMES[plan.style?.look] || null)]).files) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(assets, "vendor", "gsap.min.js"));
   const sfxUsed = new Set((plan.audio?.tracks || []).map((t) => t.src).filter((s) => s.startsWith("assets/sfx/")));
   if (sfxUsed.size) ensureDir(path.join(assets, "sfx"));
@@ -109,9 +109,10 @@ export function renderHTML(plan, footage) {
   const annotate = !!cap.annotate;
   const marker = (w, first) => {
     if (!annotate || !w.key || !first) return "";
-    return /\d|\$/.test(w.text)
-      ? `<svg class="an an-circle" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true"><path d="M8 31 C 9 11, 36 3, 58 6 C 84 9, 98 19, 96 33 C 94 49, 70 58, 46 56 C 22 54, 4 45, 6 31 C 8 19, 24 11, 44 9"/></svg>`
-      : `<svg class="an an-underline" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><path d="M3 9 C 20 3, 36 14, 54 8 S 84 3, 97 10"/></svg>`;
+    // The look's marker shape (underline, scribble, box, bracket, circle); without a look, a circle for a number and
+    // an underline for a word, as always.
+    const m = MARKERS[cap.marker] || MARKERS[/\d|\$/.test(w.text) ? "circle" : "underline"];
+    return `<svg class="an ${m.cls}" viewBox="${m.box}" preserveAspectRatio="none" aria-hidden="true"><path d="${m.d}"/></svg>`;
   };
   const capsHTML = captions
     .map((g, i) => {
@@ -126,10 +127,10 @@ export function renderHTML(plan, footage) {
   // headline: words on a soft scrim (no box), one gold emphasis, a gold rule drawn under it.
   const hookWordList = plan.hook ? plan.hook.words || plan.hook.text.split(/\s+/).map((t) => ({ text: t })) : [];
   const hookInner = headline
-    ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `<span class="hw${w.key ? " k" : ""}">${esc(w.text)}</span>`).join(" ")}</div><div id="hook-bar"></div></div>`
+    ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `<span class="hw${w.key ? " k" : ""}">${esc(w.text)}</span>`).join(" ")}${hk.treat === "type" ? '<span class="hook-cursor"></span>' : ""}</div><div id="hook-bar"></div></div>`
     : `<span id="hook-text">${esc(plan.hook?.text || "")}</span>`;
   const hookHTML = plan.hook
-    ? `      <div id="hook" class="clip" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
+    ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
     : "";
 
   const ctaHTML = plan.cta
@@ -178,7 +179,7 @@ export function renderHTML(plan, footage) {
   const slamList = plan.slams || [];
   const slamFont = (t) => Math.round(Math.min(0.115 * H, (0.86 * W) / Math.max(3, t.length * 0.52)));
   const slamHTML = slamList
-    .map((sl, i) => `      <div id="slam-${i}" class="slam clip" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"><div class="slam-word" style="font-size:${slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`)
+    .map((sl, i) => `      <div id="slam-${i}" class="slam clip" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`)
     .join("\n");
 
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
@@ -188,7 +189,8 @@ export function renderHTML(plan, footage) {
   const skinned = (g) => (gfxMode === "overlay" ? g : { ...g, skin: "glass" });
   const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g))}</div>`).join("\n");
   const skinsUsed = [...new Set(gfxList.map((g) => skinned(g).skin || "glass"))];
-  const fontsForSkins = skinFonts(skinsUsed);
+  const theme = THEMES[s.look] || null;
+  const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme)]);
 
   const tracks = plan.audio?.tracks || [];
   const audioHTML = tracks
@@ -208,7 +210,7 @@ export function renderHTML(plan, footage) {
 
   const runtimePlan = {
     duration: D,
-    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont } : null,
+    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline" } : null,
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
@@ -266,7 +268,7 @@ export function renderHTML(plan, footage) {
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
       #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
-      #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }
+      #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }${behind?.under ? "\n      #cutout-wrap { z-index: 1; } #hook { z-index: 2; }" : ""}
       #cutout { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       #root { ${sideVars} }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -331,6 +333,7 @@ ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850
         text-transform: ${ct.uppercase === false ? "none" : "uppercase"}; text-align: center;
       }
       #cta-text { display: inline-block; max-width: 100%; transform-origin: 50% 50%; ${ctaLook} }
+      .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}
     </style>
   </head>
   <body>
@@ -371,6 +374,10 @@ ${audioHTML}
           tl.fromTo(words, { opacity: 1, y: h.font * 0.12 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out", stagger: step * 0.5 }, t0);
           tl.fromTo("#hook-lines .hw.k", { scale: 1 }, { scale: 1.09, duration: 0.13, ease: "power2.out", yoyo: true, repeat: 1 }, done - 0.05);
           tl.fromTo("#hook-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.36, ease: "power3.inOut" }, h.start + 0.08);
+          // The look's treatment: never hides a word on frame 0 (it is the cover).
+          if (h.treat === "stamp") tl.fromTo("#hook-lines", { scale: 1.06 }, { scale: 1, duration: 0.26, ease: "back.out(1.6)" }, t0);
+          const cursor = document.querySelector(".hook-cursor");
+          if (cursor) for (let k = 0; k * 0.5 < h.duration; k++) tl.set(cursor, { opacity: k % 2 ? 0 : 1 }, t0 + k * 0.5);
           tl.to("#hook-block", { opacity: 0, y: -h.font * 0.3, duration: 0.24, ease: "power2.in" }, h.start + h.duration - 0.28);
         } else if (PLAN.hook) {
           const h = PLAN.hook;
