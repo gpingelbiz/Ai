@@ -42,11 +42,11 @@ export function parseCaption(raw) {
 export const postText = (c) => [c.caption, c.hashtags.length ? "" : null, c.hashtags.join(" ") || null].filter((x) => x != null).join("\n").trim();
 
 /** One dropped item: a folder or a loose video. Returns null when it holds no usable video yet. */
-export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000 } = {}) {
+export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000, sourceRoots = SOURCE_ROOTS } = {}) {
   const full = path.join(root, entry);
   let st;
   try { st = fs.statSync(full); } catch { return null; }
-  let video = null, captionFile = null, dir = null;
+  let video = null, captionFile = null, dir = null, metaFrom = null, checkFrom = null;
   if (st.isDirectory()) {
     if (entry === SCHEDULED || entry === FAILED || entry.startsWith(".")) return null;
     dir = full;
@@ -61,7 +61,14 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000 
   } else if (VIDEO.test(entry)) {
     video = full;
     const stem = entry.replace(VIDEO, "");
-    for (const c of [`${stem}.txt`, `${stem} - caption.txt`, `${stem} caption.txt`]) if (fs.existsSync(path.join(root, c))) captionFile = path.join(root, c);
+    const clip = stem.match(/^(Clip \d+) - /)?.[1];
+    for (const c of [`${stem}.txt`, `${stem} - caption.txt`, `${stem} caption.txt`, clip ? `${clip} - caption.txt` : null].filter(Boolean)) if (!captionFile && fs.existsSync(path.join(root, c))) captionFile = path.join(root, c);
+    // A video dragged in on its own: find the delivered folder it came from (same name and size) and take that
+    // folder's caption and check results, so a clip dropped without its caption file still posts with its caption.
+    if (!captionFile) {
+      const home = findSource(entry, st.size, { roots: sourceRoots });
+      if (home) { captionFile = home.captionFile; metaFrom = home.meta; checkFrom = home.check; }
+    }
   } else return null;
   if (!video) return { entry, dir, video: null, problem: "no video in it" };
   // Still copying in: wait until the file has not changed for a minute.
@@ -74,22 +81,47 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000 
   for (const f of [dir && /^Clip \d+$/.test(prefix) ? `.${prefix}.reel.json` : null, ".reel.json"].filter(Boolean)) {
     try { meta = JSON.parse(fs.readFileSync(path.join(dir || root, f), "utf8")); break; } catch {}
   }
+  if (metaFrom) { try { meta = JSON.parse(fs.readFileSync(metaFrom, "utf8")); } catch {} }
   const files = dir ? fs.readdirSync(dir) : [];
   const ai = meta.isAiGenerated ?? files.some((f) => /^b-roll \d+/i.test(f) || /runway usage/i.test(f));
   // The gate: a delivered check note with a failure means a draft for Greg to look at, not a post.
   let draft = false, why = "";
   const note = dir && files.find((f) => /check this reel\.txt$/i.test(f));
-  if (note && /^FAIL\b/m.test(fs.readFileSync(path.join(dir, note), "utf8"))) { draft = true; why = "its check note shows a failure"; }
+  const noteFile = note ? path.join(dir, note) : checkFrom;
+  if (noteFile && /^FAIL\b/m.test(fs.readFileSync(noteFile, "utf8"))) { draft = true; why = "its check note shows a failure"; }
   if (meta.preflight === "fail") { draft = true; why = "its preflight failed"; }
-  if (meta.obvious) { draft = true; why = `the reviewer saw: ${meta.obvious}`; }
+  // The render reviewer's notes do not hold a reel back (Greg 2026-10-22: dropping it is the approval, and the
+  // reviewer flags intended effects too); they go into the receipt to look at.
+  const notes = meta.obvious ? [meta.obvious] : [];
   if (!caption.caption) { draft = true; why = "there is no caption"; }
-  return { root, entry, dir, video, captionFile, caption, text: postText(caption), isAiGenerated: !!ai, coverMs: meta.coverMs ?? 50, draft, why, droppedAt: Math.round(st.mtimeMs) };
+  return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: meta.coverMs ?? 50, draft, why, droppedAt: Math.round(st.mtimeMs) };
+}
+
+// Where delivered reels live: the Desktop Reels folder (where the drop folders deliver).
+export const SOURCE_ROOTS = [process.env.REEL_WATCH_DONE || path.join(os.homedir(), "Desktop", "Reels")];
+
+/** The delivered folder a loose video came from: same file name and size. Returns its caption, meta and note. */
+export function findSource(name, size, { roots = SOURCE_ROOTS } = {}) {
+  for (const r of roots) {
+    let dirs = [];
+    try { dirs = fs.readdirSync(r, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith("Raw - ") && d.name !== "Publish" && d.name !== "Music").map((d) => path.join(r, d.name)); } catch { continue; }
+    for (const d of dirs) {
+      const f = path.join(d, name);
+      try { if (fs.statSync(f).size !== size) continue; } catch { continue; }
+      const clip = name.match(/^(Clip \d+) - /)?.[1];
+      const pick = (...c) => c.map((x) => x && path.join(d, x)).find((x) => x && fs.existsSync(x)) || null;
+      return { dir: d, captionFile: pick(clip ? `${clip} - caption.txt` : null, "caption.txt"), meta: pick(clip ? `.${clip}.reel.json` : null, ".reel.json"), check: pick(clip ? `${clip} - check this reel.txt` : null, "check this reel.txt") };
+    }
+  }
+  return null;
 }
 
 /** Everything waiting in the folder, oldest drop first. */
 export function scan({ root = ROOT, now = Date.now() } = {}) {
   if (!fs.existsSync(root)) return [];
-  return fs.readdirSync(root).map((e) => readItem(e, { root, now })).filter(Boolean).sort((a, b) => (a.droppedAt || 0) - (b.droppedAt || 0));
+  return fs.readdirSync(root).map((e) => readItem(e, { root, now })).filter(Boolean)
+    // Oldest drop first; things dropped in the same few minutes go in name order (Clip 1 before Clip 2).
+    .sort((a, b) => Math.floor((a.droppedAt || 0) / 300000) - Math.floor((b.droppedAt || 0) / 300000) || a.entry.localeCompare(b.entry, undefined, { numeric: true }));
 }
 
 /** File an item under Scheduled/ or Not posted/ with a receipt next to it. */
