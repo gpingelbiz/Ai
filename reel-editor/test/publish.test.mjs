@@ -91,6 +91,10 @@ test("slot: one reel a day, today only with two hours to spare, best hour first"
   assert.deepEqual(pickSlot({ now, bestByDay: { "2026-10-22": [18, 20], "2026-10-23": [9] } }), { day: "2026-10-22", hour: 20 });
   assert.deepEqual(pickSlot({ now, taken: ["2026-10-22"], bestByDay: { "2026-10-23": [9, 12] } }), { day: "2026-10-23", hour: 9 });
   assert.deepEqual(pickSlot({ now, taken: ["2026-10-22", "2026-10-23"] }), { day: "2026-10-24", hour: 18 });
+  // Never within two hours of another post that day: the 10 AM carousel pushes the reel to noon.
+  assert.deepEqual(pickSlot({ now, taken: ["2026-10-22"], bestByDay: { "2026-10-23": [10, 11, 12] }, busy: { "2026-10-23": [10, 18] } }), { day: "2026-10-23", hour: 12 });
+  // No best hour is clear: the clear hour nearest the best one.
+  assert.deepEqual(pickSlot({ now, taken: ["2026-10-22"], bestByDay: { "2026-10-23": [10, 11] }, busy: { "2026-10-23": [9, 11, 18] } }), { day: "2026-10-23", hour: 13 });
 });
 
 test("a clip dragged in on its own takes its caption from the delivered Clips folder it came from", () => {
