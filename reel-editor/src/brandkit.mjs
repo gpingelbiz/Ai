@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PKG_ROOT, slug } from "./util.mjs";
+import { LOOK_IDS } from "./looks.mjs";
 
 /**
  * Brand kits: one brand file (kit/brand-template.json) becomes a Reel Editor Kit zip for someone else, with their
@@ -22,10 +23,15 @@ export function checkBrand(b) {
   for (const k of ["stroke", "bg"]) if (b.colors?.[k] && !HEX.test(b.colors[k])) out.push(`colors.${k} must be a hex color like #000000`);
   if (b.look?.hook && !["headline", "gold", "box"].includes(b.look.hook)) out.push('look.hook is "headline", "gold" or "box"');
   if (b.look?.captions && !["reveal", "pop"].includes(b.look.captions)) out.push('look.captions is "reveal" or "pop"');
+  for (const x of Array.isArray(b.looks?.avoid) ? b.looks.avoid : []) if (!LOOK_IDS.includes(String(x).toLowerCase().trim())) out.push(`looks.avoid: "${x}" is not a look (${LOOK_IDS.join(", ")})`);
+  if (Array.isArray(b.looks?.avoid) && LOOK_IDS.filter((id) => id !== "gregcard" && !b.looks.avoid.map((x) => String(x).toLowerCase().trim()).includes(id)).length < 3) out.push("looks.avoid leaves fewer than 3 looks; a look cannot repeat within 3 reels");
   return out;
 }
 
 export const kitSlug = (b) => slug(b.name || "brand");
+
+/** Looks the brand file turns off (`looks.avoid`), only real look ids. */
+export const avoidLooks = (b) => (Array.isArray(b?.looks?.avoid) ? b.looks.avoid.map((x) => String(x).toLowerCase().trim()).filter((x) => LOOK_IDS.includes(x)) : []);
 
 /** The reel preset: Greg's full look underneath (so it keeps improving with the editor), every personal field theirs. */
 export function brandPreset(b, { fonts = {} } = {}) {
@@ -38,8 +44,8 @@ export function brandPreset(b, { fonts = {} } = {}) {
     captions: { style: look.captions || "reveal", annotate: look.annotate !== false },
     hook: { style: look.hook || "headline", behind: look.behind !== false },
     slams: { enabled: look.slams !== false },
-    // The Greg card is Greg's signature look; nobody else's reels get it.
-    graphics: { excludeLooks: ["gregcard"] },
+    // The Greg card is Greg's signature look; nobody else's reels get it. looks.avoid drops looks off their brand.
+    graphics: { excludeLooks: ["gregcard", ...avoidLooks(b)] },
     // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
     broll: { world: String(b.world || "").trim(), worldInPrompt: true, style: String(b.brollStyle || "").trim() },
     carousel: { handle: b.handle || "", style: String(b.carouselStyle || "").trim() },

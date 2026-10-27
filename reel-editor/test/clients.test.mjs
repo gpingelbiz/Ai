@@ -96,3 +96,10 @@ test("client b-roll comes from the client's world, with a scene history of its o
   assert.equal(recentFile({ REEL_CACHE: "/c/jane" }), "/c/jane/broll-recent.json");
   assert.match(recentFile({}), /\.cache\/reel-editor\/broll-recent\.json$/);
 });
+
+test("a brand file can turn off looks that do not fit it; typos are caught", async () => {
+  const { checkBrand } = await import("../src/brandkit.mjs");
+  assert.deepEqual(brandPreset({ ...brand, looks: { avoid: ["fieldnotes", "Press"] } }).graphics.excludeLooks, ["gregcard", "fieldnotes", "press"]);
+  assert.match(checkBrand({ ...brand, looks: { avoid: ["neon"] } }).join(" "), /"neon" is not a look/);
+  assert.match(checkBrand({ ...brand, looks: { avoid: ["receipts", "phone", "fieldnotes", "briefing", "press", "shopfloor", "blueprint", "casefile"] } }).join(" "), /fewer than 3 looks/);
+});
