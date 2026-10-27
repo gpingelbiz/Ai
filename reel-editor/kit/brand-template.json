@@ -1,5 +1,5 @@
 {
-  "_how": "Copy this file, fill it in for one person, then run: node scripts/brand-kit.mjs their-brand.json. Fields starting with _ are notes and are ignored.",
+  "_how": "Copy this file, fill it in for one person, then run: node scripts/brand-kit.mjs their-brand.json (a kit they run) or node scripts/client.mjs add their-brand.json (you edit their footage on this Mac). Fields starting with _ are notes and are ignored.",
   "name": "Jane Doe",
   "handle": "@janedoe",
   "colors": {
@@ -29,5 +29,7 @@
   "terms": ["Their program name", "Their framework"],
   "names": ["Their business name"],
   "phrases": [],
+  "cta": "",
+  "_cta": "Client folders only: the on-screen call to action and caption CTA (\"Comment PRICE\"). Empty = none.",
   "corrections": [{ "from": "how speech-to-text mishears a term", "to": "How it is spelled" }]
 }

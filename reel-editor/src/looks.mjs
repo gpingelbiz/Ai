@@ -162,23 +162,23 @@ export function rememberLook(look) {
 }
 
 /** The lines added to the card prompt: the catalog, the recent looks to avoid, the reply field. */
-export function looksPrompt(recent = []) {
+export function looksPrompt(recent = [], { exclude = [] } = {}) {
   return [
     "Also pick ONE look for all the cards of this reel, from what the reel is about. Looks:",
-    ...LOOK_IDS.map((id) => `- ${id}: ${LOOKS[id].label}, for ${LOOKS[id].fits}`),
+    ...LOOK_IDS.filter((id) => !exclude.includes(id)).map((id) => `- ${id}: ${LOOKS[id].label}, for ${LOOKS[id].fits}`),
     recent.length ? `The last reels used, most recent last: ${recent.join(", ")}. Do not use any of the last three (${recent.slice(-3).join(", ")}), and prefer a look not in the list at all, unless this reel's topic plainly calls for one of them.` : "",
     'Put it in the reply as "look": "<id>", with "lookWhy": a short reason tied to the topic.',
   ].filter(Boolean).join("\n");
 }
 
 /** A look from Claude's reply, checked; otherwise one from the topic words, never the most recent. */
-export function pickLook(reply, { transcript = "", recent = [] } = {}) {
+export function pickLook(reply, { transcript = "", recent = [], exclude = [] } = {}) {
   const asked = String(reply?.look || "").toLowerCase().replace(/[^a-z]/g, "");
-  if (LOOKS[asked]) return { look: asked, why: String(reply?.lookWhy || "").trim(), source: "claude" };
+  if (LOOKS[asked] && !exclude.includes(asked)) return { look: asked, why: String(reply?.lookWhy || "").trim(), source: "claude" };
   const t = transcript.toLowerCase();
   const score = (id) => LOOKS[id].fits.split(/,\s*/).reduce((a, w) => a + (t.includes(w.split(" ").pop()) ? 1 : 0), 0);
   const cool = new Set(recent.slice(-3));
-  const ranked = LOOK_IDS.filter((id) => id !== "glass" && !cool.has(id)).sort((a, b) => score(b) - score(a));
+  const ranked = LOOK_IDS.filter((id) => id !== "glass" && !cool.has(id) && !exclude.includes(id)).sort((a, b) => score(b) - score(a));
   return { look: ranked[0] || "glass", why: "picked from the topic words", source: "fallback" };
 }
 

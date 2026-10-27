@@ -5,7 +5,8 @@ import os from "node:os";
 import { log, warn, writeJSON, readJSON, ensureDir, r3 } from "./util.mjs";
 
 /** Scenes drawn for recent reels, so the next reel does not get the same empty conference room again. */
-export const recentFile = (env = process.env) => env.REEL_BROLL_RECENT || path.join(os.homedir(), ".cache", "reel-editor", "broll-recent.json");
+// REEL_CACHE gives a client its own scene history, so its b-roll never steers off (or into) Greg's scenes.
+export const recentFile = (env = process.env) => env.REEL_BROLL_RECENT || path.join(env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-recent.json");
 export function readRecent(file = recentFile()) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")).scenes || []; } catch { return []; }
 }
@@ -76,11 +77,17 @@ export const PICKS_SCHEMA = {
   additionalProperties: false,
 };
 
-export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4, style = "", recent = [], aspect = "9:16" }) {
+// Greg's own examples. A brand with a world of its own (a client, a kit) gets its world instead, so its b-roll is
+// set in its life, never in Greg's trucks and job sites.
+const GREG_EXAMPLES = "(a phone face-down on a truck tailgate, a whiteboard with one smudged number, a work boot on a job-site step, a Bible open on a passenger seat, a cold coffee beside a closed laptop)";
+
+export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4, style = "", recent = [], aspect = "9:16", world = "" }) {
   return [
     "You are a reel editor adding b-roll to a talking-head Instagram reel.",
     `First pick ${count} caption lines where cutting away to a still image would make the point land harder, spread across the reel, at least ${spacing} seconds apart.`,
-    "For each, describe the image in one or two sentences: a literal object or process shot tied to the thing being said at that moment, lived-in and specific (a phone face-down on a truck tailgate, a whiteboard with one smudged number, a work boot on a job-site step, a Bible open on a passenger seat, a cold coffee beside a closed laptop). Say what the light is and where it comes from.",
+    world
+      ? `For each, describe the image in one or two sentences: a literal object or process shot tied to the thing being said at that moment, lived-in and specific, set in the speaker's own world. Say what the light is and where it comes from.\nThe speaker's world (every image comes from here, never from a job site, truck or workshop unless it is named here): ${world}`
+      : `For each, describe the image in one or two sentences: a literal object or process shot tied to the thing being said at that moment, lived-in and specific ${GREG_EXAMPLES}. Say what the light is and where it comes from.`,
     "Never: empty conference rooms, dinner tables, skylines, empty offices, generic desks (they read as stock photos); faces or anyone who could read as the speaker; readable text, numbers, logos or brands; clip-art metaphors (lightbulbs, chess pieces, rockets, puzzle pieces, mountains, arrows).",
     "Skip lines where the speaker is talking about themself in a way only their face can carry.",
     recent.length ? `Recent reels already used these scenes; pick something clearly different (another object, place or moment):\n${recent.map((s) => `- ${s}`).join("\n")}` : "",
@@ -135,7 +142,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   try {
     log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"} and drawing the stills…`);
     const transcript = groups.map((g) => g.text).join(" ");
-    const reply = await codexExec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: len + gap, style: settings.style || "", recent: readRecent(), aspect: settings.aspect || "9:16" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
+    const reply = await codexExec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: len + gap, style: settings.style || "", recent: readRecent(), aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
     picks = JSON.parse(reply).picks || [];
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);

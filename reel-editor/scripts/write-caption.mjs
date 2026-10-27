@@ -27,11 +27,11 @@ export function voiceFile(plan, env = process.env) {
 }
 
 /** The prompt Claude gets. Pure, so it can be tested. */
-export function buildPrompt({ transcript, hook, voice, cta, auto = false }) {
+export function buildPrompt({ transcript, hook, voice, cta, auto = false, watchlist = true }) {
   return [
     "You write the Instagram post copy for one finished talking-head reel.",
     "",
-    "1. Call the sandcastles top_hooks tool with scope \"all\" and a query naming this reel's topic in a few words. You may also call top_hooks with scope \"watchlist\", and top_formats. Use at most 3 calls.",
+    "1. Call the sandcastles top_hooks tool with scope \"all\" and a query naming this reel's topic in a few words. " + (watchlist ? "You may also call top_hooks with scope \"watchlist\", and top_formats." : "You may also call top_formats. Never use the \"watchlist\" scope: it is someone else's watchlist.") + " Use at most 3 calls.",
     "2. From the results, find the hook patterns (spoken_hook_category + madlib) and caption habits winning for this topic.",
     "3. Write the copy in the speaker's voice, reusing their own words from the transcript wherever you can.",
     "",
@@ -120,7 +120,7 @@ async function main() {
   const hook = plan.hook?.text || "";
   const auto = !!(hook && plan.hook?.auto);
   const out = outArg || path.join(workDir, "caption.txt");
-  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voiceFile(plan), "utf8"), cta, auto });
+  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voiceFile(plan), "utf8"), cta, auto, watchlist: process.env.REEL_CAPTION_WATCHLIST !== "0" });
   let reply;
   try {
     reply = await runClaude(prompt);
