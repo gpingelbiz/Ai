@@ -78,7 +78,7 @@ if [ "${REEL_WATCH_FAST:-0}" != 1 ]; then
 fi
 
 # Mac notification (shows on the Mini; harmless when there is no GUI session).
-notify() { local t m; t=$(printf '%s' "$1" | tr '"' "'"); m=$(printf '%s' "$2" | tr '"' "'"); osascript -e "display notification \"$m\" with title \"$t\"" >/dev/null 2>&1 || true; }
+notify() { local t m; t=$(printf '%s%s' "${REEL_CLIENT:+$REEL_CLIENT: }" "$1" | tr '"' "'"); m=$(printf '%s' "$2" | tr '"' "'"); osascript -e "display notification \"$m\" with title \"$t\"" >/dev/null 2>&1 || true; }
 
 # Publish metadata next to a delivered reel (read by the Publish folder, src/publish-folder.mjs): whether the reel
 # has AI pictures (Instagram's AI label), the preflight result and anything obvious the reviewer saw.

@@ -59,6 +59,10 @@ Every reel also goes through four quality stages (README "Studio sound, the capt
 
 Cards take a per-reel look picked by Claude from the topic (`src/looks.mjs`: receipts, phone, fieldnotes, gregcard, briefing, press, shopfloor, blueprint, casefile, redline, glass), never one of the last three; `--look <id>` / `#look:<id>` sets it. `node scripts/looks-preview.mjs --footage <video>` shows them all. The look also sets the hook treatment, the gold-word marker, the slam style, the b-roll grade and cut, and the camera move (`THEMES` / `applyTheme`; glass keeps the preset's own); captions never change, and `--zoom-style` / `--broll-cut` win. `node scripts/themes-preview.mjs --footage <video> --still <broll.png>` shows every look's whole theme.
 
+## Clients
+
+`node scripts/client.mjs add their-brand.json` sets up a client edited on this Mac: drop folders in `~/Desktop/Reels/Clients/<Name>/`, finished reels there too, everything in the client's brand (`src/clients.mjs`, `client.env` per client, scanned by the same `watch-folder.sh` under one lock). The Greg card look, Greg's Sandcastles watchlist and his CTA never reach a client. `client.mjs list` shows them.
+
 ## Brand kits
 
 `node scripts/brand-kit.mjs <brand.json>` builds `dist/<Name> Reel Editor Kit.zip` with their look, fonts, words and voice built in (template `kit/brand-template.json`; fill it from their Brand & Messaging Guide). Never hand anyone a kit in Greg's look, and never edit someone else's footage in pingel-brand: client work uses the client's kit.

@@ -264,8 +264,8 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const transcript = groups.map((g) => g.text).join(" ");
     const recent = recentLooks();
     const fixed = settings.look && LOOKS[settings.look] ? settings.look : null;
-    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent) }), { timeoutMs: 240000 }));
-    const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent });
+    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude: settings.excludeLooks || [] }) }), { timeoutMs: 240000 }));
+    const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude: settings.excludeLooks || [] });
     lookPicked = picked;
     const raw = reply.scenes || [];
     scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });

@@ -8,6 +8,8 @@
 #   REEL_WATCH_RAW_YOUTUBE   Raw - Full YouTube Edit: the whole long video edited for YouTube (default ~/Reels/raw-youtube)
 #   REEL_WATCH_RAW_RUNWAY    Raw - Reel with Runway B-roll: the full look with generated video clips (default ~/Reels/raw-runway)
 #   REEL_WATCH_ROOT          work folder (default ~/Reels); markers live in videos/.seen
+#   REEL_CLIENTS             client roots (default ~/Reels/clients; scripts/client.mjs makes them), scanned after
+#                            Greg's folders under the same lock, each job with that client's client.env
 # A clip is skipped once it has a .done or .failed marker. Rename a failed clip to retry it.
 set -uo pipefail
 
@@ -32,21 +34,41 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
-# Keep scanning until a pass finds nothing new, so clips dropped mid-render are not missed.
-while :; do
-  did=0
-  for pair in "reel|$RAW" "broll|$RAW_BROLL" "carousel|$RAW_CAROUSEL" "long|$RAW_LONG" "youtube|$RAW_YOUTUBE" "runway|$RAW_RUNWAY"; do
+# One pass over a set of drop folders: $1 marker folder, $2 client.env ("" for Greg's own), then mode|folder pairs.
+scan() {
+  local seen="$1" envf="$2" pair mode dir f base key mark
+  shift 2
+  for pair in "$@"; do
     mode="${pair%%|*}"; dir="${pair#*|}"
     for f in "$dir"/*.{mov,mp4,m4v}; do
       # A marker names the clip by name, size and modified time, so a new file with an old name is edited again.
       # Older name-only markers still count, so clips done before are not redone.
       base="$(basename "$f")"; [ "$mode" = reel ] || base="$mode-$base"
       key="$base@$(filesize "$f")-$(filemtime "$f")"
-      [ -e "$SEEN/$key.done" ] || [ -e "$SEEN/$key.failed" ] || [ -e "$SEEN/$base.done" ] || [ -e "$SEEN/$base.failed" ] && continue
+      [ -e "$seen/$key.done" ] || [ -e "$seen/$key.failed" ] || [ -e "$seen/$base.done" ] || [ -e "$seen/$base.failed" ] && continue
       did=1
-      if "$JOB" "$f" "$mode"; then mark="$SEEN/$key.done"; else mark="$SEEN/$key.failed"; fi
+      # A client's job runs with the client's settings (brand preset, word list, voice, folders), never Greg's.
+      if [ -n "$envf" ]; then
+        ( set -a; . "$envf"; set +a; "$JOB" "$f" "$mode" ) && mark="$seen/$key.done" || mark="$seen/$key.failed"
+      else
+        if "$JOB" "$f" "$mode"; then mark="$seen/$key.done"; else mark="$seen/$key.failed"; fi
+      fi
       touch "$mark" || { echo "cannot write $mark; stopping so this clip is not edited again and again" >&2; exit 1; }
     done
+  done
+}
+
+# Clients (scripts/client.mjs): each has its own drop folders and markers under ~/Reels/clients/<slug>.
+CLIENTS="${REEL_CLIENTS:-$HOME/Reels/clients}"
+
+# Keep scanning until a pass finds nothing new, so clips dropped mid-render are not missed.
+while :; do
+  did=0
+  scan "$SEEN" "" "reel|$RAW" "broll|$RAW_BROLL" "carousel|$RAW_CAROUSEL" "long|$RAW_LONG" "youtube|$RAW_YOUTUBE" "runway|$RAW_RUNWAY"
+  for envf in "$CLIENTS"/*/client.env; do
+    c="$(dirname "$envf")"
+    mkdir -p "$c/videos/.seen"
+    scan "$c/videos/.seen" "$envf" "reel|$c/raw" "broll|$c/raw-broll" "carousel|$c/raw-carousel" "long|$c/raw-long" "youtube|$c/raw-youtube" "runway|$c/raw-runway"
   done
   [ "$did" = 1 ] || break
 done

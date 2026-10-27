@@ -38,7 +38,10 @@ export function brandPreset(b, { fonts = {} } = {}) {
     captions: { style: look.captions || "reveal", annotate: look.annotate !== false },
     hook: { style: look.hook || "headline", behind: look.behind !== false },
     slams: { enabled: look.slams !== false },
-    broll: { world: String(b.world || "").trim(), style: String(b.brollStyle || "").trim() },
+    // The Greg card is Greg's signature look; nobody else's reels get it.
+    graphics: { excludeLooks: ["gregcard"] },
+    // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
+    broll: { world: String(b.world || "").trim(), worldInPrompt: true, style: String(b.brollStyle || "").trim() },
     carousel: { handle: b.handle || "", style: String(b.carouselStyle || "").trim() },
     lowerThird: { name: b.name, handle: b.handle || "" },
   };
