@@ -94,6 +94,7 @@ export function sceneDuration(s) {
   // Cards hold long enough to be read twice: the speaker is still on screen, so a card is never a cut.
   if (s.type === "list" || s.type === "steps" || s.type === "bars") return r3(Math.min(8, 4.5 + 0.7 * n));
   if (s.type === "message") return r3(Math.min(8, 4 + 1.2 * n));
+  if (s.type === "compare" && (Number.isInteger(s.pivotLine) || Number.isFinite(s.pivotAt))) return 4.5;
   if (s.type === "quote" || s.type === "compare") return 6;
   if (s.type === "chapter") return 3.5;
   if (s.type === "headline") return 5.5;
@@ -107,12 +108,15 @@ export function graphicsCount(duration, { max = 6, every = 10 } = {}) {
 }
 
 const clean = (s, max = 80) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
-const words = (s) => String(s || "").replace(/\*/g, "").trim().split(/\s+/).filter(Boolean).length;
+const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
+const wordCount = (s) => String(s || "").replace(/\*/g, "").trim().split(/\s+/).filter(Boolean).length;
+const capWords = (s, max) => words(s).slice(0, Math.max(0, max)).join(" ");
+const compareWords = (s) => words(s.title).length + [s.a, s.b].reduce((n, x) => n + words(x?.label).length + words(x?.value).length + words(x?.note).length, 0);
 const itemLine = (line) => Number.isInteger(line) ? line : parseInt(line, 10);
 const hasTimedItems = (s) => (s.type === "list" || s.type === "steps") && s.items?.length && s.items.every((it) => Number.isFinite(it.at));
 
 function cardWords(s) {
-  return words(s.eyebrow) + words(s.title) + (s.items || []).reduce((n, it) => n + words(it.text) + words(it.tag), 0);
+  return wordCount(s.eyebrow) + wordCount(s.title) + (s.items || []).reduce((n, it) => n + wordCount(it.text) + wordCount(it.tag), 0);
 }
 
 const QUALIFIED_NUMBER = /\b(?:about|around|over|under|within|nearly|almost|up\s+to)\b|\bafter\s+(?:\d[\d,.]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+years?\b/i;
@@ -127,6 +131,32 @@ export function numberMotion(s, { schema = 1 } = {}) {
   if (s.motion === "growth" && !qualified && (statEnds || barEnds)) return "growth";
   if (s.motion === "reveal" || s.motion === "growth" || schema >= GRAPHICS_SCHEMA) return "reveal";
   return "";
+}
+
+function capCompareSide(x, max = 6) {
+  const valueWords = words(x.value).length;
+  const label = capWords(x.label, Math.max(1, max - valueWords));
+  const note = capWords(x.note, max - valueWords - words(label).length);
+  return { ...x, label, note };
+}
+
+/** Fit a staged comparison to its 160 WPM reading budget without cutting a number or its qualifier apart. */
+function fitCompareBudget(s, duration) {
+  const budget = Math.max(2, Math.floor((duration - 0.7) / 0.375));
+  const out = { ...s, a: capCompareSide(s.a), b: capCompareSide(s.b) };
+  if (compareWords(out) <= budget) return out;
+  out.title = "";
+  for (const side of [out.a, out.b]) {
+    while (compareWords(out) > budget && words(side.note).length) side.note = capWords(side.note, words(side.note).length - 1);
+  }
+  for (const side of [out.a, out.b]) {
+    while (compareWords(out) > budget && words(side.label).length > 1) side.label = capWords(side.label, words(side.label).length - 1);
+  }
+  if (compareWords(out) > budget && out.a.value && out.b.value) { out.a.value = ""; out.b.value = ""; }
+  for (const side of [out.a, out.b]) {
+    while (compareWords(out) > budget && words(side.label).length > 1) side.label = capWords(side.label, words(side.label).length - 1);
+  }
+  return out;
 }
 
 /** Tidy one scene from Claude: known type, short text, the fields that type needs. Returns null if unusable. */
@@ -150,7 +180,7 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
     const supplied = items.filter((it) => Object.hasOwn(it, "line"));
     const lined = items.filter((it) => Number.isInteger(it.line));
     // No cue lines is the legacy card. Once one item is timed, every item must be timed in spoken order.
-    if (supplied.length && (lined.length !== items.length || lined.some((it, i) => i && it.line <= lined[i - 1].line) || items.some((it) => words(it.text) > 4))) return null;
+    if (supplied.length && (lined.length !== items.length || lined.some((it, i) => i && it.line <= lined[i - 1].line) || items.some((it) => wordCount(it.text) > 4))) return null;
     s.items = items;
   } else if (s.type === "bars") {
     s.title = clean(raw.title, 48);
@@ -169,6 +199,13 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
     s.b = side(raw.b);
     if (!s.a.label || !s.b.label) return null;
     if (!(splitStat(s.a.value) && splitStat(s.b.value))) { s.a.value = ""; s.b.value = ""; }
+    const pivotLine = Number.isInteger(raw.pivotLine) ? raw.pivotLine : parseInt(raw.pivotLine, 10);
+    if (Number.isInteger(pivotLine)) {
+      s.pivotLine = pivotLine;
+      s.kind = ["versus", "before-after", "roles"].includes(raw.kind) ? raw.kind : "versus";
+      s.a = capCompareSide(s.a);
+      s.b = capCompareSide(s.b);
+    }
   } else if (s.type === "message") {
     s.contact = clean(raw.contact, 18);
     s.items = (Array.isArray(raw.items) ? raw.items : [])
@@ -196,7 +233,17 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
 export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail = 1.5, longest = 8 } = {}) {
   const from = hook ? hook.start + hook.duration + lead : 3;
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
-  return groups.map((g, i) => ({ i, start: g.start, text: g.text })).filter((c) => c.start >= from && c.start + 2.2 <= until && c.start + Math.min(longest, until - c.start) <= until);
+  return groups.map((g, i) => ({ i, start: g.start, text: g.text, words: g.words || [] })).filter((c) => c.start >= from && c.start + 2.2 <= until && c.start + Math.min(longest, until - c.start) <= until);
+}
+
+function pivotTime(candidate) {
+  const tokens = candidate.words.map((w) => String(w.text || "").toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const phrases = [["but"], ["instead"], ["now"], ["what", "they", "hear"], ["the", "real", "reason"], ["two", "years", "later"]];
+  for (const phrase of phrases) {
+    const at = tokens.findIndex((_, i) => phrase.every((x, j) => tokens[i + j] === x));
+    if (at >= 0 && Number.isFinite(candidate.words[at]?.start)) return candidate.words[at].start;
+  }
+  return candidate.start;
 }
 
 /**
@@ -204,12 +251,14 @@ export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail 
  * card comes before the previous one would end, the previous one is shortened (never below `minHold`) rather than
  * the next one dropped: a card that holds long is good, a point with no card is worse.
  */
-export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 6, tail = 1.5, minHold = 4 } = {}) {
+export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 6, tail = 1.5, minHold = 4, fps = 30 } = {}) {
   const byLine = new Map(candidates.map((c) => [c.i, c]));
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   const out = [];
   const stats = [];
+  let contrast = false;
   for (const s of [...scenes].filter((x) => x && byLine.has(x.line)).sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
+    if (s.type === "compare" && Number.isInteger(s.pivotLine) && contrast) continue;
     const start = byLine.get(s.line).start;
     if (s.type === "stat" && (stats.length >= 2 || stats.some((at) => start - at < 8))) continue;
     let scene = s;
@@ -223,7 +272,7 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
       scene = { ...s, items };
       scene.duration = sceneDuration(scene);
       const budget = Math.floor((scene.duration - 0.7) / 0.375);
-      if (items.some((it) => words(it.text) > 4) || cardWords(scene) > budget) continue;
+      if (items.some((it) => wordCount(it.text) > 4) || cardWords(scene) > budget) continue;
       const timed = out.filter(hasTimedItems);
       if (timed.length >= 2 || timed.some((g) => start - g.start < 8)) continue;
       if (start + scene.duration > until) continue;
@@ -236,9 +285,18 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
       prev.duration = room;
     }
     const dur = r3(Math.min(scene.duration, until - start));
-    if (dur < 2 && !hasTimedItems(scene)) continue;
-    out.push({ ...scene, start: r3(start), duration: dur });
-    if (s.type === "stat") stats.push(start);
+    if (dur < (scene.type === "compare" && Number.isInteger(scene.pivotLine) ? 3 : 2) && !hasTimedItems(scene)) continue;
+    let placed = { ...scene, start: r3(start), duration: dur };
+    if (scene.type === "compare" && Number.isInteger(scene.pivotLine)) {
+      const pivot = byLine.get(scene.pivotLine);
+      if (!pivot) continue;
+      const pivotAt = r3(Math.round((pivotTime(pivot) - start) * fps) / fps);
+      if (pivotAt < 6 / fps || pivotAt > dur - 16 / fps) continue;
+      placed = fitCompareBudget({ ...placed, pivotAt }, dur);
+      contrast = true;
+    }
+    out.push(placed);
+    if (scene.type === "stat") stats.push(start);
     if (out.length >= max) break;
   }
   return out;
@@ -255,7 +313,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "- quote: a line worth reading, either something the speaker quotes (eyebrow = where it is from, as they say it) or their own strongest line (eyebrow = a 2-4 word label). text, with the one phrase that matters in *asterisks* (it is highlighted).",
     "- headline: the key statement in at most 7 words, with the one phrase that matters in *asterisks* (it is set in gold).",
     "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text, line}], where line is where that step is first said.",
-    "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
+    "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), kind (versus, before-after, or roles), pivotLine (the numbered caption line where the contrast word is spoken), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
     "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most, motion (\"reveal\" or \"growth\"). Keep exact printed labels and use reveal unless two rows are the explicit starting and ending values of one spoken change.",
     "- message: a text exchange the speaker reads out or acts out (a client text, a rep\u2019s reply, what they typed). contact (who it is from, as the speaker names them, else empty), items [{from: \"them\" | \"me\", text}] 1-3 bubbles, their words only.",
     "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
@@ -272,6 +330,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "- Anchor every item to the line where that item first becomes known. Never reveal a later point early.",
     "- Pick at most two timed list/steps cards in the reel and keep their starts at least 8 seconds apart.",
     "- A timed list/steps card must fit this whole-card reading budget: floor((seconds on screen - 0.7) / 0.375) words.",
+    "- A compare holds 3 to 4.5 seconds. Use at most one compare in the reel, at most 6 words on either side, and keep the whole card inside its reading budget. Set pivotLine to the line that contains the spoken contrast (but, instead, now, what they hear, the real reason, two years later). Side B is the payoff: never reveal or make it readable before pivotLine.",
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
     "- No emojis, no hashtags, no calls to action.",
     voice ? `\nVoice for labels and trims:\n${voice.trim()}` : "",
@@ -285,7 +344,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
     looks ? `\n${looks}\n` : "",
-    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
+    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","pivotLine":0,"kind":"versus|before-after|roles","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
   ].join("\n");
 }
 
@@ -396,7 +455,8 @@ export function sceneHTML(s, { schema = 1 } = {}) {
   };
   // A look can reshape a card into an artifact (notification, Notes list, receipt, typed card); otherwise its skin
   // only restyles the regular markup below.
-  if (s.skin && s.skin !== "glass") { const h = skinHTML({ ...s, motion }, s.skin, { statHTML: renderStat }); if (h) return h; }
+  const stagedCompare = s.type === "compare" && Number.isFinite(s.pivotAt);
+  if (!stagedCompare && s.skin && s.skin !== "glass") { const h = skinHTML({ ...s, motion }, s.skin, { statHTML: renderStat }); if (h) return h; }
   const eyebrow = s.eyebrow ? `<div class="g-eyebrow g-in"><span class="g-dot"></span>${esc(s.eyebrow)}</div>` : "";
   if (s.type === "stat") {
     // Sized by length so a long value ("Almost 8 years") stays inside the card; short ones go big.
@@ -436,6 +496,15 @@ export function sceneHTML(s, { schema = 1 } = {}) {
       const v = splitStat(x.value);
       return `<div class="g-side ${cls}${String(x.label).length > 14 ? " g-side-long" : ""}"><div class="g-side-label">${esc(x.label)}</div>${v ? `<div class="g-side-value">${esc(x.value)}</div><div class="g-side-bar"><div class="g-side-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div>` : ""}${x.note ? `<div class="g-side-note">${esc(x.note)}</div>` : ""}</div>`;
     };
+    if (stagedCompare) {
+      const kind = ["versus", "before-after", "roles"].includes(s.kind) ? s.kind : "versus";
+      const from = s.faceSide === "right" ? " g-from-right" : "";
+      const pivot = kind === "before-after"
+        ? '<div class="g-pivot g-pivot-arrow"><span>&rarr;</span></div>'
+        : `<div class="g-pivot g-pivot-divider"><span class="g-divider"></span>${kind === "versus" ? '<span class="g-versus">VS</span>' : ""}</div>`;
+      const a = side(s.a, "g-side-a").replace(/<\/div>$/, kind === "before-after" ? '<span class="g-side-cross"></span></div>' : "</div>");
+      return `<div class="g-box g-center g-contrast" style="left:7.04%;right:12.96%;top:10.42%;bottom:auto;max-height:45%">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-compare g-compare-dynamic g-kind-${kind}${from}">${a}${pivot}${side(s.b, "g-side-b")}</div></div>`;
+    }
     return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-compare g-in">${side(s.a, "g-side-a")}<div class="g-vs">VS</div>${side(s.b, "g-side-b")}</div></div>`;
   }
   if (s.type === "bars") {
@@ -628,6 +697,17 @@ export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0
       .g-side-b .g-side-fill { background: ${c.accent}; opacity: 1; }
       .g-side-note { margin-top: ${px(10)}; font-size: ${px(26)}; font-weight: 600; opacity: 0.75; }
       .g-vs { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0); width: ${px(74)}; height: ${px(74)}; border-radius: 50%; display: grid; place-items: center; background: ${c.bg}; border: ${px(3)} solid ${c.accent}; color: ${c.accent}; font-size: ${px(26)}; font-weight: 900; letter-spacing: 0.08em; z-index: 1; }
+      .g-compare-dynamic { gap: ${px(72)}; align-items: stretch; }
+      .g-compare-dynamic .g-side { display: flex; flex-direction: column; justify-content: center; min-height: ${px(210)}; overflow: hidden; }
+      .g-compare-dynamic .g-side-a { clip-path: inset(0 100% 0 0); }
+      .g-compare-dynamic.g-from-right .g-side-a { clip-path: inset(0 0 0 100%); }
+      .g-compare-dynamic .g-side-b { clip-path: inset(0 100% 0 0); }
+      .g-compare-dynamic .g-side-label, .g-compare-dynamic .g-side-long .g-side-label, .g-compare-dynamic .g-side-note { font-size: ${px(48)}; line-height: 1.08; }
+      .g-compare-dynamic .g-pivot { position: absolute; left: 50%; top: 0; bottom: 0; width: ${px(72)}; transform: translateX(-50%); display: grid; place-items: center; z-index: 2; pointer-events: none; }
+      .g-compare-dynamic .g-divider { width: ${px(5)}; height: 100%; background: ${c.accent}; transform: scaleY(0); transform-origin: 50% 0; }
+      .g-compare-dynamic .g-versus { position: absolute; display: grid; place-items: center; width: ${px(72)}; height: ${px(72)}; border-radius: 50%; background: ${c.bg}; border: ${px(3)} solid ${c.accent}; color: ${c.accent}; font-size: ${px(48)}; font-weight: 900; transform: scale(0); }
+      .g-compare-dynamic .g-pivot-arrow { color: ${c.accent}; font-size: ${px(76)}; font-weight: 900; opacity: 0; }
+      .g-compare-dynamic .g-side-cross { position: absolute; left: 8%; right: 8%; top: 50%; height: ${px(6)}; background: ${c.accent}; transform: rotate(-7deg) scaleX(0); transform-origin: 0 50%; }
       .g-bars { display: flex; flex-direction: column; gap: ${px(16)}; width: 100%; }
       .g-bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: ${px(16)}; margin-bottom: ${px(8)}; }
       .g-bar-label { font-size: ${px(34)}; font-weight: 800; text-transform: uppercase; opacity: 0.8; }
@@ -726,10 +806,34 @@ ${SKINS_JS}
               tl.fromTo(p.closest(".g-icon"), { scale: 1 }, { scale: 1.12, duration: 0.1, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.4);
             });
           }
-          // Compare: the accent side wipes over from the divider, the VS badge pops, the bars fill.
-          el.querySelectorAll(".g-side-b").forEach((b) => tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: "sine.inOut", immediateRender: false }, g.start + 0.45));
-          el.querySelectorAll(".g-vs").forEach((v) => tl.to(v, { scale: 1, duration: 0.35, ease: "back.out(2)" }, g.start + 0.95));
-          el.querySelectorAll(".g-side-fill, .g-bar-fill").forEach((f, k) => tl.fromTo(f, { scaleX: 0 }, { scaleX: 1, duration: 0.85, ease: "power3.out", immediateRender: false }, g.start + 0.5 + k * 0.18));
+          // Compare: schema 2 waits for the spoken pivot; an older card keeps its original wipe exactly.
+          if (PLAN.graphicsSchema >= 2 && g.pivotAt != null) {
+            const frame = 1 / (PLAN.fps || 30);
+            const pivot = g.start + g.pivotAt;
+            const a = el.querySelector(".g-side-a"), b = el.querySelector(".g-side-b");
+            const aFrom = g.faceSide === "right" ? "inset(0 0 0 100%)" : "inset(0 100% 0 0)";
+            if (a) tl.fromTo(a, { clipPath: aFrom }, { clipPath: "inset(0 0% 0 0)", duration: 6 * frame, ease: "power3.out", immediateRender: false }, g.start);
+            el.querySelectorAll(".g-divider").forEach((d) => tl.fromTo(d, { scaleY: 0 }, { scaleY: 1, duration: 5 * frame, ease: "power2.inOut", immediateRender: false }, pivot));
+            el.querySelectorAll(".g-pivot-arrow").forEach((d) => tl.fromTo(d, { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: 5 * frame, ease: "power2.inOut", immediateRender: false }, pivot));
+            el.querySelectorAll(".g-versus").forEach((v) => tl.fromTo(v, { scale: 0 }, { scale: 1, duration: 3 * frame, ease: "power3.out", immediateRender: false }, pivot + 2 * frame));
+            if (b) {
+              tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 10 * frame, ease: "power3.out", immediateRender: false }, pivot);
+              tl.fromTo(b, { scale: 1 }, { scale: 1.04, duration: 3 * frame, ease: "expo.out", immediateRender: false }, pivot + 10 * frame);
+              tl.to(b, { scale: 1, duration: 3 * frame, ease: "power2.out" }, pivot + 13 * frame);
+            }
+            if (a) tl.to(a, { opacity: 0.5, filter: "grayscale(1)", duration: 5 * frame, ease: "power2.inOut" }, pivot);
+            el.querySelectorAll(".g-side-cross").forEach((x) => tl.to(x, { scaleX: 1, duration: 5 * frame, ease: "power2.inOut" }, pivot));
+            const sideFills = el.querySelectorAll(".g-side-fill");
+            if (sideFills.length === 2) {
+              tl.fromTo(sideFills[0], { scaleX: 0 }, { scaleX: 1, duration: 12 * frame, ease: "power3.out", immediateRender: false }, g.start);
+              tl.fromTo(sideFills[1], { scaleX: 0 }, { scaleX: 1, duration: 12 * frame, ease: "power3.out", immediateRender: false }, pivot);
+            }
+          } else {
+            el.querySelectorAll(".g-side-b").forEach((b) => tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: "sine.inOut", immediateRender: false }, g.start + 0.45));
+            el.querySelectorAll(".g-vs").forEach((v) => tl.to(v, { scale: 1, duration: 0.35, ease: "back.out(2)" }, g.start + 0.95));
+            el.querySelectorAll(".g-side-fill").forEach((f, k) => tl.fromTo(f, { scaleX: 0 }, { scaleX: 1, duration: 0.85, ease: "power3.out", immediateRender: false }, g.start + 0.5 + k * 0.18));
+          }
+          el.querySelectorAll(".g-bar-fill").forEach((f, k) => tl.fromTo(f, { scaleX: 0 }, { scaleX: 1, duration: 0.85, ease: "power3.out", immediateRender: false }, g.start + 0.5 + k * 0.18));
           // Message thread: typing dots before each incoming bubble, bubbles pop from their tail.
           const bubbles = el.querySelectorAll(".g-bubble");
           const dots = el.querySelector(".g-typing");
@@ -794,6 +898,6 @@ ${SKINS_JS}
               if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
             });
           }
-          if (liveItems.length) tl.to(el, { opacity: 0, duration: 5 / fps, ease: "power2.in" }, g.start + g.duration - 5 / fps);
+          if (liveItems.length || (PLAN.graphicsSchema >= 2 && g.pivotAt != null)) tl.to(el, { opacity: 0, duration: 5 / fps, ease: "power2.in" }, g.start + g.duration - 5 / fps);
           else tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
         });`;

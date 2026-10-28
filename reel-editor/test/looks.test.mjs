@@ -57,6 +57,13 @@ test("styles and fonts only for the skins in use", () => {
   assert.match(f.css, /Permanent Marker/);
 });
 
+test("every compare skin keeps the staged pivot markup", () => {
+  for (const id of LOOK_IDS) {
+    const html = sceneHTML({ type: "compare", skin: skinFor(id, "compare"), pivotAt: 1, kind: "roles", a: { label: "Seller", value: "", note: "" }, b: { label: "Buyer", value: "", note: "" } });
+    assert.match(html, /g-compare-dynamic g-kind-roles/, id);
+  }
+});
+
 import { THEMES, applyTheme, MARKERS, themeCSS, themeFontSkins } from "../src/looks.mjs";
 import { loadPreset } from "../src/presets.mjs";
 import { composeProject } from "../src/compose.mjs";

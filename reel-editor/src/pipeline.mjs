@@ -407,10 +407,12 @@ export async function runEdit(input, opts = {}) {
     const repeats = (g) => { const t = toks(g.text || g.title); return t.length && t.filter((x) => hk.has(x)).length / t.length >= 0.8; };
     const before = graphics.length;
     graphics = graphics.filter((g) => !(["headline", "quote"].includes(g.type) && repeats(g)));
+    graphics.schema = graphicsSchema;
     if (graphics.length < before) log(`graphics: dropped ${before - graphics.length} card${before - graphics.length === 1 ? "" : "s"} that only repeated the hook`);
   }
   // Structure cards win their slots: a planned card within 6 s of one is dropped.
   const allCards = [...structureCards, ...graphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2)))].sort((a, b) => a.start - b.start);
+  allCards.schema = graphicsSchema;
   // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
   const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail };
   const broll = preset.broll?.enabled && shownGroups.length
