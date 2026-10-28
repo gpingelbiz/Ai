@@ -116,6 +116,62 @@ export function duckingLane(words, { duration, level = 0.1, swell = 2.2, minGap 
   return out;
 }
 
+/**
+ * Duck from the real voice level as well as the transcript. The detector follows FFmpeg's sidechain-compressor
+ * shape (separate attack and release smoothing; idea from af_sidechaincompress.c, LGPL-2.1+), while the sparse
+ * output stays compatible with the existing HyperFrames volume lane.
+ */
+export function duckingLaneFromEnvelope(env, { duration, words = [], level = 0.1, swell = 2.2, minGap = 0.9, ramp = 0.35, start = 0.5, fadeIn = 1, fadeOut = 1.5, attack = 0.025, release = 0.25, floorOffsetDb = 12 } = {}) {
+  const step = Number(env?.step);
+  const db = env?.db;
+  if (!(duration > 0) || !(step > 0) || !Array.isArray(db) || !db.length) return duckingLane(words, { duration, level, swell, minGap, ramp, start, fadeIn, fadeOut });
+  const levels = db.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!levels.length) return duckingLane(words, { duration, level, swell, minGap, ramp, start, fadeIn, fadeOut });
+  const floor = levels[Math.floor((levels.length - 1) * 0.1)];
+  const threshold = Math.max(-45, floor + floorOffsetDb);
+  const spoken = words
+    .filter((w) => Number.isFinite(w?.start) && Number.isFinite(w?.end) && w.end > w.start)
+    .sort((a, b) => a.start - b.start);
+
+  // Collapse the 20 ms decisions into speech regions first; only real gaps become automation points.
+  const regions = [];
+  let word = 0, open = null;
+  const blocks = Math.ceil(duration / step);
+  for (let i = 0; i < blocks; i++) {
+    const a = i * step, b = Math.min(duration, a + step);
+    while (word < spoken.length && spoken[word].end <= a) word++;
+    const inWord = word < spoken.length && spoken[word].start < b && spoken[word].end > a;
+    const speech = (i < db.length && Number.isFinite(db[i]) && db[i] > threshold) || inWord;
+    if (speech && open == null) open = a;
+    if (!speech && open != null) { regions.push({ start: open, end: a }); open = null; }
+  }
+  if (open != null) regions.push({ start: open, end: duration });
+  if (!regions.length) return duckingLane(words, { duration, level, swell, minGap, ramp, start, fadeIn, fadeOut });
+
+  const hi = Math.min(1, level * swell);
+  const pts = [{ t: r3(start), v: 0 }, { t: r3(Math.min(duration, start + fadeIn)), v: level }];
+  for (let i = 0; i + 1 < regions.length; i++) {
+    const g0 = regions[i].end + release, g1 = regions[i + 1].start;
+    if (g1 - g0 < minGap) continue;
+    const up = Math.min(ramp, (g1 - g0) / 3);
+    pts.push(
+      { t: r3(g0), v: level },
+      { t: r3(g0 + up), v: hi },
+      { t: r3(g1), v: hi },
+      { t: r3(g1 + attack), v: level },
+    );
+  }
+  pts.push({ t: r3(Math.max(start, duration - fadeOut)), v: level }, { t: r3(duration), v: 0 });
+  const out = [];
+  for (const p of pts) {
+    if (p.t < start || p.t > duration) continue;
+    const last = out[out.length - 1];
+    if (last && p.t <= last.t) { if (p.t === last.t) last.v = p.v; continue; }
+    out.push(p);
+  }
+  return out;
+}
+
 export function describePick(track, choice) {
   const why = choice?.moods?.length ? ` (${choice.moods.join(" / ")}${choice.why ? ": " + choice.why : ""})` : " (random)";
   return `${track.name}${why}`;

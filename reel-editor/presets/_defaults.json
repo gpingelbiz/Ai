@@ -109,6 +109,7 @@
     "musicVolume": 0.1,
     "duck": true,
     "roomTone": true,
+    "duckFrom": "voice",
     "cleanAudio": true,
     "sfx": false,
     "sfxVolume": 0.45,
