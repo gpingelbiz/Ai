@@ -17,6 +17,12 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
 export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter"];
 
 /**
+ * graphics.json schema. 2 = the dynamic-graphics plan (cards timed to the words they show, truthful numbers).
+ * An older plan is still reused as is, so an old reel renders as it did; `--new-graphics` replans it.
+ */
+export const GRAPHICS_SCHEMA = 2;
+
+/**
  * Line icons for list rows (24x24 stroke paths, drawn on as the row appears). Claude picks one per row from
  * this list; a row without a pick gets one from its words, or none. Nothing is downloaded: HyperFrames ships no
  * icon pack, and Lottie files would have to come from LottieFiles with their own licenses.
@@ -251,8 +257,10 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
       const look = settings.look && LOOKS[settings.look] ? settings.look : saved.look || "glass";
       const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
-      log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look})`);
+      const old = (saved.schema || 1) < GRAPHICS_SCHEMA ? `; card plan v${saved.schema || 1}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
+      log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look}${old})`);
       scenes.look = look;
+      scenes.schema = saved.schema || 1;
       return scenes;
     }
   }
@@ -273,7 +281,8 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
     return [];
   }
-  writeJSON(planPath, { key, look: lookPicked?.look || "glass", lookWhy: lookPicked?.why || "", scenes });
+  writeJSON(planPath, { schema: GRAPHICS_SCHEMA, key, look: lookPicked?.look || "glass", lookWhy: lookPicked?.why || "", scenes });
+  scenes.schema = GRAPHICS_SCHEMA;
   if (lookPicked && !settings.look) rememberLook(lookPicked.look);
   log(`graphics: look "${LOOKS[lookPicked?.look || "glass"].label}"${lookPicked?.why ? ` (${lookPicked.why})` : ""}`);
   scenes.look = lookPicked?.look || "glass";
