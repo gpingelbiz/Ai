@@ -118,6 +118,9 @@ case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
 case "$base" in *"#fast"*) flags+=(--pace fast);; esac
 case "$base" in *"#look:"*) lk="${base#*#look:}"; lk="${lk%%[ .#]*}"; flags+=(--look "$lk");; esac
+# "#v2": Greg's test look from the Oct 28 design teardown (presets/pingel-v2.json). Never on a client's reel (their
+# brand kit wins) or in the Runway folder, which has its own preset.
+case "$base" in *"#v2"*) [ "$MODE" = runway ] || [ -n "${REEL_CLIENT:-}" ] || flags+=(--preset pingel-v2);; esac
 # Music: the editor picks from the music folder by the mood of what is said; "#music:<name>" asks for a track
 # whose file name contains <name>; "#nomusic" skips it. Carousels never get music.
 if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then

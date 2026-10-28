@@ -280,7 +280,14 @@ export async function runEdit(input, opts = {}) {
       if (detection) detection = { ...detection, frames: detection.frames }; // the hook and caption placement see the same frames, scaled below
     } else log("framing: no face found, keeping the frame as shot");
   }
-  const zoomedHead = (d, z) => headExtent(d, { zoom: framing.scale * z, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38 });
+  // Where the head is on the canvas: the base framing scales the footage about its origin AND slides it (framing.shift,
+  // applied as the wrap's y in compose.mjs). Leaving the slide out put a v2 hook on the forehead: placement thought
+  // the head sat 12% lower than it did.
+  const zoomedHead = (d, z) => {
+    const h = headExtent(d, { zoom: framing.scale * z, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38 });
+    const shift = framing.shift || 0;
+    return h && shift ? { top: Math.max(0, h.top + shift), bottom: Math.min(1, h.bottom + shift) } : h;
+  };
   let captionTop = preset.captions.position - 0.04;
   if (showCaptions && preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
     const head = zoomedHead(detection, framing.multi ? Math.max(1, ...(preset.zooms.scales || [1])) : 1);
@@ -468,6 +475,12 @@ export async function runEdit(input, opts = {}) {
       const top = cardHeadTop(detection, { zooms, t0: g.start, t1: g.start + g.duration, scale: framing.scale, originY, shift: framing.shift || 0 });
       if (top != null) g.headTop = top;
     }
+  }
+  // The hook never covers the head either: in front of the speaker (not the text-behind-you cutout) the page measures
+  // the real hook text and shrinks it toward its top until it ends above this head top (at the opening push-in).
+  if (hook && !behindPlan && detection && sameShape) {
+    const head = zoomedHead(detection, 1.06);
+    if (head) { hook.headTop = r3(head.top); hook.headBottom = r3(head.bottom); }
   }
   // Cold open: the first b-roll still holds under the hook for a beat before the speaker appears.
   const coldOpen = preset.coldOpen?.enabled && broll.length ? { duration: r3(Math.min(preset.coldOpen.duration || 0.6, Math.max(0.3, duration / 20))), src: broll[0].src, file: broll[0].file } : null;
