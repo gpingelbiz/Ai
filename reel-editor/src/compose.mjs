@@ -108,6 +108,9 @@ export function renderHTML(plan, footage) {
   // Caption looks: "pop" (Anton with a black outline, the line pops in) or "reveal" (heavy Inter, no outline; the
   // whole phrase shows dimmed and each word lights up as it is spoken).
   const reveal = cap.style === "reveal";
+  // dimFuture: false shows the whole phrase at full strength and swaps it hard (the niche winners' pattern); the
+  // default dims the words not yet spoken.
+  const dimFuture = reveal && cap.dimFuture !== false;
   // Hand-drawn marker on the gold word: a squiggle underline, or a loose circle around a number or amount. The
   // stroke draws on as the word is spoken (stroke-dashoffset, measured at runtime).
   const annotate = !!cap.annotate;
@@ -226,13 +229,13 @@ export function renderHTML(plan, footage) {
 
   const runtimePlan = {
     duration: D,
-    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline" } : null,
+    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(Number.isFinite(plan.hook.headTop) && !behind ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
     broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video })),
-    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}) })),
+    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}) })),
     graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
     graphicsSide: plan.framing?.side || "right",
@@ -249,6 +252,7 @@ export function renderHTML(plan, footage) {
     height: H,
     reveal,
     capCut: cap.animation === "cut",
+    capDim: dimFuture,
     hookPush: s.hook?.push !== false,
     reframe: plan.reframe || [],
     fps: s.render?.fps || 30,
@@ -332,7 +336,7 @@ ${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "ov
       .cap .w { display: inline-block; transform-origin: 50% 50%; }
       .cap .w.k { color: ${c.accent}; }
 ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850; line-height: 1.04; letter-spacing: -0.01em; -webkit-text-stroke: 0; text-shadow: 0 0.04em 0.28em rgba(0,0,0,0.6), 0 0 0.8em rgba(0,0,0,0.3); gap: 0.02em 0.24em; max-width: 86%; }
-      .cap .w { opacity: 0.38; }` : ""}${cap.quiet ? `
+${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap-line { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2; letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: 0 0.03em 0.08em rgba(0,0,0,0.45), 0 0.04em 0.24em rgba(0,0,0,0.4); gap: 0.06em 0.26em; }
       .cap .w.k { color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none; }` : ""}
       #hook {
@@ -385,6 +389,30 @@ ${audioHTML}
         // Every move of the footage is mirrored on the person cutout (text behind you), so the two stay registered.
         const WRAP = PLAN.behind ? ["#video-wrap", "#cutout-wrap"] : "#video-wrap";
         const FOOT = PLAN.behind ? ["#footage", "#cutout"] : "#footage";
+        // The hook never covers the head: with hook.headTop (the head top at the opening push-in) the real hook text is
+        // measured and the whole hook moves up until it ends 1.5% of the frame above the head, never above the 7% top
+        // bar; only if it still does not fit does it shrink toward its top (to 60% at most). Without a measurement the
+        // hook is left as placed.
+        if (PLAN.hook && Number.isFinite(PLAN.hook.headTop)) {
+          const hookEl = document.getElementById("hook");
+          const root = document.getElementById("root").getBoundingClientRect();
+          const k = root.height ? root.height / PLAN.height : 1;
+          let top = Infinity, bottom = -Infinity;
+          hookEl.querySelectorAll("*").forEach((n) => {
+            if (n.id === "hook-scrim" || n.closest("#hook-scrim")) return;
+            const r = n.getBoundingClientRect();
+            if (r.width && r.height) { top = Math.min(top, (r.top - root.top) / k); bottom = Math.max(bottom, (r.bottom - root.top) / k); }
+          });
+          const limit = PLAN.hook.headTop * PLAN.height - PLAN.height * 0.015;
+          // A hook placed under the chin (wide shots) is already clear of the head; only an overlap moves it.
+          const overlaps = top < (PLAN.hook.headBottom ?? 1) * PLAN.height;
+          if (Number.isFinite(bottom) && overlaps && bottom > limit && bottom > top) {
+            const bar = PLAN.height * 0.07, height = bottom - top;
+            const y = Math.max(bar - top, limit - bottom);
+            const scale = top + y + height > limit ? Math.max(0.6, (limit - top - y) / height) : 1;
+            gsap.set(hookEl, { scale, y, transformOrigin: "50% " + Math.round(top) + "px" });
+          }
+        }
         if (PLAN.hook && PLAN.hook.style === "headline") {
           const h = PLAN.hook;
           const words = document.querySelectorAll("#hook-lines .hw");
@@ -432,7 +460,7 @@ ${audioHTML}
           });
           if (PLAN.reveal) {
             if (!PLAN.capCut) tl.fromTo(line, { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.12, ease: "power2.out" }, g.start);
-            g.words.forEach((w, j) => tl.fromTo("#cap-" + i + "-w" + j, { opacity: 0.38 }, { opacity: 1, duration: 0.07, ease: "none", immediateRender: false }, Math.max(g.start, w[0])));
+            if (PLAN.capDim) g.words.forEach((w, j) => tl.fromTo("#cap-" + i + "-w" + j, { opacity: 0.38 }, { opacity: 1, duration: 0.07, ease: "none", immediateRender: false }, Math.max(g.start, w[0])));
           } else if (!PLAN.capCut) {
             tl.fromTo(line, { scale: 0.8 }, { scale: 1, duration: 0.16, ease: "back.out(2.5)" }, g.start);
           }

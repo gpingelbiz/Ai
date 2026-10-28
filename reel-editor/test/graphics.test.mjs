@@ -160,6 +160,11 @@ test("truthful numbers: schema 1 keeps the legacy zero-count markup and runtime;
   };
   const page = renderHTML(plan, "assets/footage.mp4");
   assert.match(page, /"graphics":\[\{"start":4,"duration":5\.5,"motion":"reveal"\}\]/);
+  // With a head measurement the page drops the footage below the card's real edge (headGuard); without one it keeps 11%.
+  const guarded = renderHTML({ ...plan, graphics: [{ ...card, start: 4, duration: 5.5, headTop: 0.41 }] }, "assets/footage.mp4");
+  assert.match(guarded, /"graphics":\[\{"start":4,"duration":5\.5,"motion":"reveal","headTop":0\.41\}\]/);
+  assert.match(guarded, /const headGuard = /);
+  assert.match(guarded, /const drop = guard\.drop;/);
   const cardHTML = page.slice(page.indexOf('id="gfx-0"'), page.indexOf('id="captions"'));
   assert.match(cardHTML, /About <\/span><span class="g-exact-number">10<\/span><span class="g-affix"> minutes<\/span>/);
   assert.doesNotMatch(cardHTML, /g-count|data-to=/);

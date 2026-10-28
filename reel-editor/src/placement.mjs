@@ -51,6 +51,26 @@ export function zoomDuring(zooms = [], t0 = 0, t1 = 3) {
   return Math.max(scale, current);
 }
 
+/**
+ * The highest the head gets while a card is up (fraction of the frame height): the strongest zoom in the card's
+ * window and the base slide included. The page drops the footage just far enough that this clears the card's real
+ * bottom edge, so a card never covers the head. Null when no face was found.
+ */
+export function cardHeadTop(detection, { zooms = [], t0 = 0, t1 = 0, scale = 1, originY = 0.38, shift = 0 } = {}) {
+  const head = headExtent(detection, { zoom: scale * zoomDuring(zooms, t0, t1), originY });
+  return head ? Math.round((head.top + shift) * 1000) / 1000 : null;
+}
+
+/** The whole head as a box (fractions of the frame) for the progress rail: hair to chin at the given zoom, a face and
+ *  a half wide, so the rail clears more than the face box. Falls back to the face box when no head span is found. */
+export function headBoxFor(face, detection, { zoom = 1, scale = 1, originY = 0.38, shift = 0 } = {}) {
+  if (!face) return null;
+  const head = headExtent(detection, { zoom: scale * zoom, originY });
+  if (!head) return face;
+  const r = (x) => Math.round(x * 1000) / 1000;
+  return { cx: face.cx, w: r(Math.min(1, face.w * scale * zoom * 1.5)), cy: r((head.top + head.bottom) / 2 + shift), h: r(head.bottom - head.top) };
+}
+
 /** Head extent (top of hair to chin) across frames, with the zoom applied around its origin. Null when nobody is found. */
 /** The speaker's face box as fractions of the frame: median centre and size over the sampled frames, or null. */
 export function faceBox(detection) {
@@ -158,9 +178,15 @@ const rectsOverlap = (a, b, gap = 0) => a.x < b.x + b.w + gap && a.x + a.w + gap
 export function placeProgressRail({ W = 1080, H = 1920, hookTop = 0, hookBottom = 0.35, captionTop = 0.68, face = null, side = "right" } = {}) {
   const hook = { x: 76, y: hookTop * H, w: Math.min(W - 152, 864), h: Math.max(0, (hookBottom - hookTop) * H) };
   const faceRect = face ? { x: face.cx * W - face.w * W / 2, y: face.cy * H - face.h * H / 2, w: face.w * W, h: face.h * H } : null;
-  const band = { x: 86, y: 820, w: Math.min(814, W - 86 - 140), h: 140, orientation: "horizontal" };
+  // 170 px tall: a label may wrap to two 48 px lines ("FINALLY / LEFT") instead of being cut off.
+  const band = { x: 86, y: 820, w: Math.min(814, W - 86 - 140), h: 170, orientation: "horizontal" };
   const bandBlocked = rectsOverlap(band, hook, 20) || band.y + band.h + 20 > captionTop * H || (faceRect && rectsOverlap(band, faceRect, 18));
   if (!bandBlocked) return band;
+
+  // In a medium talking-head shot the head fills the middle of the frame, so the band would sit on it. Next try the
+  // top of the frame: under Instagram's top bar (y 200) and above the hook, when the hook sits low enough.
+  const top = { ...band, y: 200 };
+  if (top.y + top.h + 24 <= hookTop * H && !(faceRect && rectsOverlap(top, faceRect, 18))) return { ...top, at: "top" };
 
   const x = side === "left" ? 76 : Math.min(680, W - 400);
   const y = Math.max(200, Math.ceil(hookBottom * H + 24));
