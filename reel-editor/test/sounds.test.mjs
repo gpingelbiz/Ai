@@ -25,6 +25,7 @@ test("sound cues: one per edit, markers skipped next to a louder cue, levels sca
   for (const k of Object.keys(SOUNDS)) assert.ok(fs.existsSync(path.join(PKG_ROOT, "assets", "sfx", SOUNDS[k].file)), `${k} file vendored`);
   assert.ok(fs.readFileSync(path.join(PKG_ROOT, "assets", "sfx", "NOTICE.md"), "utf8").includes("CC0"));
   assert.deepEqual(soundCues({ zooms: [], graphics: [] }), []);
+  assert.deepEqual(soundCues({ graphics: [{ type: "progress", start: 0, pulses: [{ at: 4 }] }] }), [], "rail pulses are small events, not card drops");
   assert.ok(soundCues({ captions: [{ start: 1, words: [{ text: "own", key: true, start: 1 }] }], annotate: true }).length === 0, "marker sounds are off by default");
 });
 

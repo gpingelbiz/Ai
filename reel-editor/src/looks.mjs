@@ -14,52 +14,52 @@ export const LOOKS = {
   receipts: {
     label: "Receipts",
     fits: "money, pricing, revenue, profit, what something costs, a P&L, deals, discounts, payment plans",
-    skins: { stat: "notify", headline: "notify", bars: "receipt", list: "receipt", steps: "receipt", compare: "receipt", quote: "type", message: "phone", post: "glass", chapter: "type" },
+    skins: { stat: "notify", headline: "notify", bars: "receipt", list: "receipt", steps: "receipt", compare: "receipt", quote: "type", message: "phone", post: "glass", chapter: "type", progress: "receipt" },
   },
   phone: {
     label: "Phone",
     fits: "sales calls, DMs, texts, objections, follow-up, leads, booking, what a prospect or client says",
-    skins: { stat: "notify", headline: "notify", quote: "notify", list: "notes", steps: "notes", compare: "notes", bars: "notes", message: "phone", post: "glass", chapter: "notify" },
+    skins: { stat: "notify", headline: "notify", quote: "notify", list: "notes", steps: "notes", compare: "notes", bars: "notes", message: "phone", post: "glass", chapter: "notify", progress: "notes" },
   },
   fieldnotes: {
     label: "Field notes",
     fits: "discipline, habits, mindset, faith, a personal story, lessons learned, the morning routine, family",
-    skins: { stat: "paper", headline: "paper", quote: "paper", list: "paper", steps: "paper", compare: "paper", bars: "paper", message: "phone", post: "paper", chapter: "paper" },
+    skins: { stat: "paper", headline: "paper", quote: "paper", list: "paper", steps: "paper", compare: "paper", bars: "paper", message: "phone", post: "paper", chapter: "paper", progress: "paper" },
   },
   gregcard: {
     label: "Typewriter card",
     fits: "one conviction line, a hard truth, faith as conviction, a short punchy reel with one idea",
-    skins: { stat: "type", headline: "type", quote: "type", list: "type", steps: "type", compare: "type", bars: "receipt", message: "phone", post: "type", chapter: "type" },
+    skins: { stat: "type", headline: "type", quote: "type", list: "type", steps: "type", compare: "type", bars: "receipt", message: "phone", post: "type", chapter: "type", progress: "type" },
   },
   briefing: {
     label: "Briefing",
     fits: "leadership, systems, hiring, team structure, frameworks, a breakdown or explainer, the numbers behind a business",
-    skins: { stat: "editorial", headline: "editorial", quote: "editorial", list: "editorial", steps: "editorial", compare: "editorial", bars: "editorial", message: "phone", post: "editorial", chapter: "editorial" },
+    skins: { stat: "editorial", headline: "editorial", quote: "editorial", list: "editorial", steps: "editorial", compare: "editorial", bars: "editorial", message: "phone", post: "editorial", chapter: "editorial", progress: "editorial" },
   },
   press: {
     label: "Press sheet",
     fits: "a hard truth, myth-busting, a contrarian take, what nobody tells you, testimony, a bold claim",
-    skins: { stat: "press", headline: "press", quote: "press", list: "press", steps: "press", compare: "press", bars: "press", message: "phone", post: "press", chapter: "press" },
+    skins: { stat: "press", headline: "press", quote: "press", list: "press", steps: "press", compare: "press", bars: "press", message: "phone", post: "press", chapter: "press", progress: "press" },
   },
   shopfloor: {
     label: "Instrument panel",
     fits: "close rates, KPIs, scorecards, quotas, standards, the numbers on the board, diagnosing a problem",
-    skins: { stat: "panel", headline: "panel", quote: "panel", list: "panel", steps: "panel", compare: "panel", bars: "panel", message: "phone", post: "panel", chapter: "panel" },
+    skins: { stat: "panel", headline: "panel", quote: "panel", list: "panel", steps: "panel", compare: "panel", bars: "panel", message: "phone", post: "panel", chapter: "panel", progress: "panel" },
   },
   blueprint: {
     label: "Sales schematic",
     fits: "a framework, a sales process, a pipeline, cause and effect, how a system is built, a step-by-step",
-    skins: { stat: "blueprint", headline: "blueprint", quote: "blueprint", list: "blueprint", steps: "blueprint", compare: "blueprint", bars: "blueprint", message: "phone", post: "blueprint", chapter: "blueprint" },
+    skins: { stat: "blueprint", headline: "blueprint", quote: "blueprint", list: "blueprint", steps: "blueprint", compare: "blueprint", bars: "blueprint", message: "phone", post: "blueprint", chapter: "blueprint", progress: "blueprint" },
   },
   casefile: {
     label: "Case file",
     fits: "proof, evidence, what really happened, a call review, a case study, a before and after, receipts of a result",
-    skins: { stat: "case", headline: "case", quote: "case", list: "case", steps: "case", compare: "case", bars: "case", message: "phone", post: "case", chapter: "case" },
+    skins: { stat: "case", headline: "case", quote: "case", list: "case", steps: "case", compare: "case", bars: "case", message: "phone", post: "case", chapter: "case", progress: "case" },
   },
   redline: {
     label: "Coach's redline",
     fits: "reviewing a mistake, what not to do, breaking down a script or a call, correcting a bad habit",
-    skins: { stat: "redline", headline: "redline", quote: "redline", list: "redline", steps: "redline", compare: "redline", bars: "redline", message: "phone", post: "redline", chapter: "redline" },
+    skins: { stat: "redline", headline: "redline", quote: "redline", list: "redline", steps: "redline", compare: "redline", bars: "redline", message: "phone", post: "redline", chapter: "redline", progress: "redline" },
   },
   glass: {
     label: "Glass",

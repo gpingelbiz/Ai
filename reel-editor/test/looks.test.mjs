@@ -6,7 +6,7 @@ import { sceneHTML } from "../src/graphics.mjs";
 const statHTML = (v) => `<div class="g-stat g-in"><span class="g-count" data-to="1">${v}</span></div>`;
 
 test("looks: every look maps every card type to a skin; the prompt lists them and steers off the last one", () => {
-  for (const id of LOOK_IDS) for (const t of ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter"]) assert.ok(typeof skinFor(id, t) === "string");
+  for (const id of LOOK_IDS) for (const t of ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter", "progress"]) assert.ok(typeof skinFor(id, t) === "string");
   for (const id of LOOK_IDS) {
     assert.equal(skinFor(id, "message", "proof"), "proof");
     assert.match(sceneHTML({ type: "message", mode: "proof", context: "HE MESSAGED US", items: [{ from: "them", text: "I left the jail" }], skin: skinFor(id, "message", "proof") }), /g-box g-proof/, `${id} message skin renders proof mode`);

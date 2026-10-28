@@ -14,7 +14,7 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
  * phrase highlighted), headline (the key statement), steps (2-4 connected nodes: a flow or a before -> after).
  */
 
-export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter"];
+export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter", "progress"];
 
 /**
  * graphics.json schema. 2 = the dynamic-graphics plan (cards timed to the words they show, truthful numbers).
@@ -115,6 +115,7 @@ export function graphicsCount(duration, { max = 6, every = 10 } = {}) {
 }
 
 const clean = (s, max = 80) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const shortWords = (s, max = 3, chars = 32) => clean(s, chars).split(/\s+/).filter(Boolean).slice(0, max).join(" ");
 const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
 const wordCount = (s) => String(s || "").replace(/\*/g, "").trim().split(/\s+/).filter(Boolean).length;
 const capWords = (s, max) => words(s).slice(0, Math.max(0, max)).join(" ");
@@ -217,6 +218,15 @@ function groundProof(s, lines, candidates) {
 /** Tidy one scene from Claude: known type, short text, the fields that type needs. Returns null if unusable. */
 export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
   if (!raw || !TYPES.includes(raw.type)) return null;
+  if (raw.type === "progress") {
+    const s = { type: "progress", title: shortWords(raw.title), style: raw.style === "count" ? "count" : "journey" };
+    s.items = (Array.isArray(raw.items) ? raw.items : [])
+      .map((it) => ({ line: Number.isInteger(it?.line) ? it.line : parseInt(it?.line, 10), label: shortWords(it?.label) }))
+      .filter((it) => Number.isInteger(it.line) && it.label)
+      .slice(0, 4);
+    if (s.items.length < 2) return null;
+    return s;
+  }
   const s = { type: raw.type, line: Number.isInteger(raw.line) ? raw.line : parseInt(raw.line, 10), eyebrow: clean(raw.eyebrow, 40) };
   if (!Number.isInteger(s.line)) return null;
   if (s.type === "stat") {
@@ -378,7 +388,34 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
   return out;
 }
 
-export function scenesPrompt({ candidates, transcript, hook, count, voice = "", looks = "" }) {
+const transcriptWords = (groups) => new Set(groups.flatMap((g) => String(g.text || "").toLowerCase().replace(/[^a-z0-9'’]+/g, " ").split(/\s+/).filter(Boolean)));
+
+/** A progress rail starts with the hook, not on an ordinary card candidate. Its item lines are its later pulses. */
+export function resolveProgressScenes(scenes, groups, { hook, duration, cards = [] } = {}) {
+  if (!hook) return [];
+  const words = transcriptWords(groups);
+  const numberWords = { two: 2, three: 3, four: 4 };
+  const promised = String(hook.text || "").toLowerCase().match(/\b(?:2|3|4|two|three|four)\b/);
+  const promisedCount = promised ? numberWords[promised[0]] || Number(promised[0]) : 0;
+  const truthSafe = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9'’]+/g, " ").split(/\s+/).filter(Boolean).every((w) => words.has(w));
+  const byLine = new Map(groups.map((g, i) => [i, g]));
+  const overlapsCard = (at) => cards.some((c) => c.type !== "progress" && at < c.start + c.duration && at + 1.4 > c.start);
+  for (const s of scenes.filter((x) => x?.type === "progress").slice(0, 1)) {
+    if (s.style === "count" && promisedCount !== s.items.length) continue;
+    if ((s.title && !truthSafe(s.title)) || s.items.some((it) => !truthSafe(it.label))) continue;
+    if (s.items.some((it) => !byLine.has(it.line))) continue;
+    const starts = s.items.map((it) => byLine.get(it.line).start);
+    if (starts.some((at, i) => i && at <= starts[i - 1])) continue;
+    const hookEnd = r3(hook.start + hook.duration);
+    if (s.style !== "count" && starts.at(-1) < hookEnd + 8) continue;
+    if (starts[0] < hook.start || starts.at(-1) >= duration) continue;
+    const pulses = s.items.map((it, i) => ({ line: it.line, at: r3(starts[i]), hidden: overlapsCard(starts[i]) }));
+    return [{ ...s, start: r3(hook.start), duration: r3(Math.min(duration, starts.at(-1) + 1.4) - hook.start), hookEnd, pulses }];
+  }
+  return [];
+}
+
+export function scenesPrompt({ candidates, anchors = candidates, transcript, hook, count, voice = "", looks = "" }) {
   return [
     "You are the motion designer on a talking-head Instagram reel. You pick the moments where a designed graphic card cuts in to show what the speaker is saying, and you write the words on each card. You never use tools; reply with JSON only.",
     `Pick up to ${count} moments, spread across the reel, at least 6 seconds apart. Only pick a moment when a card makes the point clearer or hit harder: the speaker says a number or amount, lists things, describes steps or a before and after, contrasts two things, quotes something, or lands the key line.`,
@@ -393,6 +430,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most, motion (\"reveal\" or \"growth\"). Keep exact printed labels and use reveal unless two rows are the explicit starting and ending values of one spoken change.",
     "- message: a text exchange the speaker reads out or acts out. For reconstructed proof, use mode: \"proof\", context (who and what, in the speaker's exact words), items [{from: \"them\" | \"me\", text, line}] 1-3 bubbles, and optional outcome {line, text}. Each bubble is at most 16 words. Do not add contact in proof mode. Legacy acted-out exchanges may omit mode and use contact plus items without line.",
     "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
+    "- progress: one small payoff rail, separate from the card count. title is optional and at most 3 words; style is journey or count; items are 2 to 4 ordered {line, label} milestones, with each label 1 to 3 words taken from the speaker. journey is only for real ordered beats whose final payoff is at least 8 seconds after the hook. count is only when the hook explicitly promises a number, and each item is a promised section start. Never use progress on a one-idea reel.",
     `- list items may carry icon: one of ${Object.keys(ICONS).join(", ")} (pick the one that fits the item, else leave empty).`,
     "Every card has an eyebrow: a 2-5 word label in caps over it (\"AFTER A BAD NUMBER\", \"THE STANDARD\", \"WHAT YOU OWN\").",
     "",
@@ -411,6 +449,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "- A timed list/steps card must fit this whole-card reading budget: floor((seconds on screen - 0.7) / 0.375) words.",
     "- A compare holds 3 to 4.5 seconds. Use at most one compare in the reel, at most 6 words on either side, and keep the whole card inside its reading budget. Set pivotLine to the line that contains the spoken contrast (but, instead, now, what they hear, the real reason, two years later). Side B is the payoff: never reveal or make it readable before pivotLine.",
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
+    "- Offer at most one progress scene. It does not replace or consume one of the requested cards. Its item line anchors must be strictly increasing.",
     "- No emojis, no hashtags, no calls to action.",
     voice ? `\nVoice for labels and trims:\n${voice.trim()}` : "",
     "",
@@ -422,8 +461,11 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "Lines a card may start on (number: start time, text). A card starts when that line is spoken, so pick the line where the idea begins:",
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
+    "Lines a progress milestone may anchor to (number: start time, text):",
+    ...anchors.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
+    "",
     looks ? `\n${looks}\n` : "",
-    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","mode":"proof","context":"","outcome":{"line":0,"text":""},"pivotLine":0,"kind":"versus|before-after|roles","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
+    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post|progress","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","style":"journey|count","unit":"","emphasize":0,"contact":"","mode":"proof","context":"","outcome":{"line":0,"text":""},"pivotLine":0,"kind":"versus|before-after|roles","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
   ].join("\n");
 }
 
@@ -436,7 +478,8 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
   if (!max) { log("graphics: reel too short, skipped"); return []; }
   const candidates = sceneCandidates(groups, duration, { hook, cta, tail });
-  const lines = groups.map((g, i) => ({ i, start: g.start, text: g.text }));
+  const anchors = groups.map((g, i) => ({ i, start: g.start, text: g.text }));
+  const lines = anchors;
   if (!candidates.length) { log("graphics: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
   if (!force && fs.existsSync(planPath)) {
@@ -444,7 +487,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     // Reuse while every card still has its line (a new hook hides different caption lines and shifts the line
     // numbers; the cards follow their line by start time instead of costing another Claude call).
     const byStart = (s) => candidates.find((c) => Math.abs(c.start - (s.start ?? -1)) < 0.05);
-    const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.every(byStart);
+    const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.filter((s) => s.type !== "progress").every(byStart);
     if ((saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
@@ -457,8 +500,10 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
         items: (s.items || []).map((it) => ({ ...it, line: lines.find((line) => Math.abs(line.start - (s.start + (it.at || 0))) < 0.05)?.i ?? it.line })),
         ...(s.outcome ? { outcome: { ...s.outcome, line: lines.find((line) => Math.abs(line.start - (s.start + (s.outcome.at || 0))) < 0.05)?.i ?? s.outcome.line } } : {}),
       } : s;
-      const cards = saved.scenes.map(relined).map(remapProof).map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s);
-      const scenes = placeScenes(cards.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type, s.mode), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
+      const savedCards = saved.scenes.filter((s) => s.type !== "progress").map(relined).map(remapProof).map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s).map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type, s.mode), ...(s.type === "post" ? { handle } : {}) }));
+      const cards = placeScenes(savedCards, candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
+      const rawProgress = saved.scenes.filter((s) => s.type === "progress").map(normalizeScene).filter(Boolean).map((s) => ({ ...s, skin: skinFor(look, s.type) }));
+      const scenes = [...cards, ...resolveProgressScenes(rawProgress, groups, { hook, duration, cards })].sort((a, b) => a.start - b.start);
       const old = schema < GRAPHICS_SCHEMA ? `; card plan v${schema}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look}${old})`);
       scenes.look = look;
@@ -474,11 +519,13 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const transcript = groups.map((g) => g.text).join(" ");
     const recent = recentLooks();
     const fixed = settings.look && LOOKS[settings.look] ? settings.look : null;
-    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude: settings.excludeLooks || [] }) }), { timeoutMs: 240000 }));
+    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude: settings.excludeLooks || [] }) }), { timeoutMs: 240000 }));
     const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude: settings.excludeLooks || [] });
     lookPicked = picked;
-    const raw = reply.scenes || [];
-    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
+    const raw = (reply.scenes || []).map(normalizeScene).filter(Boolean);
+    const cards = placeScenes(raw.filter((s) => s.type !== "progress").map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
+    const progress = resolveProgressScenes(raw.filter((s) => s.type === "progress").map((s) => ({ ...s, skin: skinFor(picked.look, s.type) })), groups, { hook, duration, cards });
+    scenes = [...cards, ...progress].sort((a, b) => a.start - b.start);
   } catch (e) {
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
     return [];
@@ -631,6 +678,83 @@ export function sceneHTML(s, { schema = 1 } = {}) {
   const nodes = s.items.map((it, k) => `${k ? '<div class="g-link"></div>' : ""}<div class="g-node g-in${k === s.items.length - 1 ? " g-node-last" : ""}"><span class="g-node-num">${String(k + 1).padStart(2, "0")}</span>${esc(it.text)}</div>`).join("");
   return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-steps">${nodes}</div></div>`;
 }
+
+/** Semantic markup for the hook-time rail. It is rendered on its own track, never by the card loop. */
+export function progressHTML(s) {
+  const count = s.style === "count" ? `<div class="p-count"><span class="p-current">01</span>/<span>${String(s.items.length).padStart(2, "0")}</span></div>` : "";
+  const nodes = s.items.map((it, i) => `<div class="p-node" data-index="${i}"><span class="p-dot"></span><span class="p-label">${esc(it.label)}</span></div>`).join("");
+  return `<div class="p-shell">${s.title ? `<div class="p-title">${esc(s.title)}</div>` : ""}<div class="p-main">${count}<div class="p-track"><div class="p-line"><div class="p-fill"></div></div>${nodes}</div></div></div>`;
+}
+
+/** Rail styles use only the preset palette and the fonts already selected for the reel. */
+export function progressCSS({ H, colors }) {
+  const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
+  const u = H / 1920;
+  const px = (n) => `${Math.round(n * u)}px`;
+  return `
+      .progress { --p-text: ${c.text}; --p-accent: ${c.accent}; --p-bg: ${c.bg}; position: absolute; opacity: 0; pointer-events: none; color: var(--p-text); font-family: "Inter", sans-serif; }
+      .p-shell { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: ${px(8)}; padding: ${px(12)} ${px(18)}; border: ${px(2)} solid color-mix(in srgb, ${c.text} 34%, transparent); border-radius: ${px(18)}; background: color-mix(in srgb, ${c.bg} 85%, transparent); box-shadow: 0 ${px(12)} ${px(36)} color-mix(in srgb, ${c.bg} 60%, transparent); }
+      .p-title { min-height: ${px(48)}; font-family: "Anton", sans-serif; font-size: ${px(48)}; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; }
+      .p-main { display: flex; align-items: center; gap: ${px(20)}; min-height: ${px(68)}; }
+      .p-count { flex: none; min-width: ${px(108)}; font-family: "Anton", sans-serif; font-size: ${px(48)}; line-height: 1; font-variant-numeric: tabular-nums; }
+      .p-current { color: var(--p-accent); }
+      .p-track { position: relative; flex: 1; height: ${px(72)}; display: flex; align-items: flex-start; justify-content: space-between; }
+      .p-line { position: absolute; left: ${px(14)}; right: ${px(14)}; top: ${px(12)}; height: ${px(5)}; background: color-mix(in srgb, ${c.text} 20%, transparent); transform-origin: 0 50%; }
+      .p-fill { width: 100%; height: 100%; background: var(--p-accent); transform: scaleX(0); transform-origin: 0 50%; }
+      .p-node { position: relative; z-index: 1; min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: center; gap: ${px(8)}; transform-origin: 50% ${px(12)}; }
+      .p-dot { width: ${px(24)}; height: ${px(24)}; box-sizing: border-box; border: ${px(5)} solid var(--p-bg); border-radius: 50%; background: var(--p-text); box-shadow: 0 0 0 ${px(2)} color-mix(in srgb, ${c.text} 54%, transparent); }
+      .p-label { width: 100%; min-height: ${px(48)}; overflow: hidden; font-size: ${px(48)}; font-weight: 800; line-height: 1; text-align: center; text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; }
+      .progress.vertical .p-shell { padding: ${px(18)} ${px(14)}; }
+      .progress.vertical .p-main { flex: 1; align-items: stretch; flex-direction: column; gap: ${px(12)}; }
+      .progress.vertical .p-count { min-width: 0; }
+      .progress.vertical .p-track { height: auto; min-height: 0; flex-direction: column; align-items: stretch; }
+      .progress.vertical .p-line { left: ${px(10)}; right: auto; top: ${px(12)}; bottom: ${px(12)}; width: ${px(5)}; height: auto; transform-origin: 50% 0; }
+      .progress.vertical .p-fill { width: 100%; height: 100%; transform: scaleY(0); transform-origin: 50% 0; }
+      .progress.vertical .p-node { flex: 1; flex-direction: row; align-items: flex-start; gap: ${px(12)}; }
+      .progress.vertical .p-dot { flex: none; }
+      .progress.vertical .p-label { text-align: left; }
+      .progress.skin-receipt .p-shell, .progress.skin-type .p-shell, .progress.skin-case .p-shell { border-radius: 0; font-family: "Courier Prime", monospace; }
+      .progress.skin-paper .p-shell { border-width: ${px(4)}; font-family: "Permanent Marker", sans-serif; }
+      .progress.skin-editorial .p-title, .progress.skin-editorial .p-label { font-family: "DM Serif Display", serif; text-transform: none; }
+      .progress.skin-panel .p-shell, .progress.skin-blueprint .p-shell, .progress.skin-redline .p-shell { border-radius: 0; border-style: dashed; }`;
+}
+
+/** Deterministic hook draw and milestone pulses (all motion is quantized to whole 30 fps frames). */
+export const PROGRESS_JS = `
+        PLAN.progress.forEach((p, i) => {
+          const el = document.getElementById("progress-" + i);
+          const nodes = [...el.querySelectorAll(".p-node")];
+          const labels = [...el.querySelectorAll(".p-label")];
+          const fill = el.querySelector(".p-fill");
+          const current = el.querySelector(".p-current");
+          const f = (frames) => frames / (PLAN.fps || 30);
+          const vertical = el.classList.contains("vertical");
+          tl.fromTo(el, { opacity: 0, scale: 0.985 }, { opacity: 1, scale: 1, duration: f(8), ease: "power3.out" }, p.start);
+          tl.fromTo(el.querySelector(".p-line"), vertical ? { scaleY: 0 } : { scaleX: 0 }, vertical ? { scaleY: 1, duration: f(8), ease: "power3.out" } : { scaleX: 1, duration: f(8), ease: "power3.out" }, p.start);
+          nodes.forEach((node, k) => {
+            const land = [5, 8, 12, 12][k];
+            tl.fromTo(node, { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: f(3), ease: "power3.out" }, p.start + f(land - 3));
+          });
+          labels.forEach((label, k) => tl.fromTo(label, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: f(6), ease: "power3.out" }, p.start + f(k * 3)));
+          tl.to(el, { opacity: 0, duration: f(5), ease: "power2.in" }, Math.max(p.start, p.hookEnd - f(5)));
+          p.pulses.forEach((pulse, active) => {
+            if (pulse.hidden) return;
+            const at = pulse.at;
+            tl.set(el, { opacity: 0, scale: 0.985 }, at);
+            nodes.forEach((node, k) => {
+              tl.set(node, { opacity: k < active ? 0.45 : k === active ? 1 : 0.18, scale: 1 }, at);
+              tl.set(node.querySelector(".p-dot"), { backgroundColor: k === active ? "var(--p-accent)" : "var(--p-text)" }, at);
+              tl.set(labels[k], { opacity: k < active ? 0.45 : k === active ? 1 : 0 }, at);
+            });
+            if (current) tl.set(current, { textContent: String(active + 1).padStart(2, "0") }, at);
+            tl.fromTo(el, { opacity: 0, scale: 0.985 }, { opacity: 1, scale: 1, duration: f(8), ease: "power3.out" }, at);
+            tl.fromTo(fill, vertical ? { scaleY: 0 } : { scaleX: 0 }, vertical ? { scaleY: (active + 1) / nodes.length, duration: f(10), ease: "power2.inOut" } : { scaleX: (active + 1) / nodes.length, duration: f(10), ease: "power2.inOut" }, at + f(5));
+            const dot = nodes[active].querySelector(".p-dot");
+            tl.to(dot, { scale: 1.15, duration: f(3), ease: "expo.out" }, at + f(8));
+            tl.to(dot, { scale: 1, duration: f(3), ease: "power2.out" }, at + f(11));
+            tl.to(el, { opacity: 0, duration: f(5), ease: "power2.in" }, at + 1.4 - f(5));
+          });
+        });`;
 
 /**
  * CSS for the cards at canvas size W x H. Two modes: "full" takes the screen (content in the upper two thirds,

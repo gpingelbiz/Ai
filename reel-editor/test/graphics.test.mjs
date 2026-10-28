@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeScene, placeScenes, sceneCandidates, graphicsCount, sceneHTML, scenesPrompt, sceneDuration, GRAPHICS_SCHEMA, proofMessageCSS } from "../src/graphics.mjs";
+import { normalizeScene, placeScenes, sceneCandidates, graphicsCount, sceneHTML, scenesPrompt, sceneDuration, GRAPHICS_SCHEMA, proofMessageCSS, resolveProgressScenes, PROGRESS_JS } from "../src/graphics.mjs";
 import { brollCandidates } from "../src/broll.mjs";
 import { firstJSON } from "../src/claude.mjs";
 import { renderHTML } from "../src/compose.mjs";
@@ -86,6 +86,15 @@ test("render: cards and reveal captions", () => {
   assert.match(html, /"reveal":true/);
   assert.match(html, /\.cap \.w \{ opacity: 0\.38; \}/);
   assert.match(html, /PLAN\.graphics\.forEach/);
+  assert.doesNotMatch(html, /PLAN\.progress/, "a legacy plan gets no progress markup or runtime lane");
+
+  const progressPlan = structuredClone(plan);
+  progressPlan.graphics.push({ type: "progress", title: "THE JOURNEY", style: "journey", skin: "glass", start: 0, hookEnd: 2.8, duration: 14.4, placement: { x: 86, y: 820, w: 814, h: 140, orientation: "horizontal" }, items: [{ line: 2, label: "JAIL JOB" }, { line: 6, label: "LEFT" }, { line: 9, label: "SALES" }], pulses: [{ line: 2, at: 4, hidden: false }, { line: 6, at: 9, hidden: true }, { line: 9, at: 13, hidden: false }] });
+  const progressHTML = renderHTML(progressPlan, "assets/footage.mp4");
+  assert.match(progressHTML, /id="progress-0" class="progress clip horizontal skin-glass"[^>]+data-track-index="3"/);
+  assert.ok(progressHTML.indexOf('id="progress-0"') < progressHTML.indexOf('id="captions"'), "the rail track sits under captions");
+  assert.equal((progressHTML.match(/id="gfx-/g) || []).length, 1, "the rail is not rendered as a card");
+  assert.match(progressHTML, /PLAN\.progress\.forEach/);
 });
 
 test("a close next card shortens the previous one instead of being dropped; never below 4 s", () => {
@@ -405,4 +414,38 @@ test("spoken steps: future text starts hidden, item offsets reach the timeline, 
   assert.doesNotMatch(legacy, /gfx-list gfx-timed/);
   assert.match(legacy, /g-row g-in g-plain/);
   assert.match(legacy, /tl\.fromTo\(ins, \{ opacity: 0, y: 46 \}, \{ opacity: 1, y: 0, duration: 0\.42, ease: "power3\.out"/);
+});
+
+test("progress: hook timing bypasses card candidates, anchors stay ordered, labels are capped, and only one rail survives", () => {
+  const lines = Array.from({ length: 16 }, (_, i) => ({ start: i * 2, end: i * 2 + 1, text: i === 0 ? "my very long journey" : i === 2 ? "jail job began here" : i === 7 ? "then I left that jail job" : i === 12 ? "I moved into sales" : i === 13 ? "extra" : i === 14 ? "dropped" : `spoken line ${i}`, words: [] }));
+  const hook = { start: 0, duration: 2.8, text: "My journey into sales" };
+  const normal = sceneCandidates(lines, 32, { hook });
+  assert.ok(normal.every((c) => c.start >= 3.3), "ordinary cards still start after the hook");
+  const raw = normalizeScene({ type: "progress", title: "MY VERY LONG JOURNEY", style: "journey", items: [{ line: 2, label: "JAIL JOB BEGAN HERE" }, { line: 7, label: "LEFT" }, { line: 12, label: "INTO SALES" }, { line: 13, label: "extra" }, { line: 14, label: "dropped" }] });
+  assert.equal(raw.title, "MY VERY LONG");
+  assert.equal(raw.items[0].label, "JAIL JOB BEGAN");
+  assert.equal(raw.items.length, 4);
+  const second = normalizeScene({ type: "progress", style: "journey", items: [{ line: 2, label: "jail" }, { line: 12, label: "sales" }] });
+  const placed = resolveProgressScenes([raw, second], lines, { hook, duration: 32 });
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0].start, 0, "the rail starts with the hook rather than a card candidate");
+  assert.deepEqual(placed[0].pulses.map((p) => p.line), [2, 7, 12, 13]);
+  const reversed = normalizeScene({ type: "progress", style: "journey", items: [{ line: 12, label: "sales" }, { line: 7, label: "left" }] });
+  assert.deepEqual(resolveProgressScenes([reversed], lines, { hook, duration: 32 }), [], "anchors must be chronological");
+});
+
+test("progress: count needs the hook's count, a card hides a pulse, and animation times are whole frames", () => {
+  const lines = [
+    { start: 0, text: "three mistakes" },
+    { start: 4, text: "first mistake" },
+    { start: 9, text: "second mistake" },
+    { start: 14, text: "third mistake" },
+  ];
+  const rail = normalizeScene({ type: "progress", style: "count", items: [{ line: 1, label: "first mistake" }, { line: 2, label: "second mistake" }, { line: 3, label: "third mistake" }] });
+  const placed = resolveProgressScenes([rail], lines, { hook: { start: 0, duration: 2.8, text: "Three mistakes" }, duration: 20, cards: [{ type: "headline", start: 8.5, duration: 2 }] });
+  assert.deepEqual(placed[0].pulses.map((p) => p.hidden), [false, true, false]);
+  assert.deepEqual(resolveProgressScenes([rail], lines, { hook: { start: 0, duration: 2.8, text: "The mistakes" }, duration: 20 }), []);
+  for (const frames of [3, 5, 6, 8, 10, 11]) assert.match(PROGRESS_JS, new RegExp(`f\\(${frames}\\)`));
+  assert.match(PROGRESS_JS, /\[5, 8, 12, 12\]/);
+  assert.doesNotMatch(PROGRESS_JS, /Math\.random|Date\.now/);
 });
