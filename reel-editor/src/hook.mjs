@@ -2,6 +2,13 @@ function cleanHook(s) {
   return s.replace(/[\p{Extended_Pictographic}️]/gu, "").replace(/\s+/g, " ").replace(/[,.;:\-]+$/, "").trim();
 }
 
+/** How long the hook stays up: hook.duration seconds, or the whole reel for "reel" (one-line reels). */
+export function hookSeconds(setting, reel) {
+  if (setting === "reel") return reel;
+  const s = Number(setting);
+  return Math.min(Number.isFinite(s) && s > 0 ? s : 3, reel);
+}
+
 /**
  * Hook title for the first seconds. Pass text for an AI-written hook; otherwise the opening phrase is used
  * (up to maxWords, cut at the first sentence end once 3 words are in).

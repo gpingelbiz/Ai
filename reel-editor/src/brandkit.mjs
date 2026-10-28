@@ -22,21 +22,41 @@ export function checkBrand(b) {
   for (const k of ["stroke", "bg"]) if (b.colors?.[k] && !HEX.test(b.colors[k])) out.push(`colors.${k} must be a hex color like #000000`);
   if (b.look?.hook && !["headline", "gold", "box"].includes(b.look.hook)) out.push('look.hook is "headline", "gold" or "box"');
   if (b.look?.captions && !["reveal", "pop"].includes(b.look.captions)) out.push('look.captions is "reveal" or "pop"');
+  for (const k of ["hookCase", "captionCase"]) if (b.look?.[k] && !["upper", "sentence"].includes(b.look[k])) out.push(`look.${k} is "upper" or "sentence"`);
+  const hs = b.look?.hookSeconds;
+  if (hs != null && hs !== "reel" && !(Number(hs) >= 1 && Number(hs) <= 60)) out.push('look.hookSeconds is a number of seconds (1-60) or "reel"');
+  if (b.look?.pace && !["fast", "calm"].includes(b.look.pace)) out.push('look.pace is "fast" or "calm"');
   return out;
 }
 
 export const kitSlug = (b) => slug(b.name || "brand");
 
+/**
+ * Calm pacing (look.pace "calm"): gentler silence cuts (gaps over 0.6 s instead of 0.35 s), punch-ins at most every
+ * 16 s and two per 30 s with no jump-cut cadence between them, and no cold open unless look.coldOpen turns it on.
+ * "fast" (the default) keeps Greg's pacing from pingel-brand.
+ */
+export const CALM = { cuts: { silence: "medium" }, zooms: { minSpacing: 16, maxPer30: 2, cadence: { enabled: false } } };
+
 /** The reel preset: Greg's full look underneath (so it keeps improving with the editor), every personal field theirs. */
 export function brandPreset(b, { fonts = {} } = {}) {
   const look = b.look || {};
+  const calm = look.pace === "calm";
+  // Only what the brand file asks for is written, so a brand file without these fields keeps Greg's behaviour.
+  const coldOpen = look.coldOpen != null ? look.coldOpen !== false : calm ? false : null;
   return {
     name: `brand-${kitSlug(b)}`,
     extends: "pingel-brand",
     colors: { text: b.colors.text, accent: b.colors.accent, stroke: b.colors.stroke || "#000000", bg: b.colors.bg || "#0B0B0D" },
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
-    captions: { style: look.captions || "reveal", annotate: look.annotate !== false },
-    hook: { style: look.hook || "headline", behind: look.behind !== false },
+    captions: { style: look.captions || "reveal", annotate: look.annotate !== false, ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
+    hook: {
+      style: look.hook || "headline", behind: look.behind !== false,
+      ...(look.hookCase ? { uppercase: look.hookCase !== "sentence" } : {}),
+      ...(look.hookSeconds != null ? { duration: look.hookSeconds === "reel" ? "reel" : Number(look.hookSeconds) } : {}),
+    },
+    ...(calm ? structuredClone(CALM) : {}),
+    ...(coldOpen != null ? { coldOpen: { enabled: coldOpen } } : {}),
     slams: { enabled: look.slams !== false },
     // The Greg card is Greg's signature look; nobody else's reels get it.
     graphics: { excludeLooks: ["gregcard"] },

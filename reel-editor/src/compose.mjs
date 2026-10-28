@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
+import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile, ownDisplay } from "./util.mjs";
 import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 
@@ -46,7 +46,7 @@ export function composeProject(plan, projectDir) {
   ensureDir(path.join(assets, "vendor"));
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(fontFile(plan.style, f), path.join(assets, "fonts", f));
   // The fonts the reel's card look needs (typewriter, marker, serif).
-  for (const f of skinFonts([...(plan.graphics || []).map((g) => g.skin || "glass"), ...themeFontSkins(THEMES[plan.style?.look] || null)]).files) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
+  for (const f of skinFonts([...(plan.graphics || []).map((g) => g.skin || "glass"), ...themeFontSkins(THEMES[plan.style?.look] || null)], { display: ownDisplay(plan.style) }).files) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(assets, "vendor", "gsap.min.js"));
   const sfxUsed = new Set((plan.audio?.tracks || []).map((t) => t.src).filter((s) => s.startsWith("assets/sfx/")));
   if (sfxUsed.size) ensureDir(path.join(assets, "sfx"));
@@ -190,7 +190,7 @@ export function renderHTML(plan, footage) {
   const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g))}</div>`).join("\n");
   const skinsUsed = [...new Set(gfxList.map((g) => skinned(g).skin || "glass"))];
   const theme = THEMES[s.look] || null;
-  const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme)]);
+  const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme)], { display: ownDisplay(s) });
 
   const tracks = plan.audio?.tracks || [];
   const audioHTML = tracks
@@ -316,7 +316,7 @@ ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
         padding: ${Math.max(0, Math.round(hk.position * H - hookFont * 1.2))}px 7% 0; box-sizing: border-box;
         font-family: "Anton", sans-serif; font-weight: 400; font-size: ${hookFont}px; line-height: 1.05; letter-spacing: 0.01em;
-        text-transform: uppercase; color: ${hookColor}; text-align: center;
+        text-transform: ${hk.uppercase === false ? "none" : "uppercase"}; color: ${hookColor}; text-align: center;
         -webkit-text-stroke: ${hookStroke}px ${c.stroke}; paint-order: stroke fill; text-shadow: ${hk.shadow || cap.shadow};
       }
       #hook-block { position: absolute; left: 4%; right: 4%; top: ${Math.round(hk.position * H)}px; text-align: center; }
