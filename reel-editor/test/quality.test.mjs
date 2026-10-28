@@ -152,6 +152,19 @@ test("card preflight: frame-zero hook length and a single-value count-up are tru
   assert.ok(found.some((i) => i.code === "frame-zero-hook"));
   assert.ok(found.some((i) => i.code === "card-truth-countup"));
   assert.ok(!graphicChecks(cardPlan([{ ...stat, display: "threshold" }])).some((i) => i.code === "card-truth-countup"));
+  // A v2 plan reveals the exact value (and a growth count starts at the spoken number): nothing false is shown.
+  assert.ok(!graphicChecks({ ...cardPlan([stat]), graphicsSchema: 2 }).some((i) => i.code === "card-truth-countup"));
+  assert.ok(!graphicChecks(cardPlan([{ ...stat, motion: "reveal" }])).some((i) => i.code === "card-truth-countup"));
+});
+
+test("card preflight: a timed card's own hold after its last item is not lingering", () => {
+  // Steps hold 1.2 s after the last item; a proof thread holds its reading time (Clip 5: 4.467 s, last bubble 0.733 s).
+  const steps = { type: "steps", start: 10, duration: 3.2, box: safeBox, items: [{ text: "Live it", at: 0 }, { text: "They notice", at: 1 }, { text: "Then we talk", at: 2 }] };
+  const proof = { type: "message", mode: "proof", start: 8.933, duration: 4.467, box: safeBox, context: "he reached back out", items: [{ from: "them", text: "I finally left my jail job", at: 0.733 }] };
+  const found = graphicChecks(cardPlan([steps, proof]));
+  assert.ok(!found.some((i) => i.code === "card-item-hold"), found.map((i) => i.message).join("; "));
+  const lingering = graphicChecks(cardPlan([{ ...steps, duration: 6 }]));
+  assert.ok(lingering.some((i) => i.code === "card-item-hold"), "a hand-stretched timed card is still flagged");
 });
 
 test("a plan with no cards receives no new graphics warnings", () => {

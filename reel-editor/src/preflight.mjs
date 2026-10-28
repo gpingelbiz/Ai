@@ -3,6 +3,7 @@ import path from "node:path";
 import { run, r3 } from "./util.mjs";
 import { probe } from "./probe.mjs";
 import { hookBlockHeight } from "./placement.mjs";
+import { numberMotion, sceneDuration } from "./graphics.mjs";
 
 /**
  * Preflight: checks on the finished file before it reaches the Desktop. Sound (integrated loudness, true peak,
@@ -219,7 +220,10 @@ export function graphicChecks(plan) {
     if (count > budget) items.push({ level: "warn", code: "card-reading-budget", message: `${card.type || "card"} at ${at(card)} shows ${count} words; its ${r3(+card.duration || 0)} s hold fits ${budget}` });
     if ((+card.duration || 0) > rules.maxHold) items.push({ level: "warn", code: "card-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s (keep cards at or under ${rules.maxHold} s)` });
     const timed = itemTimedDuration(card);
-    if (timed != null && (+card.duration || 0) > timed + 1 / 30) items.push({ level: "warn", code: "card-item-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s, past its last item at ${r3(timed)} s` });
+    // A timed card holds after its last item by design (1.2 s for steps, the reading time for a proof thread);
+    // only a hold past what the card's own rule gives is lingering.
+    const v2Timed = card.mode === "proof" || (card.items?.length && card.items.every((it) => Number.isFinite(it.at)));
+    if (timed != null && (+card.duration || 0) > (v2Timed ? Math.max(timed, sceneDuration(card)) : timed) + 1 / 30) items.push({ level: "warn", code: "card-item-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s, past its last item at ${r3(timed)} s` });
 
     const box = cardBox(card, plan, W, H), right = box.x + box.width, bottom = box.y + box.height;
     const cap = plan.style?.captions || {};
@@ -233,7 +237,10 @@ export function graphicChecks(plan) {
     if (bad.length) items.push({ level: "warn", code: "card-bounds", message: `${source} at ${at(card)} is outside x ${rules.left}-${rules.right}px / y ${rules.top}px-caption top (${bad.join(", ")})` });
     if (right > rules.right && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "card-right-rail", message: `${source} at ${at(card)} reaches the right action rail below ${pct(SAFE.rightFrom)}` });
 
-    const countUp = card.type === "stat" && /\d/.test(String(card.value || "")) && !card.value2 && card.countUp !== false && card.animateNumber !== false && !["fixed", "threshold"].includes(card.display);
+    // Only the legacy zero count-up shows numbers that were never said; a v2 reveal prints the exact value and a
+    // growth count starts at the spoken starting number.
+    const legacyCount = !numberMotion(card, { schema: plan.graphicsSchema || plan.graphics?.schema || 1 });
+    const countUp = card.type === "stat" && legacyCount && /\d/.test(String(card.value || "")) && !card.value2 && card.countUp !== false && card.animateNumber !== false && !["fixed", "threshold"].includes(card.display);
     if (countUp) items.push({ level: "warn", code: "card-truth-countup", message: `stat at ${at(card)} counts through numbers Greg did not say before it reaches "${card.value}"` });
   }
 
