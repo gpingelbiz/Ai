@@ -31,7 +31,8 @@ export function planFullLayout(shot) {
   return { shot, note: "full-frame cutaway" };
 }
 
-/** Put a 4:5 panel on whichever side leaves the most room around the whole head at the strongest active zoom. */
+/** The biggest clear panel: 4:5 beside the head (on the side with more room) or 5:4 on the wall above it, at the
+ *  strongest active zoom. A centred head leaves no side room, and a high head no wall; the larger one wins. */
 export function planWindowLayout(shot, context = {}) {
   const { W = 1080, H = 1920, captionTop = 0.68 } = context;
   const head = headFor(shot, context);
@@ -45,22 +46,17 @@ export function planWindowLayout(shot, context = {}) {
   ].sort((a, b) => b.room - a.room);
   const vertical = captionTop * H - PANEL_GAP - TOP_SAFE;
   const width = Math.floor(Math.min(PANEL_MAX, rooms[0].room, vertical / 1.25));
-  if (width < PANEL_MIN) {
-    // A centred talking head leaves no side room, but the wall above the head often fits a wider 5:4 panel.
-    const above = (head.cy - head.h / 2) * H - PANEL_GAP - TOP_SAFE;
-    const aw = Math.floor(Math.min(SAFE_RIGHT - SAFE_LEFT, PANEL_MAX * 1.5, above * 1.25));
-    if (aw >= PANEL_MIN && Math.round(aw / 1.25) >= PANEL_MIN * 0.8) {
-      const ah = Math.round(aw / 1.25);
-      const ax = Math.round(Math.max(SAFE_LEFT, Math.min(SAFE_RIGHT - aw, head.cx * W - aw / 2)));
-      return { shot: { ...shot, layout: "window", panel: { x: ax, y: TOP_SAFE, w: aw, h: ah, side: "top" } }, note: "window above the head (no room beside it)" };
-    }
-    return { shot: { ...shot, layout: "full" }, skipped: "window skipped: no clear 280px panel beside or above the head" };
-  }
-
-  const height = Math.round(width * 1.25);
-  const x = rooms[0].side === "left" ? SAFE_LEFT : SAFE_RIGHT - width;
-  const panel = { x, y: TOP_SAFE, w: width, h: height, side: rooms[0].side };
-  return { shot: { ...shot, layout: "window", panel }, note: `window on the ${panel.side} of the head` };
+  const side = width >= PANEL_MIN
+    ? { x: rooms[0].side === "left" ? SAFE_LEFT : SAFE_RIGHT - width, y: TOP_SAFE, w: width, h: Math.round(width * 1.25), side: rooms[0].side }
+    : null;
+  const above = (head.cy - head.h / 2) * H - PANEL_GAP - TOP_SAFE;
+  const aw = Math.floor(Math.min(SAFE_RIGHT - SAFE_LEFT, PANEL_MAX * 1.5, above * 1.25));
+  const top = aw >= PANEL_MIN && Math.round(aw / 1.25) >= PANEL_MIN * 0.8
+    ? { x: Math.round(Math.max(SAFE_LEFT, Math.min(SAFE_RIGHT - aw, head.cx * W - aw / 2))), y: TOP_SAFE, w: aw, h: Math.round(aw / 1.25), side: "top" }
+    : null;
+  const panel = [side, top].filter(Boolean).sort((a, b) => b.w * b.h - a.w * a.h)[0];
+  if (!panel) return { shot: { ...shot, layout: "full" }, skipped: "window skipped: no clear 280px panel beside or above the head" };
+  return { shot: { ...shot, layout: "window", panel }, note: panel.side === "top" ? "window above the head" : `window on the ${panel.side} of the head` };
 }
 
 /** Split at the halfway seam. The outer footage position moves; #video-wrap keeps owning every punch-in. */

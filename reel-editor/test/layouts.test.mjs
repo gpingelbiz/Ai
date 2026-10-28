@@ -76,6 +76,13 @@ test("split keeps the whole head between the seam and the captions, and a low fa
   assert.match(fallback.skipped, /too low/);
 });
 
+test("window takes the bigger clear spot: above a low head, beside a high one", () => {
+  const low = planWindowLayout(shot, contextFor({ cx: 0.3, cy: 0.5, w: 0.16, h: 0.14 }));
+  assert.equal(low.shot.panel.side, "top", "a tall wall above the head beats a 360 px side panel");
+  const high = planWindowLayout(shot, contextFor({ cx: 0.3, cy: 0.3, w: 0.16, h: 0.14 }));
+  assert.equal(high.shot.panel.side, "right", "no wall above a high head, so the panel goes beside it");
+});
+
 test("a face sampled inside the cutaway's window wins over the reel-wide face", () => {
   const seated = { cx: 0.25, cy: 0.4, w: 0.16, h: 0.14 };
   const selfie = { cx: 0.5, cy: 0.55, w: 0.5, h: 0.34 };
