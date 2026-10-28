@@ -271,8 +271,25 @@ test("proof messages start at the first exact mention and reveal only exact tran
 
   const invented = normalizeScene({ type: "message", mode: "proof", line: 0, context: "He messaged us", items: [{ from: "them", line: 1, text: "He promised us money" }] });
   assert.deepEqual(placeScenes([invented], lines, { duration: 20, lines }), [], "invented bubble copy is rejected");
-  const repeatedLate = normalizeScene({ type: "message", mode: "proof", line: 0, context: "He messaged us", items: [{ from: "them", line: 2, text: "I left the jail" }] });
-  assert.deepEqual(placeScenes([repeatedLate], lines, { duration: 20, lines }), [], "a real phrase with the wrong first-line anchor is rejected");
+  const wrongLine = normalizeScene({ type: "message", mode: "proof", line: 0, context: "He messaged us", items: [{ from: "them", line: 2, text: "I left the jail" }] });
+  const fixed = placeScenes([wrongLine], lines, { duration: 20, lines });
+  assert.equal(fixed[0].items[0].at, 2, "a real phrase cues where it is really said, whatever line Claude named");
+});
+
+test("proof messages ground across three-word caption lines (a bubble starting on the last word of a line)", () => {
+  // Clip 5 of the Oct 22 recording: "to say Hey I / finally left / my jail job"; Claude named the second line.
+  const lines = [
+    { i: 0, start: 8.93, text: "And he reached" },
+    { i: 1, start: 9.35, text: "back out" },
+    { i: 2, start: 9.67, text: "to say Hey I" },
+    { i: 3, start: 10.27, text: "finally left" },
+    { i: 4, start: 10.75, text: "my jail job" },
+  ];
+  const card = normalizeScene({ type: "message", mode: "proof", line: 3, context: "he reached back out", items: [{ from: "them", line: 3, text: "I finally left my jail job" }] });
+  const placed = placeScenes([card], lines, { duration: 30, lines });
+  assert.equal(placed.length, 1, "the card is kept");
+  assert.equal(placed[0].start, 8.933, "it starts on the context's first line");
+  assert.equal(placed[0].items[0].at, 0.733, "the bubble lands on the line where its first word is said");
 });
 
 test("proof messages trim bubbles to 16 words, enforce the total reading budget and allow one per reel", () => {

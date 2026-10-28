@@ -175,11 +175,11 @@ const cleanWords = (s, maxWords, maxChars = 160) => {
 const proofTokens = (s) => String(s || "").toLowerCase().match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) || [];
 
 /** The first transcript line where an exact spoken phrase begins, including phrases that cross caption lines. */
-function firstExactLine(lines, phrase) {
+function firstExactLine(lines, phrase, from = -Infinity) {
   const needle = proofTokens(phrase);
   if (!needle.length) return null;
   const words = [];
-  for (const line of lines || []) for (const word of proofTokens(line.text)) words.push({ word, line: line.i });
+  for (const line of lines || []) if (line.i >= from) for (const word of proofTokens(line.text)) words.push({ word, line: line.i });
   outer: for (let i = 0; i <= words.length - needle.length; i++) {
     for (let j = 0; j < needle.length; j++) if (words[i + j].word !== needle[j]) continue outer;
     return words[i].line;
@@ -197,15 +197,17 @@ function groundProof(s, lines, candidates) {
   let prior = line;
   const items = [];
   for (const item of s.items || []) {
-    const first = firstExactLine(lines, item.text);
-    if (first == null || first !== item.line || first < prior || !byLine.has(first)) return null;
+    // Claude's line is only a hint: with three-word caption lines a bubble often starts on the last word of the line
+    // before the one it names, so the cue is where the exact words really begin, after the context.
+    const first = firstExactLine(lines, item.text, prior);
+    if (first == null || !byLine.has(first)) return null;
     prior = first;
     items.push({ ...item, at: r3(Math.round((byLine.get(first).start - start) * 30) / 30) });
   }
   let outcome = null;
   if (s.outcome) {
-    const first = firstExactLine(lines, s.outcome.text);
-    if (first == null || first !== s.outcome.line || first < prior || !byLine.has(first)) return null;
+    const first = firstExactLine(lines, s.outcome.text, prior);
+    if (first == null || !byLine.has(first)) return null;
     outcome = { ...s.outcome, at: r3(Math.round((byLine.get(first).start - start) * 30) / 30) };
   }
   const grounded = { ...s, line, items, ...(outcome ? { outcome } : {}) };
@@ -428,7 +430,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text, line}], where line is where that step is first said.",
     "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), kind (versus, before-after, or roles), pivotLine (the numbered caption line where the contrast word is spoken), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
     "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most, motion (\"reveal\" or \"growth\"). Keep exact printed labels and use reveal unless two rows are the explicit starting and ending values of one spoken change.",
-    "- message: a text exchange the speaker reads out or acts out. For reconstructed proof, use mode: \"proof\", context (who and what, in the speaker's exact words), items [{from: \"them\" | \"me\", text, line}] 1-3 bubbles, and optional outcome {line, text}. Each bubble is at most 16 words. Do not add contact in proof mode. Legacy acted-out exchanges may omit mode and use contact plus items without line.",
+    "- message: a text exchange the speaker reads out or acts out. For reconstructed proof, use mode: \"proof\", context (2 to 4 of the speaker's exact words that introduce the message, like \"he reached back out\" or \"he sent me\"), items [{from: \"them\" | \"me\", text, line}] 1-3 bubbles, and optional outcome {line, text}. Each bubble is at most 16 words. Do not add contact in proof mode. Legacy acted-out exchanges may omit mode and use contact plus items without line.",
     "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
     "- progress: one small payoff rail, separate from the card count. title is optional and at most 3 words; style is journey or count; items are 2 to 4 ordered {line, label} milestones, with each label 1 to 3 words taken from the speaker. journey is only for real ordered beats whose final payoff is at least 8 seconds after the hook. count is only when the hook explicitly promises a number, and each item is a promised section start. Never use progress on a one-idea reel.",
     `- list items may carry icon: one of ${Object.keys(ICONS).join(", ")} (pick the one that fits the item, else leave empty).`,
@@ -441,6 +443,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     "- Use at most two stat cards in the reel, and put their start lines at least 8 seconds apart.",
     "- When the speaker quotes someone else or acts out a message or line, a quote card may show it but must not present it as the speaker's own words.",
     "- For proof messages, anchor the card where the speaker first establishes that the message exists; anchor each bubble or outcome to the first line where its content becomes known.",
+    "- When the speaker tells the same message twice (a quick version early, the full retelling later), the proof card goes on the EARLY telling: most viewers leave within 5 to 10 seconds, so a proof card in the last third is wasted. Keep a proof card to at most 12 words in all.",
     "- Proof context, bubble text and outcome text must be exact consecutive words from the transcript, only trimmed shorter. Never invent a sender name, timestamp, read receipt or outcome.",
     "- Use at most one proof message in the reel.",
     "- Short: items at most 4 words, headline at most 7 words, sub and eyebrow at most 6 words.",
@@ -449,7 +452,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     "- A timed list/steps card must fit this whole-card reading budget: floor((seconds on screen - 0.7) / 0.375) words.",
     "- A compare holds 3 to 4.5 seconds. Use at most one compare in the reel, at most 6 words on either side, and keep the whole card inside its reading budget. Set pivotLine to the line that contains the spoken contrast (but, instead, now, what they hear, the real reason, two years later). Side B is the payoff: never reveal or make it readable before pivotLine.",
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
-    "- Fewer cards beat more: the biggest reels in this niche are a face, one premise and captions. Reply with an empty scenes list when the reel is one opinion with no structure, an emotional or identity moment, or a skit. A personal story gets at most a proof message or a progress rail, and only when the speaker gives a real message or a real sequence. Never pick a card that repeats the hook or the line already on screen.",
+    "- Fewer cards beat more: the biggest reels in this niche are a face, one premise and captions. Reply with an empty scenes list when the reel is one opinion with no structure, an emotional or identity moment, or a skit. A personal story gets no other cards, but when the speaker quotes a real message (a DM, a text, what someone said to them) it does get the proof message card, and a real sequence of events may get a progress rail. Never pick a card that repeats the hook or the line already on screen.",
     "- Offer at most one progress scene. It does not replace or consume one of the requested cards. Its item line anchors must be strictly increasing.",
     "- No emojis, no hashtags, no calls to action.",
     voice ? `\nVoice for labels and trims:\n${voice.trim()}` : "",
@@ -526,6 +529,10 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const raw = (reply.scenes || []).map(normalizeScene).filter(Boolean);
     const cards = placeScenes(raw.filter((s) => s.type !== "progress").map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
     const progress = resolveProgressScenes(raw.filter((s) => s.type === "progress").map((s) => ({ ...s, skin: skinFor(picked.look, s.type) })), groups, { hook, duration, cards });
+    // A pick the timing, grounding or reading rules turn down is dropped; say so, or an empty reel looks like a choice.
+    const dropped = (reply.scenes || []).length - cards.length - progress.length;
+    if (process.env.REEL_DEBUG_GRAPHICS) log(`graphics: Claude's picks ${JSON.stringify(reply.scenes || [])}`);
+    if (dropped > 0) log(`graphics: ${dropped} of ${(reply.scenes || []).length} picked card${dropped === 1 ? " was" : "s were"} dropped by the timing, wording or reading rules (${(reply.scenes || []).map((s) => s.type + (s.mode ? "/" + s.mode : "") + "@line " + s.line).join(", ")})`);
     scenes = [...cards, ...progress].sort((a, b) => a.start - b.start);
   } catch (e) {
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
