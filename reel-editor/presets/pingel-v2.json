@@ -1,0 +1,45 @@
+{
+  "name": "pingel-v2",
+  "extends": "pingel-brand",
+  "_about": "Test look from the Oct 28 design teardown of 36 top niche reels (~/Reels/research/design-teardown/DESIGN_SPEC.md). Same brand colours; sentence-case captions higher up, a smaller hook clear of the head, tighter and higher framing, one-take pacing, less b-roll. Opt in with --preset pingel-v2 or #v2 in a dropped file name.",
+  "captions": {
+    "position": 0.65,
+    "placeMin": 0.58,
+    "placeMax": 0.72,
+    "placeGap": 0.025,
+    "fontSizeFrac": 0.0355,
+    "uppercase": false,
+    "style": "reveal",
+    "dimFuture": false,
+    "animation": "cut",
+    "autoKeywords": false,
+    "annotate": false
+  },
+  "hook": {
+    "fontSizeFrac": 0.041,
+    "maxWords": 12,
+    "behind": false
+  },
+  "framing": {
+    "enabled": true,
+    "faceHeight": 0.2,
+    "eyeLine": 0.38,
+    "max": 1.3
+  },
+  "zooms": {
+    "scales": [1.16, 1.22],
+    "cadence": {
+      "enabled": false
+    }
+  },
+  "broll": {
+    "max": 2,
+    "maxWithGraphics": 1,
+    "every": 20,
+    "duration": 1.6,
+    "gap": 8
+  },
+  "coldOpen": {
+    "enabled": false
+  }
+}

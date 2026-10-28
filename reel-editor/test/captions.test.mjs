@@ -115,3 +115,42 @@ test("minShow: a line that would flash joins the next one; off by default", asyn
   assert.ok(on.length < off.length, `${off.map((g) => g.text).join(" | ")} vs ${on.map((g) => g.text).join(" | ")}`);
   for (let i = 0; i + 1 < on.length; i++) assert.ok(on[i + 1].start - on[i].start >= 0.25 || on[i].words.length >= 3);
 });
+
+test("design v2: dimFuture false shows the whole phrase and swaps it; the default still dims unspoken words", () => {
+  const groups = markKeywords(groupWords(sample, 24), dict);
+  const base = JSON.parse(readFileSync(new URL("../presets/_defaults.json", import.meta.url)));
+  const plan = (captions) => ({ name: "t", canvas: { width: 1080, height: 1920 }, style: { ...base, captions: { ...base.captions, ...captions } }, video: { src: "/x/clean.mp4", duration: 24, hasAudio: true }, captions: groups, hook: pickHook(sample), zooms: [], audio: { tracks: [] } });
+  const dim = renderHTML(plan({ style: "reveal" }), "assets/footage.mp4");
+  assert.match(dim, /\.cap \.w \{ opacity: 0\.38; \}/);
+  assert.match(dim, /"capDim":true/);
+  const whole = renderHTML(plan({ style: "reveal", dimFuture: false, animation: "cut" }), "assets/footage.mp4");
+  assert.doesNotMatch(whole, /\.cap \.w \{ opacity: 0\.38; \}/, "no dimmed future words");
+  assert.match(whole, /"capDim":false/);
+  assert.match(whole, /"capCut":true/, "a hard swap, no entrance animation");
+});
+
+test("the hook never covers the head: a measured head top reaches the page, the text-behind-you hook is left alone", () => {
+  const groups = markKeywords(groupWords(sample, 24), dict);
+  const style = JSON.parse(readFileSync(new URL("../presets/_defaults.json", import.meta.url)));
+  const hook = { ...pickHook(sample), headTop: 0.272, headBottom: 0.492 };
+  const html = renderHTML({ name: "t", canvas: { width: 1080, height: 1920 }, style, video: { src: "/x/clean.mp4", duration: 24, hasAudio: true }, captions: groups, hook, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
+  assert.match(html, /"headTop":0\.272,"headBottom":0\.492/);
+  assert.match(html, /Number\.isFinite\(PLAN\.hook\.headTop\)/);
+  const plain = renderHTML({ name: "t", canvas: { width: 1080, height: 1920 }, style, video: { src: "/x/clean.mp4", duration: 24, hasAudio: true }, captions: groups, hook: pickHook(sample), zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
+  assert.doesNotMatch(plain, /"headTop"/, "no measurement, nothing moves");
+});
+
+test("pingel-v2 builds on pingel-brand: same colours and b-roll world, the teardown's caption, hook, framing and pacing values", async () => {
+  const { loadPreset } = await import("../src/presets.mjs");
+  const v2 = loadPreset("pingel-v2"), brand = loadPreset("pingel-brand");
+  assert.deepEqual(v2.colors, brand.colors);
+  assert.equal(v2.broll.world, brand.broll.world);
+  assert.equal(v2.captions.uppercase, false);
+  assert.equal(v2.captions.position, 0.65);
+  assert.equal(v2.captions.dimFuture, false);
+  assert.equal(v2.hook.behind, false);
+  assert.equal(v2.framing.enabled, true);
+  assert.equal(v2.zooms.cadence.enabled, false);
+  assert.equal(v2.coldOpen.enabled, false);
+  assert.equal(brand.captions.uppercase, true, "the default look is unchanged");
+});
