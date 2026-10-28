@@ -1,9 +1,44 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planCuts, findBadTakes, remapWords } from "../src/cuts.mjs";
+import { planCuts, findBadTakes, remapWords, findRoomTone } from "../src/cuts.mjs";
 import { readFileSync } from "node:fs";
 
 const sample = JSON.parse(readFileSync(new URL("../examples/sample-words.json", import.meta.url))).words;
+
+test("findRoomTone prefers clean room outside the speech over a longer pause", () => {
+  const step = 0.02;
+  const db = new Array(250).fill(-24);
+  for (let i = 0; i < 45; i++) db[i] = -58;
+  for (let i = 80; i < 170; i++) db[i] = -58;
+  for (let i = 205; i < 250; i++) db[i] = -58;
+  const words = [{ start: 1, end: 1.5 }, { start: 3.5, end: 4 }];
+  const room = findRoomTone({ step, db }, words, 5);
+  assert.ok(room);
+  assert.ok(room.end <= 0.92 || room.start >= 4.08, JSON.stringify(room));
+  assert.equal(room.db, -58);
+});
+
+test("findRoomTone picks a quiet long pause and trims its edges", () => {
+  const step = 0.02;
+  const db = new Array(300).fill(-24);
+  for (let i = 65; i < 145; i++) db[i] = -57;
+  const words = [{ start: 0, end: 1.2 }, { start: 3, end: 6 }];
+  const room = findRoomTone({ step, db }, words, 6);
+  assert.deepEqual(room, { start: 1.35, end: 2.75, db: -57 });
+});
+
+test("findRoomTone rejects a quiet candidate with a spike", () => {
+  const db = new Array(20).fill(-60);
+  db[10] = -45;
+  assert.equal(findRoomTone({ step: 0.02, db }, [], 0.4), null);
+});
+
+test("findRoomTone returns null when every word-free run is above the clip floor", () => {
+  const db = new Array(100).fill(-30);
+  for (let i = 0; i < 55; i++) db[i] = -60;
+  const words = [{ start: 0, end: 1.08 }];
+  assert.equal(findRoomTone({ step: 0.02, db }, words, 2), null);
+});
 
 test("findBadTakes drops the false start and keeps the restart", () => {
   const drop = findBadTakes(sample);

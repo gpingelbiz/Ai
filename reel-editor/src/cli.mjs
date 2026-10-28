@@ -66,6 +66,7 @@ Options (edit / batch)
                            is said (Claude, headless); "Signature ..." tracks come back more often
   --music-want <text>      with --music-dir: the track whose file name contains this    --no-duck  flat level
   --no-clean-audio         skip noise reduction + loudness normalization
+  --no-room-tone           fade jump cuts to silence instead of laying a quiet room bed underneath them
   --sfx                    ElevenLabs whoosh on zoom-ins and pop on the hook (needs ELEVENLABS_API_KEY)
   --voiceover <script.txt> ElevenLabs narration track      --voice <id>    --replace-audio (mute footage)
   --quality <q>            draft | looks (default) | delivery        --fps <n>  default 30
@@ -159,6 +160,8 @@ const EDIT_OPTIONS = {
   voiceover: { type: "string" },
   voice: { type: "string" },
   "replace-audio": { type: "boolean" },
+  "room-tone": { type: "boolean" },
+  "no-room-tone": { type: "boolean" },
   quality: { type: "string" },
   fps: { type: "string" },
   broll: { type: "boolean" },
