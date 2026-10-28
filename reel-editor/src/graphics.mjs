@@ -14,7 +14,13 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
  * phrase highlighted), headline (the key statement), steps (2-4 connected nodes: a flow or a before -> after).
  */
 
-export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter"];
+export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter", "progress"];
+
+/**
+ * graphics.json schema. 2 = the dynamic-graphics plan (cards timed to the words they show, truthful numbers).
+ * An older plan is still reused as is, so an old reel renders as it did; `--new-graphics` replans it.
+ */
+export const GRAPHICS_SCHEMA = 2;
 
 /**
  * Line icons for list rows (24x24 stroke paths, drawn on as the row appears). Claude picks one per row from
@@ -83,9 +89,19 @@ export function iconFor(text, pick) {
 /** How long each kind of card holds, from how much there is to read. */
 export function sceneDuration(s) {
   const n = (s.items || []).length;
+  const timed = (s.type === "list" || s.type === "steps") && n && s.items.every((it) => Number.isFinite(it.at));
+  if (timed) return r3(Math.min(8, Math.round((s.items[n - 1].at + 1.2) * 30) / 30));
+  if (s.type === "message" && s.mode === "proof") {
+    const lastItem = Math.max(0, ...(s.items || []).map((it) => Number(it.at) || 0));
+    const last = Math.max(lastItem, Number(s.outcome?.at) || 0);
+    const beat = (s.items || []).some((it) => (Number(it.at) || 0) === last) ? 20 / 30 : 10 / 30;
+    const words = [s.context, ...(s.items || []).map((it) => it.text), s.outcome?.text].filter(Boolean).join(" ").split(/\s+/).length;
+    return r3(Math.ceil(Math.min(8, Math.max(last + beat + 1.5, 0.7 + words * 0.375)) * 30) / 30);
+  }
   // Cards hold long enough to be read twice: the speaker is still on screen, so a card is never a cut.
   if (s.type === "list" || s.type === "steps" || s.type === "bars") return r3(Math.min(8, 4.5 + 0.7 * n));
   if (s.type === "message") return r3(Math.min(8, 4 + 1.2 * n));
+  if (s.type === "compare" && (Number.isInteger(s.pivotLine) || Number.isFinite(s.pivotAt))) return 4.5;
   if (s.type === "quote" || s.type === "compare") return 6;
   if (s.type === "chapter") return 3.5;
   if (s.type === "headline") return 5.5;
@@ -99,10 +115,120 @@ export function graphicsCount(duration, { max = 6, every = 10 } = {}) {
 }
 
 const clean = (s, max = 80) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const shortWords = (s, max = 3, chars = 32) => clean(s, chars).split(/\s+/).filter(Boolean).slice(0, max).join(" ");
+const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
+const wordCount = (s) => String(s || "").replace(/\*/g, "").trim().split(/\s+/).filter(Boolean).length;
+const capWords = (s, max) => words(s).slice(0, Math.max(0, max)).join(" ");
+const compareWords = (s) => words(s.title).length + [s.a, s.b].reduce((n, x) => n + words(x?.label).length + words(x?.value).length + words(x?.note).length, 0);
+const itemLine = (line) => Number.isInteger(line) ? line : parseInt(line, 10);
+const hasTimedItems = (s) => (s.type === "list" || s.type === "steps") && s.items?.length && s.items.every((it) => Number.isFinite(it.at));
+
+function cardWords(s) {
+  return wordCount(s.eyebrow) + wordCount(s.title) + (s.items || []).reduce((n, it) => n + wordCount(it.text) + wordCount(it.tag), 0);
+}
+
+const QUALIFIED_NUMBER = /\b(?:about|around|over|under|within|nearly|almost|up\s+to)\b|\bafter\s+(?:\d[\d,.]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+years?\b/i;
+const sceneWords = (s) => [s.eyebrow, s.title, s.value, s.value2, s.sub, ...(s.items || []).flatMap((it) => [it.label, it.value])].filter(Boolean).join(" ");
+
+/** The numeric motion a card may use. Old plans with no field keep the original zero count-up. */
+export function numberMotion(s, { schema = 1 } = {}) {
+  if (!s || !["stat", "bars"].includes(s.type)) return "";
+  const qualified = QUALIFIED_NUMBER.test(sceneWords(s));
+  const statEnds = s.type === "stat" && splitStat(s.value) && splitStat(s.value2);
+  const barEnds = s.type === "bars" && s.items?.length === 2 && s.items.every((it) => splitStat(it.value));
+  if (s.motion === "growth" && !qualified && (statEnds || barEnds)) return "growth";
+  if (s.motion === "reveal" || s.motion === "growth" || schema >= GRAPHICS_SCHEMA) return "reveal";
+  return "";
+}
+
+function capCompareSide(x, max = 6) {
+  const valueWords = words(x.value).length;
+  const label = capWords(x.label, Math.max(1, max - valueWords));
+  const note = capWords(x.note, max - valueWords - words(label).length);
+  return { ...x, label, note };
+}
+
+/** Fit a staged comparison to its 160 WPM reading budget without cutting a number or its qualifier apart. */
+function fitCompareBudget(s, duration) {
+  const budget = Math.max(2, Math.floor((duration - 0.7) / 0.375));
+  const out = { ...s, a: capCompareSide(s.a), b: capCompareSide(s.b) };
+  if (compareWords(out) <= budget) return out;
+  out.title = "";
+  for (const side of [out.a, out.b]) {
+    while (compareWords(out) > budget && words(side.note).length) side.note = capWords(side.note, words(side.note).length - 1);
+  }
+  for (const side of [out.a, out.b]) {
+    while (compareWords(out) > budget && words(side.label).length > 1) side.label = capWords(side.label, words(side.label).length - 1);
+  }
+  if (compareWords(out) > budget && out.a.value && out.b.value) { out.a.value = ""; out.b.value = ""; }
+  for (const side of [out.a, out.b]) {
+    while (compareWords(out) > budget && words(side.label).length > 1) side.label = capWords(side.label, words(side.label).length - 1);
+  }
+  return out;
+}
+
+const cleanWords = (s, maxWords, maxChars = 160) => {
+  const words = String(s ?? "").replace(/\s+/g, " ").trim().split(/\s+/).filter(Boolean).slice(0, maxWords);
+  while (words.length && words.join(" ").length > maxChars) words.pop();
+  return words.join(" ");
+};
+const proofTokens = (s) => String(s || "").toLowerCase().match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) || [];
+
+/** The first transcript line where an exact spoken phrase begins, including phrases that cross caption lines. */
+function firstExactLine(lines, phrase, from = -Infinity) {
+  const needle = proofTokens(phrase);
+  if (!needle.length) return null;
+  const words = [];
+  for (const line of lines || []) if (line.i >= from) for (const word of proofTokens(line.text)) words.push({ word, line: line.i });
+  outer: for (let i = 0; i <= words.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (words[i + j].word !== needle[j]) continue outer;
+    return words[i].line;
+  }
+  return null;
+}
+
+/** Ground a proof thread in exact transcript phrases and resolve its line cues to frame-quantized offsets. */
+function groundProof(s, lines, candidates) {
+  const byLine = new Map((lines || []).map((line) => [line.i, line]));
+  const allowed = new Set((candidates || []).map((line) => line.i));
+  const line = firstExactLine(lines, s.context);
+  if (line == null || !allowed.has(line)) return null;
+  const start = Math.round(byLine.get(line).start * 30) / 30;
+  let prior = line;
+  const items = [];
+  for (const item of s.items || []) {
+    // Claude's line is only a hint: with three-word caption lines a bubble often starts on the last word of the line
+    // before the one it names, so the cue is where the exact words really begin, after the context.
+    const first = firstExactLine(lines, item.text, prior);
+    if (first == null || !byLine.has(first)) return null;
+    prior = first;
+    items.push({ ...item, at: r3(Math.round((byLine.get(first).start - start) * 30) / 30) });
+  }
+  let outcome = null;
+  if (s.outcome) {
+    const first = firstExactLine(lines, s.outcome.text, prior);
+    if (first == null || !byLine.has(first)) return null;
+    outcome = { ...s.outcome, at: r3(Math.round((byLine.get(first).start - start) * 30) / 30) };
+  }
+  const grounded = { ...s, line, items, ...(outcome ? { outcome } : {}) };
+  grounded.duration = sceneDuration(grounded);
+  const words = proofTokens([grounded.context, ...items.map((it) => it.text), outcome?.text].filter(Boolean).join(" ")).length;
+  if (words > Math.floor((grounded.duration - 0.7) / 0.375)) return null;
+  return grounded;
+}
 
 /** Tidy one scene from Claude: known type, short text, the fields that type needs. Returns null if unusable. */
-export function normalizeScene(raw) {
+export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
   if (!raw || !TYPES.includes(raw.type)) return null;
+  if (raw.type === "progress") {
+    const s = { type: "progress", title: shortWords(raw.title), style: raw.style === "count" ? "count" : "journey" };
+    s.items = (Array.isArray(raw.items) ? raw.items : [])
+      .map((it) => ({ line: Number.isInteger(it?.line) ? it.line : parseInt(it?.line, 10), label: shortWords(it?.label) }))
+      .filter((it) => Number.isInteger(it.line) && it.label)
+      .slice(0, 4);
+    if (s.items.length < 2) return null;
+    return s;
+  }
   const s = { type: raw.type, line: Number.isInteger(raw.line) ? raw.line : parseInt(raw.line, 10), eyebrow: clean(raw.eyebrow, 40) };
   if (!Number.isInteger(s.line)) return null;
   if (s.type === "stat") {
@@ -112,12 +238,17 @@ export function normalizeScene(raw) {
     if (!s.value) return null;
   } else if (s.type === "list" || s.type === "steps") {
     s.title = clean(raw.title, 48);
-    s.items = (Array.isArray(raw.items) ? raw.items : [])
+    const items = (Array.isArray(raw.items) ? raw.items : [])
       .map((it) => (typeof it === "string" ? { text: it } : it || {}))
-      .map((it) => ({ text: clean(it.text, 32), tag: clean(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain", icon: s.type === "list" ? iconFor(it.text, clean(it.icon, 12).toLowerCase()) : "" }))
+      .map((it) => ({ text: clean(it.text, 32), tag: clean(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain", icon: s.type === "list" ? iconFor(it.text, clean(it.icon, 12).toLowerCase()) : "", ...((it.line !== undefined && it.line !== null && it.line !== "") ? { line: itemLine(it.line) } : {}) }))
       .filter((it) => it.text)
       .slice(0, 4);
-    if (s.items.length < 2) return null;
+    if (items.length < 2) return null;
+    const supplied = items.filter((it) => Object.hasOwn(it, "line"));
+    const lined = items.filter((it) => Number.isInteger(it.line));
+    // No cue lines is the legacy card. Once one item is timed, every item must be timed in spoken order.
+    if (supplied.length && (lined.length !== items.length || lined.some((it, i) => i && it.line <= lined[i - 1].line) || items.some((it) => wordCount(it.text) > 4))) return null;
+    s.items = items;
   } else if (s.type === "bars") {
     s.title = clean(raw.title, 48);
     s.unit = clean(raw.unit, 8);
@@ -135,12 +266,34 @@ export function normalizeScene(raw) {
     s.b = side(raw.b);
     if (!s.a.label || !s.b.label) return null;
     if (!(splitStat(s.a.value) && splitStat(s.b.value))) { s.a.value = ""; s.b.value = ""; }
+    const pivotLine = Number.isInteger(raw.pivotLine) ? raw.pivotLine : parseInt(raw.pivotLine, 10);
+    if (Number.isInteger(pivotLine)) {
+      s.pivotLine = pivotLine;
+      s.kind = ["versus", "before-after", "roles"].includes(raw.kind) ? raw.kind : "versus";
+      s.a = capCompareSide(s.a);
+      s.b = capCompareSide(s.b);
+    }
   } else if (s.type === "message") {
-    s.contact = clean(raw.contact, 18);
-    s.items = (Array.isArray(raw.items) ? raw.items : [])
-      .map((it) => ({ from: it?.from === "me" ? "me" : "them", text: clean(it?.text, 90) }))
-      .filter((it) => it.text)
-      .slice(0, 3);
+    if (raw.mode === "proof") {
+      s.mode = "proof";
+      s.context = cleanWords(raw.context, 6, 48);
+      s.items = (Array.isArray(raw.items) ? raw.items : [])
+        .map((it) => ({ from: it?.from === "me" ? "me" : "them", text: cleanWords(it?.text, 16), line: Number.isInteger(it?.line) ? it.line : parseInt(it?.line, 10) }))
+        .filter((it) => it.text && Number.isInteger(it.line))
+        .slice(0, 3);
+      if (raw.outcome) {
+        const line = Number.isInteger(raw.outcome.line) ? raw.outcome.line : parseInt(raw.outcome.line, 10);
+        const text = cleanWords(raw.outcome.text, 12, 100);
+        if (Number.isInteger(line) && text) s.outcome = { line, text };
+      }
+      if (!s.context || !s.items.length) return null;
+    } else {
+      s.contact = clean(raw.contact, 18);
+      s.items = (Array.isArray(raw.items) ? raw.items : [])
+        .map((it) => ({ from: it?.from === "me" ? "me" : "them", text: clean(it?.text, 90) }))
+        .filter((it) => it.text)
+        .slice(0, 3);
+    }
     if (!s.items.length) return null;
   } else if (s.type === "post") {
     s.text = clean(raw.text, 150);
@@ -153,6 +306,7 @@ export function normalizeScene(raw) {
     s.text = clean(raw.text, s.type === "quote" ? 140 : 60);
     if (!s.text) return null;
   }
+  if (s.type === "stat" || s.type === "bars") s.motion = numberMotion({ ...s, motion: raw.motion }, { schema }) || "reveal";
   s.duration = sceneDuration(s);
   return s;
 }
@@ -161,7 +315,17 @@ export function normalizeScene(raw) {
 export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail = 1.5, longest = 8 } = {}) {
   const from = hook ? hook.start + hook.duration + lead : 3;
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
-  return groups.map((g, i) => ({ i, start: g.start, text: g.text })).filter((c) => c.start >= from && c.start + 2.2 <= until && c.start + Math.min(longest, until - c.start) <= until);
+  return groups.map((g, i) => ({ i, start: g.start, text: g.text, words: g.words || [] })).filter((c) => c.start >= from && c.start + 2.2 <= until && c.start + Math.min(longest, until - c.start) <= until);
+}
+
+function pivotTime(candidate) {
+  const tokens = candidate.words.map((w) => String(w.text || "").toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const phrases = [["but"], ["instead"], ["now"], ["what", "they", "hear"], ["the", "real", "reason"], ["two", "years", "later"]];
+  for (const phrase of phrases) {
+    const at = tokens.findIndex((_, i) => phrase.every((x, j) => tokens[i + j] === x));
+    if (at >= 0 && Number.isFinite(candidate.words[at]?.start)) return candidate.words[at].start;
+  }
+  return candidate.start;
 }
 
 /**
@@ -169,50 +333,127 @@ export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail 
  * card comes before the previous one would end, the previous one is shortened (never below `minHold`) rather than
  * the next one dropped: a card that holds long is good, a point with no card is worse.
  */
-export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 6, tail = 1.5, minHold = 4 } = {}) {
+export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 6, tail = 1.5, minHold = 4, fps = 30, lines = candidates } = {}) {
   const byLine = new Map(candidates.map((c) => [c.i, c]));
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   const out = [];
-  for (const s of [...scenes].filter((x) => x && byLine.has(x.line)).sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
-    const start = byLine.get(s.line).start;
+  const stats = [];
+  let contrast = false;
+  let proofUsed = false;
+  const ready = [...scenes].map((s) => s?.type === "message" && s.mode === "proof" ? groundProof(s, lines, candidates) : s).filter((x) => x && byLine.has(x.line));
+  for (const s of ready.sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
+    if (s.type === "compare" && Number.isInteger(s.pivotLine) && contrast) continue;
+    if (s.mode === "proof" && proofUsed) continue;
+    const start = s.mode === "proof" ? Math.round(byLine.get(s.line).start * 30) / 30 : byLine.get(s.line).start;
+    if (s.type === "stat" && (stats.length >= 2 || stats.some((at) => start - at < 8))) continue;
+    let scene = s;
+    const lined = (s.type === "list" || s.type === "steps") ? (s.items || []).filter((it) => Number.isInteger(it.line)) : [];
+    if (lined.length) {
+      if (lined.length !== s.items.length || lined.some((it, i) => i && it.line <= lined[i - 1].line)) continue;
+      const cues = lined.map((it) => byLine.get(it.line)?.start);
+      if (cues.some((t) => !Number.isFinite(t)) || cues[0] < start || cues.some((t, i) => i && t <= cues[i - 1]) || cues[cues.length - 1] - cues[0] > 8 || cues[cues.length - 1] - start > 8) continue;
+      const items = s.items.map((it, i) => ({ ...it, at: r3(Math.round((cues[i] - start) * 30) / 30) }));
+      if (items.some((it, i) => i && it.at <= items[i - 1].at)) continue;
+      scene = { ...s, items };
+      scene.duration = sceneDuration(scene);
+      const budget = Math.floor((scene.duration - 0.7) / 0.375);
+      if (items.some((it) => wordCount(it.text) > 4) || cardWords(scene) > budget) continue;
+      const timed = out.filter(hasTimedItems);
+      if (timed.length >= 2 || timed.some((g) => start - g.start < 8)) continue;
+      if (start + scene.duration > until) continue;
+    }
     const prev = out[out.length - 1];
     if (prev && start < prev.start + prev.duration + gap) {
       const room = r3(start - gap - prev.start);
+      if (prev.mode === "proof" && room < prev.duration) continue;
       if (room < minHold) continue;
+      if (hasTimedItems(prev)) continue;
       prev.duration = room;
     }
-    const dur = r3(Math.min(s.duration, until - start));
-    if (dur < 2) continue;
-    out.push({ ...s, start: r3(start), duration: dur });
+    const dur = r3(Math.min(scene.duration, until - start));
+    if (scene.mode === "proof" && dur < scene.duration) continue;
+    if (dur < (scene.type === "compare" && Number.isInteger(scene.pivotLine) ? 3 : 2) && !hasTimedItems(scene)) continue;
+    let placed = { ...scene, start: r3(start), duration: dur };
+    if (scene.type === "compare" && Number.isInteger(scene.pivotLine)) {
+      const pivot = byLine.get(scene.pivotLine);
+      if (!pivot) continue;
+      const pivotAt = r3(Math.round((pivotTime(pivot) - start) * fps) / fps);
+      if (pivotAt < 6 / fps || pivotAt > dur - 16 / fps) continue;
+      placed = fitCompareBudget({ ...placed, pivotAt }, dur);
+      contrast = true;
+    }
+    out.push(placed);
+    if (scene.type === "stat") stats.push(start);
+    if (scene.mode === "proof") proofUsed = true;
     if (out.length >= max) break;
   }
   return out;
 }
 
-export function scenesPrompt({ candidates, transcript, hook, count, voice = "", looks = "" }) {
+const transcriptWords = (groups) => new Set(groups.flatMap((g) => String(g.text || "").toLowerCase().replace(/[^a-z0-9'’]+/g, " ").split(/\s+/).filter(Boolean)));
+
+/** A progress rail starts with the hook, not on an ordinary card candidate. Its item lines are its later pulses. */
+export function resolveProgressScenes(scenes, groups, { hook, duration, cards = [] } = {}) {
+  if (!hook) return [];
+  const words = transcriptWords(groups);
+  const numberWords = { two: 2, three: 3, four: 4 };
+  const promised = String(hook.text || "").toLowerCase().match(/\b(?:2|3|4|two|three|four)\b/);
+  const promisedCount = promised ? numberWords[promised[0]] || Number(promised[0]) : 0;
+  const truthSafe = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9'’]+/g, " ").split(/\s+/).filter(Boolean).every((w) => words.has(w));
+  const byLine = new Map(groups.map((g, i) => [i, g]));
+  const overlapsCard = (at) => cards.some((c) => c.type !== "progress" && at < c.start + c.duration && at + 1.4 > c.start);
+  for (const s of scenes.filter((x) => x?.type === "progress").slice(0, 1)) {
+    if (s.style === "count" && promisedCount !== s.items.length) continue;
+    if ((s.title && !truthSafe(s.title)) || s.items.some((it) => !truthSafe(it.label))) continue;
+    if (s.items.some((it) => !byLine.has(it.line))) continue;
+    const starts = s.items.map((it) => byLine.get(it.line).start);
+    if (starts.some((at, i) => i && at <= starts[i - 1])) continue;
+    const hookEnd = r3(hook.start + hook.duration);
+    if (s.style !== "count" && starts.at(-1) < hookEnd + 8) continue;
+    if (starts[0] < hook.start || starts.at(-1) >= duration) continue;
+    const pulses = s.items.map((it, i) => ({ line: it.line, at: r3(starts[i]), hidden: overlapsCard(starts[i]) }));
+    return [{ ...s, start: r3(hook.start), duration: r3(Math.min(duration, starts.at(-1) + 1.4) - hook.start), hookEnd, pulses }];
+  }
+  return [];
+}
+
+export function scenesPrompt({ candidates, anchors = candidates, transcript, hook, count, voice = "", looks = "" }) {
   return [
     "You are the motion designer on a talking-head Instagram reel. You pick the moments where a designed graphic card cuts in to show what the speaker is saying, and you write the words on each card. You never use tools; reply with JSON only.",
     `Pick up to ${count} moments, spread across the reel, at least 6 seconds apart. Only pick a moment when a card makes the point clearer or hit harder: the speaker says a number or amount, lists things, describes steps or a before and after, contrasts two things, quotes something, or lands the key line.`,
     "",
     "Card types and their fields:",
-    '- stat: a number or amount the speaker says. value ("$10,000", "10 minutes", "8 years"), optional value2 for a range or change (shown as value -> value2), sub (a short line under it, from their words).',
-    "- list: 2 to 4 short items the speaker names. title (optional), items [{text, tag, state}]: state is check (things to do / that count), strike (things that don't matter / to stop), or plain. tag is an optional 1-2 word label on the right.",
+    '- stat: a number or amount the speaker says. value ("$10,000", "10 minutes", "8 years"), optional value2 for a range or change, sub (a short line under it, from their words), motion ("reveal" or "growth"). Use reveal by default. Use growth only when the card contains both ends of an explicit change the speaker states, such as value "3" and value2 "30" for "from 3 to 30".',
+    "- list: 2 to 4 short items the speaker names. title (optional), items [{text, tag, state, line}]: line is where that item is first said; state is check (things to do / that count), strike (things that don't matter / to stop), or plain. tag is an optional 1-2 word label on the right.",
     "- quote: a line worth reading, either something the speaker quotes (eyebrow = where it is from, as they say it) or their own strongest line (eyebrow = a 2-4 word label). text, with the one phrase that matters in *asterisks* (it is highlighted).",
     "- headline: the key statement in at most 7 words, with the one phrase that matters in *asterisks* (it is set in gold).",
-    "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text}].",
-    "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
-    "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most.",
-    "- message: a text exchange the speaker reads out or acts out (a client text, a rep\u2019s reply, what they typed). contact (who it is from, as the speaker names them, else empty), items [{from: \"them\" | \"me\", text}] 1-3 bubbles, their words only.",
+    "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text, line}], where line is where that step is first said.",
+    "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), kind (versus, before-after, or roles), pivotLine (the numbered caption line where the contrast word is spoken), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
+    "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most, motion (\"reveal\" or \"growth\"). Keep exact printed labels and use reveal unless two rows are the explicit starting and ending values of one spoken change.",
+    "- message: a text exchange the speaker reads out or acts out. For reconstructed proof, use mode: \"proof\", context (2 to 4 of the speaker's exact words that introduce the message, like \"he reached back out\" or \"he sent me\"), items [{from: \"them\" | \"me\", text, line}] 1-3 bubbles, and optional outcome {line, text}. Each bubble is at most 16 words. Do not add contact in proof mode. Legacy acted-out exchanges may omit mode and use contact plus items without line.",
     "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
+    "- progress: one small payoff rail, separate from the card count. title is optional and at most 3 words; style is journey or count; items are 2 to 4 ordered {line, label} milestones, with each label 1 to 3 words taken from the speaker. journey is only for real ordered beats whose final payoff is at least 8 seconds after the hook. count is only when the hook explicitly promises a number, and each item is a promised section start. Never use progress on a one-idea reel.",
     `- list items may carry icon: one of ${Object.keys(ICONS).join(", ")} (pick the one that fits the item, else leave empty).`,
     "Every card has an eyebrow: a 2-5 word label in caps over it (\"AFTER A BAD NUMBER\", \"THE STANDARD\", \"WHAT YOU OWN\").",
     "",
     "Rules:",
     "- Use only what the speaker says: their words, names and numbers, lightly trimmed. Never invent numbers, sources, quotes, results or steps they did not give.",
     "- Keep every qualifier the speaker puts on a number (almost, about, over, nearly, up to, around): they said \"almost eight years\", so the value is \"Almost 8 years\", never \"8 years\".",
+    "- A qualified value (about, over, under, within, nearly, almost, up to, after N years) always uses motion \"reveal\". The qualifier stays attached to the number; never count through other qualified claims.",
+    "- Use at most two stat cards in the reel, and put their start lines at least 8 seconds apart.",
     "- When the speaker quotes someone else or acts out a message or line, a quote card may show it but must not present it as the speaker's own words.",
+    "- For proof messages, anchor the card where the speaker first establishes that the message exists; anchor each bubble or outcome to the first line where its content becomes known.",
+    "- When the speaker tells the same message twice (a quick version early, the full retelling later), the proof card goes on the EARLY telling: most viewers leave within 5 to 10 seconds, so a proof card in the last third is wasted. Keep a proof card to at most 12 words in all.",
+    "- Proof context, bubble text and outcome text must be exact consecutive words from the transcript, only trimmed shorter. Never invent a sender name, timestamp, read receipt or outcome.",
+    "- Use at most one proof message in the reel.",
     "- Short: items at most 4 words, headline at most 7 words, sub and eyebrow at most 6 words.",
+    "- Anchor every item to the line where that item first becomes known. Never reveal a later point early.",
+    "- Pick at most two timed list/steps cards in the reel and keep their starts at least 8 seconds apart.",
+    "- A timed list/steps card must fit this whole-card reading budget: floor((seconds on screen - 0.7) / 0.375) words.",
+    "- A compare holds 3 to 4.5 seconds. Use at most one compare in the reel, at most 6 words on either side, and keep the whole card inside its reading budget. Set pivotLine to the line that contains the spoken contrast (but, instead, now, what they hear, the real reason, two years later). Side B is the payoff: never reveal or make it readable before pivotLine.",
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
+    "- Fewer cards beat more: the biggest reels in this niche are a face, one premise and captions. Reply with an empty scenes list when the reel is one opinion with no structure, an emotional or identity moment, or a skit. A personal story gets no other cards, but when the speaker quotes a real message (a DM, a text, what someone said to them) it does get the proof message card, and a real sequence of events may get a progress rail. Never pick a card that repeats the hook or the line already on screen.",
+    "- Offer at most one progress scene. It does not replace or consume one of the requested cards. Its item line anchors must be strictly increasing.",
     "- No emojis, no hashtags, no calls to action.",
     voice ? `\nVoice for labels and trims:\n${voice.trim()}` : "",
     "",
@@ -224,8 +465,11 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "Lines a card may start on (number: start time, text). A card starts when that line is spoken, so pick the line where the idea begins:",
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
+    "Lines a progress milestone may anchor to (number: start time, text):",
+    ...anchors.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
+    "",
     looks ? `\n${looks}\n` : "",
-    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
+    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post|progress","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","style":"journey|count","unit":"","emphasize":0,"contact":"","mode":"proof","context":"","outcome":{"line":0,"text":""},"pivotLine":0,"kind":"versus|before-after|roles","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
   ].join("\n");
 }
 
@@ -238,6 +482,8 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
   if (!max) { log("graphics: reel too short, skipped"); return []; }
   const candidates = sceneCandidates(groups, duration, { hook, cta, tail });
+  const anchors = groups.map((g, i) => ({ i, start: g.start, text: g.text }));
+  const lines = anchors;
   if (!candidates.length) { log("graphics: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
   if (!force && fs.existsSync(planPath)) {
@@ -245,14 +491,27 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     // Reuse while every card still has its line (a new hook hides different caption lines and shifts the line
     // numbers; the cards follow their line by start time instead of costing another Claude call).
     const byStart = (s) => candidates.find((c) => Math.abs(c.start - (s.start ?? -1)) < 0.05);
-    const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.every(byStart);
+    const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.filter((s) => s.type !== "progress").every(byStart);
     if ((saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
       const look = settings.look && LOOKS[settings.look] ? settings.look : saved.look || "glass";
-      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
-      log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look})`);
+      const schema = saved.schema || 1;
+      // A timed item follows its line by time too (its saved offset from the card start).
+      const relined = (s) => ({ ...s, items: s.items?.map((it) => ({ ...it, ...(Number.isInteger(it.line) && Number.isFinite(it.at) ? { line: candidates.find((c) => Math.abs(c.start - (s.start + it.at)) < 0.05)?.i ?? it.line } : {}) })) });
+      const remapProof = (s) => s.type === "message" && s.mode === "proof" ? {
+        ...s,
+        items: (s.items || []).map((it) => ({ ...it, line: lines.find((line) => Math.abs(line.start - (s.start + (it.at || 0))) < 0.05)?.i ?? it.line })),
+        ...(s.outcome ? { outcome: { ...s.outcome, line: lines.find((line) => Math.abs(line.start - (s.start + (s.outcome.at || 0))) < 0.05)?.i ?? s.outcome.line } } : {}),
+      } : s;
+      const savedCards = saved.scenes.filter((s) => s.type !== "progress").map(relined).map(remapProof).map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s).map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type, s.mode), ...(s.type === "post" ? { handle } : {}) }));
+      const cards = placeScenes(savedCards, candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
+      const rawProgress = saved.scenes.filter((s) => s.type === "progress").map(normalizeScene).filter(Boolean).map((s) => ({ ...s, skin: skinFor(look, s.type) }));
+      const scenes = [...cards, ...resolveProgressScenes(rawProgress, groups, { hook, duration, cards })].sort((a, b) => a.start - b.start);
+      const old = schema < GRAPHICS_SCHEMA ? `; card plan v${schema}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
+      log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look}${old})`);
       scenes.look = look;
+      scenes.schema = schema;
       return scenes;
     }
   }
@@ -264,16 +523,23 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const transcript = groups.map((g) => g.text).join(" ");
     const recent = recentLooks();
     const fixed = settings.look && LOOKS[settings.look] ? settings.look : null;
-    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude: settings.excludeLooks || [] }) }), { timeoutMs: 240000 }));
+    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude: settings.excludeLooks || [] }) }), { timeoutMs: 240000 }));
     const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude: settings.excludeLooks || [] });
     lookPicked = picked;
-    const raw = reply.scenes || [];
-    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
+    const raw = (reply.scenes || []).map(normalizeScene).filter(Boolean);
+    const cards = placeScenes(raw.filter((s) => s.type !== "progress").map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
+    const progress = resolveProgressScenes(raw.filter((s) => s.type === "progress").map((s) => ({ ...s, skin: skinFor(picked.look, s.type) })), groups, { hook, duration, cards });
+    // A pick the timing, grounding or reading rules turn down is dropped; say so, or an empty reel looks like a choice.
+    const dropped = (reply.scenes || []).length - cards.length - progress.length;
+    if (process.env.REEL_DEBUG_GRAPHICS) log(`graphics: Claude's picks ${JSON.stringify(reply.scenes || [])}`);
+    if (dropped > 0) log(`graphics: ${dropped} of ${(reply.scenes || []).length} picked card${dropped === 1 ? " was" : "s were"} dropped by the timing, wording or reading rules (${(reply.scenes || []).map((s) => s.type + (s.mode ? "/" + s.mode : "") + "@line " + s.line).join(", ")})`);
+    scenes = [...cards, ...progress].sort((a, b) => a.start - b.start);
   } catch (e) {
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
     return [];
   }
-  writeJSON(planPath, { key, look: lookPicked?.look || "glass", lookWhy: lookPicked?.why || "", scenes });
+  writeJSON(planPath, { schema: GRAPHICS_SCHEMA, key, look: lookPicked?.look || "glass", lookWhy: lookPicked?.why || "", scenes });
+  scenes.schema = GRAPHICS_SCHEMA;
   if (lookPicked && !settings.look) rememberLook(lookPicked.look);
   log(`graphics: look "${LOOKS[lookPicked?.look || "glass"].label}"${lookPicked?.why ? ` (${lookPicked.why})` : ""}`);
   scenes.look = lookPicked?.look || "glass";
@@ -301,34 +567,58 @@ export function splitStat(value) {
   return { prefix: m[1], number, suffix: m[3], to, dec, commas: number.includes(","), percent: /^\s*%/.test(m[3]) };
 }
 
-/** The stat line: the number counts up from 0 as the card lands (tabular figures so nothing shifts). */
-function statHTML(value, size, extraClass = "") {
+/** A stat line. With no motion this is the legacy zero count-up markup, kept unchanged for schema-1 plans. */
+function statHTML(value, size, extraClass = "", { motion = "", from = null } = {}) {
   const p = splitStat(value);
-  if (!p) return `<div class="g-stat g-in${extraClass}" style="font-size:calc(var(--u) * ${size})">${esc(value)}</div>`;
+  if (!p) return motion
+    ? `<div class="g-stat g-in g-stat-${motion}${extraClass}" style="font-size:calc(var(--u) * ${size})"><span class="g-value-mask"><span class="g-value-lock">${esc(value)}</span></span><span class="g-value-line"></span></div>`
+    : `<div class="g-stat g-in${extraClass}" style="font-size:calc(var(--u) * ${size})">${esc(value)}</div>`;
   const affix = (t) => (!t ? "" : /^[\s$€£%+x×~-]+$/.test(t) ? `<span class="g-affix g-sym">${esc(t)}</span>` : `<span class="g-affix">${esc(t)}</span>`);
   const ring = p.percent ? `<span class="g-ring" style="--ring:0%" data-pct="${Math.max(0, Math.min(100, p.to))}"></span>` : "";
+  if (motion) {
+    const start = Number(from);
+    const startText = Number.isFinite(start) ? (p.commas ? start.toLocaleString("en-US", { minimumFractionDigits: p.dec, maximumFractionDigits: p.dec }) : start.toFixed(p.dec)) : p.number;
+    const number = motion === "growth"
+      ? `<span class="g-count" data-from="${from}" data-to="${p.to}" data-dec="${p.dec}" data-commas="${p.commas ? 1 : 0}">${esc(startText)}</span>`
+      : `<span class="g-exact-number">${esc(p.number)}</span>`;
+    return `<div class="g-stat g-in g-stat-${motion}${extraClass}" style="font-size:calc(var(--u) * ${size})"><span class="g-value-mask"><span class="g-value-lock">${ring}${affix(p.prefix)}${number}${affix(p.suffix)}</span></span><span class="g-value-line"></span></div>`;
+  }
   return `<div class="g-stat g-in${extraClass}" style="font-size:calc(var(--u) * ${size})">${ring}${affix(p.prefix)}<span class="g-count" data-to="${p.to}" data-dec="${p.dec}" data-commas="${p.commas ? 1 : 0}">${esc(p.number)}</span>${affix(p.suffix)}</div>`;
 }
 
 /** Inner HTML of one card. Elements with g-in animate in, in document order. */
-export function sceneHTML(s) {
+export function sceneHTML(s, { schema = 1 } = {}) {
+  if (s.type === "message" && s.mode === "proof") {
+    const beats = s.items.map((it, k) => `<div class="g-proof-beat g-${it.from}" data-proof-item="${k}"><div class="g-proof-typing"><i></i><i></i><i></i></div><div class="g-proof-bubble">${esc(it.text)}</div></div>`).join("");
+    const outcome = s.outcome ? `<div class="g-proof-outcome">${esc(s.outcome.text)}<span class="g-proof-underline"></span></div>` : "";
+    return `<div class="g-box g-proof"><div class="g-proof-label">IN HIS WORDS</div><div class="g-proof-context">${esc(s.context)}</div><div class="g-proof-thread">${beats}${outcome}</div></div>`;
+  }
+  const motion = numberMotion(s, { schema });
+  const renderStat = (value, size, extraClass = "") => {
+    const growth = motion === "growth" && s.type === "stat" && value === s.value;
+    return statHTML(growth ? s.value2 : value, size, extraClass, { motion, from: growth ? splitStat(s.value).to : null });
+  };
   // A look can reshape a card into an artifact (notification, Notes list, receipt, typed card); otherwise its skin
   // only restyles the regular markup below.
-  if (s.skin && s.skin !== "glass") { const h = skinHTML(s, s.skin, { statHTML }); if (h) return h; }
+  const stagedCompare = s.type === "compare" && Number.isFinite(s.pivotAt);
+  if (!stagedCompare && s.skin && s.skin !== "glass") { const h = skinHTML({ ...s, motion }, s.skin, { statHTML: renderStat }); if (h) return h; }
   const eyebrow = s.eyebrow ? `<div class="g-eyebrow g-in"><span class="g-dot"></span>${esc(s.eyebrow)}</div>` : "";
   if (s.type === "stat") {
     // Sized by length so a long value ("Almost 8 years") stays inside the card; short ones go big.
     const size = (v) => Math.round(Math.min(170, 1250 / Math.max(1, String(v).length)));
-    const range = s.value2 ? `<div class="g-arrow g-in">to</div>${statHTML(s.value2, size(s.value2), " g-stat2")}` : "";
+    const primary = renderStat(s.value, size(motion === "growth" ? s.value2 : s.value));
+    const range = s.value2 && motion !== "growth" ? `<div class="g-arrow g-in">to</div>${renderStat(s.value2, size(s.value2), " g-stat2")}` : "";
     // Every number gets a fill that sweeps with the count (a ring for a percentage, a bar for anything else).
-    const fill = splitStat(s.value) && !splitStat(s.value).percent ? `<div class="g-fill g-in"><div class="g-fill-bar"></div></div>` : "";
-    return `<div class="g-box g-center">${eyebrow}${statHTML(s.value, size(s.value))}${range}${fill}${s.sub ? `<div class="g-sub g-in">${esc(s.sub)}</div>` : ""}</div>`;
+    const fill = !motion && splitStat(s.value) && !splitStat(s.value).percent ? `<div class="g-fill g-in"><div class="g-fill-bar"></div></div>` : "";
+    return `<div class="g-box g-center">${eyebrow}${primary}${range}${fill}${s.sub ? `<div class="g-sub g-in">${esc(s.sub)}</div>` : ""}</div>`;
   }
   if (s.type === "list") {
+    const live = hasTimedItems(s);
     const rows = s.items
       .map((it, k) => {
         const mark = it.state === "check" ? `<span class="g-mark g-check">&#10003;</span>` : it.state === "strike" ? `<span class="g-mark g-x">&#10005;</span>` : `<span class="g-mark g-num">${String(k + 1).padStart(2, "0")}</span>`;
         const icon = it.icon && ICONS[it.icon] ? `<svg class="g-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[it.icon]}"/></svg>` : "";
+        if (live) return `<div class="g-live-item">${k ? '<span class="g-live-connector"></span>' : ""}<span class="g-item-dot"></span><div class="g-row g-${it.state} g-item-text">${mark}<span class="g-row-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span>${it.tag ? `<span class="g-tag">${esc(it.tag)}</span>` : ""}${icon}</div></div>`;
         return `<div class="g-row g-in g-${it.state}">${mark}<span class="g-row-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span>${it.tag ? `<span class="g-tag">${esc(it.tag)}</span>` : ""}${icon}</div>`;
       })
       .join("");
@@ -351,14 +641,30 @@ export function sceneHTML(s) {
       const v = splitStat(x.value);
       return `<div class="g-side ${cls}${String(x.label).length > 14 ? " g-side-long" : ""}"><div class="g-side-label">${esc(x.label)}</div>${v ? `<div class="g-side-value">${esc(x.value)}</div><div class="g-side-bar"><div class="g-side-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div>` : ""}${x.note ? `<div class="g-side-note">${esc(x.note)}</div>` : ""}</div>`;
     };
+    if (stagedCompare) {
+      const kind = ["versus", "before-after", "roles"].includes(s.kind) ? s.kind : "versus";
+      const from = s.faceSide === "right" ? " g-from-right" : "";
+      const pivot = kind === "before-after"
+        ? '<div class="g-pivot g-pivot-arrow"><span>&rarr;</span></div>'
+        : `<div class="g-pivot g-pivot-divider"><span class="g-divider"></span>${kind === "versus" ? '<span class="g-versus">VS</span>' : ""}</div>`;
+      const a = side(s.a, "g-side-a").replace(/<\/div>$/, kind === "before-after" ? '<span class="g-side-cross"></span></div>' : "</div>");
+      return `<div class="g-box g-center g-contrast" style="left:7.04%;right:12.96%;top:10.42%;bottom:auto;max-height:45%">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-compare g-compare-dynamic g-kind-${kind}${from}">${a}${pivot}${side(s.b, "g-side-b")}</div></div>`;
+    }
     return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-compare g-in">${side(s.a, "g-side-a")}<div class="g-vs">VS</div>${side(s.b, "g-side-b")}</div></div>`;
   }
   if (s.type === "bars") {
     const max = Math.max(1, ...s.items.map((it) => splitStat(it.value).to));
+    const from = motion === "growth" ? splitStat(s.items[0].value).to : null;
     const rows = s.items
       .map((it, k) => {
         const v = splitStat(it.value);
-        return `<div class="g-bar-row g-in${k === s.emphasize ? " g-bar-hi" : ""}"><div class="g-bar-head"><span class="g-bar-label">${esc(it.label)}</span><span class="g-bar-value"><span class="g-count" data-to="${v.to}" data-dec="${v.dec}" data-commas="${v.commas ? 1 : 0}">${esc(v.number)}</span>${esc(v.suffix || s.unit || "")}</span></div><div class="g-bar-track"><div class="g-bar-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div></div>`;
+        const exact = `${it.value}${v.suffix || !s.unit ? "" : s.unit}`;
+        const value = !motion
+          ? `<span class="g-count" data-to="${v.to}" data-dec="${v.dec}" data-commas="${v.commas ? 1 : 0}">${esc(v.number)}</span>${esc(v.suffix || s.unit || "")}`
+          : motion === "growth" && k === 1
+            ? `${v.prefix ? `<span class="g-affix">${esc(v.prefix)}</span>` : ""}<span class="g-count" data-from="${from}" data-to="${v.to}" data-dec="${v.dec}" data-commas="${v.commas ? 1 : 0}">${esc(v.commas ? from.toLocaleString("en-US", { minimumFractionDigits: v.dec, maximumFractionDigits: v.dec }) : from.toFixed(v.dec))}</span>${esc(v.suffix || s.unit || "")}`
+            : `<span class="g-value-mask"><span class="g-value-lock">${esc(exact)}</span></span>`;
+        return `<div class="g-bar-row g-in${k === s.emphasize ? " g-bar-hi" : ""}"><div class="g-bar-head"><span class="g-bar-label">${esc(it.label)}</span><span class="g-bar-value">${value}</span></div><div class="g-bar-track"><div class="g-bar-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div></div>`;
       })
       .join("");
     return `<div class="g-box">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-bars">${rows}</div></div>`;
@@ -373,16 +679,97 @@ export function sceneHTML(s) {
     return `<div class="g-box g-center"><div class="g-post g-in"><div class="g-post-head"><span class="g-post-avatar"></span><span class="g-post-who"><span class="g-post-name">${name}<svg class="g-post-badge" viewBox="0 0 24 24"><path d="M12 2l2.4 2.2 3.2-.5 1 3.1 2.9 1.5-1.3 3 1.3 3-2.9 1.5-1 3.1-3.2-.5L12 22l-2.4-2.2-3.2.5-1-3.1-2.9-1.5 1.3-3-1.3-3 2.9-1.5 1-3.1 3.2.5z"/><path class="g-post-tick" d="M8 12.5l2.6 2.5L16 9.5"/></svg></span>${handle}</span></div><div class="g-post-text">${esc(s.text)}</div><div class="g-post-foot"><span class="g-post-heart">&#9829;</span></div></div></div>`;
   }
   // steps
+  if (hasTimedItems(s)) {
+    const nodes = s.items.map((it, k) => `<div class="g-live-item">${k ? '<span class="g-live-connector"></span>' : ""}<span class="g-item-dot"></span><div class="g-node g-item-text"><span class="g-node-num">${String(k + 1).padStart(2, "0")}</span>${esc(it.text)}</div></div>`).join("");
+    return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-steps">${nodes}</div></div>`;
+  }
   const nodes = s.items.map((it, k) => `${k ? '<div class="g-link"></div>' : ""}<div class="g-node g-in${k === s.items.length - 1 ? " g-node-last" : ""}"><span class="g-node-num">${String(k + 1).padStart(2, "0")}</span>${esc(it.text)}</div>`).join("");
   return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-steps">${nodes}</div></div>`;
 }
+
+/** Semantic markup for the hook-time rail. It is rendered on its own track, never by the card loop. */
+export function progressHTML(s) {
+  const count = s.style === "count" ? `<div class="p-count"><span class="p-current">01</span>/<span>${String(s.items.length).padStart(2, "0")}</span></div>` : "";
+  const nodes = s.items.map((it, i) => `<div class="p-node" data-index="${i}"><span class="p-dot"></span><span class="p-label">${esc(it.label)}</span></div>`).join("");
+  return `<div class="p-shell">${s.title ? `<div class="p-title">${esc(s.title)}</div>` : ""}<div class="p-main">${count}<div class="p-track"><div class="p-line"><div class="p-fill"></div></div>${nodes}</div></div></div>`;
+}
+
+/** Rail styles use only the preset palette and the fonts already selected for the reel. */
+export function progressCSS({ H, colors }) {
+  const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
+  const u = H / 1920;
+  const px = (n) => `${Math.round(n * u)}px`;
+  return `
+      .progress { --p-text: ${c.text}; --p-accent: ${c.accent}; --p-bg: ${c.bg}; position: absolute; opacity: 0; pointer-events: none; color: var(--p-text); font-family: "Inter", sans-serif; }
+      .p-shell { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: ${px(8)}; padding: ${px(12)} ${px(18)}; border: ${px(2)} solid color-mix(in srgb, ${c.text} 34%, transparent); border-radius: ${px(18)}; background: color-mix(in srgb, ${c.bg} 85%, transparent); box-shadow: 0 ${px(12)} ${px(36)} color-mix(in srgb, ${c.bg} 60%, transparent); }
+      .p-title { min-height: ${px(48)}; font-family: "Anton", sans-serif; font-size: ${px(48)}; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; }
+      .p-main { display: flex; align-items: center; gap: ${px(20)}; min-height: ${px(68)}; }
+      .p-count { flex: none; min-width: ${px(108)}; font-family: "Anton", sans-serif; font-size: ${px(48)}; line-height: 1; font-variant-numeric: tabular-nums; }
+      .p-current { color: var(--p-accent); }
+      .p-track { position: relative; flex: 1; height: ${px(72)}; display: flex; align-items: flex-start; justify-content: space-between; }
+      .p-line { position: absolute; left: ${px(14)}; right: ${px(14)}; top: ${px(12)}; height: ${px(5)}; background: color-mix(in srgb, ${c.text} 20%, transparent); transform-origin: 0 50%; }
+      .p-fill { width: 100%; height: 100%; background: var(--p-accent); transform: scaleX(0); transform-origin: 0 50%; }
+      .p-node { position: relative; z-index: 1; min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: center; gap: ${px(8)}; transform-origin: 50% ${px(12)}; }
+      .p-dot { width: ${px(24)}; height: ${px(24)}; box-sizing: border-box; border: ${px(5)} solid var(--p-bg); border-radius: 50%; background: var(--p-text); box-shadow: 0 0 0 ${px(2)} color-mix(in srgb, ${c.text} 54%, transparent); }
+      .p-label { width: 100%; min-height: ${px(48)}; overflow: hidden; font-size: ${px(48)}; font-weight: 800; line-height: 1; text-align: center; text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; }
+      .progress.vertical .p-shell { padding: ${px(18)} ${px(14)}; }
+      .progress.vertical .p-main { flex: 1; align-items: stretch; flex-direction: column; gap: ${px(12)}; }
+      .progress.vertical .p-count { min-width: 0; }
+      .progress.vertical .p-track { height: auto; min-height: 0; flex-direction: column; align-items: stretch; }
+      .progress.vertical .p-line { left: ${px(10)}; right: auto; top: ${px(12)}; bottom: ${px(12)}; width: ${px(5)}; height: auto; transform-origin: 50% 0; }
+      .progress.vertical .p-fill { width: 100%; height: 100%; transform: scaleY(0); transform-origin: 50% 0; }
+      .progress.vertical .p-node { flex: 1; flex-direction: row; align-items: flex-start; gap: ${px(12)}; }
+      .progress.vertical .p-dot { flex: none; }
+      .progress.vertical .p-label { text-align: left; }
+      .progress.skin-receipt .p-shell, .progress.skin-type .p-shell, .progress.skin-case .p-shell { border-radius: 0; font-family: "Courier Prime", monospace; }
+      .progress.skin-paper .p-shell { border-width: ${px(4)}; font-family: "Permanent Marker", sans-serif; }
+      .progress.skin-editorial .p-title, .progress.skin-editorial .p-label { font-family: "DM Serif Display", serif; text-transform: none; }
+      .progress.skin-panel .p-shell, .progress.skin-blueprint .p-shell, .progress.skin-redline .p-shell { border-radius: 0; border-style: dashed; }`;
+}
+
+/** Deterministic hook draw and milestone pulses (all motion is quantized to whole 30 fps frames). */
+export const PROGRESS_JS = `
+        PLAN.progress.forEach((p, i) => {
+          const el = document.getElementById("progress-" + i);
+          const nodes = [...el.querySelectorAll(".p-node")];
+          const labels = [...el.querySelectorAll(".p-label")];
+          const fill = el.querySelector(".p-fill");
+          const current = el.querySelector(".p-current");
+          const f = (frames) => frames / (PLAN.fps || 30);
+          const vertical = el.classList.contains("vertical");
+          tl.fromTo(el, { opacity: 0, scale: 0.985 }, { opacity: 1, scale: 1, duration: f(8), ease: "power3.out" }, p.start);
+          tl.fromTo(el.querySelector(".p-line"), vertical ? { scaleY: 0 } : { scaleX: 0 }, vertical ? { scaleY: 1, duration: f(8), ease: "power3.out" } : { scaleX: 1, duration: f(8), ease: "power3.out" }, p.start);
+          nodes.forEach((node, k) => {
+            const land = [5, 8, 12, 12][k];
+            tl.fromTo(node, { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: f(3), ease: "power3.out" }, p.start + f(land - 3));
+          });
+          labels.forEach((label, k) => tl.fromTo(label, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: f(6), ease: "power3.out" }, p.start + f(k * 3)));
+          tl.to(el, { opacity: 0, duration: f(5), ease: "power2.in" }, Math.max(p.start, p.hookEnd - f(5)));
+          p.pulses.forEach((pulse, active) => {
+            if (pulse.hidden) return;
+            const at = pulse.at;
+            tl.set(el, { opacity: 0, scale: 0.985 }, at);
+            nodes.forEach((node, k) => {
+              tl.set(node, { opacity: k < active ? 0.45 : k === active ? 1 : 0.18, scale: 1 }, at);
+              tl.set(node.querySelector(".p-dot"), { backgroundColor: k === active ? "var(--p-accent)" : "var(--p-text)" }, at);
+              tl.set(labels[k], { opacity: k < active ? 0.45 : k === active ? 1 : 0 }, at);
+            });
+            if (current) tl.set(current, { textContent: String(active + 1).padStart(2, "0") }, at);
+            tl.fromTo(el, { opacity: 0, scale: 0.985 }, { opacity: 1, scale: 1, duration: f(8), ease: "power3.out" }, at);
+            tl.fromTo(fill, vertical ? { scaleY: 0 } : { scaleX: 0 }, vertical ? { scaleY: (active + 1) / nodes.length, duration: f(10), ease: "power2.inOut" } : { scaleX: (active + 1) / nodes.length, duration: f(10), ease: "power2.inOut" }, at + f(5));
+            const dot = nodes[active].querySelector(".p-dot");
+            tl.to(dot, { scale: 1.15, duration: f(3), ease: "expo.out" }, at + f(8));
+            tl.to(dot, { scale: 1, duration: f(3), ease: "power2.out" }, at + f(11));
+            tl.to(el, { opacity: 0, duration: f(5), ease: "power2.in" }, at + 1.4 - f(5));
+          });
+        });`;
 
 /**
  * CSS for the cards at canvas size W x H. Two modes: "full" takes the screen (content in the upper two thirds,
  * captions keep the bottom); "overlay" is a compact glass panel in the top third while the footage keeps playing,
  * the way explainer reels drop a payroll card or a checklist over the speaker.
  */
-export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
+export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0.68 }) {
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const u = H / 1920;
   const px = (n) => `${Math.round(n * u)}px`;
@@ -474,6 +861,10 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-stat2 { color: ${c.accent}; text-shadow: 0 0 ${px(70)} ${c.accent}88; }
       .g-stat { display: inline-flex; align-items: baseline; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; transform-origin: 50% 58%; }
       .g-count { display: inline-block; min-width: 1ch; }
+      .g-stat-reveal, .g-stat-growth { align-items: stretch; flex-direction: column; }
+      .g-value-mask { display: inline-flex; overflow: hidden; }
+      .g-value-lock { display: inline-flex; align-items: baseline; transform-origin: 50% 58%; }
+      .g-value-line { display: block; width: 100%; height: ${px(8)}; margin-top: ${px(10)}; border-radius: ${px(4)}; background: ${c.accent}; transform-origin: 0 50%; }
       .g-affix { white-space: pre; }
       .g-sym { font-size: 0.6em; align-self: center; margin: 0 0.06em; opacity: 0.9; }
       .g-fill { width: 60%; height: ${px(12)}; border-radius: ${px(6)}; background: rgba(255,255,255,0.12); overflow: hidden; }
@@ -508,6 +899,14 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-link { width: ${px(4)}; height: ${px(70)}; background: linear-gradient(${c.accent}, ${c.accent}55); transform-origin: 50% 0; }
       .g-icon { flex: none; width: ${px(52)}; height: ${px(52)}; transform-origin: 50% 50%; }
       .g-icon path { fill: none; stroke: ${c.accent}; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+      .gfx.gfx-timed.gfx-list .g-box, .gfx.gfx-timed.gfx-steps .g-box { left: ${px(76)}; right: ${px(140)}; top: ${px(200)}; bottom: auto; max-height: ${px(Math.max(300, captionTop / u - 260))}; box-sizing: border-box; overflow: hidden; transform-origin: 50% 50%; }
+      .gfx.gfx-timed .g-rows, .gfx.gfx-timed .g-steps { display: flex; flex-direction: column; align-items: stretch; gap: ${px(12)}; width: 100%; }
+      .gfx.gfx-timed .g-live-item { position: relative; display: flex; align-items: center; min-height: ${px(62)}; padding-left: ${px(34)}; transform-origin: 0 50%; }
+      .gfx.gfx-timed .g-item-text { flex: 1; min-width: 0; opacity: 0; color: ${c.accent}; transform-origin: 0 50%; }
+      .gfx.gfx-timed .g-item-dot { position: absolute; left: 0; top: 50%; width: ${px(16)}; height: ${px(16)}; margin-top: -${px(8)}; border-radius: 50%; background: ${c.accent}; box-shadow: 0 0 ${px(16)} ${c.accent}88; opacity: 0; }
+      .gfx.gfx-timed .g-live-connector { position: absolute; left: ${px(7)}; bottom: 50%; width: ${px(3)}; height: calc(50% + ${px(20)}); background: ${c.accent}; transform: scaleY(0); transform-origin: 50% 100%; opacity: 0.75; }
+      .gfx.gfx-timed .g-live-item.g-item-done .g-item-text { opacity: 0.55; color: ${c.text}; }
+      .gfx.gfx-timed.gfx-steps .g-node { justify-content: flex-start; min-height: ${px(62)}; padding: ${px(16)} ${px(22)}; font-size: ${px(48)}; text-align: left; flex-direction: row; }
       .g-compare { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: ${px(96)}; width: 100%; }
       .g-side { position: relative; padding: ${px(28)} ${px(26)}; border-radius: ${px(20)}; background: rgba(255,255,255,0.06); border: ${px(2)} solid rgba(255,255,255,0.12); text-align: left; min-height: ${px(150)}; }
       .g-side-b { background: linear-gradient(180deg, ${c.accent}2a, ${c.accent}14); border-color: ${c.accent}aa; clip-path: inset(0 100% 0 0); }
@@ -520,6 +919,17 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-side-b .g-side-fill { background: ${c.accent}; opacity: 1; }
       .g-side-note { margin-top: ${px(10)}; font-size: ${px(26)}; font-weight: 600; opacity: 0.75; }
       .g-vs { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0); width: ${px(74)}; height: ${px(74)}; border-radius: 50%; display: grid; place-items: center; background: ${c.bg}; border: ${px(3)} solid ${c.accent}; color: ${c.accent}; font-size: ${px(26)}; font-weight: 900; letter-spacing: 0.08em; z-index: 1; }
+      .g-compare-dynamic { gap: ${px(72)}; align-items: stretch; }
+      .g-compare-dynamic .g-side { display: flex; flex-direction: column; justify-content: center; min-height: ${px(210)}; overflow: hidden; }
+      .g-compare-dynamic .g-side-a { clip-path: inset(0 100% 0 0); }
+      .g-compare-dynamic.g-from-right .g-side-a { clip-path: inset(0 0 0 100%); }
+      .g-compare-dynamic .g-side-b { clip-path: inset(0 100% 0 0); }
+      .g-compare-dynamic .g-side-label, .g-compare-dynamic .g-side-long .g-side-label, .g-compare-dynamic .g-side-note { font-size: ${px(48)}; line-height: 1.08; }
+      .g-compare-dynamic .g-pivot { position: absolute; left: 50%; top: 0; bottom: 0; width: ${px(72)}; transform: translateX(-50%); display: grid; place-items: center; z-index: 2; pointer-events: none; }
+      .g-compare-dynamic .g-divider { width: ${px(5)}; height: 100%; background: ${c.accent}; transform: scaleY(0); transform-origin: 50% 0; }
+      .g-compare-dynamic .g-versus { position: absolute; display: grid; place-items: center; width: ${px(72)}; height: ${px(72)}; border-radius: 50%; background: ${c.bg}; border: ${px(3)} solid ${c.accent}; color: ${c.accent}; font-size: ${px(48)}; font-weight: 900; transform: scale(0); }
+      .g-compare-dynamic .g-pivot-arrow { color: ${c.accent}; font-size: ${px(76)}; font-weight: 900; opacity: 0; }
+      .g-compare-dynamic .g-side-cross { position: absolute; left: 8%; right: 8%; top: 50%; height: ${px(6)}; background: ${c.accent}; transform: rotate(-7deg) scaleX(0); transform-origin: 0 50%; }
       .g-bars { display: flex; flex-direction: column; gap: ${px(16)}; width: 100%; }
       .g-bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: ${px(16)}; margin-bottom: ${px(8)}; }
       .g-bar-label { font-size: ${px(34)}; font-weight: 800; text-transform: uppercase; opacity: 0.8; }
@@ -550,43 +960,129 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-post-heart.lit { color: #f91880; }${overlay}${band}`;
 }
 
+/** Proof threads are brand artifacts, not phone screenshots; this CSS is emitted only when a proof card exists. */
+export function proofMessageCSS({ H, colors, captionTop = H * 0.72 }) {
+  const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
+  const u = H / 1920;
+  const px = (n) => `${Math.round(n * u)}px`;
+  const maxHeight = Math.max(360, Math.round(captionTop - 200 * u - 40 * u));
+  return `
+      .gfx.gfx-message-proof { background: none; color: ${c.text}; }
+      .gfx.gfx-message-proof::after { background: linear-gradient(180deg, color-mix(in srgb, ${c.bg} 52%, transparent) 0%, color-mix(in srgb, ${c.bg} 18%, transparent) 34%, transparent 48%); }
+      .gfx.gfx-message-proof .g-box.g-proof { left: ${px(76)}; right: auto; top: ${px(200)}; bottom: auto; width: ${px(864)}; max-height: ${maxHeight}px; box-sizing: border-box; overflow: hidden; justify-content: flex-start; align-items: stretch; gap: ${px(12)}; padding: ${px(26)} ${px(32)} ${px(30)}; border-radius: ${px(24)}; border: ${px(2)} solid ${c.text}; background: color-mix(in srgb, ${c.bg} 94%, transparent); color: ${c.text}; box-shadow: 0 ${px(18)} ${px(52)} color-mix(in srgb, ${c.bg} 72%, transparent); text-align: left; }
+      .gfx.gfx-message-proof .g-proof-label { font-size: ${px(24)}; line-height: 1; font-weight: 800; letter-spacing: 0.2em; color: ${c.accent}; }
+      .gfx.gfx-message-proof .g-proof-context { min-height: ${px(52)}; font-size: ${px(48)}; line-height: 1.08; font-weight: 850; letter-spacing: -0.01em; text-transform: uppercase; color: ${c.text}; }
+      .gfx.gfx-message-proof .g-proof-thread { display: flex; flex-direction: column; align-items: stretch; gap: ${px(12)}; width: 100%; }
+      .gfx.gfx-message-proof .g-proof-beat { position: relative; display: flex; min-height: ${px(62)}; align-items: flex-end; opacity: 0; }
+      .gfx.gfx-message-proof .g-proof-beat.g-me { justify-content: flex-end; }
+      .gfx.gfx-message-proof .g-proof-bubble { max-width: 82%; padding: ${px(16)} ${px(22)}; border-radius: ${px(22)}; font-size: ${px(48)}; font-weight: 700; line-height: 1.16; transform-origin: 0 100%; background: ${c.text}; color: ${c.bg}; }
+      .gfx.gfx-message-proof .g-me .g-proof-bubble { transform-origin: 100% 100%; background: ${c.accent}; color: ${c.bg}; }
+      .gfx.gfx-message-proof .g-proof-typing { position: absolute; left: 0; bottom: ${px(8)}; display: flex; gap: ${px(7)}; padding: ${px(16)} ${px(20)}; border-radius: ${px(22)}; background: ${c.text}; opacity: 0; }
+      .gfx.gfx-message-proof .g-me .g-proof-typing { left: auto; right: 0; background: ${c.accent}; }
+      .gfx.gfx-message-proof .g-proof-typing i { width: ${px(12)}; height: ${px(12)}; border-radius: 50%; background: ${c.bg}; }
+      .gfx.gfx-message-proof .g-proof-outcome { position: relative; align-self: flex-start; margin-top: ${px(8)}; padding-bottom: ${px(10)}; font-size: ${px(48)}; font-weight: 850; line-height: 1.12; color: ${c.text}; opacity: 0; }
+      .gfx.gfx-message-proof .g-proof-underline { position: absolute; left: 0; right: 0; bottom: 0; height: ${px(8)}; border-radius: ${px(4)}; background: ${c.accent}; transform-origin: 0 50%; transform: scaleX(0); }`;
+}
+
 /** GSAP for the cards (runs inside the composition's timeline script; expects PLAN.graphics and tl). */
 export const GRAPHICS_JS = `
         PLAN.graphics.forEach((g, i) => {
           const el = document.getElementById("gfx-" + i);
           const box = el.querySelector(".g-box");
           const ins = el.querySelectorAll(".g-in");
-          tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
-          if (PLAN.graphicsMode === "band") tl.fromTo(box, { y: 28, scale: 0.985 }, { y: 0, scale: 1, duration: 0.32, ease: "power3.out" }, g.start);
-          else if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
-          else {
-            tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: 0.3, ease: "power3.out" }, g.start);
-            // The footage slides down a little while the card is up, so the card never sits on the forehead.
-            const drop = PLAN.height * 0.11;
-            tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
-            tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
-          }
+          const fps = PLAN.fps || 30;
+          const liveItems = g.items ? [...el.querySelectorAll(".g-live-item")] : [];
+          const proof = g.mode === "proof";
+          const frame = 1 / fps;
+          let t1;
+          if (liveItems.length) {
+            const closed = PLAN.graphicsSide === "right" ? "inset(0 100% 0 0)" : "inset(0 0 0 100%)";
+            tl.set(el, { opacity: 1 }, g.start);
+            tl.fromTo(box, { clipPath: closed }, { clipPath: "inset(0 0% 0 0)", duration: 8 / fps, ease: "power3.out", immediateRender: false }, g.start);
+            tl.fromTo(ins, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 6 / fps, ease: "power3.out", stagger: 2 / fps }, g.start);
+            liveItems.forEach((item, k) => {
+              const cue = g.start + g.items[k].at;
+              const dot = item.querySelector(".g-item-dot");
+              const text = item.querySelector(".g-item-text");
+              const connector = item.querySelector(".g-live-connector");
+              if (dot) tl.set(dot, { opacity: 1 }, Math.max(g.start, cue - 1 / fps));
+              if (k) {
+                const previous = liveItems[k - 1].querySelector(".g-item-text");
+                tl.to(previous, { opacity: 0.55, color: PLAN.graphicsText, duration: 6 / fps, ease: "power3.out" }, cue);
+              }
+              tl.fromTo(text, { opacity: 0, y: 12, scale: 1.04, color: PLAN.graphicsAccent }, { opacity: 1, y: 0, scale: 1, color: PLAN.graphicsAccent, duration: 6 / fps, ease: "power3.out", immediateRender: false }, cue);
+              if (connector) tl.fromTo(connector, { scaleY: 0 }, { scaleY: 1, duration: 7 / fps, ease: "power2.inOut", immediateRender: false }, cue);
+              item.querySelectorAll(".g-strike-line").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 10 / fps, ease: "power2.inOut", immediateRender: false }, cue));
+              item.querySelectorAll(".g-icon path").forEach((p) => {
+                const L = p.getTotalLength();
+                p.style.strokeDasharray = L + " " + L;
+                tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 10 / fps, ease: "power2.inOut", immediateRender: false }, cue);
+              });
+            });
+            if (PLAN.graphicsMode === "overlay") {
+              const drop = PLAN.height * 0.11;
+              tl.to("#video-wrap", { y: drop, duration: 8 / fps, ease: "power2.out" }, g.start);
+              tl.to("#video-wrap", { y: 0, duration: 8 / fps, ease: "power2.inOut" }, g.start + g.duration - 5 / fps);
+            }
+            t1 = g.start + 8 / fps;
+          } else {
+            if (proof) tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 8 * frame, ease: "power3.out" }, g.start);
+            else tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
+            if (PLAN.graphicsMode === "band") tl.fromTo(box, { y: 28, scale: 0.985 }, { y: 0, scale: 1, duration: 0.32, ease: "power3.out" }, g.start);
+            else if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
+            else {
+              tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: proof ? 8 * frame : 0.3, ease: "power3.out" }, g.start);
+              // The footage slides down a little while the card is up, so the card never sits on the forehead.
+              const drop = PLAN.height * 0.11;
+              tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
+              tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
+            }
 ${SKINS_JS}
-          tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: Math.min(0.22, 1.1 / Math.max(1, ins.length)) }, g.start + 0.06);
-          // Bubbles run on their own clock (typing, then pop), so take them out of the stagger.
-          el.querySelectorAll(".g-bubble.g-in").forEach((b) => tl.set(b, { opacity: 0 }, g.start + 0.06));
-          const t1 = g.start + 0.06 + 0.42 + Math.min(0.22, 1.1 / Math.max(1, ins.length)) * Math.max(0, ins.length - 1);
-          el.querySelectorAll(".g-strike-line").forEach((s, k) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.3, ease: "power2.inOut" }, t1 + 0.1 + k * 0.18));
-          el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, PLAN.graphicsMode === "overlay" ? { scaleX: 0 } : { scaleY: 0 }, PLAN.graphicsMode === "overlay" ? { scaleX: 1, duration: 0.25, ease: "power2.out" } : { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
-          el.querySelectorAll(".g-hl").forEach((s) => tl.fromTo(s, { backgroundSize: "0% 46%" }, { backgroundSize: "100% 46%", duration: 0.5, ease: "power2.inOut" }, t1 + 0.05));
-          el.querySelectorAll(".g-rule").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power3.inOut" }, t1));
-          // List icons draw on with their row, then settle with a small pop.
-          el.querySelectorAll(".g-icon path").forEach((p, k) => {
-            const L = p.getTotalLength();
-            p.style.strokeDasharray = L + " " + L;
-            const at = g.start + 0.2 + k * Math.min(0.22, 1.1 / Math.max(1, ins.length));
-            tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.45, ease: "power2.inOut", immediateRender: false }, at);
-            tl.fromTo(p.closest(".g-icon"), { scale: 1 }, { scale: 1.12, duration: 0.1, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.4);
-          });
-          // Compare: the accent side wipes over from the divider, the VS badge pops, the bars fill.
-          el.querySelectorAll(".g-side-b").forEach((b) => tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: "sine.inOut", immediateRender: false }, g.start + 0.45));
-          el.querySelectorAll(".g-vs").forEach((v) => tl.to(v, { scale: 1, duration: 0.35, ease: "back.out(2)" }, g.start + 0.95));
-          el.querySelectorAll(".g-side-fill, .g-bar-fill").forEach((f, k) => tl.fromTo(f, { scaleX: 0 }, { scaleX: 1, duration: 0.85, ease: "power3.out", immediateRender: false }, g.start + 0.5 + k * 0.18));
+            tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: Math.min(0.22, 1.1 / Math.max(1, ins.length)) }, g.start + 0.06);
+            // Bubbles run on their own clock (typing, then pop), so take them out of the stagger.
+            el.querySelectorAll(".g-bubble.g-in").forEach((b) => tl.set(b, { opacity: 0 }, g.start + 0.06));
+            t1 = g.start + 0.06 + 0.42 + Math.min(0.22, 1.1 / Math.max(1, ins.length)) * Math.max(0, ins.length - 1);
+            el.querySelectorAll(".g-strike-line").forEach((s, k) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.3, ease: "power2.inOut" }, t1 + 0.1 + k * 0.18));
+            el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, PLAN.graphicsMode === "overlay" ? { scaleX: 0 } : { scaleY: 0 }, PLAN.graphicsMode === "overlay" ? { scaleX: 1, duration: 0.25, ease: "power2.out" } : { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
+            el.querySelectorAll(".g-hl").forEach((s) => tl.fromTo(s, { backgroundSize: "0% 46%" }, { backgroundSize: "100% 46%", duration: 0.5, ease: "power2.inOut" }, t1 + 0.05));
+            el.querySelectorAll(".g-rule").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power3.inOut" }, t1));
+            // List icons draw on with their row, then settle with a small pop.
+            el.querySelectorAll(".g-icon path").forEach((p, k) => {
+              const L = p.getTotalLength();
+              p.style.strokeDasharray = L + " " + L;
+              const at = g.start + 0.2 + k * Math.min(0.22, 1.1 / Math.max(1, ins.length));
+              tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.45, ease: "power2.inOut", immediateRender: false }, at);
+              tl.fromTo(p.closest(".g-icon"), { scale: 1 }, { scale: 1.12, duration: 0.1, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.4);
+            });
+          }
+          // Compare: schema 2 waits for the spoken pivot; an older card keeps its original wipe exactly.
+          if (PLAN.graphicsSchema >= 2 && g.pivotAt != null) {
+            const frame = 1 / (PLAN.fps || 30);
+            const pivot = g.start + g.pivotAt;
+            const a = el.querySelector(".g-side-a"), b = el.querySelector(".g-side-b");
+            const aFrom = g.faceSide === "right" ? "inset(0 0 0 100%)" : "inset(0 100% 0 0)";
+            if (a) tl.fromTo(a, { clipPath: aFrom }, { clipPath: "inset(0 0% 0 0)", duration: 6 * frame, ease: "power3.out", immediateRender: false }, g.start);
+            el.querySelectorAll(".g-divider").forEach((d) => tl.fromTo(d, { scaleY: 0 }, { scaleY: 1, duration: 5 * frame, ease: "power2.inOut", immediateRender: false }, pivot));
+            el.querySelectorAll(".g-pivot-arrow").forEach((d) => tl.fromTo(d, { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: 5 * frame, ease: "power2.inOut", immediateRender: false }, pivot));
+            el.querySelectorAll(".g-versus").forEach((v) => tl.fromTo(v, { scale: 0 }, { scale: 1, duration: 3 * frame, ease: "power3.out", immediateRender: false }, pivot + 2 * frame));
+            if (b) {
+              tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 10 * frame, ease: "power3.out", immediateRender: false }, pivot);
+              tl.fromTo(b, { scale: 1 }, { scale: 1.04, duration: 3 * frame, ease: "expo.out", immediateRender: false }, pivot + 10 * frame);
+              tl.to(b, { scale: 1, duration: 3 * frame, ease: "power2.out" }, pivot + 13 * frame);
+            }
+            if (a) tl.to(a, { opacity: 0.5, filter: "grayscale(1)", duration: 5 * frame, ease: "power2.inOut" }, pivot);
+            el.querySelectorAll(".g-side-cross").forEach((x) => tl.to(x, { scaleX: 1, duration: 5 * frame, ease: "power2.inOut" }, pivot));
+            const sideFills = el.querySelectorAll(".g-side-fill");
+            if (sideFills.length === 2) {
+              tl.fromTo(sideFills[0], { scaleX: 0 }, { scaleX: 1, duration: 12 * frame, ease: "power3.out", immediateRender: false }, g.start);
+              tl.fromTo(sideFills[1], { scaleX: 0 }, { scaleX: 1, duration: 12 * frame, ease: "power3.out", immediateRender: false }, pivot);
+            }
+          } else {
+            el.querySelectorAll(".g-side-b").forEach((b) => tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: "sine.inOut", immediateRender: false }, g.start + 0.45));
+            el.querySelectorAll(".g-vs").forEach((v) => tl.to(v, { scale: 1, duration: 0.35, ease: "back.out(2)" }, g.start + 0.95));
+            el.querySelectorAll(".g-side-fill").forEach((f, k) => tl.fromTo(f, { scaleX: 0 }, { scaleX: 1, duration: 0.85, ease: "power3.out", immediateRender: false }, g.start + 0.5 + k * 0.18));
+          }
+          el.querySelectorAll(".g-bar-fill").forEach((f, k) => tl.fromTo(f, { scaleX: 0 }, { scaleX: 1, duration: 0.85, ease: "power3.out", immediateRender: false }, g.start + 0.5 + k * 0.18));
           // Message thread: typing dots before each incoming bubble, bubbles pop from their tail.
           const bubbles = el.querySelectorAll(".g-bubble");
           const dots = el.querySelector(".g-typing");
@@ -599,28 +1095,93 @@ ${SKINS_JS}
             }
             tl.fromTo(b, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.32, ease: "back.out(1.8)", immediateRender: false }, at);
           });
+          // Proof thread: each exact spoken beat owns its cue. The tray grows, dots type for 12 frames, then the
+          // bubble lands from its tail. Reconstructed proof is visibly labelled and never carries phone chrome.
+          if (proof) {
+            const proofBeats = [...el.querySelectorAll(".g-proof-beat")];
+            const proofOutcome = el.querySelector(".g-proof-outcome");
+            const pad = parseFloat(getComputedStyle(box).paddingBottom) || 0;
+            const top = box.getBoundingClientRect().top;
+            const context = el.querySelector(".g-proof-context");
+            const baseHeight = Math.ceil(context.getBoundingClientRect().bottom - top + pad);
+            const expansions = [];
+            proofBeats.forEach((beat, k) => {
+              const at = g.start + (g.items[k]?.at || 0);
+              const typing = beat.querySelector(".g-proof-typing");
+              const bubble = beat.querySelector(".g-proof-bubble");
+              expansions.push({ at, height: Math.ceil(beat.getBoundingClientRect().bottom - top + pad) });
+              tl.set(beat, { opacity: 1 }, at);
+              tl.fromTo(typing, { opacity: 0 }, { opacity: 1, duration: 1 * frame, ease: "power1.out", immediateRender: false }, at);
+              typing.querySelectorAll("i").forEach((dot, j) => tl.fromTo(dot, { y: 0 }, { y: -6, duration: 3 * frame, ease: "sine.inOut", yoyo: true, repeat: 1, immediateRender: false }, at + (1 + j * 2) * frame));
+              tl.set(typing, { opacity: 0 }, at + 12 * frame);
+              tl.fromTo(bubble, { opacity: 0, scale: 0.72 }, { opacity: 1, scale: 1, duration: 8 * frame, ease: "back.out(1.5)", immediateRender: false }, at + 12 * frame);
+            });
+            if (proofOutcome && g.outcome) {
+              const at = g.start + (g.outcome.at || 0);
+              expansions.push({ at, height: Math.ceil(proofOutcome.getBoundingClientRect().bottom - top + pad) });
+              tl.fromTo(proofOutcome, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 6 * frame, ease: "power3.out", immediateRender: false }, at);
+              tl.fromTo(proofOutcome.querySelector(".g-proof-underline"), { scaleX: 0 }, { scaleX: 1, duration: 10 * frame, ease: "power2.inOut", immediateRender: false }, at);
+            }
+            let height = baseHeight;
+            tl.set(box, { height }, g.start);
+            expansions.sort((a, b) => a.at - b.at || a.height - b.height).forEach((event) => {
+              const next = Math.max(height, event.height);
+              if (next > height) tl.fromTo(box, { height }, { height: next, duration: 8 * frame, ease: "power3.out", immediateRender: false }, event.at);
+              height = next;
+            });
+          }
           // Post card: the like lands a beat after the text.
           el.querySelectorAll(".g-post-heart").forEach((h) => {
             tl.fromTo(h, { scale: 1 }, { scale: 1.5, duration: 0.14, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, t1 + 0.5);
             tl.set(h, { className: "g-post-heart lit" }, t1 + 0.5);
           });
-          // Stat: the number accelerates up from 0 and decelerates onto the exact value (one integer per frame, so
-          // a seek shows the same digits), the fill sweeps with it, and the line lands with one small pulse.
-          const COUNT = Math.min(1.3, Math.max(0.6, g.duration * 0.25));
-          const fps = PLAN.fps || 30;
-          const countEase = gsap.parseEase("sine.inOut");
-          el.querySelectorAll(".g-count").forEach((n, k) => {
-            const to = parseFloat(n.dataset.to), dec = parseInt(n.dataset.dec || "0", 10), commas = n.dataset.commas === "1";
-            const fmt = (v) => (commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec));
-            const at = g.start + 0.16 + k * (COUNT + 0.25);
-            const last = Math.max(1, Math.round(COUNT * fps));
-            for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(to * countEase(f / last)) }, at + COUNT * (f / last));
-            const stat = n.closest(".g-stat") || n.closest(".g-bar-value");
-            tl.to(stat, { scale: 1.07, duration: 0.165, ease: "power3.out" }, at + COUNT);
-            tl.to(stat, { scale: 1, duration: 0.165, ease: "power2.out" }, at + COUNT + 0.165);
-            const ring = stat.querySelector(".g-ring");
-            if (ring) for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * countEase(f / last)).toFixed(2) + "%" }, at + COUNT * (f / last));
-            if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
-          });
-          tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
+          const gfxFrame = 1 / fps;
+          if (g.motion === "reveal" || g.motion === "growth") {
+            // An exact fact is present in the DOM from its first visible frame. Motion comes from the five-frame
+            // bottom mask, seven-frame brand baseline and restrained three-plus-three-frame value lock.
+            el.querySelectorAll(".g-value-mask").forEach((m, k) => tl.fromTo(m, { clipPath: "inset(100% 0 0 0)" }, { clipPath: "inset(0% 0 0 0)", duration: 5 * gfxFrame, ease: "power2.inOut", immediateRender: false }, g.start + k * gfxFrame));
+            el.querySelectorAll(".g-value-line").forEach((line) => tl.fromTo(line, { scaleX: 0 }, { scaleX: 1, duration: 7 * gfxFrame, ease: "power2.inOut", immediateRender: false }, g.start));
+            if (g.motion === "reveal") el.querySelectorAll(".g-value-lock").forEach((value) => {
+              tl.fromTo(value, { scale: 1 }, { scale: 1.04, duration: 3 * gfxFrame, ease: "expo.out", immediateRender: false }, g.start + 5 * gfxFrame);
+              tl.to(value, { scale: 1, duration: 3 * gfxFrame, ease: "power2.out" }, g.start + 8 * gfxFrame);
+            });
+            const ringEase = gsap.parseEase("power3.out");
+            el.querySelectorAll(".g-ring").forEach((ring) => {
+              const last = 21;
+              for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * ringEase(f / last)).toFixed(2) + "%" }, g.start + f * gfxFrame);
+            });
+          }
+          if (g.motion === "growth") {
+            // A real from/to claim counts from its spoken start, never zero, with one deterministic value per frame.
+            const countEase = gsap.parseEase("power3.out");
+            el.querySelectorAll(".g-count[data-from]").forEach((n) => {
+              const from = parseFloat(n.dataset.from), to = parseFloat(n.dataset.to), dec = parseInt(n.dataset.dec || "0", 10), commas = n.dataset.commas === "1";
+              const fmt = (v) => (commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec));
+              const at = g.start + 5 * gfxFrame;
+              const last = 21;
+              for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(from + (to - from) * countEase(f / last)) }, at + f * gfxFrame);
+              const stat = n.closest(".g-value-lock") || n.closest(".g-bar-value");
+              tl.fromTo(stat, { scale: 1 }, { scale: 1.04, duration: 3 * gfxFrame, ease: "expo.out", immediateRender: false }, at + last * gfxFrame);
+              tl.to(stat, { scale: 1, duration: 3 * gfxFrame, ease: "power2.out" }, at + (last + 3) * gfxFrame);
+            });
+          } else if (!g.motion) {
+            // Schema 1: preserve the original zero count-up byte for byte.
+            const COUNT = Math.min(1.3, Math.max(0.6, g.duration * 0.25));
+            const countEase = gsap.parseEase("sine.inOut");
+            el.querySelectorAll(".g-count").forEach((n, k) => {
+              const to = parseFloat(n.dataset.to), dec = parseInt(n.dataset.dec || "0", 10), commas = n.dataset.commas === "1";
+              const fmt = (v) => (commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec));
+              const at = g.start + 0.16 + k * (COUNT + 0.25);
+              const last = Math.max(1, Math.round(COUNT * fps));
+              for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(to * countEase(f / last)) }, at + COUNT * (f / last));
+              const stat = n.closest(".g-stat") || n.closest(".g-bar-value");
+              tl.to(stat, { scale: 1.07, duration: 0.165, ease: "power3.out" }, at + COUNT);
+              tl.to(stat, { scale: 1, duration: 0.165, ease: "power2.out" }, at + COUNT + 0.165);
+              const ring = stat.querySelector(".g-ring");
+              if (ring) for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * countEase(f / last)).toFixed(2) + "%" }, at + COUNT * (f / last));
+              if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
+            });
+          }
+          if (liveItems.length || (PLAN.graphicsSchema >= 2 && g.pivotAt != null) || proof) tl.to(el, { opacity: 0, duration: 5 / fps, ease: "power2.in" }, g.start + g.duration - 5 / fps);
+          else tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
         });`;

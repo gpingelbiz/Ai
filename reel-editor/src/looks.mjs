@@ -14,52 +14,52 @@ export const LOOKS = {
   receipts: {
     label: "Receipts",
     fits: "money, pricing, revenue, profit, what something costs, a P&L, deals, discounts, payment plans",
-    skins: { stat: "notify", headline: "notify", bars: "receipt", list: "receipt", steps: "receipt", compare: "receipt", quote: "type", message: "phone", post: "glass", chapter: "type" },
+    skins: { stat: "notify", headline: "notify", bars: "receipt", list: "receipt", steps: "receipt", compare: "receipt", quote: "type", message: "phone", post: "glass", chapter: "type", progress: "receipt" },
   },
   phone: {
     label: "Phone",
     fits: "sales calls, DMs, texts, objections, follow-up, leads, booking, what a prospect or client says",
-    skins: { stat: "notify", headline: "notify", quote: "notify", list: "notes", steps: "notes", compare: "notes", bars: "notes", message: "phone", post: "glass", chapter: "notify" },
+    skins: { stat: "notify", headline: "notify", quote: "notify", list: "notes", steps: "notes", compare: "notes", bars: "notes", message: "phone", post: "glass", chapter: "notify", progress: "notes" },
   },
   fieldnotes: {
     label: "Field notes",
     fits: "discipline, habits, mindset, faith, a personal story, lessons learned, the morning routine, family",
-    skins: { stat: "paper", headline: "paper", quote: "paper", list: "paper", steps: "paper", compare: "paper", bars: "paper", message: "phone", post: "paper", chapter: "paper" },
+    skins: { stat: "paper", headline: "paper", quote: "paper", list: "paper", steps: "paper", compare: "paper", bars: "paper", message: "phone", post: "paper", chapter: "paper", progress: "paper" },
   },
   gregcard: {
     label: "Typewriter card",
     fits: "one conviction line, a hard truth, faith as conviction, a short punchy reel with one idea",
-    skins: { stat: "type", headline: "type", quote: "type", list: "type", steps: "type", compare: "type", bars: "receipt", message: "phone", post: "type", chapter: "type" },
+    skins: { stat: "type", headline: "type", quote: "type", list: "type", steps: "type", compare: "type", bars: "receipt", message: "phone", post: "type", chapter: "type", progress: "type" },
   },
   briefing: {
     label: "Briefing",
     fits: "leadership, systems, hiring, team structure, frameworks, a breakdown or explainer, the numbers behind a business",
-    skins: { stat: "editorial", headline: "editorial", quote: "editorial", list: "editorial", steps: "editorial", compare: "editorial", bars: "editorial", message: "phone", post: "editorial", chapter: "editorial" },
+    skins: { stat: "editorial", headline: "editorial", quote: "editorial", list: "editorial", steps: "editorial", compare: "editorial", bars: "editorial", message: "phone", post: "editorial", chapter: "editorial", progress: "editorial" },
   },
   press: {
     label: "Press sheet",
     fits: "a hard truth, myth-busting, a contrarian take, what nobody tells you, testimony, a bold claim",
-    skins: { stat: "press", headline: "press", quote: "press", list: "press", steps: "press", compare: "press", bars: "press", message: "phone", post: "press", chapter: "press" },
+    skins: { stat: "press", headline: "press", quote: "press", list: "press", steps: "press", compare: "press", bars: "press", message: "phone", post: "press", chapter: "press", progress: "press" },
   },
   shopfloor: {
     label: "Instrument panel",
     fits: "close rates, KPIs, scorecards, quotas, standards, the numbers on the board, diagnosing a problem",
-    skins: { stat: "panel", headline: "panel", quote: "panel", list: "panel", steps: "panel", compare: "panel", bars: "panel", message: "phone", post: "panel", chapter: "panel" },
+    skins: { stat: "panel", headline: "panel", quote: "panel", list: "panel", steps: "panel", compare: "panel", bars: "panel", message: "phone", post: "panel", chapter: "panel", progress: "panel" },
   },
   blueprint: {
     label: "Sales schematic",
     fits: "a framework, a sales process, a pipeline, cause and effect, how a system is built, a step-by-step",
-    skins: { stat: "blueprint", headline: "blueprint", quote: "blueprint", list: "blueprint", steps: "blueprint", compare: "blueprint", bars: "blueprint", message: "phone", post: "blueprint", chapter: "blueprint" },
+    skins: { stat: "blueprint", headline: "blueprint", quote: "blueprint", list: "blueprint", steps: "blueprint", compare: "blueprint", bars: "blueprint", message: "phone", post: "blueprint", chapter: "blueprint", progress: "blueprint" },
   },
   casefile: {
     label: "Case file",
     fits: "proof, evidence, what really happened, a call review, a case study, a before and after, receipts of a result",
-    skins: { stat: "case", headline: "case", quote: "case", list: "case", steps: "case", compare: "case", bars: "case", message: "phone", post: "case", chapter: "case" },
+    skins: { stat: "case", headline: "case", quote: "case", list: "case", steps: "case", compare: "case", bars: "case", message: "phone", post: "case", chapter: "case", progress: "case" },
   },
   redline: {
     label: "Coach's redline",
     fits: "reviewing a mistake, what not to do, breaking down a script or a call, correcting a bad habit",
-    skins: { stat: "redline", headline: "redline", quote: "redline", list: "redline", steps: "redline", compare: "redline", bars: "redline", message: "phone", post: "redline", chapter: "redline" },
+    skins: { stat: "redline", headline: "redline", quote: "redline", list: "redline", steps: "redline", compare: "redline", bars: "redline", message: "phone", post: "redline", chapter: "redline", progress: "redline" },
   },
   glass: {
     label: "Glass",
@@ -133,7 +133,7 @@ export const MARKERS = {
 };
 
 /** The skin a card gets in a look. */
-export const skinFor = (look, type) => (LOOKS[look]?.skins?.[type]) || "glass";
+export const skinFor = (look, type, mode) => (type === "message" && mode === "proof" ? "proof" : (LOOKS[look]?.skins?.[type]) || "glass");
 
 /** Skins and fonts: which font files a skin needs (in assets/fonts) and the family name it uses. */
 export const SKIN_FONTS = {
@@ -194,9 +194,11 @@ const glyph = { stat: "$", headline: "!", quote: "“", post: "@", chapter: "#" 
 /**
  * Card HTML for skins that reshape a card into an artifact (a notification, a Notes list, a receipt, a typed card).
  * Returns null when the skin only restyles the regular markup (paper, editorial, phone, glass). `statHTML` is the
- * regular count-up number, passed in so the count keeps working.
+ * regular stat number, passed in so its schema-specific motion keeps working.
  */
 export function skinHTML(s, skin, { statHTML }) {
+  const live = (s.type === "list" || s.type === "steps") && s.items?.length && s.items.every((it) => Number.isFinite(it.at));
+  const liveRow = (html, k) => `<div class="g-live-item">${k ? '<span class="g-live-connector"></span>' : ""}<span class="g-item-dot"></span>${html}</div>`;
   if (skin === "notify") {
     const app = plain(s.eyebrow || "Update").toLowerCase().replace(/^./, (c) => c.toUpperCase());
     const title = s.type === "stat" ? statHTML(s.value, Math.round(Math.min(130, 900 / Math.max(1, String(s.value).length)))) : `<div class="n-title">${marked(s.text || s.title || s.value || "", "g-gold")}</div>`;
@@ -208,7 +210,7 @@ export function skinHTML(s, skin, { statHTML }) {
     if (s.type === "compare") items = [{ text: [s.a?.label, s.a?.note].filter(Boolean).join(": "), state: "strike" }, { text: [s.b?.label, s.b?.note].filter(Boolean).join(": "), state: "check" }];
     else if (s.type === "bars") items = (s.items || []).map((it, k) => ({ text: `${it.label}: ${it.value}${s.unit || ""}`, state: k === s.emphasize ? "check" : "plain" }));
     else items = (s.items || []).map((it, k) => ({ text: s.type === "steps" ? `${k + 1}. ${it.text}` : it.text, state: it.state || "plain" }));
-    const rows = items.map((it) => `<div class="n-item g-in n-${it.state}"><span class="n-circle"></span><span class="n-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span></div>`).join("");
+    const rows = items.map((it, k) => live ? liveRow(`<div class="n-item n-${it.state} g-item-text"><span class="n-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span></div>`, k) : `<div class="n-item g-in n-${it.state}"><span class="n-circle"></span><span class="n-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span></div>`).join("");
     return `<div class="g-box g-notes"><div class="n-bar g-in"><span class="n-back">‹ Notes</span><span class="n-done">Done</span></div><div class="n-heading g-in">${marked(s.title || s.eyebrow || "", "g-gold")}</div><div class="n-list">${rows}</div></div>`;
   }
   if (skin === "receipt") {
@@ -217,17 +219,21 @@ export function skinHTML(s, skin, { statHTML }) {
     else if (s.type === "compare") rows = [[s.a?.label, s.a?.value || s.a?.note || "", false], [s.b?.label, s.b?.value || s.b?.note || "", true]];
     else if (s.type === "stat") total = [s.sub || "Total", s.value];
     else rows = (s.items || []).map((it, k) => [s.type === "steps" ? `${k + 1}. ${it.text}` : it.text, it.tag || (it.state === "check" ? "✓" : it.state === "strike" ? "✕" : ""), it.state === "check"]);
-    const row = ([a, b, hi]) => `<div class="r-row g-in${hi ? " r-hi" : ""}"><span class="r-l">${esc(a || "")}</span><span class="r-dots"></span><span class="r-r">${esc(b || "")}</span></div>`;
+    const row = ([a, b, hi], k) => live ? liveRow(`<div class="r-row g-item-text${hi ? " r-hi" : ""}"><span class="r-l">${esc(a || "")}</span><span class="r-dots"></span><span class="r-r">${esc(b || "")}</span></div>`, k) : `<div class="r-row g-in${hi ? " r-hi" : ""}"><span class="r-l">${esc(a || "")}</span><span class="r-dots"></span><span class="r-r">${esc(b || "")}</span></div>`;
     const totalHTML = total ? `<div class="r-total g-in"><span class="r-l">${esc(total[0])}</span>${statHTML(total[1], 92, " r-total-v")}</div>` : "";
     return `<div class="g-box g-receipt"><div class="r-head g-in">${esc(plain(s.eyebrow || s.title || "Receipt"))}</div>${s.title && s.eyebrow ? `<div class="r-sub g-in">${esc(plain(s.title))}</div>` : ""}<div class="r-rule g-in"></div>${rows.map(row).join("")}${rows.length && total ? '<div class="r-rule g-in"></div>' : ""}${totalHTML}<div class="r-foot g-in">* * * thank you * * *</div></div>`;
   }
   if (skin === "type") {
+    if (s.type === "stat" && s.motion) {
+      const value = statHTML(s.value, Math.round(Math.min(130, 900 / Math.max(1, String(s.motion === "growth" ? s.value2 : s.value).length))));
+      return `<div class="g-box g-type-card"><div class="t-text">${value}</div>${s.sub ? `<div class="t-line g-in">${esc(sentence(s.sub))}</div>` : ""}${s.eyebrow ? `<div class="t-sign g-in">— ${esc(plain(s.eyebrow).toLowerCase())}</div>` : ""}</div>`;
+    }
     let text;
     if (s.type === "list" || s.type === "steps") text = (s.items || []).map((it) => `— ${sentence(it.text)}`).join("\n");
     else if (s.type === "compare") text = `${sentence(s.a?.label)}${s.a?.note ? `: ${plain(s.a.note)}` : ""}.\n${sentence(s.b?.label)}${s.b?.note ? `: ${plain(s.b.note)}` : ""}.`;
     else if (s.type === "stat") text = `${plain(s.value)}${s.value2 ? ` → ${plain(s.value2)}` : ""}.${s.sub ? `\n${sentence(s.sub)}` : ""}`;
     else text = sentence(s.text || s.title || "");
-    const lines = text.split("\n").map((l) => `<div class="t-line">${chars(l)}</div>`).join("");
+    const lines = text.split("\n").map((l, k) => live ? liveRow(`<div class="t-line g-item-text">${esc(l)}</div>`, k) : `<div class="t-line">${chars(l)}</div>`).join("");
     return `<div class="g-box g-type-card"><div class="t-text">${lines}</div>${s.eyebrow ? `<div class="t-sign g-in">— ${esc(plain(s.eyebrow).toLowerCase())}</div>` : ""}</div>`;
   }
   return null;
