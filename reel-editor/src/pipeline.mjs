@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
-import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments } from "./cuts.mjs";
+import { planCuts, applyCuts, remapWords, remapEnvelope, audioEnvelope, guardSilenceCuts, snapSegments } from "./cuts.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
 import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
@@ -31,7 +31,7 @@ import { planSlams } from "./slams.mjs";
 import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
 import { iconCandidates, planIcons } from "./icons.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
-import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
+import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, duckingLaneFromEnvelope, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
 import { makeCover } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
@@ -579,7 +579,7 @@ export async function runEdit(input, opts = {}) {
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
   const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
 
   const plan = {
     version: 1,
@@ -645,7 +645,7 @@ function readVoice(plan) {
   try { return fs.readFileSync(voiceFile(plan), "utf8"); } catch { return ""; }
 }
 
-async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], transcript = "", cues = null }) {
+async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], envelope = null, segments = [], transcript = "", cues = null }) {
   const assets = ensureDir(path.join(projectDir, "assets"));
   const audio = { tracks: [], replaceAudio: !!opts.replaceAudio };
 
@@ -674,7 +674,23 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
     // Trim (or loop a short track) to the reel length and normalize the bed, so the level means the same for
     // a loud trap beat and a soft pad: -16 LUFS like the voice, then `level` under it.
     await run("ffmpeg", ["-y", "-loglevel", "error", "-stream_loop", "-1", "-i", src, "-t", String(r3(duration - startAt)), "-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "192k", dst]);
-    const lane = preset.audio.duck === false ? null : duckingLane(words, { duration, level, start: startAt });
+    let lane = null;
+    if (preset.audio.duck !== false) {
+      if ((preset.audio.duckFrom || "voice") === "words") {
+        lane = duckingLane(words, { duration, level, start: startAt });
+        log("music ducking: transcript words");
+      } else {
+        try {
+          const mapped = remapEnvelope(await envelope, segments);
+          if (!mapped.db.length || mapped.db.length * mapped.step < duration - Math.max(0.1, mapped.step * 2)) throw new Error("level scan does not cover the reel");
+          lane = duckingLaneFromEnvelope(mapped, { duration, words, level, start: startAt });
+          log("music ducking: voice envelope + transcript words");
+        } catch (e) {
+          lane = duckingLane(words, { duration, level, start: startAt });
+          warn(`music ducking: voice envelope unavailable (${String(e.message).split("\n")[0]}); using transcript words`);
+        }
+      }
+    } else log("music ducking: off");
     audio.tracks.push({ id: "music", src: "assets/music.m4a", start: startAt, duration: r3(duration - startAt), volume: level, fadeIn: 1, fadeOut: 1.5, lane, track: 8 });
     fs.writeFileSync(path.join(workDir, "music.txt"), `Music: ${path.basename(src)}\n`);
     log(`music: ${pickNote || path.basename(src)} at ${level}${lane ? ", swelling in the pauses" : ""}`);

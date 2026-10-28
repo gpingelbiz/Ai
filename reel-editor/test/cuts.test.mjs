@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planCuts, findBadTakes, remapWords } from "../src/cuts.mjs";
+import { planCuts, findBadTakes, remapWords, remapEnvelope } from "../src/cuts.mjs";
 import { readFileSync } from "node:fs";
 
 const sample = JSON.parse(readFileSync(new URL("../examples/sample-words.json", import.meta.url))).words;
@@ -51,6 +51,13 @@ test("remapWords moves words onto the cut timeline and keeps order", () => {
   assert.ok(words[words.length - 1].end <= plan.keptDuration + 0.001);
   assert.equal(words[0].text, "Most");
   assert.equal(words[0].start, 0.12);
+});
+
+test("remapEnvelope concatenates two kept source segments in reel time", () => {
+  const env = { step: 0.1, db: Array.from({ length: 12 }, (_, i) => -60 + i) };
+  const mapped = remapEnvelope(env, [{ start: 0.2, end: 0.5 }, { start: 0.8, end: 1 }]);
+  assert.equal(mapped.step, 0.1);
+  assert.deepEqual(mapped.db, [-58, -57, -56, -52, -51]);
 });
 
 test("a repeated word across a sentence break is not a stutter", async () => {

@@ -212,6 +212,31 @@ export function remapWords(words, segments) {
   return out;
 }
 
+/** Carry a source-time level envelope through the kept segments, which are concatenated in reel time. */
+export function remapEnvelope(env, segments) {
+  const step = Number(env?.step);
+  const source = env?.db;
+  if (!(step > 0) || !Array.isArray(source) || !source.length || !Array.isArray(segments) || !segments.length) return { step: step > 0 ? step : 0.02, db: [] };
+  const kept = segments.filter((s) => Number.isFinite(s?.start) && Number.isFinite(s?.end) && s.end > s.start);
+  if (kept.length !== segments.length) return { step, db: [] };
+  const sourceDuration = source.length * step;
+  if (kept.some((s) => s.start < 0 || s.end > sourceDuration + step)) return { step, db: [] };
+  const duration = kept.reduce((sum, s) => sum + s.end - s.start, 0);
+  const db = [];
+  let seg = 0, off = 0;
+  for (let i = 0; i * step < duration - step / 2; i++) {
+    const t = i * step;
+    while (seg + 1 < kept.length && t >= off + kept[seg].end - kept[seg].start - step / 100) {
+      off += kept[seg].end - kept[seg].start;
+      seg++;
+    }
+    const sourceT = kept[seg].start + (t - off);
+    const j = Math.min(source.length - 1, Math.max(0, Math.floor((sourceT + step / 100) / step)));
+    db.push(Number.isFinite(source[j]) ? source[j] : -120);
+  }
+  return { step, db };
+}
+
 /** One ffmpeg pass: trim+concat the kept segments, optional audio clean-up, constant frame rate.
  *  hdr: convert BT.2020/HLG video to tagged BT.709 SDR (captions disappear in HyperFrames otherwise; see hdr.mjs). */
 /**

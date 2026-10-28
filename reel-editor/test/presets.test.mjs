@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { loadPreset } from "../src/presets.mjs";
 
+test("voice envelope music ducking is on by default", () => {
+  assert.equal(loadPreset("clean").audio.duckFrom, "voice");
+});
+
 test("REEL_PRESET picks the default look: a preset name or a path to a partial .json", () => {
   const saved = process.env.REEL_PRESET;
   try {
