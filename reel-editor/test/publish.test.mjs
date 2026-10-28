@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseCaption, postText, readItem, scan, fileItem, pickSlot } from "../src/publish-folder.mjs";
+// The delivered-reels lookup must never read the real ~/Desktop/Reels (an iCloud folder can stall the whole run):
+// point it at an empty folder before the module reads REEL_WATCH_DONE.
+process.env.REEL_WATCH_DONE = fs.mkdtempSync(path.join(os.tmpdir(), "reel-desk-"));
+const { parseCaption, postText, readItem, scan, fileItem, pickSlot } = await import("../src/publish-folder.mjs");
 
 const CAPTION_TXT = `HOOK
 Post copy from what is winning on Sandcastles (2026-10-22).

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { esc } from "./text.mjs";
+import { BRAND_LOOKS, BRAND_THEMES, BRAND_SKIN_FONTS, BRAND_FONT_FILES, BRAND_HOOK_FONTS, brandSkinsCSS, brandHookCSS, noteHTML } from "./brandlooks.mjs";
 
 /**
  * Looks: the visual direction of a reel's overlay cards, picked from what the reel is about so reels never look the
@@ -66,9 +67,17 @@ export const LOOKS = {
     fits: "anything that fits none of the others",
     skins: {},
   },
+  // Opt-in looks for a client brand (brandlooks.mjs); a preset gets them only through graphics.includeLooks.
+  ...BRAND_LOOKS,
 };
 
 export const LOOK_IDS = Object.keys(LOOKS);
+
+/** The looks a reel may not use: the preset's excludeLooks, plus every brand look it has not opted into. */
+export const lookExclusions = (graphics = {}) => [
+  ...(graphics.excludeLooks || []),
+  ...LOOK_IDS.filter((id) => LOOKS[id].brandOnly && !(graphics.includeLooks || []).includes(id)),
+];
 
 /**
  * The rest of a reel's design follows its look: the hook title's treatment, the caption marker shape, the climax
@@ -87,6 +96,7 @@ export const THEMES = {
   casefile: { hook: "type", marker: "box", slam: "stamp", grade: { preset: "mono-fade", intensity: 0.6, details: { grain: 0.1 } }, cut: "hard", zoom: "snap" },
   redline: { hook: "redline", marker: "circle", slam: "redline", grade: { preset: "deep-contrast", intensity: 0.55 }, cut: "flash", zoom: "snap" },
   glass: null,
+  ...BRAND_THEMES,
 };
 
 /** The font files a theme needs beyond the house fonts (the hook and slam treatments that use them). */
@@ -98,6 +108,7 @@ export function themeFontSkins(theme) {
     if (k === "marker") want.add("paper");
     if (k === "serif") want.add("editorial");
     if (k === "panel") want.add("panel");
+    if (BRAND_HOOK_FONTS[k]) want.add(BRAND_HOOK_FONTS[k]);
   }
   return [...want];
 }
@@ -143,6 +154,7 @@ export const SKIN_FONTS = {
   receipt: [["Courier Prime", "CourierPrime-Regular.ttf", 400], ["Courier Prime", "CourierPrime-Bold.ttf", 700]],
   paper: [["Permanent Marker", "PermanentMarker-Regular.ttf", 400]],
   editorial: [["DM Serif Display", "DMSerifDisplay-Regular.ttf", 400]],
+  ...BRAND_SKIN_FONTS,
 };
 
 /* ---------------------------------------------------------------- variety memory */
@@ -197,6 +209,7 @@ const glyph = { stat: "$", headline: "!", quote: "“", post: "@", chapter: "#" 
  * regular stat number, passed in so its schema-specific motion keeps working.
  */
 export function skinHTML(s, skin, { statHTML }) {
+  if (skin === "note") return noteHTML(s, { statHTML });
   const live = (s.type === "list" || s.type === "steps") && s.items?.length && s.items.every((it) => Number.isFinite(it.at));
   const liveRow = (html, k) => `<div class="g-live-item">${k ? '<span class="g-live-connector"></span>' : ""}<span class="g-item-dot"></span>${html}</div>`;
   if (skin === "notify") {
@@ -449,7 +462,7 @@ export function skinsCSS({ H, colors, skins = [] }) {
       .gfx.skin-phone .g-thread-head { color: #111; }
       .gfx.skin-phone .g-bubble.g-them, .gfx.skin-phone .g-typing { background: #E9E9EB; color: #111; }
       .gfx.skin-phone .g-bubble.g-me { background: ${c.accent}; color: ${c.bg}; }`);
-  return out.join("");
+  return out.join("") + brandSkinsCSS({ H, colors, skins });
 }
 
 /** CSS for the hook treatment and slam style of a theme (layered over the house hook and slam styles). */
@@ -478,7 +491,7 @@ export function themeCSS({ H, colors, theme }) {
     redline: `#hook.hook-t-redline #hook-lines { -webkit-text-stroke: ${px(4)} #000; paint-order: stroke fill; color: #FFFFFF; }
       #hook.hook-t-redline #hook-lines .hw.k { color: #FFFFFF; border: ${px(8)} solid ${c.accent}; border-radius: 52% 48% 55% 45% / 60% 55% 45% 40%; padding: 0 0.14em; transform: rotate(-2deg); font-size: 1em; }
       #hook.hook-t-redline #hook-bar { height: ${px(16)}; border-radius: ${px(8)}; transform: rotate(-1.5deg); }`,
-  }[theme.hook] || "";
+  }[theme.hook] || brandHookCSS({ H, colors: c, hook: theme.hook });
   const slam = {
     type: `.slam-word.slam-t-type { font-family: "Courier Prime", monospace; font-weight: 700; text-transform: none; color: #F2F0EA; -webkit-text-stroke: 0; background: rgba(0,0,0,0.88); padding: 0.06em 0.3em; font-size: 0.8em; text-shadow: none; }
       .slam-word.slam-t-type::after { content: ""; display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.1em; vertical-align: -0.08em; background: ${c.accent}; }`,
@@ -501,12 +514,13 @@ export function themeCSS({ H, colors, theme }) {
  */
 export function skinFonts(skins = [], { display = false } = {}) {
   const seen = new Map();
-  for (const sk of skins) for (const [fam, file, weight] of SKIN_FONTS[sk] || []) {
+  for (const sk of skins) for (const [fam, file, weight, style = "normal"] of SKIN_FONTS[sk] || []) {
     const own = display && sk === "editorial" ? "Anton-Regular.ttf" : file;
-    seen.set(own, [fam, own, weight]);
+    seen.set(`${fam}|${own}|${style}`, [fam, own, weight, style]);
   }
-  const files = [...seen.keys()].filter((f) => f !== "Anton-Regular.ttf");
-  const css = [...seen.values()].map(([fam, file, weight]) => `@font-face { font-family: "${fam}"; src: url("assets/fonts/${file}") format("truetype"); font-weight: ${weight}; font-style: normal; font-display: block; }`).join("\n      ");
+  // The brand's own fonts (and the house Anton and Inter) are already in the project; only skin fonts get copied.
+  const files = [...new Set([...seen.values()].map((f) => f[1]))].filter((f) => !BRAND_FONT_FILES.has(f));
+  const css = [...seen.values()].map(([fam, file, weight, style]) => `@font-face { font-family: "${fam}"; src: url("assets/fonts/${file}") format("truetype"); font-weight: ${weight}; font-style: ${style}; font-display: block; }`).join("\n      ");
   return { files, css };
 }
 

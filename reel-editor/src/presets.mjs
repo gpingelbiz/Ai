@@ -25,7 +25,7 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
   // A brand preset names its fonts relative to itself (a kit installs them next to it in ~/.reel/fonts).
   if (own.fonts) {
     p.fonts = { ...p.fonts };
-    for (const k of ["display", "body"]) if (own.fonts[k] && !path.isAbsolute(own.fonts[k])) p.fonts[k] = path.resolve(path.dirname(file), own.fonts[k]);
+    for (const k of ["display", "displayItalic", "body"]) if (own.fonts[k] && !path.isAbsolute(own.fonts[k])) p.fonts[k] = path.resolve(path.dirname(file), own.fonts[k]);
   }
   return p;
 }
@@ -65,6 +65,8 @@ export function mergeOverrides(preset, o = {}) {
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;
   if (num(o.hookPosition) != null) p.hook.position = num(o.hookPosition);
+  if (o.hookSeconds === "reel") p.hook.duration = "reel";
+  else if (num(o.hookSeconds) > 0) p.hook.duration = num(o.hookSeconds);
   if (num(o.captionPosition) != null) p.captions.position = num(o.captionPosition);
   if (o.noAutoKeywords) p.captions.autoKeywords = false;
   if (o.cta) { p.cta.enabled = true; p.cta.text = o.cta; }
