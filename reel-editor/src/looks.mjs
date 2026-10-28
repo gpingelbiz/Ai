@@ -133,7 +133,7 @@ export const MARKERS = {
 };
 
 /** The skin a card gets in a look. */
-export const skinFor = (look, type) => (LOOKS[look]?.skins?.[type]) || "glass";
+export const skinFor = (look, type, mode) => (type === "message" && mode === "proof" ? "proof" : (LOOKS[look]?.skins?.[type]) || "glass");
 
 /** Skins and fonts: which font files a skin needs (in assets/fonts) and the family name it uses. */
 export const SKIN_FONTS = {

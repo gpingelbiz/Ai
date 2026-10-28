@@ -89,6 +89,13 @@ export function iconFor(text, pick) {
 /** How long each kind of card holds, from how much there is to read. */
 export function sceneDuration(s) {
   const n = (s.items || []).length;
+  if (s.type === "message" && s.mode === "proof") {
+    const lastItem = Math.max(0, ...(s.items || []).map((it) => Number(it.at) || 0));
+    const last = Math.max(lastItem, Number(s.outcome?.at) || 0);
+    const beat = (s.items || []).some((it) => (Number(it.at) || 0) === last) ? 20 / 30 : 10 / 30;
+    const words = [s.context, ...(s.items || []).map((it) => it.text), s.outcome?.text].filter(Boolean).join(" ").split(/\s+/).length;
+    return r3(Math.ceil(Math.min(8, Math.max(last + beat + 1.5, 0.7 + words * 0.375)) * 30) / 30);
+  }
   // Cards hold long enough to be read twice: the speaker is still on screen, so a card is never a cut.
   if (s.type === "list" || s.type === "steps" || s.type === "bars") return r3(Math.min(8, 4.5 + 0.7 * n));
   if (s.type === "message") return r3(Math.min(8, 4 + 1.2 * n));
@@ -105,6 +112,53 @@ export function graphicsCount(duration, { max = 6, every = 10 } = {}) {
 }
 
 const clean = (s, max = 80) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const cleanWords = (s, maxWords, maxChars = 160) => {
+  const words = String(s ?? "").replace(/\s+/g, " ").trim().split(/\s+/).filter(Boolean).slice(0, maxWords);
+  while (words.length && words.join(" ").length > maxChars) words.pop();
+  return words.join(" ");
+};
+const proofTokens = (s) => String(s || "").toLowerCase().match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) || [];
+
+/** The first transcript line where an exact spoken phrase begins, including phrases that cross caption lines. */
+function firstExactLine(lines, phrase) {
+  const needle = proofTokens(phrase);
+  if (!needle.length) return null;
+  const words = [];
+  for (const line of lines || []) for (const word of proofTokens(line.text)) words.push({ word, line: line.i });
+  outer: for (let i = 0; i <= words.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (words[i + j].word !== needle[j]) continue outer;
+    return words[i].line;
+  }
+  return null;
+}
+
+/** Ground a proof thread in exact transcript phrases and resolve its line cues to frame-quantized offsets. */
+function groundProof(s, lines, candidates) {
+  const byLine = new Map((lines || []).map((line) => [line.i, line]));
+  const allowed = new Set((candidates || []).map((line) => line.i));
+  const line = firstExactLine(lines, s.context);
+  if (line == null || !allowed.has(line)) return null;
+  const start = Math.round(byLine.get(line).start * 30) / 30;
+  let prior = line;
+  const items = [];
+  for (const item of s.items || []) {
+    const first = firstExactLine(lines, item.text);
+    if (first == null || first !== item.line || first < prior || !byLine.has(first)) return null;
+    prior = first;
+    items.push({ ...item, at: r3(Math.round((byLine.get(first).start - start) * 30) / 30) });
+  }
+  let outcome = null;
+  if (s.outcome) {
+    const first = firstExactLine(lines, s.outcome.text);
+    if (first == null || first !== s.outcome.line || first < prior || !byLine.has(first)) return null;
+    outcome = { ...s.outcome, at: r3(Math.round((byLine.get(first).start - start) * 30) / 30) };
+  }
+  const grounded = { ...s, line, items, ...(outcome ? { outcome } : {}) };
+  grounded.duration = sceneDuration(grounded);
+  const words = proofTokens([grounded.context, ...items.map((it) => it.text), outcome?.text].filter(Boolean).join(" ")).length;
+  if (words > Math.floor((grounded.duration - 0.7) / 0.375)) return null;
+  return grounded;
+}
 
 /** Tidy one scene from Claude: known type, short text, the fields that type needs. Returns null if unusable. */
 export function normalizeScene(raw) {
@@ -142,11 +196,26 @@ export function normalizeScene(raw) {
     if (!s.a.label || !s.b.label) return null;
     if (!(splitStat(s.a.value) && splitStat(s.b.value))) { s.a.value = ""; s.b.value = ""; }
   } else if (s.type === "message") {
-    s.contact = clean(raw.contact, 18);
-    s.items = (Array.isArray(raw.items) ? raw.items : [])
-      .map((it) => ({ from: it?.from === "me" ? "me" : "them", text: clean(it?.text, 90) }))
-      .filter((it) => it.text)
-      .slice(0, 3);
+    if (raw.mode === "proof") {
+      s.mode = "proof";
+      s.context = cleanWords(raw.context, 6, 48);
+      s.items = (Array.isArray(raw.items) ? raw.items : [])
+        .map((it) => ({ from: it?.from === "me" ? "me" : "them", text: cleanWords(it?.text, 16), line: Number.isInteger(it?.line) ? it.line : parseInt(it?.line, 10) }))
+        .filter((it) => it.text && Number.isInteger(it.line))
+        .slice(0, 3);
+      if (raw.outcome) {
+        const line = Number.isInteger(raw.outcome.line) ? raw.outcome.line : parseInt(raw.outcome.line, 10);
+        const text = cleanWords(raw.outcome.text, 12, 100);
+        if (Number.isInteger(line) && text) s.outcome = { line, text };
+      }
+      if (!s.context || !s.items.length) return null;
+    } else {
+      s.contact = clean(raw.contact, 18);
+      s.items = (Array.isArray(raw.items) ? raw.items : [])
+        .map((it) => ({ from: it?.from === "me" ? "me" : "them", text: clean(it?.text, 90) }))
+        .filter((it) => it.text)
+        .slice(0, 3);
+    }
     if (!s.items.length) return null;
   } else if (s.type === "post") {
     s.text = clean(raw.text, 150);
@@ -175,21 +244,27 @@ export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail 
  * card comes before the previous one would end, the previous one is shortened (never below `minHold`) rather than
  * the next one dropped: a card that holds long is good, a point with no card is worse.
  */
-export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 6, tail = 1.5, minHold = 4 } = {}) {
+export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 6, tail = 1.5, minHold = 4, lines = candidates } = {}) {
   const byLine = new Map(candidates.map((c) => [c.i, c]));
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   const out = [];
-  for (const s of [...scenes].filter((x) => x && byLine.has(x.line)).sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
-    const start = byLine.get(s.line).start;
+  let proofUsed = false;
+  const ready = [...scenes].map((s) => s?.type === "message" && s.mode === "proof" ? groundProof(s, lines, candidates) : s).filter((x) => x && byLine.has(x.line));
+  for (const s of ready.sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
+    if (s.mode === "proof" && proofUsed) continue;
+    const start = s.mode === "proof" ? Math.round(byLine.get(s.line).start * 30) / 30 : byLine.get(s.line).start;
     const prev = out[out.length - 1];
     if (prev && start < prev.start + prev.duration + gap) {
       const room = r3(start - gap - prev.start);
+      if (prev.mode === "proof" && room < prev.duration) continue;
       if (room < minHold) continue;
       prev.duration = room;
     }
     const dur = r3(Math.min(s.duration, until - start));
+    if (s.mode === "proof" && dur < s.duration) continue;
     if (dur < 2) continue;
     out.push({ ...s, start: r3(start), duration: dur });
+    if (s.mode === "proof") proofUsed = true;
     if (out.length >= max) break;
   }
   return out;
@@ -208,7 +283,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text}].",
     "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
     "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most.",
-    "- message: a text exchange the speaker reads out or acts out (a client text, a rep\u2019s reply, what they typed). contact (who it is from, as the speaker names them, else empty), items [{from: \"them\" | \"me\", text}] 1-3 bubbles, their words only.",
+    "- message: a text exchange the speaker reads out or acts out. For reconstructed proof, use mode: \"proof\", context (who and what, in the speaker's exact words), items [{from: \"them\" | \"me\", text, line}] 1-3 bubbles, and optional outcome {line, text}. Each bubble is at most 16 words. Do not add contact in proof mode. Legacy acted-out exchanges may omit mode and use contact plus items without line.",
     "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
     `- list items may carry icon: one of ${Object.keys(ICONS).join(", ")} (pick the one that fits the item, else leave empty).`,
     "Every card has an eyebrow: a 2-5 word label in caps over it (\"AFTER A BAD NUMBER\", \"THE STANDARD\", \"WHAT YOU OWN\").",
@@ -217,6 +292,9 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "- Use only what the speaker says: their words, names and numbers, lightly trimmed. Never invent numbers, sources, quotes, results or steps they did not give.",
     "- Keep every qualifier the speaker puts on a number (almost, about, over, nearly, up to, around): they said \"almost eight years\", so the value is \"Almost 8 years\", never \"8 years\".",
     "- When the speaker quotes someone else or acts out a message or line, a quote card may show it but must not present it as the speaker's own words.",
+    "- For proof messages, anchor the card where the speaker first establishes that the message exists; anchor each bubble or outcome to the first line where its content becomes known.",
+    "- Proof context, bubble text and outcome text must be exact consecutive words from the transcript, only trimmed shorter. Never invent a sender name, timestamp, read receipt or outcome.",
+    "- Use at most one proof message in the reel.",
     "- Short: items at most 4 words, headline at most 7 words, sub and eyebrow at most 6 words.",
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
     "- No emojis, no hashtags, no calls to action.",
@@ -231,7 +309,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
     looks ? `\n${looks}\n` : "",
-    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
+    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","mode":"proof","context":"","outcome":{"line":0,"text":""},"eyebrow":"...","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","line":0,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
   ].join("\n");
 }
 
@@ -244,6 +322,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
   if (!max) { log("graphics: reel too short, skipped"); return []; }
   const candidates = sceneCandidates(groups, duration, { hook, cta, tail });
+  const lines = groups.map((g, i) => ({ i, start: g.start, text: g.text }));
   if (!candidates.length) { log("graphics: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
   if (!force && fs.existsSync(planPath)) {
@@ -256,7 +335,12 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
       const look = settings.look && LOOKS[settings.look] ? settings.look : saved.look || "glass";
-      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
+      const remapProof = (s) => s.type === "message" && s.mode === "proof" ? {
+        ...s,
+        items: (s.items || []).map((it) => ({ ...it, line: lines.find((line) => Math.abs(line.start - (s.start + (it.at || 0))) < 0.05)?.i ?? it.line })),
+        ...(s.outcome ? { outcome: { ...s.outcome, line: lines.find((line) => Math.abs(line.start - (s.start + (s.outcome.at || 0))) < 0.05)?.i ?? s.outcome.line } } : {}),
+      } : s;
+      const scenes = placeScenes(saved.scenes.map(remapProof).map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type, s.mode), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
       const old = (saved.schema || 1) < GRAPHICS_SCHEMA ? `; card plan v${saved.schema || 1}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look}${old})`);
       scenes.look = look;
@@ -276,7 +360,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude: settings.excludeLooks || [] });
     lookPicked = picked;
     const raw = reply.scenes || [];
-    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
+    scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
   } catch (e) {
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
     return [];
@@ -321,6 +405,11 @@ function statHTML(value, size, extraClass = "") {
 
 /** Inner HTML of one card. Elements with g-in animate in, in document order. */
 export function sceneHTML(s) {
+  if (s.type === "message" && s.mode === "proof") {
+    const beats = s.items.map((it, k) => `<div class="g-proof-beat g-${it.from}" data-proof-item="${k}"><div class="g-proof-typing"><i></i><i></i><i></i></div><div class="g-proof-bubble">${esc(it.text)}</div></div>`).join("");
+    const outcome = s.outcome ? `<div class="g-proof-outcome">${esc(s.outcome.text)}<span class="g-proof-underline"></span></div>` : "";
+    return `<div class="g-box g-proof"><div class="g-proof-label">IN HIS WORDS</div><div class="g-proof-context">${esc(s.context)}</div><div class="g-proof-thread">${beats}${outcome}</div></div>`;
+  }
   // A look can reshape a card into an artifact (notification, Notes list, receipt, typed card); otherwise its skin
   // only restyles the regular markup below.
   if (s.skin && s.skin !== "glass") { const h = skinHTML(s, s.skin, { statHTML }); if (h) return h; }
@@ -559,17 +648,44 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-post-heart.lit { color: #f91880; }${overlay}${band}`;
 }
 
+/** Proof threads are brand artifacts, not phone screenshots; this CSS is emitted only when a proof card exists. */
+export function proofMessageCSS({ H, colors, captionTop = H * 0.72 }) {
+  const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
+  const u = H / 1920;
+  const px = (n) => `${Math.round(n * u)}px`;
+  const maxHeight = Math.max(360, Math.round(captionTop - 200 * u - 40 * u));
+  return `
+      .gfx.gfx-message-proof { background: none; color: ${c.text}; }
+      .gfx.gfx-message-proof::after { background: linear-gradient(180deg, color-mix(in srgb, ${c.bg} 52%, transparent) 0%, color-mix(in srgb, ${c.bg} 18%, transparent) 34%, transparent 48%); }
+      .gfx.gfx-message-proof .g-box.g-proof { left: ${px(76)}; right: auto; top: ${px(200)}; bottom: auto; width: ${px(864)}; max-height: ${maxHeight}px; box-sizing: border-box; overflow: hidden; justify-content: flex-start; align-items: stretch; gap: ${px(12)}; padding: ${px(26)} ${px(32)} ${px(30)}; border-radius: ${px(24)}; border: ${px(2)} solid ${c.text}; background: color-mix(in srgb, ${c.bg} 94%, transparent); color: ${c.text}; box-shadow: 0 ${px(18)} ${px(52)} color-mix(in srgb, ${c.bg} 72%, transparent); text-align: left; }
+      .gfx.gfx-message-proof .g-proof-label { font-size: ${px(24)}; line-height: 1; font-weight: 800; letter-spacing: 0.2em; color: ${c.accent}; }
+      .gfx.gfx-message-proof .g-proof-context { min-height: ${px(52)}; font-size: ${px(48)}; line-height: 1.08; font-weight: 850; letter-spacing: -0.01em; text-transform: uppercase; color: ${c.text}; }
+      .gfx.gfx-message-proof .g-proof-thread { display: flex; flex-direction: column; align-items: stretch; gap: ${px(12)}; width: 100%; }
+      .gfx.gfx-message-proof .g-proof-beat { position: relative; display: flex; min-height: ${px(62)}; align-items: flex-end; opacity: 0; }
+      .gfx.gfx-message-proof .g-proof-beat.g-me { justify-content: flex-end; }
+      .gfx.gfx-message-proof .g-proof-bubble { max-width: 82%; padding: ${px(16)} ${px(22)}; border-radius: ${px(22)}; font-size: ${px(48)}; font-weight: 700; line-height: 1.16; transform-origin: 0 100%; background: ${c.text}; color: ${c.bg}; }
+      .gfx.gfx-message-proof .g-me .g-proof-bubble { transform-origin: 100% 100%; background: ${c.accent}; color: ${c.bg}; }
+      .gfx.gfx-message-proof .g-proof-typing { position: absolute; left: 0; bottom: ${px(8)}; display: flex; gap: ${px(7)}; padding: ${px(16)} ${px(20)}; border-radius: ${px(22)}; background: ${c.text}; opacity: 0; }
+      .gfx.gfx-message-proof .g-me .g-proof-typing { left: auto; right: 0; background: ${c.accent}; }
+      .gfx.gfx-message-proof .g-proof-typing i { width: ${px(12)}; height: ${px(12)}; border-radius: 50%; background: ${c.bg}; }
+      .gfx.gfx-message-proof .g-proof-outcome { position: relative; align-self: flex-start; margin-top: ${px(8)}; padding-bottom: ${px(10)}; font-size: ${px(48)}; font-weight: 850; line-height: 1.12; color: ${c.text}; opacity: 0; }
+      .gfx.gfx-message-proof .g-proof-underline { position: absolute; left: 0; right: 0; bottom: 0; height: ${px(8)}; border-radius: ${px(4)}; background: ${c.accent}; transform-origin: 0 50%; transform: scaleX(0); }`;
+}
+
 /** GSAP for the cards (runs inside the composition's timeline script; expects PLAN.graphics and tl). */
 export const GRAPHICS_JS = `
         PLAN.graphics.forEach((g, i) => {
           const el = document.getElementById("gfx-" + i);
           const box = el.querySelector(".g-box");
           const ins = el.querySelectorAll(".g-in");
-          tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
+          const proof = g.mode === "proof";
+          const frame = 1 / (PLAN.fps || 30);
+          if (proof) tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 8 * frame, ease: "power3.out" }, g.start);
+          else tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
           if (PLAN.graphicsMode === "band") tl.fromTo(box, { y: 28, scale: 0.985 }, { y: 0, scale: 1, duration: 0.32, ease: "power3.out" }, g.start);
           else if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
           else {
-            tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: 0.3, ease: "power3.out" }, g.start);
+            tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: proof ? 8 * frame : 0.3, ease: "power3.out" }, g.start);
             // The footage slides down a little while the card is up, so the card never sits on the forehead.
             const drop = PLAN.height * 0.11;
             tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
@@ -608,6 +724,41 @@ ${SKINS_JS}
             }
             tl.fromTo(b, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.32, ease: "back.out(1.8)", immediateRender: false }, at);
           });
+          // Proof thread: each exact spoken beat owns its cue. The tray grows, dots type for 12 frames, then the
+          // bubble lands from its tail. Reconstructed proof is visibly labelled and never carries phone chrome.
+          if (proof) {
+            const proofBeats = [...el.querySelectorAll(".g-proof-beat")];
+            const proofOutcome = el.querySelector(".g-proof-outcome");
+            const pad = parseFloat(getComputedStyle(box).paddingBottom) || 0;
+            const top = box.getBoundingClientRect().top;
+            const context = el.querySelector(".g-proof-context");
+            const baseHeight = Math.ceil(context.getBoundingClientRect().bottom - top + pad);
+            const expansions = [];
+            proofBeats.forEach((beat, k) => {
+              const at = g.start + (g.items[k]?.at || 0);
+              const typing = beat.querySelector(".g-proof-typing");
+              const bubble = beat.querySelector(".g-proof-bubble");
+              expansions.push({ at, height: Math.ceil(beat.getBoundingClientRect().bottom - top + pad) });
+              tl.set(beat, { opacity: 1 }, at);
+              tl.fromTo(typing, { opacity: 0 }, { opacity: 1, duration: 1 * frame, ease: "power1.out", immediateRender: false }, at);
+              typing.querySelectorAll("i").forEach((dot, j) => tl.fromTo(dot, { y: 0 }, { y: -6, duration: 3 * frame, ease: "sine.inOut", yoyo: true, repeat: 1, immediateRender: false }, at + (1 + j * 2) * frame));
+              tl.set(typing, { opacity: 0 }, at + 12 * frame);
+              tl.fromTo(bubble, { opacity: 0, scale: 0.72 }, { opacity: 1, scale: 1, duration: 8 * frame, ease: "back.out(1.5)", immediateRender: false }, at + 12 * frame);
+            });
+            if (proofOutcome && g.outcome) {
+              const at = g.start + (g.outcome.at || 0);
+              expansions.push({ at, height: Math.ceil(proofOutcome.getBoundingClientRect().bottom - top + pad) });
+              tl.fromTo(proofOutcome, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 6 * frame, ease: "power3.out", immediateRender: false }, at);
+              tl.fromTo(proofOutcome.querySelector(".g-proof-underline"), { scaleX: 0 }, { scaleX: 1, duration: 10 * frame, ease: "power2.inOut", immediateRender: false }, at);
+            }
+            let height = baseHeight;
+            tl.set(box, { height }, g.start);
+            expansions.sort((a, b) => a.at - b.at || a.height - b.height).forEach((event) => {
+              const next = Math.max(height, event.height);
+              if (next > height) tl.fromTo(box, { height }, { height: next, duration: 8 * frame, ease: "power3.out", immediateRender: false }, event.at);
+              height = next;
+            });
+          }
           // Post card: the like lands a beat after the text.
           el.querySelectorAll(".g-post-heart").forEach((h) => {
             tl.fromTo(h, { scale: 1 }, { scale: 1.5, duration: 0.14, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, t1 + 0.5);
@@ -631,5 +782,6 @@ ${SKINS_JS}
             if (ring) for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * countEase(f / last)).toFixed(2) + "%" }, at + COUNT * (f / last));
             if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
           });
-          tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
+          if (proof) tl.to(el, { opacity: 0, duration: 5 * frame, ease: "power2.in" }, g.start + g.duration - 5 * frame);
+          else tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
         });`;

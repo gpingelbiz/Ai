@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
-import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
+import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 
 export function canvasFor(mode, meta) {
@@ -187,7 +187,8 @@ export function renderHTML(plan, footage) {
   // Looks (looks.mjs) restyle the overlay cards; the YouTube band layout keeps the glass cards.
   const gfxMode = s.graphics?.mode || "overlay";
   const skinned = (g) => (gfxMode === "overlay" ? g : { ...g, skin: "glass" });
-  const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g))}</div>`).join("\n");
+  const hasProof = gfxList.some((g) => g.type === "message" && g.mode === "proof");
+  const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type}${g.type === "message" && g.mode === "proof" ? " gfx-message-proof" : ""} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g))}</div>`).join("\n");
   const skinsUsed = [...new Set(gfxList.map((g) => skinned(g).skin || "glass"))];
   const theme = THEMES[s.look] || null;
   const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme)]);
@@ -216,7 +217,8 @@ export function renderHTML(plan, footage) {
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
     broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video })),
-    graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration })),
+    graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration, ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}) })),
+    graphicsSchema: plan.graphicsSchema || (hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
     slams: slamList.map((sl) => ({ t: sl.t, end: sl.end })),
     zoomStyle: s.zooms?.style || "snap",
@@ -295,7 +297,7 @@ export function renderHTML(plan, footage) {
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
-${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay" }) + skinsCSS({ H, colors: c, skins: skinsUsed }) : ""}
+${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay" }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
         position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3((cap.rightMarginFrac ?? cap.sideMarginFrac) * 100)}%; top: ${r3(cap.position * 100)}%;
