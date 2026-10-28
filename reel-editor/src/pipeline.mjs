@@ -376,6 +376,7 @@ export async function runEdit(input, opts = {}) {
   let graphics = preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
+  const graphicsSchema = graphics.schema || 1;
   // The reel's look (picked with the cards) themes the rest of it: hook treatment, caption marker, slam style,
   // b-roll grade and cut, camera move. A reel without cards keeps its preset's look.
   const look = graphics.look;
@@ -455,6 +456,7 @@ export async function runEdit(input, opts = {}) {
     lines: shownGroups,
     zooms,
     graphics: allCards,
+    graphicsSchema,
     broll,
     slams,
     coldOpen,

@@ -194,7 +194,7 @@ const glyph = { stat: "$", headline: "!", quote: "“", post: "@", chapter: "#" 
 /**
  * Card HTML for skins that reshape a card into an artifact (a notification, a Notes list, a receipt, a typed card).
  * Returns null when the skin only restyles the regular markup (paper, editorial, phone, glass). `statHTML` is the
- * regular count-up number, passed in so the count keeps working.
+ * regular stat number, passed in so its schema-specific motion keeps working.
  */
 export function skinHTML(s, skin, { statHTML }) {
   if (skin === "notify") {
@@ -222,6 +222,10 @@ export function skinHTML(s, skin, { statHTML }) {
     return `<div class="g-box g-receipt"><div class="r-head g-in">${esc(plain(s.eyebrow || s.title || "Receipt"))}</div>${s.title && s.eyebrow ? `<div class="r-sub g-in">${esc(plain(s.title))}</div>` : ""}<div class="r-rule g-in"></div>${rows.map(row).join("")}${rows.length && total ? '<div class="r-rule g-in"></div>' : ""}${totalHTML}<div class="r-foot g-in">* * * thank you * * *</div></div>`;
   }
   if (skin === "type") {
+    if (s.type === "stat" && s.motion) {
+      const value = statHTML(s.value, Math.round(Math.min(130, 900 / Math.max(1, String(s.motion === "growth" ? s.value2 : s.value).length))));
+      return `<div class="g-box g-type-card"><div class="t-text">${value}</div>${s.sub ? `<div class="t-line g-in">${esc(sentence(s.sub))}</div>` : ""}${s.eyebrow ? `<div class="t-sign g-in">— ${esc(plain(s.eyebrow).toLowerCase())}</div>` : ""}</div>`;
+    }
     let text;
     if (s.type === "list" || s.type === "steps") text = (s.items || []).map((it) => `— ${sentence(it.text)}`).join("\n");
     else if (s.type === "compare") text = `${sentence(s.a?.label)}${s.a?.note ? `: ${plain(s.a.note)}` : ""}.\n${sentence(s.b?.label)}${s.b?.note ? `: ${plain(s.b.note)}` : ""}.`;

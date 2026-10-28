@@ -106,8 +106,22 @@ export function graphicsCount(duration, { max = 6, every = 10 } = {}) {
 
 const clean = (s, max = 80) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
+const QUALIFIED_NUMBER = /\b(?:about|around|over|under|within|nearly|almost|up\s+to)\b|\bafter\s+(?:\d[\d,.]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+years?\b/i;
+const sceneWords = (s) => [s.eyebrow, s.title, s.value, s.value2, s.sub, ...(s.items || []).flatMap((it) => [it.label, it.value])].filter(Boolean).join(" ");
+
+/** The numeric motion a card may use. Old plans with no field keep the original zero count-up. */
+export function numberMotion(s, { schema = 1 } = {}) {
+  if (!s || !["stat", "bars"].includes(s.type)) return "";
+  const qualified = QUALIFIED_NUMBER.test(sceneWords(s));
+  const statEnds = s.type === "stat" && splitStat(s.value) && splitStat(s.value2);
+  const barEnds = s.type === "bars" && s.items?.length === 2 && s.items.every((it) => splitStat(it.value));
+  if (s.motion === "growth" && !qualified && (statEnds || barEnds)) return "growth";
+  if (s.motion === "reveal" || s.motion === "growth" || schema >= GRAPHICS_SCHEMA) return "reveal";
+  return "";
+}
+
 /** Tidy one scene from Claude: known type, short text, the fields that type needs. Returns null if unusable. */
-export function normalizeScene(raw) {
+export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
   if (!raw || !TYPES.includes(raw.type)) return null;
   const s = { type: raw.type, line: Number.isInteger(raw.line) ? raw.line : parseInt(raw.line, 10), eyebrow: clean(raw.eyebrow, 40) };
   if (!Number.isInteger(s.line)) return null;
@@ -159,6 +173,7 @@ export function normalizeScene(raw) {
     s.text = clean(raw.text, s.type === "quote" ? 140 : 60);
     if (!s.text) return null;
   }
+  if (s.type === "stat" || s.type === "bars") s.motion = numberMotion({ ...s, motion: raw.motion }, { schema }) || "reveal";
   s.duration = sceneDuration(s);
   return s;
 }
@@ -179,8 +194,10 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
   const byLine = new Map(candidates.map((c) => [c.i, c]));
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   const out = [];
+  const stats = [];
   for (const s of [...scenes].filter((x) => x && byLine.has(x.line)).sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
     const start = byLine.get(s.line).start;
+    if (s.type === "stat" && (stats.length >= 2 || stats.some((at) => start - at < 8))) continue;
     const prev = out[out.length - 1];
     if (prev && start < prev.start + prev.duration + gap) {
       const room = r3(start - gap - prev.start);
@@ -190,6 +207,7 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
     const dur = r3(Math.min(s.duration, until - start));
     if (dur < 2) continue;
     out.push({ ...s, start: r3(start), duration: dur });
+    if (s.type === "stat") stats.push(start);
     if (out.length >= max) break;
   }
   return out;
@@ -201,13 +219,13 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     `Pick up to ${count} moments, spread across the reel, at least 6 seconds apart. Only pick a moment when a card makes the point clearer or hit harder: the speaker says a number or amount, lists things, describes steps or a before and after, contrasts two things, quotes something, or lands the key line.`,
     "",
     "Card types and their fields:",
-    '- stat: a number or amount the speaker says. value ("$10,000", "10 minutes", "8 years"), optional value2 for a range or change (shown as value -> value2), sub (a short line under it, from their words).',
+    '- stat: a number or amount the speaker says. value ("$10,000", "10 minutes", "8 years"), optional value2 for a range or change, sub (a short line under it, from their words), motion ("reveal" or "growth"). Use reveal by default. Use growth only when the card contains both ends of an explicit change the speaker states, such as value "3" and value2 "30" for "from 3 to 30".',
     "- list: 2 to 4 short items the speaker names. title (optional), items [{text, tag, state}]: state is check (things to do / that count), strike (things that don't matter / to stop), or plain. tag is an optional 1-2 word label on the right.",
     "- quote: a line worth reading, either something the speaker quotes (eyebrow = where it is from, as they say it) or their own strongest line (eyebrow = a 2-4 word label). text, with the one phrase that matters in *asterisks* (it is highlighted).",
     "- headline: the key statement in at most 7 words, with the one phrase that matters in *asterisks* (it is set in gold).",
     "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text}].",
     "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
-    "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most.",
+    "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most, motion (\"reveal\" or \"growth\"). Keep exact printed labels and use reveal unless two rows are the explicit starting and ending values of one spoken change.",
     "- message: a text exchange the speaker reads out or acts out (a client text, a rep\u2019s reply, what they typed). contact (who it is from, as the speaker names them, else empty), items [{from: \"them\" | \"me\", text}] 1-3 bubbles, their words only.",
     "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
     `- list items may carry icon: one of ${Object.keys(ICONS).join(", ")} (pick the one that fits the item, else leave empty).`,
@@ -216,6 +234,8 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "Rules:",
     "- Use only what the speaker says: their words, names and numbers, lightly trimmed. Never invent numbers, sources, quotes, results or steps they did not give.",
     "- Keep every qualifier the speaker puts on a number (almost, about, over, nearly, up to, around): they said \"almost eight years\", so the value is \"Almost 8 years\", never \"8 years\".",
+    "- A qualified value (about, over, under, within, nearly, almost, up to, after N years) always uses motion \"reveal\". The qualifier stays attached to the number; never count through other qualified claims.",
+    "- Use at most two stat cards in the reel, and put their start lines at least 8 seconds apart.",
     "- When the speaker quotes someone else or acts out a message or line, a quote card may show it but must not present it as the speaker's own words.",
     "- Short: items at most 4 words, headline at most 7 words, sub and eyebrow at most 6 words.",
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
@@ -231,7 +251,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
     looks ? `\n${looks}\n` : "",
-    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
+    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
   ].join("\n");
 }
 
@@ -256,11 +276,13 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
       const look = settings.look && LOOKS[settings.look] ? settings.look : saved.look || "glass";
-      const scenes = placeScenes(saved.scenes.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
-      const old = (saved.schema || 1) < GRAPHICS_SCHEMA ? `; card plan v${saved.schema || 1}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
+      const schema = saved.schema || 1;
+      const cards = saved.scenes.map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s);
+      const scenes = placeScenes(cards.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
+      const old = schema < GRAPHICS_SCHEMA ? `; card plan v${schema}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look}${old})`);
       scenes.look = look;
-      scenes.schema = saved.schema || 1;
+      scenes.schema = schema;
       return scenes;
     }
   }
@@ -310,28 +332,44 @@ export function splitStat(value) {
   return { prefix: m[1], number, suffix: m[3], to, dec, commas: number.includes(","), percent: /^\s*%/.test(m[3]) };
 }
 
-/** The stat line: the number counts up from 0 as the card lands (tabular figures so nothing shifts). */
-function statHTML(value, size, extraClass = "") {
+/** A stat line. With no motion this is the legacy zero count-up markup, kept unchanged for schema-1 plans. */
+function statHTML(value, size, extraClass = "", { motion = "", from = null } = {}) {
   const p = splitStat(value);
-  if (!p) return `<div class="g-stat g-in${extraClass}" style="font-size:calc(var(--u) * ${size})">${esc(value)}</div>`;
+  if (!p) return motion
+    ? `<div class="g-stat g-in g-stat-${motion}${extraClass}" style="font-size:calc(var(--u) * ${size})"><span class="g-value-mask"><span class="g-value-lock">${esc(value)}</span></span><span class="g-value-line"></span></div>`
+    : `<div class="g-stat g-in${extraClass}" style="font-size:calc(var(--u) * ${size})">${esc(value)}</div>`;
   const affix = (t) => (!t ? "" : /^[\s$€£%+x×~-]+$/.test(t) ? `<span class="g-affix g-sym">${esc(t)}</span>` : `<span class="g-affix">${esc(t)}</span>`);
   const ring = p.percent ? `<span class="g-ring" style="--ring:0%" data-pct="${Math.max(0, Math.min(100, p.to))}"></span>` : "";
+  if (motion) {
+    const start = Number(from);
+    const startText = Number.isFinite(start) ? (p.commas ? start.toLocaleString("en-US", { minimumFractionDigits: p.dec, maximumFractionDigits: p.dec }) : start.toFixed(p.dec)) : p.number;
+    const number = motion === "growth"
+      ? `<span class="g-count" data-from="${from}" data-to="${p.to}" data-dec="${p.dec}" data-commas="${p.commas ? 1 : 0}">${esc(startText)}</span>`
+      : `<span class="g-exact-number">${esc(p.number)}</span>`;
+    return `<div class="g-stat g-in g-stat-${motion}${extraClass}" style="font-size:calc(var(--u) * ${size})"><span class="g-value-mask"><span class="g-value-lock">${ring}${affix(p.prefix)}${number}${affix(p.suffix)}</span></span><span class="g-value-line"></span></div>`;
+  }
   return `<div class="g-stat g-in${extraClass}" style="font-size:calc(var(--u) * ${size})">${ring}${affix(p.prefix)}<span class="g-count" data-to="${p.to}" data-dec="${p.dec}" data-commas="${p.commas ? 1 : 0}">${esc(p.number)}</span>${affix(p.suffix)}</div>`;
 }
 
 /** Inner HTML of one card. Elements with g-in animate in, in document order. */
-export function sceneHTML(s) {
+export function sceneHTML(s, { schema = 1 } = {}) {
+  const motion = numberMotion(s, { schema });
+  const renderStat = (value, size, extraClass = "") => {
+    const growth = motion === "growth" && s.type === "stat" && value === s.value;
+    return statHTML(growth ? s.value2 : value, size, extraClass, { motion, from: growth ? splitStat(s.value).to : null });
+  };
   // A look can reshape a card into an artifact (notification, Notes list, receipt, typed card); otherwise its skin
   // only restyles the regular markup below.
-  if (s.skin && s.skin !== "glass") { const h = skinHTML(s, s.skin, { statHTML }); if (h) return h; }
+  if (s.skin && s.skin !== "glass") { const h = skinHTML({ ...s, motion }, s.skin, { statHTML: renderStat }); if (h) return h; }
   const eyebrow = s.eyebrow ? `<div class="g-eyebrow g-in"><span class="g-dot"></span>${esc(s.eyebrow)}</div>` : "";
   if (s.type === "stat") {
     // Sized by length so a long value ("Almost 8 years") stays inside the card; short ones go big.
     const size = (v) => Math.round(Math.min(170, 1250 / Math.max(1, String(v).length)));
-    const range = s.value2 ? `<div class="g-arrow g-in">to</div>${statHTML(s.value2, size(s.value2), " g-stat2")}` : "";
+    const primary = renderStat(s.value, size(motion === "growth" ? s.value2 : s.value));
+    const range = s.value2 && motion !== "growth" ? `<div class="g-arrow g-in">to</div>${renderStat(s.value2, size(s.value2), " g-stat2")}` : "";
     // Every number gets a fill that sweeps with the count (a ring for a percentage, a bar for anything else).
-    const fill = splitStat(s.value) && !splitStat(s.value).percent ? `<div class="g-fill g-in"><div class="g-fill-bar"></div></div>` : "";
-    return `<div class="g-box g-center">${eyebrow}${statHTML(s.value, size(s.value))}${range}${fill}${s.sub ? `<div class="g-sub g-in">${esc(s.sub)}</div>` : ""}</div>`;
+    const fill = !motion && splitStat(s.value) && !splitStat(s.value).percent ? `<div class="g-fill g-in"><div class="g-fill-bar"></div></div>` : "";
+    return `<div class="g-box g-center">${eyebrow}${primary}${range}${fill}${s.sub ? `<div class="g-sub g-in">${esc(s.sub)}</div>` : ""}</div>`;
   }
   if (s.type === "list") {
     const rows = s.items
@@ -364,10 +402,17 @@ export function sceneHTML(s) {
   }
   if (s.type === "bars") {
     const max = Math.max(1, ...s.items.map((it) => splitStat(it.value).to));
+    const from = motion === "growth" ? splitStat(s.items[0].value).to : null;
     const rows = s.items
       .map((it, k) => {
         const v = splitStat(it.value);
-        return `<div class="g-bar-row g-in${k === s.emphasize ? " g-bar-hi" : ""}"><div class="g-bar-head"><span class="g-bar-label">${esc(it.label)}</span><span class="g-bar-value"><span class="g-count" data-to="${v.to}" data-dec="${v.dec}" data-commas="${v.commas ? 1 : 0}">${esc(v.number)}</span>${esc(v.suffix || s.unit || "")}</span></div><div class="g-bar-track"><div class="g-bar-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div></div>`;
+        const exact = `${it.value}${v.suffix || !s.unit ? "" : s.unit}`;
+        const value = !motion
+          ? `<span class="g-count" data-to="${v.to}" data-dec="${v.dec}" data-commas="${v.commas ? 1 : 0}">${esc(v.number)}</span>${esc(v.suffix || s.unit || "")}`
+          : motion === "growth" && k === 1
+            ? `${v.prefix ? `<span class="g-affix">${esc(v.prefix)}</span>` : ""}<span class="g-count" data-from="${from}" data-to="${v.to}" data-dec="${v.dec}" data-commas="${v.commas ? 1 : 0}">${esc(v.commas ? from.toLocaleString("en-US", { minimumFractionDigits: v.dec, maximumFractionDigits: v.dec }) : from.toFixed(v.dec))}</span>${esc(v.suffix || s.unit || "")}`
+            : `<span class="g-value-mask"><span class="g-value-lock">${esc(exact)}</span></span>`;
+        return `<div class="g-bar-row g-in${k === s.emphasize ? " g-bar-hi" : ""}"><div class="g-bar-head"><span class="g-bar-label">${esc(it.label)}</span><span class="g-bar-value">${value}</span></div><div class="g-bar-track"><div class="g-bar-fill" style="--w:${Math.round((v.to / max) * 100)}%"></div></div></div>`;
       })
       .join("");
     return `<div class="g-box">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-bars">${rows}</div></div>`;
@@ -483,6 +528,10 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-stat2 { color: ${c.accent}; text-shadow: 0 0 ${px(70)} ${c.accent}88; }
       .g-stat { display: inline-flex; align-items: baseline; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; transform-origin: 50% 58%; }
       .g-count { display: inline-block; min-width: 1ch; }
+      .g-stat-reveal, .g-stat-growth { align-items: stretch; flex-direction: column; }
+      .g-value-mask { display: inline-flex; overflow: hidden; }
+      .g-value-lock { display: inline-flex; align-items: baseline; transform-origin: 50% 58%; }
+      .g-value-line { display: block; width: 100%; height: ${px(8)}; margin-top: ${px(10)}; border-radius: ${px(4)}; background: ${c.accent}; transform-origin: 0 50%; }
       .g-affix { white-space: pre; }
       .g-sym { font-size: 0.6em; align-self: center; margin: 0 0.06em; opacity: 0.9; }
       .g-fill { width: 60%; height: ${px(12)}; border-radius: ${px(6)}; background: rgba(255,255,255,0.12); overflow: hidden; }
@@ -613,23 +662,53 @@ ${SKINS_JS}
             tl.fromTo(h, { scale: 1 }, { scale: 1.5, duration: 0.14, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, t1 + 0.5);
             tl.set(h, { className: "g-post-heart lit" }, t1 + 0.5);
           });
-          // Stat: the number accelerates up from 0 and decelerates onto the exact value (one integer per frame, so
-          // a seek shows the same digits), the fill sweeps with it, and the line lands with one small pulse.
-          const COUNT = Math.min(1.3, Math.max(0.6, g.duration * 0.25));
           const fps = PLAN.fps || 30;
-          const countEase = gsap.parseEase("sine.inOut");
-          el.querySelectorAll(".g-count").forEach((n, k) => {
-            const to = parseFloat(n.dataset.to), dec = parseInt(n.dataset.dec || "0", 10), commas = n.dataset.commas === "1";
-            const fmt = (v) => (commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec));
-            const at = g.start + 0.16 + k * (COUNT + 0.25);
-            const last = Math.max(1, Math.round(COUNT * fps));
-            for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(to * countEase(f / last)) }, at + COUNT * (f / last));
-            const stat = n.closest(".g-stat") || n.closest(".g-bar-value");
-            tl.to(stat, { scale: 1.07, duration: 0.165, ease: "power3.out" }, at + COUNT);
-            tl.to(stat, { scale: 1, duration: 0.165, ease: "power2.out" }, at + COUNT + 0.165);
-            const ring = stat.querySelector(".g-ring");
-            if (ring) for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * countEase(f / last)).toFixed(2) + "%" }, at + COUNT * (f / last));
-            if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
-          });
+          const gfxFrame = 1 / fps;
+          if (g.motion === "reveal" || g.motion === "growth") {
+            // An exact fact is present in the DOM from its first visible frame. Motion comes from the five-frame
+            // bottom mask, seven-frame brand baseline and restrained three-plus-three-frame value lock.
+            el.querySelectorAll(".g-value-mask").forEach((m, k) => tl.fromTo(m, { clipPath: "inset(100% 0 0 0)" }, { clipPath: "inset(0% 0 0 0)", duration: 5 * gfxFrame, ease: "power2.inOut", immediateRender: false }, g.start + k * gfxFrame));
+            el.querySelectorAll(".g-value-line").forEach((line) => tl.fromTo(line, { scaleX: 0 }, { scaleX: 1, duration: 7 * gfxFrame, ease: "power2.inOut", immediateRender: false }, g.start));
+            if (g.motion === "reveal") el.querySelectorAll(".g-value-lock").forEach((value) => {
+              tl.fromTo(value, { scale: 1 }, { scale: 1.04, duration: 3 * gfxFrame, ease: "expo.out", immediateRender: false }, g.start + 5 * gfxFrame);
+              tl.to(value, { scale: 1, duration: 3 * gfxFrame, ease: "power2.out" }, g.start + 8 * gfxFrame);
+            });
+            const ringEase = gsap.parseEase("power3.out");
+            el.querySelectorAll(".g-ring").forEach((ring) => {
+              const last = 21;
+              for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * ringEase(f / last)).toFixed(2) + "%" }, g.start + f * gfxFrame);
+            });
+          }
+          if (g.motion === "growth") {
+            // A real from/to claim counts from its spoken start, never zero, with one deterministic value per frame.
+            const countEase = gsap.parseEase("power3.out");
+            el.querySelectorAll(".g-count[data-from]").forEach((n) => {
+              const from = parseFloat(n.dataset.from), to = parseFloat(n.dataset.to), dec = parseInt(n.dataset.dec || "0", 10), commas = n.dataset.commas === "1";
+              const fmt = (v) => (commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec));
+              const at = g.start + 5 * gfxFrame;
+              const last = 21;
+              for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(from + (to - from) * countEase(f / last)) }, at + f * gfxFrame);
+              const stat = n.closest(".g-value-lock") || n.closest(".g-bar-value");
+              tl.fromTo(stat, { scale: 1 }, { scale: 1.04, duration: 3 * gfxFrame, ease: "expo.out", immediateRender: false }, at + last * gfxFrame);
+              tl.to(stat, { scale: 1, duration: 3 * gfxFrame, ease: "power2.out" }, at + (last + 3) * gfxFrame);
+            });
+          } else if (!g.motion) {
+            // Schema 1: preserve the original zero count-up byte for byte.
+            const COUNT = Math.min(1.3, Math.max(0.6, g.duration * 0.25));
+            const countEase = gsap.parseEase("sine.inOut");
+            el.querySelectorAll(".g-count").forEach((n, k) => {
+              const to = parseFloat(n.dataset.to), dec = parseInt(n.dataset.dec || "0", 10), commas = n.dataset.commas === "1";
+              const fmt = (v) => (commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec));
+              const at = g.start + 0.16 + k * (COUNT + 0.25);
+              const last = Math.max(1, Math.round(COUNT * fps));
+              for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(to * countEase(f / last)) }, at + COUNT * (f / last));
+              const stat = n.closest(".g-stat") || n.closest(".g-bar-value");
+              tl.to(stat, { scale: 1.07, duration: 0.165, ease: "power3.out" }, at + COUNT);
+              tl.to(stat, { scale: 1, duration: 0.165, ease: "power2.out" }, at + COUNT + 0.165);
+              const ring = stat.querySelector(".g-ring");
+              if (ring) for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * countEase(f / last)).toFixed(2) + "%" }, at + COUNT * (f / last));
+              if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
+            });
+          }
           tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
         });`;

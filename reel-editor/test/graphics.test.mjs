@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeScene, placeScenes, sceneCandidates, graphicsCount, sceneHTML, scenesPrompt, sceneDuration } from "../src/graphics.mjs";
+import { normalizeScene, placeScenes, sceneCandidates, graphicsCount, sceneHTML, scenesPrompt, sceneDuration, GRAPHICS_SCHEMA } from "../src/graphics.mjs";
 import { brollCandidates } from "../src/broll.mjs";
 import { firstJSON } from "../src/claude.mjs";
 import { renderHTML } from "../src/compose.mjs";
@@ -62,6 +62,8 @@ test("the prompt keeps qualifiers, bans invented numbers and lists only allowed 
   const p = scenesPrompt({ candidates: cands, transcript: "t", hook: "h", count: 1 });
   assert.match(p, /Almost 8 years/);
   assert.match(p, /Never invent numbers/);
+  assert.match(p, /motion \("reveal" or "growth"\)/);
+  assert.match(p, /at most two stat cards.*at least 8 seconds apart/);
   assert.match(p, /^2: 4\.0s line 2$/m);
   assert.doesNotMatch(p, /^0: /m);
   assert.deepEqual(firstJSON('Here: ```json\n{"scenes":[]}\n```'), { scenes: [] });
@@ -91,7 +93,7 @@ test("a close next card shortens the previous one instead of being dropped; neve
   assert.deepEqual(placed.map((s) => [s.line, s.duration]), [[5, 5], [9, 6], [20, 6]], "line 9 shortens line 5 to 5 s; line 11 would leave line 9 under 4 s, so it is dropped");
 });
 
-test("stat cards count up: the number is split from its words, a bar or a ring sweeps with it", async () => {
+test("legacy stat cards count up: the number is split from its words, a bar or a ring sweeps with it", async () => {
   const { splitStat } = await import("../src/graphics.mjs");
   assert.deepEqual(splitStat("$10,000"), { prefix: "$", number: "10,000", suffix: "", to: 10000, dec: 0, commas: true, percent: false });
   assert.deepEqual(splitStat("Almost 8 years"), { prefix: "Almost ", number: "8", suffix: " years", to: 8, dec: 0, commas: false, percent: false });
@@ -108,6 +110,57 @@ test("stat cards count up: the number is split from its words, a bar or a ring s
   assert.ok(!words.includes("g-count"), "no number, no count");
 });
 
+test("truthful numbers: schema 2 reveals exact qualified facts; growth needs two unqualified ends and starts at the first", () => {
+  const reveal = normalizeScene({ type: "stat", line: 2, value: "About 10 minutes", motion: "growth", sub: "after a bad number" });
+  assert.equal(reveal.motion, "reveal", "a qualifier always forces reveal");
+  const revealHTML = sceneHTML(reveal);
+  assert.match(revealHTML, /g-stat-reveal/);
+  assert.match(revealHTML, /About <\/span><span class="g-exact-number">10<\/span><span class="g-affix"> minutes<\/span>/);
+  assert.doesNotMatch(revealHTML, /g-count|data-to=/, "the exact value emits no counting target or intermediate number");
+
+  const missing = normalizeScene({ type: "stat", line: 2, value: "30", motion: "growth" });
+  assert.equal(missing.motion, "reveal", "growth without its starting number is refused");
+  const growth = normalizeScene({ type: "stat", line: 2, value: "3", value2: "30", motion: "growth" });
+  assert.equal(growth.motion, "growth");
+  assert.match(sceneHTML(growth), /class="g-count" data-from="3" data-to="30"[^>]*>3<\/span>/, "the first rendered growth value is the spoken start");
+  assert.equal(normalizeScene({ type: "stat", line: 2, value: "$2k", value2: "Over $20k", motion: "growth" }).motion, "reveal");
+});
+
+test("truthful numbers: bars retain exact printed labels and schema 2 defaults to reveal", () => {
+  const bars = normalizeScene({ type: "bars", line: 2, unit: "", items: [{ label: "Before", value: "$2k" }, { label: "After", value: "$20k" }] });
+  assert.equal(bars.motion, "reveal");
+  const html = sceneHTML(bars);
+  assert.match(html, />\$2k<\/span>/);
+  assert.match(html, />\$20k<\/span>/);
+  assert.doesNotMatch(html, /g-count|data-to=/);
+  assert.match(sceneHTML({ type: "stat", eyebrow: "", value: "40%" }, { schema: GRAPHICS_SCHEMA }), /g-stat-reveal/);
+});
+
+test("truthful numbers: schema 1 keeps the legacy zero-count markup and runtime; schema 2 carries motion", () => {
+  const card = { type: "stat", eyebrow: "", value: "About 10 minutes", value2: "", sub: "" };
+  const legacy = '<div class="g-box g-center"><div class="g-stat g-in" style="font-size:calc(var(--u) * 78)"><span class="g-affix">About </span><span class="g-count" data-to="10" data-dec="0" data-commas="0">10</span><span class="g-affix"> minutes</span></div><div class="g-fill g-in"><div class="g-fill-bar"></div></div></div>';
+  assert.equal(sceneHTML(card), legacy);
+  assert.equal(sceneHTML(card, { schema: 1 }), legacy);
+
+  const plan = {
+    name: "truthful", canvas: { width: 1080, height: 1920 }, video: { duration: 12, hasAudio: false }, graphicsSchema: 2,
+    style: { colors: { text: "#fff", accent: "#c8a24b", stroke: "#000", bg: "#111" }, captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72, shadow: "none" }, hook: { fontSizeFrac: 0.05, position: 0.2 }, zooms: {}, cta: {}, graphics: {} },
+    captions: [], graphics: [{ ...card, start: 4, duration: 5.5 }], zooms: [], broll: [], slams: [], reframe: [], audio: { tracks: [] },
+  };
+  const page = renderHTML(plan, "assets/footage.mp4");
+  assert.match(page, /"graphics":\[\{"start":4,"duration":5\.5,"motion":"reveal"\}\]/);
+  const cardHTML = page.slice(page.indexOf('id="gfx-0"'), page.indexOf('id="captions"'));
+  assert.match(cardHTML, /About <\/span><span class="g-exact-number">10<\/span><span class="g-affix"> minutes<\/span>/);
+  assert.doesNotMatch(cardHTML, /g-count|data-to=/);
+});
+
+test("truthful numbers: no more than two stats, each at least eight seconds apart", () => {
+  const cands = sceneCandidates(groups, 80, { hook: { start: 0, duration: 3 } });
+  const stat = (line) => ({ type: "stat", line, value: String(line), motion: "reveal", duration: 5.5 });
+  const placed = placeScenes([stat(2), stat(5), stat(7), stat(12)], cands, { duration: 80, gap: 0 });
+  assert.deepEqual(placed.map((s) => s.line), [2, 7]);
+});
+
 test("compare, bars, message and post cards: fields are checked, list rows get icons, post carries the handle", async () => {
   const { iconFor, ICONS } = await import("../src/graphics.mjs");
   assert.equal(normalizeScene({ type: "compare", line: 1, a: { label: "Old way" }, b: {} }), null, "both sides need a label");
@@ -118,7 +171,7 @@ test("compare, bars, message and post cards: fields are checked, list rows get i
   const bars = normalizeScene({ type: "bars", line: 2, eyebrow: "", unit: "k", items: [{ label: "Jan", value: "12" }, { label: "Feb", value: "x" }, { label: "Mar", value: "45" }], emphasize: 7 });
   assert.equal(bars.items.length, 2, "rows without a number are dropped");
   assert.equal(bars.emphasize, 1, "emphasize is clamped");
-  assert.match(sceneHTML(bars), /g-bar-row g-in g-bar-hi.*data-to="45".*>45<\/span>k</s);
+  assert.match(sceneHTML(bars), /g-bar-row g-in g-bar-hi.*g-value-lock">45k<\/span>/s);
   assert.equal(normalizeScene({ type: "bars", line: 2, items: [{ label: "Jan", value: "12" }] }), null);
   const msg = normalizeScene({ type: "message", line: 3, eyebrow: "THE TEXT", contact: "Rep", items: [{ from: "them", text: "Can we push the call?" }, { from: "me", text: "No. What happened?" }, { from: "bot", text: "x" }, { text: "" }] });
   assert.deepEqual(msg.items.map((i) => i.from), ["them", "me", "them"]);
