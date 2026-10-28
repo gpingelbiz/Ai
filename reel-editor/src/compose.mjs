@@ -184,9 +184,11 @@ export function renderHTML(plan, footage) {
 
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
   const gfxList = plan.graphics || [];
+  const graphicsSchema = plan.graphicsSchema ?? gfxList.schema ?? 1;
   // Looks (looks.mjs) restyle the overlay cards; the YouTube band layout keeps the glass cards.
   const gfxMode = s.graphics?.mode || "overlay";
-  const skinned = (g) => (gfxMode === "overlay" ? g : { ...g, skin: "glass" });
+  const faceSide = plan.framing?.side === "left" ? "right" : "left";
+  const skinned = (g) => ({ ...(gfxMode === "overlay" ? g : { ...g, skin: "glass" }), faceSide });
   const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g))}</div>`).join("\n");
   const skinsUsed = [...new Set(gfxList.map((g) => skinned(g).skin || "glass"))];
   const theme = THEMES[s.look] || null;
@@ -216,7 +218,8 @@ export function renderHTML(plan, footage) {
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
     broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video })),
-    graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration })),
+    graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration, ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}) })),
+    graphicsSchema,
     graphicsMode: s.graphics?.mode || "overlay",
     slams: slamList.map((sl) => ({ t: sl.t, end: sl.end })),
     zoomStyle: s.zooms?.style || "snap",

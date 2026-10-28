@@ -62,6 +62,8 @@ test("the prompt keeps qualifiers, bans invented numbers and lists only allowed 
   const p = scenesPrompt({ candidates: cands, transcript: "t", hook: "h", count: 1 });
   assert.match(p, /Almost 8 years/);
   assert.match(p, /Never invent numbers/);
+  assert.match(p, /Set pivotLine to the line that contains the spoken contrast/);
+  assert.match(p, /never reveal or make it readable before pivotLine/i);
   assert.match(p, /^2: 4\.0s line 2$/m);
   assert.doesNotMatch(p, /^0: /m);
   assert.deepEqual(firstJSON('Here: ```json\n{"scenes":[]}\n```'), { scenes: [] });
@@ -135,6 +137,53 @@ test("compare, bars, message and post cards: fields are checked, list rows get i
   assert.match(sceneHTML(list), new RegExp(`<svg class="g-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS.phone.slice(0, 12)}`));
   const steps = normalizeScene({ type: "steps", line: 5, items: [{ text: "Make the calls" }, { text: "Own the number" }] });
   assert.ok(!sceneHTML(steps).includes("g-icon"), "icons are for list rows only");
+});
+
+test("contrast wipe: pivot lines resolve to frames, side copy fits its cap and only one is placed", () => {
+  const candidates = [
+    { i: 2, start: 4, text: "They count activity", words: [{ text: "They", start: 4 }, { text: "count", start: 4.2 }, { text: "activity", start: 4.5 }] },
+    { i: 3, start: 5.2, text: "but ignore outcomes", words: [{ text: "but", start: 5.31 }, { text: "ignore", start: 5.5 }, { text: "outcomes", start: 5.8 }] },
+    { i: 8, start: 12, text: "Owners say this", words: [] },
+    { i: 9, start: 13.2, text: "instead buyers hear that", words: [{ text: "instead", start: 13.27 }] },
+  ];
+  const mk = (line, pivotLine) => normalizeScene({
+    type: "compare", line, pivotLine, kind: "roles", title: "The whole comparison title",
+    a: { label: "what the owner keeps saying", note: "inside every single weekly meeting" },
+    b: { label: "what the buyer actually hears", note: "when the price comes up" },
+  });
+  const first = mk(2, 3);
+  assert.equal(first.duration, 4.5);
+  for (const side of [first.a, first.b]) assert.ok(`${side.label} ${side.value} ${side.note}`.trim().split(/\s+/).length <= 6);
+  const placed = placeScenes([first, mk(8, 9)], candidates, { duration: 20, gap: 3, fps: 30 });
+  assert.equal(placed.length, 1, "one contrast card per reel");
+  assert.equal(placed[0].pivotAt, 1.3, "the spoken 'but' is quantized to frame 39");
+  assert.equal(placed[0].kind, "roles");
+  const readable = [placed[0].title, placed[0].a.label, placed[0].a.value, placed[0].a.note, placed[0].b.label, placed[0].b.value, placed[0].b.note].join(" ").trim().split(/\s+/).filter(Boolean).length;
+  assert.ok(readable <= Math.floor((placed[0].duration - 0.7) / 0.375), "the whole card fits its reading budget");
+});
+
+test("contrast wipe: side B stays masked until pivotAt and runtime carries the kind", () => {
+  const plan = {
+    name: "pivot",
+    canvas: { width: 1080, height: 1920 },
+    video: { duration: 12, hasAudio: false },
+    style: { colors: { text: "#eee", accent: "#abc", stroke: "#111", bg: "#222" }, captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72, shadow: "none" }, hook: { fontSizeFrac: 0.05, position: 0.2 }, graphics: { mode: "overlay" }, zooms: {}, cta: {}, render: { fps: 30 } },
+    captions: [],
+    graphics: [{ type: "compare", eyebrow: "THE SHIFT", kind: "before-after", pivotAt: 1.3, start: 4, duration: 4.5, a: { label: "Old belief", value: "", note: "" }, b: { label: "New belief", value: "", note: "" } }],
+  };
+  plan.graphics.schema = 2;
+  const html = renderHTML(plan, "assets/footage.mp4");
+  assert.match(html, /g-compare-dynamic g-kind-before-after/);
+  assert.match(html, /\.g-compare-dynamic \.g-side-b \{ clip-path: inset\(0 100% 0 0\); \}/);
+  assert.match(html, /"pivotAt":1\.3,"kind":"before-after","faceSide":"left"/);
+  assert.match(html, /const pivot = g\.start \+ g\.pivotAt;/);
+  assert.match(html, /clipPath: "inset\(0 0% 0 0\)", duration: 10 \* frame, ease: "power3\.out"[^]*, pivot\)/);
+  assert.doesNotMatch(sceneHTML(plan.graphics[0]), /g-compare g-in/);
+});
+
+test("legacy compare markup is unchanged when pivotLine is absent", () => {
+  const legacy = { type: "compare", eyebrow: "TWO REPS", title: "Calls", a: { label: "Rep A", value: "12", note: "old way" }, b: { label: "Rep B", value: "48", note: "new way" } };
+  assert.equal(sceneHTML(legacy), '<div class="g-box g-center"><div class="g-eyebrow g-in"><span class="g-dot"></span>TWO REPS</div><div class="g-title g-in">Calls</div><div class="g-compare g-in"><div class="g-side g-side-a"><div class="g-side-label">Rep A</div><div class="g-side-value">12</div><div class="g-side-bar"><div class="g-side-fill" style="--w:25%"></div></div><div class="g-side-note">old way</div></div><div class="g-vs">VS</div><div class="g-side g-side-b"><div class="g-side-label">Rep B</div><div class="g-side-value">48</div><div class="g-side-bar"><div class="g-side-fill" style="--w:100%"></div></div><div class="g-side-note">new way</div></div></div></div>');
 });
 
 test("saved plans survive a hook change: cards and stills follow their lines by start time", async () => {
