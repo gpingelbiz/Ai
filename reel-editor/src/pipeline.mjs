@@ -16,6 +16,7 @@ import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captions
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta, hookSeconds } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
+import { planBumps, planDrift } from "./motion.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
@@ -24,8 +25,11 @@ import { THEMES, applyTheme } from "./looks.mjs";
 
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
+import { planBrollLayouts } from "./layouts.mjs";
 import { makeGraphics } from "./graphics.mjs";
 import { planSlams } from "./slams.mjs";
+import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
+import { iconCandidates, planIcons } from "./icons.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
@@ -252,7 +256,7 @@ export async function runEdit(input, opts = {}) {
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || ["window", "split", "mix"].includes(preset.broll?.layout));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
     const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
@@ -418,7 +422,8 @@ export async function runEdit(input, opts = {}) {
     const hookTop = preset.hook.style === "headline" ? preset.hook.position : Math.max(0, preset.hook.position - 1.2 * preset.hook.fontSizeFrac);
     const progressFace = face || faceBox(detection);
     // The rail must clear the whole head (hair included) at the strongest zoom, not only the face box.
-    const railHead = headBoxFor(progressFace, detection, { zoom: Math.max(1.1, ...(preset.zooms?.scales || [1])), scale: framing.scale, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0 });
+    const railDrift = preset.motion?.drift?.enabled ? 1 + (preset.motion.drift.scale || 0) : 1;
+    const railHead = headBoxFor(progressFace, detection, { zoom: Math.max(1.1, ...(preset.zooms?.scales || [1])) * railDrift, scale: framing.scale, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0 });
     const placement = placeProgressRail({ W: canvas0.width, H: canvas0.height, hookTop, hookBottom: hookTop + blockH, captionTop, face: railHead, side: progressFace && progressFace.cx >= 0.5 ? "left" : "right" });
     if (placement.skip) {
       graphics = graphics.filter((g) => g.type !== "progress");
@@ -448,11 +453,20 @@ export async function runEdit(input, opts = {}) {
   const progress = progressGraphics.map((g) => ({ ...g, version: g.version || sceneSchema, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || allCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) })) }));
   const allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
   allGraphics.schema = graphicsSchema;
-  // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
-  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail };
-  const broll = preset.broll?.enabled && shownGroups.length
+  // Shared-frame layouts never sit under a card. The legacy full cutaway keeps the short-reel exception unchanged.
+  const sharedBrollLayout = ["window", "split", "mix"].includes(preset.broll?.layout);
+  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? allCards : [], tail };
+  let broll = preset.broll?.enabled && shownGroups.length
     ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
+  // Cutout layout: the generated still or clip remains the moving background; a window-matched person matte stays
+  // registered over it. Each failed matte falls back to the established full-frame cutaway.
+  if (brollLayout(preset.broll?.layout) === "cutout") {
+    const cutoutBroll = await makeCutoutBroll({ broll, layout: preset.broll.layout, video: videoSrc, fps: preset.render.fps || 30, outDir: workDir });
+    broll = cutoutBroll.broll;
+    if (cutoutBroll.events.length) cutoutBroll.events.forEach((event) => log(event));
+    else log("cutout b-roll: no cutaways to matte");
+  }
   if (preset.zooms.enabled) {
     zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
@@ -467,13 +481,23 @@ export async function runEdit(input, opts = {}) {
       log(tl ? `speakers: ${tl.turns.length} turn${tl.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
     }
   }
-  // Cards never cover the head: each carries the highest the head gets while it is up (strongest zoom in its window),
-  // and the page drops the footage just far enough below the card's real bottom edge (graphics.mjs headGuard).
-  if (detection && sameShape) {
-    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
-    for (const g of allCards) {
-      const top = cardHeadTop(detection, { zooms, t0: g.start, t1: g.start + g.duration, scale: framing.scale, originY, shift: framing.shift || 0 });
-      if (top != null) g.headTop = top;
+  // Shared-frame b-roll is placed after zooms: each panel clears the whole head at the strongest move in its window.
+  if (broll.length && ["window", "split", "mix"].includes(preset.broll?.layout)) {
+    // The face inside each cutaway's own window (three samples), not the reel's opening frames.
+    const perShot = [];
+    for (const b of broll) {
+      const det = sameShape ? await detectFaces(videoSrc, [0.15, 0.5, 0.85].map((f) => r3(b.start + f * b.duration))) : null;
+      const f = faceBox(det);
+      perShot.push(f ? { face: f, detection: det } : null);
+    }
+    const placed = planBrollLayouts(broll, { layout: preset.broll.layout, W: canvas0.width, H: canvas0.height, captionTop, face: face || faceBox(detection), detection, zooms, framing, perShot });
+    broll = placed.shots;
+    placed.logs.forEach((line) => log(line));
+    // "mix" marks some items as cutouts; matte just those.
+    if (broll.some((b) => b.layout === "cutout")) {
+      const cutoutBroll = await makeCutoutBroll({ broll, layout: preset.broll.layout, video: videoSrc, fps: preset.render.fps || 30, outDir: workDir });
+      broll = cutoutBroll.broll;
+      cutoutBroll.events.forEach((event) => log(event));
     }
   }
   // The hook never covers the head either: in front of the speaker (not the text-behind-you cutout) the page measures
@@ -488,13 +512,74 @@ export async function runEdit(input, opts = {}) {
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
   // The rail's visible pulses count as busy too: a slam word stamping in at the top would land on the rail.
   const railPulses = progress.flatMap((g) => (g.pulses || []).filter((p) => !p.hidden).map((p) => ({ start: p.at, duration: 1.4 })));
-  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...railPulses], zooms, tail }) : [];
+  let slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...railPulses], zooms, tail, includeRank: !!preset.slams?.popout?.enabled }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
+  // Pop-out slams reuse the already-spaced slam plan: only its highest-ranked words pay the Vision cost.
+  if (preset.slams?.popout?.enabled) {
+    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+    const popouts = await makePopoutSlams({ slams, video: videoSrc, fps: preset.render.fps || 30, outDir: workDir, canvas: canvas0, settings: preset.slams.popout, framing, zoomDuring: (t0, t1) => zoomDuring(zooms, t0, t1), headTopFor: (sl) => cardHeadTop(detection, { zooms, t0: sl.t, t1: sl.end, scale: framing.scale, originY, shift: framing.shift || 0 }) });
+    slams = popouts.slams;
+    if (popouts.events.length) popouts.events.forEach((event) => log(event));
+    else log(`pop-out slams: none ranked at least ${preset.slams.popout.minRank ?? 2.5}`);
+  }
+
+  // Motion accents live on inner wrappers, independent of the punch-in transform. Drift is planned from the final
+  // zoom/cutaway lanes; bumps use the exact card and slam landing times.
+  const bumpPlan = planBumps(allCards, slams, zooms, { ...preset.motion?.impact, broll, hook, duration, tail });
+  const driftPlan = planDrift(zooms, broll, duration, { ...preset.motion?.drift, hook, tail, zoomStyle: preset.zooms.style });
+  const motion = preset.motion?.impact?.enabled || preset.motion?.drift?.enabled ? { bumps: bumpPlan.bumps, drift: driftPlan.stretches } : null;
+  if (preset.motion?.impact?.enabled) {
+    const reasons = [["nearMove", "near a punch-in/jump cut"], ["cutaway", "under a cutaway"], ["hook", "under the hook"], ["tail", "in the clean tail"], ["spacing", "too close together"], ["cap", "over the cap"]].filter(([k]) => bumpPlan.skipped[k]).map(([k, s]) => `${bumpPlan.skipped[k]} ${s}`);
+    log(`motion: ${bumpPlan.bumps.length} bump${bumpPlan.bumps.length === 1 ? "" : "s"}${reasons.length ? `; skipped ${reasons.join(", ")}` : ""}`);
+  }
+  if (preset.motion?.drift?.enabled) {
+    const ranges = driftPlan.stretches.map((d) => `${d.start.toFixed(1)}s to ${d.end.toFixed(1)}s`).join(", ");
+    const why = !driftPlan.stretches.length && driftPlan.skipped.short ? `; no gap reached ${preset.motion.drift.minGap}s` : driftPlan.skipped.cap ? `; ${driftPlan.skipped.cap} shorter stretch${driftPlan.skipped.cap === 1 ? "" : "es"} skipped by the cap` : "";
+    log(`motion: drift on ${driftPlan.stretches.length} stretch${driftPlan.stretches.length === 1 ? "" : "es"}${ranges ? ` (${ranges})` : ""}${why}`);
+  }
+
+  // Cards never cover the head: drift multiplies the strongest punch-in in each card window, and the page drops
+  // the footage just far enough below the card's real bottom edge (graphics.mjs headGuard).
+  if (detection && sameShape) {
+    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+    for (const g of allCards) {
+      const top = cardHeadTop(detection, { zooms, drift: driftPlan.stretches, t0: g.start, t1: g.start + g.duration, scale: framing.scale, originY, shift: framing.shift || 0 });
+      if (top != null) g.headTop = top;
+    }
+  }
+  // Spoken icon pops use the final zoom lane and every finished busy window, including a 0.3 s guard around slams.
+  let iconDetection = detection;
+  if (preset.icons?.enabled && sameShape && shownGroups.length) {
+    const times = [...new Set(iconCandidates(shownGroups).map((x) => x.t))];
+    if (times.length) iconDetection = await detectFaces(videoSrc, times) || detection;
+  }
+  const icons = preset.icons?.enabled && shownGroups.length ? planIcons(shownGroups, duration, {
+    ...preset.icons,
+    hook,
+    busy: [
+      ...allCards.map((g) => ({ ...g, kind: "card" })),
+      ...broll.map((b) => ({ ...b, kind: "cutaway" })),
+      ...railPulses.map((p) => ({ ...p, kind: "rail pulse" })),
+      ...slams.map((sl) => ({ start: sl.t, duration: sl.end - sl.t, pad: 0.3, kind: "slam" })),
+    ],
+    zooms,
+    face: face || faceBox(iconDetection),
+    detection: iconDetection,
+    framing,
+    W: canvas0.width,
+    H: canvas0.height,
+    captionTop,
+    tail,
+  }) : [];
+  if (preset.icons?.enabled) {
+    const skipped = Object.entries(icons.skipped || {}).map(([why, n]) => `${n} ${why}`).join(", ");
+    log(`icons: ${icons.length} spoken pop${icons.length === 1 ? "" : "s"}${icons.length ? ": " + icons.map((x) => `"${x.word}" at ${x.t}s`).join(", ") : ""}${skipped ? `; skipped ${skipped}` : ""}`);
+  }
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
   const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
 
   const plan = {
     version: 1,
@@ -514,6 +599,8 @@ export async function runEdit(input, opts = {}) {
     scenes: { schema: sceneSchema },
     broll,
     slams,
+    ...(motion ? { motion } : {}),
+    icons,
     coldOpen,
     lowerThird,
     structure,
@@ -650,6 +737,7 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
     plan.graphics = (plan.graphics || []).filter((g) => g.start < D);
     plan.broll = (plan.broll || []).filter((b) => b.start < D);
     plan.slams = (plan.slams || []).filter((sl) => sl.t < D);
+    plan.icons = (plan.icons || []).filter((icon) => icon.t < D);
     plan.cta = null;
     plan.audio = { ...(plan.audio || {}), tracks: (plan.audio?.tracks || []).filter((t) => t.start < D).map((t) => ({ ...t, duration: Math.min(t.duration || D, D - t.start), lane: t.lane ? t.lane.filter((p) => p.t <= D) : t.lane })) };
     const projectDir = path.join(outDir, `project-${i + 1}`);

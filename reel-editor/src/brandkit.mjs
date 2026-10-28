@@ -39,10 +39,11 @@ export const kitSlug = (b) => slug(b.name || "brand");
 
 /**
  * Calm pacing (look.pace "calm"): gentler silence cuts (gaps over 0.6 s instead of 0.35 s), punch-ins at most every
- * 16 s and two per 30 s with no jump-cut cadence between them, and no cold open unless look.coldOpen turns it on.
+ * 16 s and two per 30 s with no jump-cut cadence between them, no icon pops or impact bumps, and no cold open unless
+ * look.coldOpen turns it on.
  * "fast" (the default) keeps Greg's pacing from pingel-brand.
  */
-export const CALM = { cuts: { silence: "medium" }, zooms: { minSpacing: 16, maxPer30: 2, cadence: { enabled: false } } };
+export const CALM = { cuts: { silence: "medium" }, zooms: { minSpacing: 16, maxPer30: 2, cadence: { enabled: false } }, icons: { enabled: false }, motion: { impact: { enabled: false } } };
 
 /** The card looks a brand allows: everything but gregcard, or only `looks.only` (brand looks included). */
 export function lookChoice(b) {
@@ -71,7 +72,9 @@ export function brandPreset(b, { fonts = {} } = {}) {
     },
     ...(calm ? structuredClone(CALM) : {}),
     ...(coldOpen != null ? { coldOpen: { enabled: coldOpen } } : {}),
-    slams: { enabled: look.slams !== false },
+    // Calm brands keep the slams plain: no pop-out (the dim, outline and word behind the head), no icon stickers
+    // and no impact bumps (CALM); drift and the face-on b-roll layouts stay.
+    slams: { enabled: look.slams !== false, ...(calm ? { popout: { enabled: false } } : {}) },
     // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
     graphics: { ...lookChoice(b), ...(calm ? { every: 14, max: 4 } : {}) },

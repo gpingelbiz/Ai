@@ -83,7 +83,7 @@ Options (edit / batch)
   --annotate               a hand-drawn marker underlines (circles a number) the gold word in each caption line
                            as it is spoken. --no-annotate off
   --zoom-style <s>         camera (creator punch-in: push, slight tilt, edge defocus) | snap (hard cut-in zoom)
-  --broll-cut <s>          hard (default) | flash (a white editorial flash on the cut) | blur (the still arrives from a blur)
+  --broll-cut <s>          hard (default) | flash | blur | whip (a horizontal slide with directional blur)
   --broll-engine <e>       codex (stills drawn by Codex) | runway (generated video clips via the Runway API; needs
                            RUNWAY_API_KEY, about 30 credits = $0.30 per 5-second clip; every clip goes in the usage ledger)
   --no-cadence             no cut cadence (the frame otherwise cuts between two framings every 2.5-4.5 s)

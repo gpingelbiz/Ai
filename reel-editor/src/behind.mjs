@@ -30,15 +30,18 @@ async function matteBinary() {
  * Build <outDir>/cutout.webm for [start, start+duration] of `video`. Returns {src, start, duration, coverage, frames}
  * or {error} (no person found, the mask covers everything, Swift unavailable, ffmpeg failed).
  */
-export async function makeCutout({ video, start = 0, duration = 3, fps = 30, outDir, quality = "accurate", minCoverage = 0.04, maxCoverage = 0.8 }) {
+export async function makeCutout({ video, start = 0, duration = 3, fps = 30, outDir, quality = "accurate", minCoverage = 0.04, maxCoverage = 0.8, name = "cutout", grid = null }) {
   const bin = await matteBinary();
   if (!bin) return { error: "person cutout needs Swift (xcode-select --install)" };
-  const maskDir = path.join(outDir, "matte");
+  const stem = String(name).replace(/[^a-z0-9-]+/gi, "-");
+  const maskDir = path.join(outDir, stem === "cutout" ? "matte" : `${stem}-matte`);
   fs.rmSync(maskDir, { recursive: true, force: true });
   fs.mkdirSync(maskDir, { recursive: true });
   let info;
   try {
-    const { out } = await run(bin, [video, String(r3(start)), String(r3(start + duration)), maskDir, "--quality", quality], { capture: true });
+    const args = [video, String(r3(start)), String(r3(start + duration)), maskDir, "--quality", quality];
+    if (grid) args.push("--grid", `${grid.cols || 27}x${grid.rows || 48}`);
+    const { out } = await run(bin, args, { capture: true });
     info = JSON.parse(out);
   } catch (e) {
     fs.rmSync(maskDir, { recursive: true, force: true });
@@ -46,9 +49,12 @@ export async function makeCutout({ video, start = 0, duration = 3, fps = 30, out
   }
   const pct = Math.round((info.coverage || 0) * 100);
   if (!info.frames) { fs.rmSync(maskDir, { recursive: true, force: true }); return { error: "person matte: no frames" }; }
-  if (info.coverage < minCoverage) { fs.rmSync(maskDir, { recursive: true, force: true }); return { error: `no person in the hook frames (mask covers ${pct}%)` }; }
+  if (info.coverage < minCoverage) { fs.rmSync(maskDir, { recursive: true, force: true }); return { error: `no person in the ${stem === "cutout" ? "hook frames" : "matte window"} (mask covers ${pct}%)` }; }
   if (info.coverage > maxCoverage) { fs.rmSync(maskDir, { recursive: true, force: true }); return { error: `the person mask covers ${pct}% of the frame, too close to use` }; }
-  const webm = path.join(outDir, "cutout.webm");
+  if (grid) {
+    try { info.grid = JSON.parse(fs.readFileSync(path.join(maskDir, "occupancy.json"), "utf8")); } catch { info.grid = null; }
+  }
+  const webm = path.join(outDir, `${stem}.webm`);
   try {
     // The mask (slightly softened) becomes the alpha of the same frames; VP9 keeps the alpha for the renderer's browser.
     await run("ffmpeg", [
@@ -65,7 +71,7 @@ export async function makeCutout({ video, start = 0, duration = 3, fps = 30, out
     fs.rmSync(maskDir, { recursive: true, force: true });
   }
   if (!fs.existsSync(webm) || !fs.statSync(webm).size) return { error: "cutout encode wrote nothing" };
-  return { src: webm, start: r3(start), duration: r3(Math.min(duration, info.frames / (info.fps || fps))), coverage: r3(info.coverage), frames: info.frames };
+  return { src: webm, start: r3(start), duration: r3(Math.min(duration, info.frames / (info.fps || fps))), coverage: r3(info.coverage), frames: info.frames, ...(info.grid ? { grid: info.grid } : {}) };
 }
 
 export function describeCutout(res) {

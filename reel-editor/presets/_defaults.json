@@ -85,6 +85,17 @@
       "tightScale": 1.05
     }
   },
+  "motion": {
+    "impact": {
+      "enabled": false,
+      "scale": 0.025
+    },
+    "drift": {
+      "enabled": false,
+      "minGap": 6,
+      "scale": 0.03
+    }
+  },
   "cuts": {
     "silence": "medium",
     "badTakes": true,
@@ -134,6 +145,7 @@
   },
   "broll": {
     "enabled": false,
+    "layout": "full",
     "max": 3,
     "maxWithGraphics": 2,
     "every": 12,
@@ -178,7 +190,25 @@
     "enabled": false,
     "max": 5,
     "minSpacing": 8,
-    "hold": 1.1
+    "hold": 1.1,
+    "popout": {
+      "enabled": false,
+      "max": 2,
+      "minRank": 2.5,
+      "dim": 0.62,
+      "blur": 10,
+      "outline": 0.004,
+      "maxCovered": 0.06
+    }
+  },
+  "icons": {
+    "enabled": false,
+    "max": 4,
+    "minSpacing": 6,
+    "maxPer30": 3,
+    "hold": 1.2,
+    "size": 0.12,
+    "skin": "disc"
   },
   "coldOpen": {
     "enabled": false,

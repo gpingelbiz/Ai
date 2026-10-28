@@ -66,6 +66,21 @@ test("brand.json: sentence-case hook and captions, whole-reel hook, calm pace", 
   assert.ok(!("cuts" in brandPreset({ ...julee, look: { pace: "fast" } })), "fast writes nothing: Greg's pacing");
 });
 
+test("brand.json: calm brands keep plain slams with no icons or bumps; fast brands get every add-on in their colours", () => {
+  const calm = load({ ...julee, look: { pace: "calm" } });
+  const fast = load(julee);
+  try {
+    assert.equal(calm.p.slams.popout.enabled, false);
+    assert.equal(calm.p.icons.enabled, false);
+    assert.equal(calm.p.motion.impact.enabled, false);
+    assert.equal(calm.p.motion.drift.enabled, true, "drift stays: it is a slow push, not a stamp");
+    assert.equal(calm.p.broll.layout, "mix", "b-roll still keeps the speaker on screen");
+    assert.equal(fast.p.slams.popout.enabled, true);
+    assert.equal(fast.p.icons.enabled, true);
+    assert.equal(fast.p.colors.accent, julee.colors.accent, "the add-ons draw in the brand's own colours");
+  } finally { for (const x of [calm, fast]) fs.rmSync(x.dir, { recursive: true, force: true }); }
+});
+
 test("brand.json: bad values are named in plain words", () => {
   assert.deepEqual(checkBrand({ ...julee, look: { hookCase: "sentence", captionCase: "upper", hookSeconds: "reel", pace: "calm" } }), []);
   assert.deepEqual(checkBrand({ ...julee, look: { hookSeconds: 8 } }), []);
