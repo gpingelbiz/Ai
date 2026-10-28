@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeScene, placeScenes, sceneCandidates, graphicsCount, sceneHTML, scenesPrompt, sceneDuration, GRAPHICS_SCHEMA } from "../src/graphics.mjs";
+import { normalizeScene, placeScenes, sceneCandidates, graphicsCount, sceneHTML, scenesPrompt, sceneDuration, GRAPHICS_SCHEMA, proofMessageCSS } from "../src/graphics.mjs";
 import { brollCandidates } from "../src/broll.mjs";
 import { firstJSON } from "../src/claude.mjs";
 import { renderHTML } from "../src/compose.mjs";
@@ -237,6 +237,87 @@ test("contrast wipe: side B stays masked until pivotAt and runtime carries the k
 test("legacy compare markup is unchanged when pivotLine is absent", () => {
   const legacy = { type: "compare", eyebrow: "TWO REPS", title: "Calls", a: { label: "Rep A", value: "12", note: "old way" }, b: { label: "Rep B", value: "48", note: "new way" } };
   assert.equal(sceneHTML(legacy), '<div class="g-box g-center"><div class="g-eyebrow g-in"><span class="g-dot"></span>TWO REPS</div><div class="g-title g-in">Calls</div><div class="g-compare g-in"><div class="g-side g-side-a"><div class="g-side-label">Rep A</div><div class="g-side-value">12</div><div class="g-side-bar"><div class="g-side-fill" style="--w:25%"></div></div><div class="g-side-note">old way</div></div><div class="g-vs">VS</div><div class="g-side g-side-b"><div class="g-side-label">Rep B</div><div class="g-side-value">48</div><div class="g-side-bar"><div class="g-side-fill" style="--w:100%"></div></div><div class="g-side-note">new way</div></div></div></div>');
+});
+
+test("proof messages start at the first exact mention and reveal only exact transcript text on their line", () => {
+  const lines = [
+    { i: 0, start: 5, text: "He messaged us yesterday" },
+    { i: 1, start: 7, text: "and said I left the jail" },
+    { i: 2, start: 9.7, text: "Two years later I am in sales" },
+  ];
+  const proof = normalizeScene({
+    type: "message", mode: "proof", line: 2, context: "He messaged us",
+    contact: "Invented Sender",
+    items: [{ from: "them", line: 1, text: "I left the jail" }],
+    outcome: { line: 2, text: "I am in sales" },
+  });
+  const placed = placeScenes([proof], lines, { duration: 20, lines });
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0].line, 0, "context is re-anchored to its first transcript occurrence");
+  assert.equal(placed[0].start, 5);
+  assert.equal(placed[0].items[0].at, 2);
+  assert.equal(placed[0].outcome.at, 4.7);
+  assert.ok(placed[0].duration >= placed[0].outcome.at + 10 / 30 + 1.5 - 0.001, "holds 1.5 s after the underline finishes");
+  assert.ok(!("contact" in proof), "proof mode never keeps a sender name");
+
+  const invented = normalizeScene({ type: "message", mode: "proof", line: 0, context: "He messaged us", items: [{ from: "them", line: 1, text: "He promised us money" }] });
+  assert.deepEqual(placeScenes([invented], lines, { duration: 20, lines }), [], "invented bubble copy is rejected");
+  const repeatedLate = normalizeScene({ type: "message", mode: "proof", line: 0, context: "He messaged us", items: [{ from: "them", line: 2, text: "I left the jail" }] });
+  assert.deepEqual(placeScenes([repeatedLate], lines, { duration: 20, lines }), [], "a real phrase with the wrong first-line anchor is rejected");
+});
+
+test("proof messages trim bubbles to 16 words, enforce the total reading budget and allow one per reel", () => {
+  const twenty = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty";
+  const trimmed = normalizeScene({ type: "message", mode: "proof", line: 0, context: "He messaged us with the answer", items: [{ line: 1, text: twenty }] });
+  assert.equal(trimmed.items[0].text.split(/\s+/).length, 16);
+
+  const lines = [
+    { i: 0, start: 5, text: "He messaged us with the answer" },
+    { i: 1, start: 6, text: twenty },
+    { i: 2, start: 14, text: "She texted me" },
+    { i: 3, start: 15, text: "I got the job" },
+  ];
+  assert.deepEqual(placeScenes([trimmed], lines, { duration: 24, lines }), [], "a thread that cannot fit its reading budget is rejected");
+  const one = normalizeScene({ type: "message", mode: "proof", line: 0, context: "He messaged us", items: [{ line: 1, text: "one two three" }] });
+  const two = normalizeScene({ type: "message", mode: "proof", line: 2, context: "She texted me", items: [{ line: 3, text: "I got the job" }] });
+  assert.equal(placeScenes([one, two], lines, { duration: 24, lines, gap: 0 }).filter((s) => s.mode === "proof").length, 1);
+});
+
+test("proof message markup is source-labelled, brand-colored and timed without changing legacy messages", () => {
+  const proof = normalizeScene({ type: "message", mode: "proof", line: 0, context: "He messaged us", contact: "Fake Name", items: [{ from: "them", line: 1, text: "I left the jail" }], outcome: { line: 2, text: "I am in sales" } });
+  const html = sceneHTML(proof);
+  assert.match(html, /IN HIS WORDS/);
+  assert.match(html, /data-proof-item="0"/);
+  assert.match(html, /g-proof-underline/);
+  assert.doesNotMatch(html, /Fake Name|g-avatar|n-time/);
+  const css = proofMessageCSS({ H: 1920, colors: { text: "#EDEAE2", accent: "#39FF88", bg: "#19132A" }, captionTop: 1382 });
+  assert.match(css, /left: 76px;[\s\S]*top: 200px;[\s\S]*width: 864px/);
+  assert.match(css, /background: #39FF88; color: #19132A/);
+  assert.match(css, /font-size: 48px/);
+  assert.doesNotMatch(css, /#0a80f8|#007aff|#fff(?:fff)?/i);
+
+  const legacy = normalizeScene({ type: "message", line: 3, eyebrow: "THE TEXT", contact: "Rep", items: [{ from: "them", text: "Can we talk?" }] });
+  assert.equal(sceneHTML(legacy), '<div class="g-box"><div class="g-eyebrow g-in"><span class="g-dot"></span>THE TEXT</div><div class="g-thread"><div class="g-thread-head g-in"><span class="g-avatar">R</span>Rep</div><div class="g-typing"><i></i><i></i><i></i></div><div class="g-bubble g-in g-them">Can we talk?</div></div></div>');
+});
+
+test("proof message prompt and runtime carry first-mention guidance and per-beat timing", () => {
+  const p = scenesPrompt({ candidates: [{ i: 0, start: 5, text: "He messaged us" }], transcript: "He messaged us", hook: "The proof", count: 1 });
+  assert.match(p, /anchor the card where the speaker first establishes that the message exists/);
+  assert.match(p, /anchor each bubble or outcome to the first line where its content becomes known/);
+  assert.match(p, /Never invent a sender name, timestamp, read receipt or outcome/);
+  assert.match(p, /at most one proof message/);
+
+  const plan = {
+    name: "proof", canvas: { width: 1080, height: 1920 }, video: { duration: 16, hasAudio: false },
+    style: { colors: { text: "#EDEAE2", accent: "#39FF88", stroke: "#111111", bg: "#19132A" }, captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72, shadow: "none" }, hook: { fontSizeFrac: 0.05, position: 0.2 }, graphics: { mode: "overlay" }, zooms: {}, cta: {}, render: { fps: 30 } },
+    captions: [], graphicsSchema: 2, graphics: [{ type: "message", mode: "proof", skin: "phone", context: "He messaged us", items: [{ from: "them", text: "I left the jail", at: 2 }], outcome: { text: "I am in sales", at: 4.7 }, start: 5, duration: 6.534 }],
+  };
+  const rendered = renderHTML(plan, "assets/footage.mp4");
+  assert.match(rendered, /gfx-message gfx-message-proof skin-phone/);
+  assert.match(rendered, /"mode":"proof","items":\[\{"at":2,"from":"them"\}\],"outcome":\{"at":4\.7\}/);
+  assert.match(rendered, /"graphicsSchema":2/);
+  assert.match(rendered, /at \+ 12 \* frame/);
+  assert.match(rendered, /scale: 0\.72[\s\S]*back\.out\(1\.5\)/);
 });
 
 test("saved plans survive a hook change: cards and stills follow their lines by start time", async () => {

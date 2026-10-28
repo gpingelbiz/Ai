@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
-import { sceneHTML, graphicsCSS, GRAPHICS_JS, numberMotion } from "./graphics.mjs";
+import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, numberMotion } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 
 export function canvasFor(mode, meta) {
@@ -190,7 +190,8 @@ export function renderHTML(plan, footage) {
   const faceSide = plan.framing?.side === "left" ? "right" : "left";
   const skinned = (g) => ({ ...(gfxMode === "overlay" ? g : { ...g, skin: "glass" }), faceSide });
   const timed = (g) => (g.type === "list" || g.type === "steps") && g.items?.length && g.items.every((it) => Number.isFinite(it.at));
-  const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type}${timed(g) ? " gfx-timed" : ""} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g), { schema: gfxSchema })}</div>`).join("\n");
+  const hasProof = gfxList.some((g) => g.type === "message" && g.mode === "proof");
+  const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type}${timed(g) ? " gfx-timed" : ""}${g.type === "message" && g.mode === "proof" ? " gfx-message-proof" : ""} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g), { schema: gfxSchema })}</div>`).join("\n");
   const skinsUsed = [...new Set(gfxList.map((g) => skinned(g).skin || "glass"))];
   const theme = THEMES[s.look] || null;
   const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme)]);
@@ -219,8 +220,8 @@ export function renderHTML(plan, footage) {
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
     broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video })),
-    graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}) })),
-    graphicsSchema: gfxSchema,
+    graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}) })),
+    graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
     graphicsSide: plan.framing?.side || "right",
     graphicsText: c.text,
@@ -302,7 +303,7 @@ export function renderHTML(plan, footage) {
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
-${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H }) + skinsCSS({ H, colors: c, skins: skinsUsed }) : ""}
+${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
         position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3((cap.rightMarginFrac ?? cap.sideMarginFrac) * 100)}%; top: ${r3(cap.position * 100)}%;
