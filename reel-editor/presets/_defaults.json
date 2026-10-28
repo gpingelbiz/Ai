@@ -85,6 +85,17 @@
       "tightScale": 1.05
     }
   },
+  "motion": {
+    "impact": {
+      "enabled": false,
+      "scale": 0.025
+    },
+    "drift": {
+      "enabled": false,
+      "minGap": 6,
+      "scale": 0.03
+    }
+  },
   "cuts": {
     "silence": "medium",
     "badTakes": true,

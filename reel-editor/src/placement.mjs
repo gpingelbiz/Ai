@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { run, PKG_ROOT } from "./util.mjs";
+import { driftDuring } from "./motion.mjs";
 
 /**
  * Put the hook where it will not cover the speaker's head: above it when there is room, otherwise between the chin
@@ -56,8 +57,8 @@ export function zoomDuring(zooms = [], t0 = 0, t1 = 3) {
  * window and the base slide included. The page drops the footage just far enough that this clears the card's real
  * bottom edge, so a card never covers the head. Null when no face was found.
  */
-export function cardHeadTop(detection, { zooms = [], t0 = 0, t1 = 0, scale = 1, originY = 0.38, shift = 0 } = {}) {
-  const head = headExtent(detection, { zoom: scale * zoomDuring(zooms, t0, t1), originY });
+export function cardHeadTop(detection, { zooms = [], drift = [], t0 = 0, t1 = 0, scale = 1, originY = 0.38, shift = 0 } = {}) {
+  const head = headExtent(detection, { zoom: scale * zoomDuring(zooms, t0, t1) * driftDuring(drift, t0, t1), originY });
   return head ? Math.round((head.top + shift) * 1000) / 1000 : null;
 }
 

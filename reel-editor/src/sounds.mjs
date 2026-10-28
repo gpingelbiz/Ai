@@ -19,12 +19,13 @@ export const SOUNDS = {
  * within 0.35 s of a louder cue.
  * Returns [{id, src, start, duration, volume, track}].
  */
-export function soundCues({ zooms = [], graphics = [], slams = [], coldOpen = null, captions = [], annotate = false, markers = false, level = 0.3, lead = { move: 0.06, slam: 0.02, card: 0.0, flash: 0.05, marker: 0.0 } } = {}) {
+export function soundCues({ zooms = [], graphics = [], slams = [], broll = [], brollCut = "hard", coldOpen = null, captions = [], annotate = false, markers = false, level = 0.3, lead = { move: 0.06, slam: 0.02, card: 0.0, flash: 0.05, marker: 0.0 } } = {}) {
   const cues = [];
   const add = (kind, at) => cues.push({ kind, at: r3(Math.max(0, at - (lead[kind] || 0))) });
   for (const z of zooms) if (z.scale > 1 && !z.cut) add("move", z.t);
   for (const g of graphics) if (g.type !== "progress") add("card", g.start + 0.1);
   for (const s of slams) add("slam", s.t + 0.3);
+  if (brollCut === "whip") for (const b of broll) { add("move", b.start); add("move", b.start + b.duration); }
   if (coldOpen) add("flash", coldOpen.duration);
   if (annotate && markers) {
     for (const g of captions) {
