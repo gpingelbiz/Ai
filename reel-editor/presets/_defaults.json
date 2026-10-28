@@ -13,7 +13,20 @@
   },
   "preflight": {
     "enabled": true,
-    "strict": false
+    "strict": false,
+    "cards": {
+      "readingWpm": 160,
+      "orientationSeconds": 0.7,
+      "maxHold": 5,
+      "maxOccupancy": 0.25,
+      "saveWorthyOccupancy": 0.3,
+      "eventWindow": 10,
+      "maxMajorStarts": 2,
+      "minMajorGap": 3,
+      "left": 76,
+      "right": 940,
+      "top": 200
+    }
   },
   "colors": {
     "text": "#FFFFFF",

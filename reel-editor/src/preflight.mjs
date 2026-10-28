@@ -17,6 +17,20 @@ import { hookBlockHeight } from "./placement.mjs";
 // Instagram Reels at 9:16: the caption and handle strip at the bottom, the icon column on the right, the top bar.
 export const SAFE = { top: 0.07, bottom: 0.167, right: 0.11, rightFrom: 0.42, rightTo: 0.86 };
 
+export const CARD_RULES = {
+  readingWpm: 160,
+  orientationSeconds: 0.7,
+  maxHold: 5,
+  maxOccupancy: 0.25,
+  saveWorthyOccupancy: 0.3,
+  eventWindow: 10,
+  maxMajorStarts: 2,
+  minMajorGap: 3,
+  left: 76,
+  right: 940,
+  top: 200,
+};
+
 export async function measureLoudness(file) {
   const { err } = await run("ffmpeg", ["-hide_banner", "-nostats", "-i", file, "-af", "ebur128=peak=true", "-f", "null", "-"], { capture: true, allowFail: true });
   // The per-frame lines carry I:/LRA: too; only the Summary block at the end counts.
@@ -84,10 +98,163 @@ export function layoutChecks(plan) {
     const p = plan.cta.position ?? st.cta?.position ?? 0.62;
     if (p + 0.06 > 1 - SAFE.bottom) items.push({ level: "warn", code: "cta-safe-zone", message: `the CTA at ${pct(p)} is inside the Instagram caption strip` });
   }
+  items.push(...graphicChecks(plan));
   return items;
 }
 
 const pct = (f) => `${Math.round(f * 100)}%`;
+
+const words = (text) => String(text || "").replace(/\*/g, "").trim().split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
+
+/** The words a viewer must read on a card, excluding decorative skin chrome. */
+export function cardWords(card) {
+  const out = [card.eyebrow, card.title];
+  if (card.type === "stat") out.push(card.value, card.value2, card.sub);
+  else if (card.type === "compare") out.push(card.a?.label, card.a?.value, card.a?.note, card.b?.label, card.b?.value, card.b?.note);
+  else if (card.type === "bars") for (const item of card.items || []) out.push(item.label, `${item.value || ""}${card.unit || ""}`);
+  else if (card.type === "message") { out.push(card.contact); for (const item of card.items || []) out.push(item.text); }
+  else if (["list", "steps"].includes(card.type)) for (const item of card.items || []) out.push(item.text, item.tag);
+  else out.push(card.text);
+  return words(out.filter(Boolean).join(" "));
+}
+
+export function cardOccupancy(cards, duration) {
+  if (!(duration > 0)) return 0;
+  const spans = (cards || []).map((g) => [Math.max(0, +g.start || 0), Math.min(duration, (+g.start || 0) + (+g.duration || 0))]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
+  let total = 0, run = null;
+  for (const span of spans) {
+    if (run && span[0] <= run[1]) run[1] = Math.max(run[1], span[1]);
+    else { if (run) total += run[1] - run[0]; run = [...span]; }
+  }
+  if (run) total += run[1] - run[0];
+  return total / duration;
+}
+
+export function majorEventStarts(plan) {
+  return [
+    ...(plan.graphics || []).map((g, i) => ({ t: +g.start || 0, kind: "card", label: `${g.type || "card"} ${i + 1}` })),
+    ...(plan.broll || []).map((b, i) => ({ t: +b.start || 0, kind: "cutaway", label: `cutaway ${i + 1}` })),
+    ...(plan.coldOpen ? [{ t: 0, kind: "cutaway", label: "cold open" }] : []),
+  ].sort((a, b) => a.t - b.t);
+}
+
+export function maxMajorEvents(plan, seconds = 10) {
+  const events = majorEventStarts(plan);
+  let max = 0;
+  for (let i = 0, j = 0; i < events.length; i++) {
+    while (events[i].t - events[j].t >= seconds) j++;
+    max = Math.max(max, i - j + 1);
+  }
+  return max;
+}
+
+function itemTimedDuration(card) {
+  let found = false, end = 0;
+  for (const item of card.items || []) {
+    const rawStart = item.offset ?? item.at ?? item.start;
+    const rawEnd = item.endOffset ?? item.end;
+    if (rawStart == null && rawEnd == null && item.duration == null) continue;
+    found = true;
+    let start = Number(rawStart ?? 0), stop = Number(rawEnd ?? (start + Number(item.duration || 0)));
+    if (start >= card.start && card.start > 0) start -= card.start;
+    if (stop >= card.start && card.start > 0 && rawEnd != null) stop -= card.start;
+    end = Math.max(end, stop, start);
+  }
+  return found && end > 0 ? end : null;
+}
+
+function dimension(v, size) {
+  if (typeof v === "string" && /%$/.test(v)) return parseFloat(v) * size / 100;
+  const n = Number(v);
+  return Number.isFinite(n) && Math.abs(n) <= 1 ? n * size : n;
+}
+
+function explicitCardBox(card, W, H) {
+  const raw = card.box || card.bounds || card.layout?.box;
+  const b = Array.isArray(raw) ? { x: raw[0], y: raw[1], width: raw[2], height: raw[3] } : raw;
+  if (!b) return null;
+  const x = dimension(b.x ?? b.left, W), y = dimension(b.y ?? b.top, H);
+  let width = dimension(b.width ?? b.w, W), height = dimension(b.height ?? b.h, H);
+  if (!(width >= 0) && (b.x2 ?? b.right) != null && Number.isFinite(x)) width = dimension(b.x2 ?? b.right, W) - x;
+  if (!(height >= 0) && (b.y2 ?? b.bottom) != null && Number.isFinite(y)) height = dimension(b.y2 ?? b.bottom, H) - y;
+  if (![x, y, width, height].every(Number.isFinite)) return null;
+  return { x, y, width, height, estimated: false };
+}
+
+function estimatedCardBox(card, plan, W, H) {
+  const mode = plan.style?.graphics?.mode || "overlay";
+  if (mode === "full") return { x: 0.08 * W, y: 0.15 * H, width: 0.81 * W, height: 0.39 * H, estimated: true };
+  const n = (card.items || []).length;
+  const heights = { stat: 300, headline: 250, quote: 330, compare: 380, bars: 210 + n * 80, list: 190 + n * 78, steps: 300, message: 190 + n * 105, post: 360, chapter: 250 };
+  const height = Math.min((mode === "band" ? 0.62 : 0.4) * H, heights[card.type] || 340);
+  if (mode !== "band") return { x: 0.04 * W, y: 0.055 * H, width: 0.92 * W, height, estimated: true };
+  const f = plan.framing || {}, face = f.face;
+  let x = 0.56 * W, width = 0.4 * W, y = 0.2 * H;
+  if (f.multi && face) { x = 0.32 * W; width = 0.36 * W; y = 0.08 * H; }
+  else if (face) {
+    const room = (f.side === "right" ? 1 - (face.cx + face.w / 2) : face.cx - face.w / 2) - 0.2 * face.w - 0.04;
+    width = Math.max(0.22, Math.min(0.3, room)) * W;
+    x = (f.side === "right" ? 0.96 * W - width : 0.04 * W);
+    y = Math.max(0.06, Math.min(0.5, face.cy - face.h * 0.6)) * H;
+  }
+  return { x, y, width, height, estimated: true };
+}
+
+function cardBox(card, plan, W, H) {
+  return explicitCardBox(card, W, H) || estimatedCardBox(card, plan, W, H);
+}
+
+/** Retention guardrails for graphic cards. Warnings only; a plan with no cards returns exactly no new items. */
+export function graphicChecks(plan) {
+  const cards = plan?.graphics || [];
+  if (!cards.length) return [];
+  const items = [];
+  const rules = { ...CARD_RULES, ...(plan.style?.preflight?.cards || {}) };
+  const D = plan.video?.duration || 0;
+  const W = plan.canvas?.width || 1080, H = plan.canvas?.height || 1920;
+  const at = (g) => fmt(+g.start || 0);
+  for (const card of cards) {
+    const count = cardWords(card).length;
+    const budget = Math.max(0, Math.floor(((+card.duration || 0) - rules.orientationSeconds) / (60 / rules.readingWpm)));
+    if (count > budget) items.push({ level: "warn", code: "card-reading-budget", message: `${card.type || "card"} at ${at(card)} shows ${count} words; its ${r3(+card.duration || 0)} s hold fits ${budget}` });
+    if ((+card.duration || 0) > rules.maxHold) items.push({ level: "warn", code: "card-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s (keep cards at or under ${rules.maxHold} s)` });
+    const timed = itemTimedDuration(card);
+    if (timed != null && (+card.duration || 0) > timed + 1 / 30) items.push({ level: "warn", code: "card-item-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s, past its last item at ${r3(timed)} s` });
+
+    const box = cardBox(card, plan, W, H), right = box.x + box.width, bottom = box.y + box.height;
+    const cap = plan.style?.captions || {};
+    const captionTop = plan.captions?.length && cap.enabled !== false ? (cap.position ?? 0.6) * H - 0.6 * (cap.fontSizeFrac || 0.04) * H : H;
+    const bad = [];
+    if (box.x < rules.left) bad.push(`left ${Math.round(box.x)}px`);
+    if (right > rules.right) bad.push(`right ${Math.round(right)}px`);
+    if (box.y < rules.top) bad.push(`top ${Math.round(box.y)}px`);
+    if (bottom > captionTop) bad.push(`bottom ${Math.round(bottom)}px past captions at ${Math.round(captionTop)}px`);
+    const source = box.estimated ? `estimated ${card.type || "card"} box` : `${card.type || "card"} box`;
+    if (bad.length) items.push({ level: "warn", code: "card-bounds", message: `${source} at ${at(card)} is outside x ${rules.left}-${rules.right}px / y ${rules.top}px-caption top (${bad.join(", ")})` });
+    if (right > rules.right && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "card-right-rail", message: `${source} at ${at(card)} reaches the right action rail below ${pct(SAFE.rightFrom)}` });
+
+    const countUp = card.type === "stat" && /\d/.test(String(card.value || "")) && !card.value2 && card.countUp !== false && card.animateNumber !== false && !["fixed", "threshold"].includes(card.display);
+    if (countUp) items.push({ level: "warn", code: "card-truth-countup", message: `stat at ${at(card)} counts through numbers Greg did not say before it reaches "${card.value}"` });
+  }
+
+  const saveWorthy = cards.some((g) => g.saveWorthy === true || g.reference === true || g.informationRole === "reference" || g.role === "reference");
+  const occupancy = cardOccupancy(cards, D), maxOccupancy = saveWorthy ? rules.saveWorthyOccupancy : rules.maxOccupancy;
+  if (occupancy > maxOccupancy) items.push({ level: "warn", code: "card-occupancy", message: `cards occupy ${pct(occupancy)} of the reel (keep ${saveWorthy ? "one save-worthy reference reel" : "cards"} at or under ${pct(maxOccupancy)})` });
+
+  const events = majorEventStarts(plan);
+  for (let i = 1; i < events.length; i++) {
+    const gap = events[i].t - events[i - 1].t;
+    if (gap < rules.minMajorGap) items.push({ level: "warn", code: "major-event-gap", message: `${events[i].label} at ${fmt(events[i].t)} starts ${r3(gap)} s after ${events[i - 1].label} (leave ${rules.minMajorGap} s)` });
+  }
+  const maxEvents = maxMajorEvents(plan, rules.eventWindow);
+  if (maxEvents > rules.maxMajorStarts) items.push({ level: "warn", code: "major-event-budget", message: `${maxEvents} cards/cutaways start inside one rolling ${rules.eventWindow} s window (maximum ${rules.maxMajorStarts})` });
+
+  const hook = plan.hook;
+  const hookCount = hook && (+hook.start || 0) <= 1 / 30 ? words(hook.text).length : 0;
+  if (hookCount < 4) items.push({ level: "warn", code: "frame-zero-hook", message: `frame zero has ${hookCount} hook words (target 4-8)` });
+  else if (hookCount >= 9) items.push({ level: "warn", code: "frame-zero-hook", message: `frame zero has ${hookCount} hook words (target 4-8)` });
+  return items;
+}
 
 /**
  * Pacing and caption readability from the plan (after herk-edit-kit's measured numbers and remotion-captioneer's

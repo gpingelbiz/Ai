@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { alignWords } from "../src/align.mjs";
 import { fixPrompt, validateEdits, applyEdits, fixHints } from "../src/correct.mjs";
-import { layoutChecks, preflightText, describePreflight, SAFE } from "../src/preflight.mjs";
+import { graphicChecks, layoutChecks, preflightText, describePreflight, SAFE } from "../src/preflight.mjs";
 
 const W = (text, start, end, extra = {}) => ({ text, start, end, ...extra });
 
@@ -95,4 +95,65 @@ test("pacing: progress milestones are small pulse events, not one long card", as
   const { stats } = pacingChecks(plan);
   assert.equal(stats.firstCut, 4, "the long rail lifetime is not a card hold");
   assert.equal(stats.shots, 5, "only the two visible 1.4-second pulses add event boundaries");
+});
+
+const cardPlan = (graphics, extra = {}) => ({
+  video: { duration: 30 },
+  canvas: { width: 1080, height: 1920 },
+  style: { captions: { enabled: true, position: 0.7, fontSizeFrac: 0.04 }, graphics: { mode: "overlay" }, preflight: { cards: {} } },
+  captions: [{ start: 0, end: 30, text: "spoken caption" }],
+  hook: { start: 0, duration: 3, text: "Your bad day shows in ten minutes" },
+  graphics,
+  broll: [],
+  ...extra,
+});
+
+const safeBox = { x: 100, y: 250, width: 600, height: 300 };
+
+test("card preflight: reading budget, five-second hold and item-timed hold are warnings with the card time", () => {
+  const plan = cardPlan([{ type: "list", start: 4, duration: 5.2, eyebrow: "THE WHOLE PLAY", title: "DO THIS NOW", items: [{ text: "Make the first call", offset: 0 }, { text: "Ask what happened", offset: 2, duration: 1 }], box: safeBox }]);
+  const found = graphicChecks(plan);
+  const codes = found.map((i) => i.code);
+  assert.ok(codes.includes("card-reading-budget"));
+  assert.ok(codes.includes("card-hold"));
+  assert.ok(codes.includes("card-item-hold"));
+  assert.match(found.find((i) => i.code === "card-reading-budget").message, /at 0:04/);
+  assert.ok(found.every((i) => i.level === "warn"));
+});
+
+test("card preflight: occupancy is 25%, or 30% for one marked save-worthy reference", () => {
+  const card = { type: "headline", start: 4, duration: 5.5, text: "Own the number", box: safeBox };
+  assert.ok(graphicChecks(cardPlan([card], { video: { duration: 20 } })).some((i) => i.code === "card-occupancy"));
+  assert.ok(!graphicChecks(cardPlan([{ ...card, saveWorthy: true }], { video: { duration: 20 } })).some((i) => i.code === "card-occupancy"));
+});
+
+test("card preflight: rolling event budget catches close starts and three starts in ten seconds", () => {
+  const graphics = [4, 6.5, 11].map((start, i) => ({ type: "headline", start, duration: 2, text: `Point ${i + 1}`, box: safeBox }));
+  const found = graphicChecks(cardPlan(graphics));
+  assert.ok(found.some((i) => i.code === "major-event-gap"));
+  assert.ok(found.some((i) => i.code === "major-event-budget"));
+});
+
+test("card preflight: actual and estimated boxes respect the card rectangle, caption top and right rail", () => {
+  const bad = { type: "headline", start: 4, duration: 3, text: "Own the number", box: { x: 70, y: 190, width: 900, height: 700 } };
+  const actual = graphicChecks(cardPlan([bad]));
+  assert.ok(actual.some((i) => i.code === "card-bounds"));
+  assert.ok(actual.some((i) => i.code === "card-right-rail"));
+  const edgeBox = graphicChecks(cardPlan([{ type: "headline", start: 4, duration: 3, text: "Own the number", bounds: { left: 100, top: 250, right: 900, bottom: 800 } }]));
+  assert.ok(!edgeBox.some((i) => i.code === "card-bounds"));
+  const estimated = graphicChecks(cardPlan([{ type: "headline", start: 4, duration: 3, text: "Own the number" }]));
+  assert.match(estimated.find((i) => i.code === "card-bounds").message, /estimated headline box/);
+});
+
+test("card preflight: frame-zero hook length and a single-value count-up are truthful", () => {
+  const stat = { type: "stat", start: 4, duration: 3, value: "About 10 minutes", box: safeBox };
+  const plan = cardPlan([stat], { hook: { start: 0, duration: 3, text: "One two three four five six seven eight nine" } });
+  const found = graphicChecks(plan);
+  assert.ok(found.some((i) => i.code === "frame-zero-hook"));
+  assert.ok(found.some((i) => i.code === "card-truth-countup"));
+  assert.ok(!graphicChecks(cardPlan([{ ...stat, display: "threshold" }])).some((i) => i.code === "card-truth-countup"));
+});
+
+test("a plan with no cards receives no new graphics warnings", () => {
+  assert.deepEqual(graphicChecks(cardPlan([])), []);
 });

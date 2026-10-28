@@ -8,6 +8,7 @@ import { fixWords, describeFix } from "./correct.mjs";
 import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
 import { makeCutout, describeCutout } from "./behind.mjs";
 import { runPreflight, writePreflight, describePreflight } from "./preflight.mjs";
+import { writeFeatures } from "./features.mjs";
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
@@ -377,6 +378,7 @@ export async function runEdit(input, opts = {}) {
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
   const graphicsSchema = graphics.schema || 1;
+  const sceneSchema = graphicsSchema;
   // The reel's look (picked with the cards) themes the rest of it: hook treatment, caption marker, slam style,
   // b-roll grade and cut, camera move. A reel without cards keeps its preset's look.
   const look = graphics.look;
@@ -430,8 +432,11 @@ export async function runEdit(input, opts = {}) {
   // Structure cards win their slots: a planned card within 6 s of one is dropped.
   const progressGraphics = graphics.filter((g) => g.type === "progress");
   const regularGraphics = graphics.filter((g) => g.type !== "progress");
-  const allCards = [...structureCards, ...regularGraphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2)))].sort((a, b) => a.start - b.start);
-  const progress = progressGraphics.map((g) => ({ ...g, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || allCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) })) }));
+  const allCards = [
+    ...structureCards.map((g) => ({ ...g, version: g.version || 1 })),
+    ...regularGraphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2))).map((g) => ({ ...g, version: g.version || sceneSchema })),
+  ].sort((a, b) => a.start - b.start);
+  const progress = progressGraphics.map((g) => ({ ...g, version: g.version || sceneSchema, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || allCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) })) }));
   const allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
   allGraphics.schema = graphicsSchema;
   // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
@@ -480,6 +485,7 @@ export async function runEdit(input, opts = {}) {
     zooms,
     graphics: allGraphics,
     graphicsSchema,
+    scenes: { schema: sceneSchema },
     broll,
     slams,
     coldOpen,
@@ -493,6 +499,7 @@ export async function runEdit(input, opts = {}) {
     words: cleanWords,
   };
   writeJSON(path.join(workDir, "plan.json"), plan);
+  writeFeatures(workDir, plan, { sceneSchema });
   composeProject(plan, projectDir);
   log(`project: ${projectDir} (edit ${path.join(workDir, "plan.json")} and run: reel build ${workDir})`);
   if (opts.noRender) return { workDir, plan };
@@ -639,6 +646,7 @@ export async function buildProject(workDir, opts = {}) {
   if (!fs.existsSync(planPath)) throw new Error(`no plan.json in ${workDir}`);
   const plan = readJSON(planPath);
   const projectDir = path.join(workDir, "project");
+  writeFeatures(workDir, plan);
   composeProject(plan, projectDir);
   log(`project rebuilt from plan.json: ${projectDir}`);
   if (opts.noRender) return { workDir, plan };
