@@ -143,8 +143,19 @@ export function renderHTML(plan, footage) {
   // Text behind you: the person cut out of the same frames (VP9 with alpha) plays over the hook, in a wrap that
   // mirrors every move of the footage wrap, so the headline runs behind the head and shoulders.
   const behind = plan.behind && plan.behind.src ? plan.behind : null;
+  const bumps = plan.motion?.bumps || [];
+  const drifts = plan.motion?.drift || [];
+  const hasImpact = bumps.length > 0;
+  const hasDrift = drifts.length > 0;
+  const motionWrap = (inner, cutout = false) => {
+    const pre = cutout ? "cutout-" : "";
+    if (hasImpact) inner = `<div id="${pre}impact-wrap" class="motion-inner">${inner}</div>`;
+    if (hasDrift) inner = `<div id="${pre}drift-wrap" class="motion-inner">${inner}</div>`;
+    return inner;
+  };
+  const cutoutMedia = behind ? `<video id="cutout" class="clip" src="${esc(behind.src)}" data-start="${behind.start}" data-duration="${behind.duration}" data-track-index="4" muted playsinline></video>` : "";
   const cutoutHTML = behind
-    ? `      <div id="cutout-wrap" data-layout-allow-overflow><video id="cutout" class="clip" src="${esc(behind.src)}" data-start="${behind.start}" data-duration="${behind.duration}" data-track-index="4" muted playsinline></video></div>`
+    ? `      <div id="cutout-wrap" data-layout-allow-overflow>${motionWrap(cutoutMedia, true)}</div>`
     : "";
 
   // B-roll stills: full-frame cutaways over the footage, under the captions. The voice keeps playing underneath.
@@ -156,7 +167,7 @@ export function renderHTML(plan, footage) {
   const pullStyle = focusPull ? ` style="--hf-color-grading-blur: ${focusPull}"` : "";
   // The cut: hard (the default from the b-roll research), flash (the Social Flash recipe: a white wash with a warm
   // core on the frame of the cut, in and out), or blur (the still arrives from and leaves into a blur).
-  const brollCut = ["flash", "blur"].includes(s.broll?.cut) ? s.broll.cut : "hard";
+  const brollCut = ["flash", "blur", "whip"].includes(s.broll?.cut) ? s.broll.cut : "hard";
   // A still is an <img>; a generated clip (Runway) is a muted <video> that plays from its start while the cut holds.
   const brollMedia = (b) => (b.video
     ? `<video class="broll-media" src="${esc(b.src)}" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2" muted playsinline${grade}${pullStyle}></video>`
@@ -164,6 +175,12 @@ export function renderHTML(plan, footage) {
   const brollHTML = brollList
     .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`)
     .join("\n");
+  // A real directional blur for whip cuts. Chromium's SVG filter is seek-stable and `stdDeviation="x 0"` blurs
+  // only horizontally; animating the attribute avoids frame-history tricks whose result depends on render order.
+  const whip = brollCut === "whip" && brollList.length > 0;
+  const whipFiltersHTML = whip
+    ? `      <svg id="whip-filters" width="0" height="0" aria-hidden="true"><defs><filter id="whip-foot-filter" x="-25%" y="-5%" width="150%" height="110%"><feGaussianBlur id="whip-foot-blur" stdDeviation="0 0" edgeMode="duplicate" /></filter>${brollList.map((_, i) => `<filter id="whip-broll-filter-${i}" x="-25%" y="-5%" width="150%" height="110%"><feGaussianBlur id="whip-broll-blur-${i}" stdDeviation="0 0" edgeMode="duplicate" /></filter>`).join("")}</defs></svg>\n`
+    : "";
 
   // Cold open: the strongest still under the hook for the first beat, then a flash into the speaker.
   const open = plan.coldOpen && plan.coldOpen.src ? plan.coldOpen : null;
@@ -220,6 +237,9 @@ export function renderHTML(plan, footage) {
     .join("\n");
 
   const videoAudio = plan.audio?.replaceAudio || !plan.video.hasAudio ? " muted" : ' data-has-audio="true"';
+  const footageMedia = `<video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>`;
+  const videoWrapHTML = `      <div id="video-wrap" data-layout-allow-overflow>\n        ${motionWrap(footageMedia)}\n      </div>`;
+  const videoLayerHTML = whip ? `      <div id="whip-wrap" data-layout-allow-overflow>\n${videoWrapHTML}\n      </div>` : videoWrapHTML;
 
   const runtimePlan = {
     duration: D,
@@ -253,6 +273,7 @@ export function renderHTML(plan, footage) {
     base: plan.framing?.scale || 1,
     baseShift: Math.round((plan.framing?.shift || 0) * H),
     behind: behind ? { start: behind.start, duration: behind.duration } : null,
+    ...(hasImpact || hasDrift ? { motion: { bumps, drift: drifts } } : {}),
   };
   if (progressList.length) runtimePlan.progress = progressList.map((g) => ({ start: g.start, duration: g.duration, hookEnd: g.hookEnd, pulses: g.pulses || [] }));
   const framing = plan.framing || { scale: 1, side: "right", face: null };
@@ -287,7 +308,9 @@ export function renderHTML(plan, footage) {
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
       #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
-      #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }${behind?.under ? "\n      #cutout-wrap { z-index: 1; } #hook { z-index: 2; }" : ""}
+${whip ? `      #whip-wrap { position: absolute; inset: 0; filter: url(#whip-foot-filter); will-change: transform, filter; }
+${brollList.map((_, i) => `      #broll-${i} { filter: url(#whip-broll-filter-${i}); will-change: transform, filter; }`).join("\n")}
+` : ""}${hasImpact || hasDrift ? `      .motion-inner { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }\n` : ""}      #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }${behind?.under ? "\n      #cutout-wrap { z-index: 1; } #hook { z-index: 2; }" : ""}
       #cutout { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       #root { ${sideVars} }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -357,9 +380,7 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}
   </head>
   <body>
     <div id="root" data-composition-id="reel" data-start="0" data-width="${W}" data-height="${H}" data-duration="${D}" data-fps="${s.render?.fps || 30}"${plan.video.hasAudio || tracks.length ? ` data-fx-chain="${esc(JSON.stringify({ version: 1, nodes: [{ type: "truepeak", id: "ceiling", label: "Delivery ceiling", params: { ceiling: -1.5, lookahead: 3, release: 80 } }] }))}"` : ""}>
-      <div id="video-wrap" data-layout-allow-overflow>
-        <video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>
-      </div>
+${whipFiltersHTML}${videoLayerHTML}
 ${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div id="defocus"></div>` : ""}
 ${openHTML}
 ${brollHTML}
@@ -497,7 +518,20 @@ ${audioHTML}
             }
           });
         } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to(WRAP, { scale: z.scale * BASE, xPercent: z.xPercent || 0, duration: z.snap, ease: "power3.out" }, z.t)));
-        // Cold open: the still holds under the hook with a slow push, the flash hits on the cut to the speaker.
+${hasImpact || hasDrift ? `        // Drift and impact are isolated from WRAP, so their scales multiply the active punch-in instead of replacing it.
+        const MOTION_FRAME = 1 / (PLAN.fps || 30);
+${hasDrift ? `        const DRIFT = PLAN.behind ? ["#drift-wrap", "#cutout-drift-wrap"] : "#drift-wrap";
+        PLAN.motion.drift.forEach((d) => {
+          tl.fromTo(DRIFT, { scale: 1 }, { scale: d.scale, duration: d.end - d.start, ease: "sine.inOut", immediateRender: false }, d.start);
+          if (d.reset === "cut") tl.set(DRIFT, { scale: 1 }, d.end);
+          else tl.to(DRIFT, { scale: 1, duration: d.out || 5 * MOTION_FRAME, ease: d.reset === "move" ? "power3.out" : "power2.in" }, d.end);
+        });
+` : ""}${hasImpact ? `        const IMPACT = PLAN.behind ? ["#impact-wrap", "#cutout-impact-wrap"] : "#impact-wrap";
+        PLAN.motion.bumps.forEach((b) => {
+          tl.fromTo(IMPACT, { scale: 1 }, { scale: b.scale, duration: 2 * MOTION_FRAME, ease: "expo.out", immediateRender: false }, b.t);
+          tl.to(IMPACT, { scale: 1, duration: 4 * MOTION_FRAME, ease: "power2.out" }, b.t + 2 * MOTION_FRAME);
+        });
+` : ""}` : ""}        // Cold open: the still holds under the hook with a slow push, the flash hits on the cut to the speaker.
         if (PLAN.coldOpen) {
           const d = PLAN.coldOpen.duration;
           tl.set("#cold-open", { opacity: 1 }, 0);
@@ -519,7 +553,23 @@ ${cardList.length ? GRAPHICS_JS : ""}${progressList.length ? PROGRESS_JS : ""}
           const m = MOVES[b.motion] || MOVES.in;
           const img = el.querySelector(".broll-media");
           const bEnd = b.start + b.duration;
-          if (PLAN.brollCut === "blur") {
+          ${whip ? `if (PLAN.brollCut === "whip") {
+            const frames = 7 / (PLAN.fps || 30), peak = 3 / (PLAN.fps || 30), outAt = bEnd - frames;
+            const footBlur = document.getElementById("whip-foot-blur"), brollBlur = document.getElementById("whip-broll-blur-" + i);
+            const blur = (node, at) => {
+              tl.fromTo(node, { attr: { stdDeviation: "0 0" } }, { attr: { stdDeviation: "42 0" }, duration: peak, ease: "power2.in", immediateRender: false }, at);
+              tl.to(node, { attr: { stdDeviation: "0 0" }, duration: frames - peak, ease: "power2.out" }, at + peak);
+            };
+            tl.set(el, { opacity: 1 }, b.start);
+            tl.fromTo("#whip-wrap", { xPercent: 0 }, { xPercent: -14, duration: frames, ease: "power2.inOut", immediateRender: false }, b.start);
+            tl.fromTo(el, { xPercent: 14 }, { xPercent: 0, duration: frames, ease: "power2.inOut", immediateRender: false }, b.start);
+            blur(footBlur, b.start); blur(brollBlur, b.start);
+            tl.set("#whip-wrap", { xPercent: -14 }, outAt);
+            tl.to("#whip-wrap", { xPercent: 0, duration: frames, ease: "power2.inOut" }, outAt);
+            tl.to(el, { xPercent: 14, duration: frames, ease: "power2.inOut" }, outAt);
+            blur(footBlur, outAt); blur(brollBlur, outAt);
+            tl.set(el, { opacity: 0 }, bEnd);
+          } else ` : ""}if (PLAN.brollCut === "blur") {
             tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" }, b.start);
             tl.fromTo(img, { "--hf-color-grading-blur": 1 }, { "--hf-color-grading-blur": 0, duration: 0.45, ease: "power3.out", immediateRender: false }, b.start);
             tl.to(img, { "--hf-color-grading-blur": 1, duration: 0.35, ease: "power2.in" }, bEnd - 0.35);
