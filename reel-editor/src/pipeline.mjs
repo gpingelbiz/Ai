@@ -26,6 +26,7 @@ import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { makeGraphics } from "./graphics.mjs";
 import { planSlams } from "./slams.mjs";
+import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
@@ -450,9 +451,17 @@ export async function runEdit(input, opts = {}) {
   allGraphics.schema = graphicsSchema;
   // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
   const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail };
-  const broll = preset.broll?.enabled && shownGroups.length
+  let broll = preset.broll?.enabled && shownGroups.length
     ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
+  // Cutout layout: the generated still or clip remains the moving background; a window-matched person matte stays
+  // registered over it. Each failed matte falls back to the established full-frame cutaway.
+  if (brollLayout(preset.broll?.layout) === "cutout") {
+    const cutoutBroll = await makeCutoutBroll({ broll, layout: preset.broll.layout, video: videoSrc, fps: preset.render.fps || 30, outDir: workDir });
+    broll = cutoutBroll.broll;
+    if (cutoutBroll.events.length) cutoutBroll.events.forEach((event) => log(event));
+    else log("cutout b-roll: no cutaways to matte");
+  }
   if (preset.zooms.enabled) {
     zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
@@ -488,8 +497,16 @@ export async function runEdit(input, opts = {}) {
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
   // The rail's visible pulses count as busy too: a slam word stamping in at the top would land on the rail.
   const railPulses = progress.flatMap((g) => (g.pulses || []).filter((p) => !p.hidden).map((p) => ({ start: p.at, duration: 1.4 })));
-  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...railPulses], zooms, tail }) : [];
+  let slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...railPulses], zooms, tail, includeRank: !!preset.slams?.popout?.enabled }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
+  // Pop-out slams reuse the already-spaced slam plan: only its highest-ranked words pay the Vision cost.
+  if (preset.slams?.popout?.enabled) {
+    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+    const popouts = await makePopoutSlams({ slams, video: videoSrc, fps: preset.render.fps || 30, outDir: workDir, canvas: canvas0, settings: preset.slams.popout, framing, zoomDuring: (t0, t1) => zoomDuring(zooms, t0, t1), headTopFor: (sl) => cardHeadTop(detection, { zooms, t0: sl.t, t1: sl.end, scale: framing.scale, originY, shift: framing.shift || 0 }) });
+    slams = popouts.slams;
+    if (popouts.events.length) popouts.events.forEach((event) => log(event));
+    else log(`pop-out slams: none ranked at least ${preset.slams.popout.minRank ?? 2.5}`);
+  }
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");

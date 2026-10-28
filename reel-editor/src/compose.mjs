@@ -59,6 +59,15 @@ export function composeProject(plan, projectDir) {
     b.video = /\.(mp4|mov|webm|m4v)$/i.test(b.file || "");
     copyOrLink(b.file, path.join(projectDir, b.src));
   });
+  // Window-matched person mattes for pop-out slams and cutout b-roll live beside the hook's alpha clip.
+  const extraCutouts = [
+    ...(plan.broll || []).map((b, i) => ({ cut: b.cutout, src: `assets/cutouts/broll-${i + 1}.webm` })),
+    ...(plan.slams || []).map((sl, i) => ({ cut: sl.popout, src: `assets/cutouts/popout-${i + 1}.webm` })),
+  ].filter((x) => x.cut?.file && fs.existsSync(x.cut.file));
+  if (extraCutouts.length) ensureDir(path.join(assets, "cutouts"));
+  for (const x of extraCutouts) { x.cut.src = x.src; copyOrLink(x.cut.file, path.join(projectDir, x.src)); }
+  for (const b of plan.broll || []) if (b.cutout && !b.cutout.src) b.cutout = null;
+  for (const sl of plan.slams || []) if (sl.popout && !sl.popout.src) sl.popout = null;
   // Text behind you: the person cutout (VP9 with alpha) for the hook window.
   if (plan.behind?.file && fs.existsSync(plan.behind.file)) {
     plan.behind.src = "assets/cutout.webm";
@@ -164,6 +173,10 @@ export function renderHTML(plan, footage) {
   const brollHTML = brollList
     .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`)
     .join("\n");
+  const brollCutoutHTML = brollList
+    .map((b, i) => b.cutout?.src ? `      <div id="broll-cutout-wrap-${i}" class="cutout-wrap broll-cutout-wrap" data-layout-allow-overflow><video id="broll-cutout-${i}" class="clip cutout-person broll-cutout-person" style="--cutout-outline:${r3(W * 0.004)}px" src="${esc(b.cutout.src)}" data-start="${b.cutout.start}" data-duration="${b.cutout.duration}" data-track-index="4" muted playsinline></video></div>` : "")
+    .filter(Boolean)
+    .join("\n");
 
   // Cold open: the strongest still under the hook for the first beat, then a flash into the speaker.
   const open = plan.coldOpen && plan.coldOpen.src ? plan.coldOpen : null;
@@ -182,7 +195,19 @@ export function renderHTML(plan, footage) {
   const slamList = plan.slams || [];
   const slamFont = (t) => Math.round(Math.min(0.115 * H, (0.86 * W) / Math.max(3, t.length * 0.52)));
   const slamHTML = slamList
-    .map((sl, i) => `      <div id="slam-${i}" class="slam clip" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`)
+    .map((sl, i) => {
+      const p = sl.popout?.src ? sl.popout : null;
+      const stage = p ? ` style="left:${r3((76 / 1080) * 100)}%;right:${r3(((1080 - 940) / 1080) * 100)}%;top:${p.placement.top}px;height:${Math.round(p.placement.fontSize * 1.05)}px"` : "";
+      return `      <div id="slam-${i}" class="slam clip${p ? " slam-popout" : ""}" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"${stage}><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${p?.placement.fontSize || slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`;
+    })
+    .join("\n");
+  const popoutBgHTML = slamList
+    .map((sl, i) => sl.popout?.src ? `      <div id="popout-bg-${i}" class="popout-bg clip" style="background:radial-gradient(ellipse 46% 31% at 50% 45%, ${hexA(c.accent, 0.48)} 0%, ${hexA(c.accent, 0)} 72%),linear-gradient(${hexA(c.bg, sl.popout.dim ?? 0.62)},${hexA(c.bg, sl.popout.dim ?? 0.62)})" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="1" data-layout-allow-overflow></div>` : "")
+    .filter(Boolean)
+    .join("\n");
+  const popoutCutoutHTML = slamList
+    .map((sl, i) => sl.popout?.src ? `      <div id="popout-cutout-wrap-${i}" class="cutout-wrap popout-cutout-wrap" data-layout-allow-overflow><video id="popout-cutout-${i}" class="clip cutout-person popout-cutout-person" style="--cutout-outline:${r3(W * (sl.popout.outline ?? 0.004))}px" src="${esc(sl.popout.src)}" data-start="${sl.popout.start}" data-duration="${sl.popout.duration}" data-track-index="4" muted playsinline></video></div>` : "")
+    .filter(Boolean)
     .join("\n");
 
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
@@ -228,14 +253,14 @@ export function renderHTML(plan, footage) {
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
-    broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video })),
+    broll: brollList.map((b, i) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}) })),
     graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}) })),
     graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
     graphicsSide: plan.framing?.side || "right",
     graphicsText: c.text,
     graphicsAccent: c.accent,
-    slams: slamList.map((sl) => ({ t: sl.t, end: sl.end })),
+    slams: slamList.map((sl, i) => ({ t: sl.t, end: sl.end, ...(sl.popout?.src ? { popout: { i, blur: sl.popout.blur ?? 10 } } : {}) })),
     zoomStyle: s.zooms?.style || "snap",
     focusPull,
     brollCut,
@@ -253,6 +278,16 @@ export function renderHTML(plan, footage) {
     base: plan.framing?.scale || 1,
     baseShift: Math.round((plan.framing?.shift || 0) * H),
     behind: behind ? { start: behind.start, duration: behind.duration } : null,
+    cutoutWraps: [
+      ...(behind ? ["#cutout-wrap"] : []),
+      ...brollList.map((b, i) => b.cutout?.src ? `#broll-cutout-wrap-${i}` : null).filter(Boolean),
+      ...slamList.map((sl, i) => sl.popout?.src ? `#popout-cutout-wrap-${i}` : null).filter(Boolean),
+    ],
+    cutoutMedia: [
+      ...(behind ? ["#cutout"] : []),
+      ...brollList.map((b, i) => b.cutout?.src ? `#broll-cutout-${i}` : null).filter(Boolean),
+      ...slamList.map((sl, i) => sl.popout?.src ? `#popout-cutout-${i}` : null).filter(Boolean),
+    ],
   };
   if (progressList.length) runtimePlan.progress = progressList.map((g) => ({ start: g.start, duration: g.duration, hookEnd: g.hookEnd, pulses: g.pulses || [] }));
   const framing = plan.framing || { scale: 1, side: "right", face: null };
@@ -289,6 +324,10 @@ export function renderHTML(plan, footage) {
       #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
       #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }${behind?.under ? "\n      #cutout-wrap { z-index: 1; } #hook { z-index: 2; }" : ""}
       #cutout { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }
+      .cutout-person { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .broll-cutout-person { filter: drop-shadow(var(--cutout-outline) 0 0 ${c.text}) drop-shadow(calc(-1 * var(--cutout-outline)) 0 0 ${c.text}) drop-shadow(0 var(--cutout-outline) 0 ${c.text}) drop-shadow(0 calc(-1 * var(--cutout-outline)) 0 ${c.text}) drop-shadow(0 ${Math.round(H * 0.009)}px ${Math.round(H * 0.014)}px ${hexA(c.stroke, 0.68)}); }
+      .popout-cutout-person { opacity: 0; filter: drop-shadow(var(--cutout-outline) 0 0 ${c.text}) drop-shadow(calc(-1 * var(--cutout-outline)) 0 0 ${c.text}) drop-shadow(0 var(--cutout-outline) 0 ${c.text}) drop-shadow(0 calc(-1 * var(--cutout-outline)) 0 ${c.text}) drop-shadow(0 0 ${Math.round(H * 0.026)}px ${hexA(c.accent, 0.52)}); }
       #root { ${sideVars} }
       #footage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
       /* Creator punch-in: the frame edges defocus for a beat while the camera moves (the centre stays sharp). */
@@ -301,6 +340,7 @@ export function renderHTML(plan, footage) {
       .broll-flash { position: absolute; inset: -12%; opacity: 0; background: rgb(255,253,250); pointer-events: none; }
       #open-flash { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
       .broll-flash-core { position: absolute; inset: -18%; opacity: 0; background: radial-gradient(ellipse 68% 92% at 37% 47%, rgb(255,255,255) 0%, rgba(255,255,255,0.98) 20%, rgba(255,253,250,0.86) 45%, rgba(255,174,105,0.32) 67%, rgba(255,174,105,0) 100%); }
+      .popout-bg { position: absolute; inset: 0; opacity: 0; pointer-events: none; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
       #lower-third { position: absolute; left: 5%; top: 80%; display: flex; align-items: stretch; gap: ${Math.round(H * 0.012)}px; opacity: 0; pointer-events: none; }
       .lt-bar { width: ${Math.round(H * 0.008)}px; background: ${c.accent}; border-radius: ${Math.round(H * 0.004)}px; transform-origin: 50% 100%; }
       .lt-text { display: flex; flex-direction: column; justify-content: center; gap: ${Math.round(H * 0.004)}px; padding: ${Math.round(H * 0.008)}px 0; font-family: "Inter", sans-serif; color: ${c.text}; text-shadow: 0 0.06em 0.4em rgba(0,0,0,0.6); }
@@ -363,11 +403,14 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}
 ${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div id="defocus"></div>` : ""}
 ${openHTML}
 ${brollHTML}
+${popoutBgHTML}
 ${lowerHTML}
 ${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}
 ${slamHTML}
 ${hookHTML}
 ${cutoutHTML}
+${brollCutoutHTML}
+${popoutCutoutHTML}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
 ${capsHTML}
       </div>
@@ -378,9 +421,9 @@ ${audioHTML}
       const PLAN = ${JSON.stringify(runtimePlan)};
       (function () {
         const tl = gsap.timeline({ paused: true });
-        // Every move of the footage is mirrored on the person cutout (text behind you), so the two stay registered.
-        const WRAP = PLAN.behind ? ["#video-wrap", "#cutout-wrap"] : "#video-wrap";
-        const FOOT = PLAN.behind ? ["#footage", "#cutout"] : "#footage";
+        // Every footage move is mirrored on every person cutout, so hook, slam and b-roll mattes stay registered.
+        const WRAP = PLAN.cutoutWraps.length ? ["#video-wrap", ...PLAN.cutoutWraps] : "#video-wrap";
+        const FOOT = PLAN.cutoutMedia.length ? ["#footage", ...PLAN.cutoutMedia] : "#footage";
         // The hook never covers the head: with hook.headTop (the head top at the opening push-in) the real hook text is
         // measured and the whole hook moves up until it ends 1.5% of the frame above the head, never above the 7% top
         // bar; only if it still does not fit does it shrink toward its top (to 60% at most). Without a measurement the
@@ -559,6 +602,15 @@ ${cardList.length ? GRAPHICS_JS : ""}${progressList.length ? PROGRESS_JS : ""}
           const word = el.querySelector(".slam-word");
           const land = 0.42;
           const outAt = Math.max(sl.t + land + 3 * frame, sl.end - 0.28);
+          if (sl.popout) {
+            const bg = document.getElementById("popout-bg-" + i);
+            const person = document.getElementById("popout-cutout-" + i);
+            const release = Math.max(sl.t + 6 * frame, sl.end - 8 * frame);
+            tl.fromTo(bg, { opacity: 0, backdropFilter: "blur(0px)", webkitBackdropFilter: "blur(0px)" }, { opacity: 1, backdropFilter: "blur(" + sl.popout.blur + "px)", webkitBackdropFilter: "blur(" + sl.popout.blur + "px)", duration: 6 * frame, ease: "power2.out", immediateRender: false }, sl.t);
+            tl.fromTo(person, { opacity: 0 }, { opacity: 1, duration: 3 * frame, ease: "expo.out", immediateRender: false }, sl.t);
+            tl.to(bg, { opacity: 0, backdropFilter: "blur(0px)", webkitBackdropFilter: "blur(0px)", duration: 8 * frame, ease: "power2.in" }, release);
+            tl.to(person, { opacity: 0, duration: 8 * frame, ease: "power2.in" }, release);
+          }
           tl.set(el, { opacity: 1 }, sl.t);
           tl.fromTo(word, { scale: 1.6, opacity: 0, y: 0 }, { scale: 1, opacity: 1, y: 0, duration: land, ease: "expo.out" }, sl.t);
           tl.to(stage, { x: PLAN.width * 0.0055, y: -PLAN.height * 0.003, duration: frame, ease: "power2.out" }, sl.t + land);

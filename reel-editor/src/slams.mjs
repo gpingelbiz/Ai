@@ -49,7 +49,7 @@ export function slamCandidates(groups, dict = {}) {
  * word hit together. Each slam holds `hold` seconds (longer if the word itself runs longer).
  * Returns [{t, end, text}] in time order.
  */
-export function planSlams(groups, duration, { dict = {}, hook = null, busy = [], zooms = [], minSpacing = 8, max = 5, hold = 1.1, tail = 1.5 } = {}) {
+export function planSlams(groups, duration, { dict = {}, hook = null, busy = [], zooms = [], minSpacing = 8, max = 5, hold = 1.1, tail = 1.5, includeRank = false } = {}) {
   const from = hook ? hook.start + hook.duration + 0.3 : 1;
   duration = duration - Math.max(0, tail - 1.5);
   const punch = new Set(zooms.filter((z) => z.scale > 1).map((z) => z.t));
@@ -66,5 +66,5 @@ export function planSlams(groups, duration, { dict = {}, hook = null, busy = [],
     if (picked.some((p) => Math.abs(p.t - c.t) < minSpacing)) continue;
     picked.push(c);
   }
-  return picked.sort((a, b) => a.t - b.t).map(({ t, end, text }) => ({ t, end, text }));
+  return picked.sort((a, b) => a.t - b.t).map(({ t, end, text, rank }) => ({ t, end, text, ...(includeRank ? { rank } : {}) }));
 }

@@ -134,6 +134,7 @@
   },
   "broll": {
     "enabled": false,
+    "layout": "full",
     "max": 3,
     "maxWithGraphics": 2,
     "every": 12,
@@ -178,7 +179,16 @@
     "enabled": false,
     "max": 5,
     "minSpacing": 8,
-    "hold": 1.1
+    "hold": 1.1,
+    "popout": {
+      "enabled": false,
+      "max": 2,
+      "minRank": 2.5,
+      "dim": 0.62,
+      "blur": 10,
+      "outline": 0.004,
+      "maxCovered": 0.15
+    }
   },
   "coldOpen": {
     "enabled": false,
