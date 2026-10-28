@@ -22,6 +22,10 @@
     "slams": true,
     "behind": true
   },
+  "looks": {
+    "_note": "Card looks that do not fit this brand, turned off for their reels: receipts, phone, fieldnotes, briefing, press, shopfloor, blueprint, casefile, redline, glass. Leave empty to allow all.",
+    "avoid": []
+  },
   "world": "Who they are and where they live and work, for the b-roll: their business, their city, their setting, the things that show up in their life. One or two sentences, concrete.",
   "brollStyle": "",
   "carouselStyle": "The look of their carousel pictures: light, colors, texture. Never another creator's style.",
