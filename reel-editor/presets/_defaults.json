@@ -134,6 +134,7 @@
   },
   "broll": {
     "enabled": false,
+    "layout": "full",
     "max": 3,
     "maxWithGraphics": 2,
     "every": 12,
