@@ -89,6 +89,8 @@ export function iconFor(text, pick) {
 /** How long each kind of card holds, from how much there is to read. */
 export function sceneDuration(s) {
   const n = (s.items || []).length;
+  const timed = (s.type === "list" || s.type === "steps") && n && s.items.every((it) => Number.isFinite(it.at));
+  if (timed) return r3(Math.min(8, Math.round((s.items[n - 1].at + 1.2) * 30) / 30));
   // Cards hold long enough to be read twice: the speaker is still on screen, so a card is never a cut.
   if (s.type === "list" || s.type === "steps" || s.type === "bars") return r3(Math.min(8, 4.5 + 0.7 * n));
   if (s.type === "message") return r3(Math.min(8, 4 + 1.2 * n));
@@ -105,6 +107,13 @@ export function graphicsCount(duration, { max = 6, every = 10 } = {}) {
 }
 
 const clean = (s, max = 80) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const words = (s) => String(s || "").replace(/\*/g, "").trim().split(/\s+/).filter(Boolean).length;
+const itemLine = (line) => Number.isInteger(line) ? line : parseInt(line, 10);
+const hasTimedItems = (s) => (s.type === "list" || s.type === "steps") && s.items?.length && s.items.every((it) => Number.isFinite(it.at));
+
+function cardWords(s) {
+  return words(s.eyebrow) + words(s.title) + (s.items || []).reduce((n, it) => n + words(it.text) + words(it.tag), 0);
+}
 
 const QUALIFIED_NUMBER = /\b(?:about|around|over|under|within|nearly|almost|up\s+to)\b|\bafter\s+(?:\d[\d,.]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+years?\b/i;
 const sceneWords = (s) => [s.eyebrow, s.title, s.value, s.value2, s.sub, ...(s.items || []).flatMap((it) => [it.label, it.value])].filter(Boolean).join(" ");
@@ -132,12 +141,17 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
     if (!s.value) return null;
   } else if (s.type === "list" || s.type === "steps") {
     s.title = clean(raw.title, 48);
-    s.items = (Array.isArray(raw.items) ? raw.items : [])
+    const items = (Array.isArray(raw.items) ? raw.items : [])
       .map((it) => (typeof it === "string" ? { text: it } : it || {}))
-      .map((it) => ({ text: clean(it.text, 32), tag: clean(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain", icon: s.type === "list" ? iconFor(it.text, clean(it.icon, 12).toLowerCase()) : "" }))
+      .map((it) => ({ text: clean(it.text, 32), tag: clean(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain", icon: s.type === "list" ? iconFor(it.text, clean(it.icon, 12).toLowerCase()) : "", ...((it.line !== undefined && it.line !== null && it.line !== "") ? { line: itemLine(it.line) } : {}) }))
       .filter((it) => it.text)
       .slice(0, 4);
-    if (s.items.length < 2) return null;
+    if (items.length < 2) return null;
+    const supplied = items.filter((it) => Object.hasOwn(it, "line"));
+    const lined = items.filter((it) => Number.isInteger(it.line));
+    // No cue lines is the legacy card. Once one item is timed, every item must be timed in spoken order.
+    if (supplied.length && (lined.length !== items.length || lined.some((it, i) => i && it.line <= lined[i - 1].line) || items.some((it) => words(it.text) > 4))) return null;
+    s.items = items;
   } else if (s.type === "bars") {
     s.title = clean(raw.title, 48);
     s.unit = clean(raw.unit, 8);
@@ -198,15 +212,32 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
   for (const s of [...scenes].filter((x) => x && byLine.has(x.line)).sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
     const start = byLine.get(s.line).start;
     if (s.type === "stat" && (stats.length >= 2 || stats.some((at) => start - at < 8))) continue;
+    let scene = s;
+    const lined = (s.type === "list" || s.type === "steps") ? (s.items || []).filter((it) => Number.isInteger(it.line)) : [];
+    if (lined.length) {
+      if (lined.length !== s.items.length || lined.some((it, i) => i && it.line <= lined[i - 1].line)) continue;
+      const cues = lined.map((it) => byLine.get(it.line)?.start);
+      if (cues.some((t) => !Number.isFinite(t)) || cues[0] < start || cues.some((t, i) => i && t <= cues[i - 1]) || cues[cues.length - 1] - cues[0] > 8 || cues[cues.length - 1] - start > 8) continue;
+      const items = s.items.map((it, i) => ({ ...it, at: r3(Math.round((cues[i] - start) * 30) / 30) }));
+      if (items.some((it, i) => i && it.at <= items[i - 1].at)) continue;
+      scene = { ...s, items };
+      scene.duration = sceneDuration(scene);
+      const budget = Math.floor((scene.duration - 0.7) / 0.375);
+      if (items.some((it) => words(it.text) > 4) || cardWords(scene) > budget) continue;
+      const timed = out.filter(hasTimedItems);
+      if (timed.length >= 2 || timed.some((g) => start - g.start < 8)) continue;
+      if (start + scene.duration > until) continue;
+    }
     const prev = out[out.length - 1];
     if (prev && start < prev.start + prev.duration + gap) {
       const room = r3(start - gap - prev.start);
       if (room < minHold) continue;
+      if (hasTimedItems(prev)) continue;
       prev.duration = room;
     }
-    const dur = r3(Math.min(s.duration, until - start));
-    if (dur < 2) continue;
-    out.push({ ...s, start: r3(start), duration: dur });
+    const dur = r3(Math.min(scene.duration, until - start));
+    if (dur < 2 && !hasTimedItems(scene)) continue;
+    out.push({ ...scene, start: r3(start), duration: dur });
     if (s.type === "stat") stats.push(start);
     if (out.length >= max) break;
   }
@@ -220,10 +251,10 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "",
     "Card types and their fields:",
     '- stat: a number or amount the speaker says. value ("$10,000", "10 minutes", "8 years"), optional value2 for a range or change, sub (a short line under it, from their words), motion ("reveal" or "growth"). Use reveal by default. Use growth only when the card contains both ends of an explicit change the speaker states, such as value "3" and value2 "30" for "from 3 to 30".',
-    "- list: 2 to 4 short items the speaker names. title (optional), items [{text, tag, state}]: state is check (things to do / that count), strike (things that don't matter / to stop), or plain. tag is an optional 1-2 word label on the right.",
+    "- list: 2 to 4 short items the speaker names. title (optional), items [{text, tag, state, line}]: line is where that item is first said; state is check (things to do / that count), strike (things that don't matter / to stop), or plain. tag is an optional 1-2 word label on the right.",
     "- quote: a line worth reading, either something the speaker quotes (eyebrow = where it is from, as they say it) or their own strongest line (eyebrow = a 2-4 word label). text, with the one phrase that matters in *asterisks* (it is highlighted).",
     "- headline: the key statement in at most 7 words, with the one phrase that matters in *asterisks* (it is set in gold).",
-    "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text}].",
+    "- steps: 2 to 4 short nodes connected top to bottom: a sequence the speaker gives, or a cause -> effect / before -> after. items [{text, line}], where line is where that step is first said.",
     "- compare: two things the speaker sets against each other (the old way vs the new way, closer A vs closer B, what you say vs what they hear). title (optional), a {label, value, note} and b {label, value, note}: label 1-3 words, value only when the speaker gives a number for both sides, note an optional 2-4 word line.",
     "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most, motion (\"reveal\" or \"growth\"). Keep exact printed labels and use reveal unless two rows are the explicit starting and ending values of one spoken change.",
     "- message: a text exchange the speaker reads out or acts out (a client text, a rep\u2019s reply, what they typed). contact (who it is from, as the speaker names them, else empty), items [{from: \"them\" | \"me\", text}] 1-3 bubbles, their words only.",
@@ -238,6 +269,9 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     "- Use at most two stat cards in the reel, and put their start lines at least 8 seconds apart.",
     "- When the speaker quotes someone else or acts out a message or line, a quote card may show it but must not present it as the speaker's own words.",
     "- Short: items at most 4 words, headline at most 7 words, sub and eyebrow at most 6 words.",
+    "- Anchor every item to the line where that item first becomes known. Never reveal a later point early.",
+    "- Pick at most two timed list/steps cards in the reel and keep their starts at least 8 seconds apart.",
+    "- A timed list/steps card must fit this whole-card reading budget: floor((seconds on screen - 0.7) / 0.375) words.",
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
     "- No emojis, no hashtags, no calls to action.",
     voice ? `\nVoice for labels and trims:\n${voice.trim()}` : "",
@@ -251,7 +285,7 @@ export function scenesPrompt({ candidates, transcript, hook, count, voice = "", 
     ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
     looks ? `\n${looks}\n` : "",
-    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
+    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","unit":"","emphasize":0,"contact":"","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
   ].join("\n");
 }
 
@@ -277,7 +311,9 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
       const look = settings.look && LOOKS[settings.look] ? settings.look : saved.look || "glass";
       const schema = saved.schema || 1;
-      const cards = saved.scenes.map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s);
+      // A timed item follows its line by time too (its saved offset from the card start).
+      const relined = (s) => ({ ...s, items: s.items?.map((it) => ({ ...it, ...(Number.isInteger(it.line) && Number.isFinite(it.at) ? { line: candidates.find((c) => Math.abs(c.start - (s.start + it.at)) < 0.05)?.i ?? it.line } : {}) })) });
+      const cards = saved.scenes.map(relined).map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s);
       const scenes = placeScenes(cards.map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type), ...(s.type === "post" ? { handle } : {}) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
       const old = schema < GRAPHICS_SCHEMA ? `; card plan v${schema}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look}${old})`);
@@ -372,10 +408,12 @@ export function sceneHTML(s, { schema = 1 } = {}) {
     return `<div class="g-box g-center">${eyebrow}${primary}${range}${fill}${s.sub ? `<div class="g-sub g-in">${esc(s.sub)}</div>` : ""}</div>`;
   }
   if (s.type === "list") {
+    const live = hasTimedItems(s);
     const rows = s.items
       .map((it, k) => {
         const mark = it.state === "check" ? `<span class="g-mark g-check">&#10003;</span>` : it.state === "strike" ? `<span class="g-mark g-x">&#10005;</span>` : `<span class="g-mark g-num">${String(k + 1).padStart(2, "0")}</span>`;
         const icon = it.icon && ICONS[it.icon] ? `<svg class="g-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[it.icon]}"/></svg>` : "";
+        if (live) return `<div class="g-live-item">${k ? '<span class="g-live-connector"></span>' : ""}<span class="g-item-dot"></span><div class="g-row g-${it.state} g-item-text">${mark}<span class="g-row-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span>${it.tag ? `<span class="g-tag">${esc(it.tag)}</span>` : ""}${icon}</div></div>`;
         return `<div class="g-row g-in g-${it.state}">${mark}<span class="g-row-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span>${it.tag ? `<span class="g-tag">${esc(it.tag)}</span>` : ""}${icon}</div>`;
       })
       .join("");
@@ -427,6 +465,10 @@ export function sceneHTML(s, { schema = 1 } = {}) {
     return `<div class="g-box g-center"><div class="g-post g-in"><div class="g-post-head"><span class="g-post-avatar"></span><span class="g-post-who"><span class="g-post-name">${name}<svg class="g-post-badge" viewBox="0 0 24 24"><path d="M12 2l2.4 2.2 3.2-.5 1 3.1 2.9 1.5-1.3 3 1.3 3-2.9 1.5-1 3.1-3.2-.5L12 22l-2.4-2.2-3.2.5-1-3.1-2.9-1.5 1.3-3-1.3-3 2.9-1.5 1-3.1 3.2.5z"/><path class="g-post-tick" d="M8 12.5l2.6 2.5L16 9.5"/></svg></span>${handle}</span></div><div class="g-post-text">${esc(s.text)}</div><div class="g-post-foot"><span class="g-post-heart">&#9829;</span></div></div></div>`;
   }
   // steps
+  if (hasTimedItems(s)) {
+    const nodes = s.items.map((it, k) => `<div class="g-live-item">${k ? '<span class="g-live-connector"></span>' : ""}<span class="g-item-dot"></span><div class="g-node g-item-text"><span class="g-node-num">${String(k + 1).padStart(2, "0")}</span>${esc(it.text)}</div></div>`).join("");
+    return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-steps">${nodes}</div></div>`;
+  }
   const nodes = s.items.map((it, k) => `${k ? '<div class="g-link"></div>' : ""}<div class="g-node g-in${k === s.items.length - 1 ? " g-node-last" : ""}"><span class="g-node-num">${String(k + 1).padStart(2, "0")}</span>${esc(it.text)}</div>`).join("");
   return `<div class="g-box g-center">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-steps">${nodes}</div></div>`;
 }
@@ -436,7 +478,7 @@ export function sceneHTML(s, { schema = 1 } = {}) {
  * captions keep the bottom); "overlay" is a compact glass panel in the top third while the footage keeps playing,
  * the way explainer reels drop a payroll card or a checklist over the speaker.
  */
-export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
+export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0.68 }) {
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const u = H / 1920;
   const px = (n) => `${Math.round(n * u)}px`;
@@ -566,6 +608,14 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-link { width: ${px(4)}; height: ${px(70)}; background: linear-gradient(${c.accent}, ${c.accent}55); transform-origin: 50% 0; }
       .g-icon { flex: none; width: ${px(52)}; height: ${px(52)}; transform-origin: 50% 50%; }
       .g-icon path { fill: none; stroke: ${c.accent}; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+      .gfx.gfx-timed.gfx-list .g-box, .gfx.gfx-timed.gfx-steps .g-box { left: ${px(76)}; right: ${px(140)}; top: ${px(200)}; bottom: auto; max-height: ${px(Math.max(300, captionTop / u - 260))}; box-sizing: border-box; overflow: hidden; transform-origin: 50% 50%; }
+      .gfx.gfx-timed .g-rows, .gfx.gfx-timed .g-steps { display: flex; flex-direction: column; align-items: stretch; gap: ${px(12)}; width: 100%; }
+      .gfx.gfx-timed .g-live-item { position: relative; display: flex; align-items: center; min-height: ${px(62)}; padding-left: ${px(34)}; transform-origin: 0 50%; }
+      .gfx.gfx-timed .g-item-text { flex: 1; min-width: 0; opacity: 0; color: ${c.accent}; transform-origin: 0 50%; }
+      .gfx.gfx-timed .g-item-dot { position: absolute; left: 0; top: 50%; width: ${px(16)}; height: ${px(16)}; margin-top: -${px(8)}; border-radius: 50%; background: ${c.accent}; box-shadow: 0 0 ${px(16)} ${c.accent}88; opacity: 0; }
+      .gfx.gfx-timed .g-live-connector { position: absolute; left: ${px(7)}; bottom: 50%; width: ${px(3)}; height: calc(50% + ${px(20)}); background: ${c.accent}; transform: scaleY(0); transform-origin: 50% 100%; opacity: 0.75; }
+      .gfx.gfx-timed .g-live-item.g-item-done .g-item-text { opacity: 0.55; color: ${c.text}; }
+      .gfx.gfx-timed.gfx-steps .g-node { justify-content: flex-start; min-height: ${px(62)}; padding: ${px(16)} ${px(22)}; font-size: ${px(48)}; text-align: left; flex-direction: row; }
       .g-compare { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: ${px(96)}; width: 100%; }
       .g-side { position: relative; padding: ${px(28)} ${px(26)}; border-radius: ${px(20)}; background: rgba(255,255,255,0.06); border: ${px(2)} solid rgba(255,255,255,0.12); text-align: left; min-height: ${px(150)}; }
       .g-side-b { background: linear-gradient(180deg, ${c.accent}2a, ${c.accent}14); border-color: ${c.accent}aa; clip-path: inset(0 100% 0 0); }
@@ -614,33 +664,68 @@ export const GRAPHICS_JS = `
           const el = document.getElementById("gfx-" + i);
           const box = el.querySelector(".g-box");
           const ins = el.querySelectorAll(".g-in");
-          tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
-          if (PLAN.graphicsMode === "band") tl.fromTo(box, { y: 28, scale: 0.985 }, { y: 0, scale: 1, duration: 0.32, ease: "power3.out" }, g.start);
-          else if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
-          else {
-            tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: 0.3, ease: "power3.out" }, g.start);
-            // The footage slides down a little while the card is up, so the card never sits on the forehead.
-            const drop = PLAN.height * 0.11;
-            tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
-            tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
-          }
+          const fps = PLAN.fps || 30;
+          const liveItems = g.items ? [...el.querySelectorAll(".g-live-item")] : [];
+          let t1;
+          if (liveItems.length) {
+            const closed = PLAN.graphicsSide === "right" ? "inset(0 100% 0 0)" : "inset(0 0 0 100%)";
+            tl.set(el, { opacity: 1 }, g.start);
+            tl.fromTo(box, { clipPath: closed }, { clipPath: "inset(0 0% 0 0)", duration: 8 / fps, ease: "power3.out", immediateRender: false }, g.start);
+            tl.fromTo(ins, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 6 / fps, ease: "power3.out", stagger: 2 / fps }, g.start);
+            liveItems.forEach((item, k) => {
+              const cue = g.start + g.items[k].at;
+              const dot = item.querySelector(".g-item-dot");
+              const text = item.querySelector(".g-item-text");
+              const connector = item.querySelector(".g-live-connector");
+              if (dot) tl.set(dot, { opacity: 1 }, Math.max(g.start, cue - 1 / fps));
+              if (k) {
+                const previous = liveItems[k - 1].querySelector(".g-item-text");
+                tl.to(previous, { opacity: 0.55, color: PLAN.graphicsText, duration: 6 / fps, ease: "power3.out" }, cue);
+              }
+              tl.fromTo(text, { opacity: 0, y: 12, scale: 1.04, color: PLAN.graphicsAccent }, { opacity: 1, y: 0, scale: 1, color: PLAN.graphicsAccent, duration: 6 / fps, ease: "power3.out", immediateRender: false }, cue);
+              if (connector) tl.fromTo(connector, { scaleY: 0 }, { scaleY: 1, duration: 7 / fps, ease: "power2.inOut", immediateRender: false }, cue);
+              item.querySelectorAll(".g-strike-line").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 10 / fps, ease: "power2.inOut", immediateRender: false }, cue));
+              item.querySelectorAll(".g-icon path").forEach((p) => {
+                const L = p.getTotalLength();
+                p.style.strokeDasharray = L + " " + L;
+                tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 10 / fps, ease: "power2.inOut", immediateRender: false }, cue);
+              });
+            });
+            if (PLAN.graphicsMode === "overlay") {
+              const drop = PLAN.height * 0.11;
+              tl.to("#video-wrap", { y: drop, duration: 8 / fps, ease: "power2.out" }, g.start);
+              tl.to("#video-wrap", { y: 0, duration: 8 / fps, ease: "power2.inOut" }, g.start + g.duration - 5 / fps);
+            }
+            t1 = g.start + 8 / fps;
+          } else {
+            tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
+            if (PLAN.graphicsMode === "band") tl.fromTo(box, { y: 28, scale: 0.985 }, { y: 0, scale: 1, duration: 0.32, ease: "power3.out" }, g.start);
+            else if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
+            else {
+              tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: 0.3, ease: "power3.out" }, g.start);
+              // The footage slides down a little while the card is up, so the card never sits on the forehead.
+              const drop = PLAN.height * 0.11;
+              tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
+              tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
+            }
 ${SKINS_JS}
-          tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: Math.min(0.22, 1.1 / Math.max(1, ins.length)) }, g.start + 0.06);
-          // Bubbles run on their own clock (typing, then pop), so take them out of the stagger.
-          el.querySelectorAll(".g-bubble.g-in").forEach((b) => tl.set(b, { opacity: 0 }, g.start + 0.06));
-          const t1 = g.start + 0.06 + 0.42 + Math.min(0.22, 1.1 / Math.max(1, ins.length)) * Math.max(0, ins.length - 1);
-          el.querySelectorAll(".g-strike-line").forEach((s, k) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.3, ease: "power2.inOut" }, t1 + 0.1 + k * 0.18));
-          el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, PLAN.graphicsMode === "overlay" ? { scaleX: 0 } : { scaleY: 0 }, PLAN.graphicsMode === "overlay" ? { scaleX: 1, duration: 0.25, ease: "power2.out" } : { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
-          el.querySelectorAll(".g-hl").forEach((s) => tl.fromTo(s, { backgroundSize: "0% 46%" }, { backgroundSize: "100% 46%", duration: 0.5, ease: "power2.inOut" }, t1 + 0.05));
-          el.querySelectorAll(".g-rule").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power3.inOut" }, t1));
-          // List icons draw on with their row, then settle with a small pop.
-          el.querySelectorAll(".g-icon path").forEach((p, k) => {
-            const L = p.getTotalLength();
-            p.style.strokeDasharray = L + " " + L;
-            const at = g.start + 0.2 + k * Math.min(0.22, 1.1 / Math.max(1, ins.length));
-            tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.45, ease: "power2.inOut", immediateRender: false }, at);
-            tl.fromTo(p.closest(".g-icon"), { scale: 1 }, { scale: 1.12, duration: 0.1, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.4);
-          });
+            tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: Math.min(0.22, 1.1 / Math.max(1, ins.length)) }, g.start + 0.06);
+            // Bubbles run on their own clock (typing, then pop), so take them out of the stagger.
+            el.querySelectorAll(".g-bubble.g-in").forEach((b) => tl.set(b, { opacity: 0 }, g.start + 0.06));
+            t1 = g.start + 0.06 + 0.42 + Math.min(0.22, 1.1 / Math.max(1, ins.length)) * Math.max(0, ins.length - 1);
+            el.querySelectorAll(".g-strike-line").forEach((s, k) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.3, ease: "power2.inOut" }, t1 + 0.1 + k * 0.18));
+            el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, PLAN.graphicsMode === "overlay" ? { scaleX: 0 } : { scaleY: 0 }, PLAN.graphicsMode === "overlay" ? { scaleX: 1, duration: 0.25, ease: "power2.out" } : { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
+            el.querySelectorAll(".g-hl").forEach((s) => tl.fromTo(s, { backgroundSize: "0% 46%" }, { backgroundSize: "100% 46%", duration: 0.5, ease: "power2.inOut" }, t1 + 0.05));
+            el.querySelectorAll(".g-rule").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power3.inOut" }, t1));
+            // List icons draw on with their row, then settle with a small pop.
+            el.querySelectorAll(".g-icon path").forEach((p, k) => {
+              const L = p.getTotalLength();
+              p.style.strokeDasharray = L + " " + L;
+              const at = g.start + 0.2 + k * Math.min(0.22, 1.1 / Math.max(1, ins.length));
+              tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.45, ease: "power2.inOut", immediateRender: false }, at);
+              tl.fromTo(p.closest(".g-icon"), { scale: 1 }, { scale: 1.12, duration: 0.1, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.4);
+            });
+          }
           // Compare: the accent side wipes over from the divider, the VS badge pops, the bars fill.
           el.querySelectorAll(".g-side-b").forEach((b) => tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: "sine.inOut", immediateRender: false }, g.start + 0.45));
           el.querySelectorAll(".g-vs").forEach((v) => tl.to(v, { scale: 1, duration: 0.35, ease: "back.out(2)" }, g.start + 0.95));
@@ -662,7 +747,6 @@ ${SKINS_JS}
             tl.fromTo(h, { scale: 1 }, { scale: 1.5, duration: 0.14, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, t1 + 0.5);
             tl.set(h, { className: "g-post-heart lit" }, t1 + 0.5);
           });
-          const fps = PLAN.fps || 30;
           const gfxFrame = 1 / fps;
           if (g.motion === "reveal" || g.motion === "growth") {
             // An exact fact is present in the DOM from its first visible frame. Motion comes from the five-frame
@@ -710,5 +794,6 @@ ${SKINS_JS}
               if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
             });
           }
-          tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
+          if (liveItems.length) tl.to(el, { opacity: 0, duration: 5 / fps, ease: "power2.in" }, g.start + g.duration - 5 / fps);
+          else tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
         });`;

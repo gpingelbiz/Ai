@@ -38,6 +38,15 @@ test("artifacts: a notification keeps the count-up, a receipt totals only number
   assert.match(sceneHTML({ type: "stat", eyebrow: "X", value: "$5", skin: "notify" }), /g-notify/);
 });
 
+test("timed list rows keep their live-item hooks in every look skin", () => {
+  const card = { type: "list", eyebrow: "THE ORDER", items: [{ text: "First", state: "plain", at: 0 }, { text: "Second", state: "check", at: 2 }] };
+  for (const look of LOOK_IDS) {
+    const html = sceneHTML({ ...card, skin: skinFor(look, "list") });
+    assert.equal((html.match(/class="g-live-item"/g) || []).length, 2, look);
+    assert.equal((html.match(/g-item-text/g) || []).length, 2, look);
+  }
+});
+
 test("styles and fonts only for the skins in use", () => {
   const css = skinsCSS({ H: 1920, colors: { accent: "#C8A24B" }, skins: ["paper", "receipt"] });
   assert.match(css, /skin-paper/);
