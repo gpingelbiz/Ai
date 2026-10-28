@@ -65,6 +65,8 @@ export function mergeOverrides(preset, o = {}) {
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;
   if (num(o.hookPosition) != null) p.hook.position = num(o.hookPosition);
+  if (o.hookSeconds === "reel") p.hook.duration = "reel";
+  else if (num(o.hookSeconds) > 0) p.hook.duration = num(o.hookSeconds);
   if (num(o.captionPosition) != null) p.captions.position = num(o.captionPosition);
   if (o.noAutoKeywords) p.captions.autoKeywords = false;
   if (o.cta) { p.cta.enabled = true; p.cta.text = o.cta; }

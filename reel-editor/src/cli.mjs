@@ -49,6 +49,7 @@ Options (edit / batch)
                            gold | outline (Bone text, black outline) | box (Bone on Obsidian backing)
                            Mark the gold phrase by hand with asterisks: --hook "The *10 minutes* after a bad number"
   --hook-position <0-1>    hook height from the top (default 0.22); 0.40 clears the head on wide shots
+  --hook-seconds <n|reel>  how long the hook stays up (default 3); reel = the whole reel (one-liners, podcast titles)
   --caption-position <0-1> caption height from the top; by default they sit just under the chin (0.56-0.76)
   --no-auto-keywords       gold only on dictionary terms, numbers and power words (no automatic picks)
   --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)
@@ -129,6 +130,7 @@ const EDIT_OPTIONS = {
   "no-hook": { type: "boolean" },
   "title-style": { type: "string" },
   "hook-position": { type: "string" },
+  "hook-seconds": { type: "string" },
   "caption-position": { type: "string" },
   "no-auto-keywords": { type: "boolean" },
   cta: { type: "string" },

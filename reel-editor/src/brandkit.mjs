@@ -22,7 +22,7 @@ export function checkBrand(b) {
   for (const k of ["text", "accent"]) if (!HEX.test(b.colors?.[k] || "")) out.push(`colors.${k} must be a hex color like #FFFFFF`);
   for (const k of ["stroke", "bg"]) if (b.colors?.[k] && !HEX.test(b.colors[k])) out.push(`colors.${k} must be a hex color like #000000`);
   if (b.look?.hook && !["headline", "gold", "box"].includes(b.look.hook)) out.push('look.hook is "headline", "gold" or "box"');
-  if (b.look?.captions && !["reveal", "pop"].includes(b.look.captions)) out.push('look.captions is "reveal" or "pop"');
+  if (b.look?.captions && !["reveal", "pop", "quiet"].includes(b.look.captions)) out.push('look.captions is "reveal", "pop" or "quiet"');
   for (const k of ["hookCase", "captionCase"]) if (b.look?.[k] && !["upper", "sentence"].includes(b.look[k])) out.push(`look.${k} is "upper" or "sentence"`);
   const hs = b.look?.hookSeconds;
   if (hs != null && hs !== "reel" && !(Number(hs) >= 1 && Number(hs) <= 60)) out.push('look.hookSeconds is a number of seconds (1-60) or "reel"');
@@ -62,7 +62,8 @@ export function brandPreset(b, { fonts = {} } = {}) {
     extends: "pingel-brand",
     colors: { text: b.colors.text, accent: b.colors.accent, stroke: b.colors.stroke || "#000000", bg: b.colors.bg || "#0B0B0D" },
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.displayItalic ? { displayItalic: fonts.displayItalic } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
-    captions: { style: look.captions || "reveal", annotate: look.annotate !== false, ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
+    // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
+    captions: { style: look.captions === "quiet" ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(look.captions === "quiet" ? { quiet: true, fontSizeFrac: 0.029 } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
     hook: {
       style: look.hook || "headline", behind: look.behind !== false,
       ...(look.hookCase ? { uppercase: look.hookCase !== "sentence" } : {}),

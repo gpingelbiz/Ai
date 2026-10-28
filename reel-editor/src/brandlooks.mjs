@@ -274,6 +274,27 @@ export function brandSkinsCSS({ H, colors, skins = [] }) {
   return out.join("");
 }
 
+/**
+ * The house pieces restyled for a preset that uses the brand looks (graphics.includeLooks): the phone look's labels
+ * in ink instead of accent text, its headings in the serif, and the name tag as a two-line serif credit beside a
+ * thin accent line. Greg's presets never get this block.
+ */
+export function brandQuietCSS({ H, colors }) {
+  const c = { accent: "#FFD600", text: "#FFFFFF", ...colors };
+  const u = H / 1920;
+  const px = (n) => `${Math.round(n * u)}px`;
+  return `
+      .gfx.skin-notes .n-bar { color: ${INK}; }
+      .gfx.skin-notes .n-heading, .gfx.skin-notify .n-title { font-family: "Look Serif", serif; font-weight: 500; line-height: 1.18; padding-top: 0.06em; text-transform: none; letter-spacing: -0.005em; }
+      .gfx.skin-phone .g-eyebrow { color: rgba(17,17,17,0.6); }
+      .gfx.skin-notes .n-item, .gfx.skin-notify .n-body, .gfx.skin-notify .n-head { font-family: "Look Sans", sans-serif; }
+      .gfx.skin-notify .n-title .g-gold, .gfx.skin-notes .n-heading .g-gold { background: ${c.accent}; color: ${INK}; font-style: italic; }
+      .gfx.skin-notes .n-check .n-circle { background: ${c.accent}; border-color: ${c.accent}; }
+      .lt-bar { width: ${px(4)}; border-radius: 0; }
+      .lt-name { font-family: "Look Serif", serif; font-weight: 500; letter-spacing: -0.005em; }
+      .lt-handle { font-family: "Look Sans", sans-serif; font-weight: 600; letter-spacing: 0.28em; text-transform: uppercase; color: ${c.text}; opacity: 0.88; }`;
+}
+
 /** Hook treatments for the brand looks (layered over the headline hook, like themeCSS). */
 export function brandHookCSS({ H, colors, hook }) {
   const c = { accent: "#FFD600", ...colors };

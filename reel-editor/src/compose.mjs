@@ -3,6 +3,7 @@ import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile, ownDisplay } from "./util.mjs";
 import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
+import { brandQuietCSS } from "./brandlooks.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -193,7 +194,9 @@ export function renderHTML(plan, footage) {
   const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g))}</div>`).join("\n");
   const skinsUsed = [...new Set(gfxList.map((g) => skinned(g).skin || "glass"))];
   const theme = THEMES[s.look] || null;
-  const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme)], { display: ownDisplay(s) });
+  // A preset on the brand looks also gets the quiet house pieces (phone labels, name tag) and the brand fonts for them.
+  const brandQuiet = (s.graphics?.includeLooks || []).length > 0;
+  const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme), ...(brandQuiet ? ["atelier"] : [])], { display: ownDisplay(s) });
 
   const tracks = plan.audio?.tracks || [];
   const audioHTML = tracks
@@ -314,7 +317,9 @@ ${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "ove
       .cap .w { display: inline-block; transform-origin: 50% 50%; }
       .cap .w.k { color: ${c.accent}; }
 ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850; line-height: 1.04; letter-spacing: -0.01em; -webkit-text-stroke: 0; text-shadow: 0 0.04em 0.28em rgba(0,0,0,0.6), 0 0 0.8em rgba(0,0,0,0.3); gap: 0.02em 0.24em; max-width: 86%; }
-      .cap .w { opacity: 0.38; }` : ""}
+      .cap .w { opacity: 0.38; }` : ""}${cap.quiet ? `
+      .cap-line { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2; letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: 0 0.03em 0.08em rgba(0,0,0,0.45), 0 0.04em 0.24em rgba(0,0,0,0.4); gap: 0.06em 0.26em; }
+      .cap .w.k { color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none; }` : ""}
       #hook {
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
         padding: ${Math.max(0, Math.round(hk.position * H - hookFont * 1.2))}px 7% 0; box-sizing: border-box;
@@ -336,7 +341,7 @@ ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850
         text-transform: ${ct.uppercase === false ? "none" : "uppercase"}; text-align: center;
       }
       #cta-text { display: inline-block; max-width: 100%; transform-origin: 50% 50%; ${ctaLook} }
-      .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}
+      .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}
     </style>
   </head>
   <body>

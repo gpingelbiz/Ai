@@ -102,3 +102,28 @@ test("render: quiet motion for brand skins, the house motion untouched", () => {
   assert.match(html, /\.gfx\.skin-atelier \.g-box/);
   assert.match(html, /ease: "back\.out\(1\.8\)"/, "the house bubble pop is still there for every other skin");
 });
+
+test("quiet captions, the quiet phone labels and name tag: only for a brand that asks, never for Greg", async () => {
+  const { mergeOverrides } = await import("../src/presets.mjs");
+  const base = (style) => ({
+    name: "t", canvas: { width: 1080, height: 1920 }, video: { duration: 8, hasAudio: true },
+    style: { colors: julee.colors, captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72, shadow: "none", style: "reveal", ...style.captions }, hook: { fontSizeFrac: 0.05, position: 0.2 }, zooms: {}, cta: {}, graphics: style.graphics || {} },
+    captions: [{ start: 1, end: 2, text: "ask this", words: [{ text: "ask", start: 1, end: 1.4 }, { text: "this", start: 1.4, end: 1.8, key: true }] }],
+  });
+  const house = renderHTML(base({}), "assets/footage.mp4");
+  assert.doesNotMatch(house, /\.cap \.w\.k \{ color: #111111; background:/);
+  assert.doesNotMatch(house, /\.lt-name \{ font-family: "Look Serif"/);
+  const hers = renderHTML(base({ captions: { quiet: true }, graphics: { includeLooks: ["note"] } }), "assets/footage.mp4");
+  assert.match(hers, /\.cap-line \{ font-family: "Inter", sans-serif; font-weight: 600;[^}]*-webkit-text-stroke: 0/);
+  assert.match(hers, /\.cap \.w\.k \{ color: #111111; background: #FFB27D;/);
+  assert.match(hers, /\.gfx\.skin-notes \.n-bar \{ color: #111111; \}/);
+  assert.match(hers, /\.lt-name \{ font-family: "Look Serif"/);
+  assert.match(hers, /font-family: "Look Serif"; src: url\("assets\/fonts\/Anton-Regular\.ttf"\)/, "the brand fonts load for them");
+  const b = brandPreset({ ...julee, look: { captions: "quiet" } }).captions;
+  assert.deepEqual([b.style, b.quiet, b.fontSizeFrac], ["reveal", true, 0.029]);
+  assert.deepEqual(checkBrand({ ...julee, look: { captions: "quiet" } }), []);
+  const g = loadPreset("pingel-brand");
+  assert.equal(mergeOverrides(g, { hookSeconds: "reel" }).hook.duration, "reel");
+  assert.equal(mergeOverrides(g, { hookSeconds: "6" }).hook.duration, 6);
+  assert.equal(mergeOverrides(g, {}).hook.duration, 3, "no flag: Greg's 3 s");
+});
