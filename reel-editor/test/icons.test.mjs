@@ -38,7 +38,7 @@ test("icon planning: gold nouns rank first, spacing and reel/rolling caps apply,
 });
 
 test("icon planning: hook, cards, cutaways, guarded slams, rail pulses and the last 1.5 seconds are busy", () => {
-  const groups = [line(2, "money"), line(5.5, "calls"), line(10.5, "time"), line(13.8, "deal"), line(20.4, "text"), line(24, "truck"), line(28, "faith")];
+  const groups = [line(2, "money"), line(5.5, "calls"), line(10.5, "minutes"), line(13.8, "deal"), line(20.4, "text"), line(24, "truck"), line(28, "faith")];
   const icons = planIcons(groups, 30, {
     face,
     hook: { start: 0, duration: 3 },

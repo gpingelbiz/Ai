@@ -39,11 +39,20 @@ test("window layout takes the empty side and never overlaps the strongest-zoom h
   }
 });
 
-test("window falls back to today's full cutaway when a centred wide head leaves no side", () => {
+test("a centred wide head moves the window above the head, and with no wall above it falls back to the full cutaway", () => {
   const face = { cx: 0.5, cy: 0.45, w: 0.45, h: 0.2 };
-  const result = planWindowLayout(shot, contextFor(face));
+  const above = planWindowLayout(shot, contextFor(face));
+  assert.equal(above.shot.layout, "window");
+  assert.equal(above.shot.panel.side, "top");
+  const p = above.shot.panel;
+  assert.ok(p.y >= 200 && p.x >= 76 && p.x + p.w <= 940);
+  const head = (0.45 - 0.2 / 2) * 1920;
+  assert.ok(p.y + p.h <= head, "the panel ends above the face box");
+
+  const high = { cx: 0.5, cy: 0.3, w: 0.45, h: 0.2 };
+  const result = planWindowLayout(shot, contextFor(high));
   assert.equal(result.shot.layout, "full");
-  assert.match(result.skipped, /neither side/);
+  assert.match(result.skipped, /beside or above/);
 });
 
 test("split centres a fitting face in the bottom half and a low face falls back to window", () => {
@@ -59,12 +68,17 @@ test("split centres a fitting face in the bottom half and a low face falls back 
   assert.match(fallback.skipped, /too low/);
 });
 
-test("mix alternates window, split, window in a fixed order", () => {
+test("mix rotates window, cutout, split in a fixed order, and a window that cannot fit becomes the cutout", () => {
   const face = { cx: 0.25, cy: 0.4, w: 0.16, h: 0.14 };
-  const shots = [5, 12, 19].map((start) => ({ start, duration: 2 }));
+  const shots = [5, 12, 19, 26].map((start) => ({ start, duration: 2 }));
   const planned = planBrollLayouts(shots, { ...contextFor(face), layout: "mix" });
-  assert.deepEqual(planned.shots.map((b) => b.layout), ["window", "split", "window"]);
-  assert.equal(planned.logs.length, 3, "one log line per item");
+  assert.deepEqual(planned.shots.map((b) => b.layout), ["window", "cutout", "split", "window"]);
+  assert.equal(planned.logs.length, 4, "one log line per item");
+
+  const high = { cx: 0.5, cy: 0.3, w: 0.45, h: 0.2 };
+  const tight = planBrollLayouts([{ start: 5, duration: 2 }], { ...contextFor(high), layout: "mix" });
+  assert.equal(tight.shots[0].layout, "cutout");
+  assert.match(tight.logs[0], /window skipped/);
 });
 
 const style = {

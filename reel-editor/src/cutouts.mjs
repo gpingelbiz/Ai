@@ -42,7 +42,7 @@ function coveredByPerson(grid, box, W, H) {
 }
 
 /** Largest readable word box in the upper half. Falls back to a normal-size word fully above the head. */
-export function placePopoutWord(text, grid, { width = 1080, height = 1920, maxCovered = 0.15, headTop = 0.28, zoom = 1, originX = 0.5, originY = 0.38, shiftY = 0 } = {}) {
+export function placePopoutWord(text, grid, { width = 1080, height = 1920, maxCovered = 0.06, headTop = 0.28, zoom = 1, originX = 0.5, originY = 0.38, shiftY = 0 } = {}) {
   const left = Math.min(width, Math.max(0, width * (76 / 1080)));
   const right = Math.min(width, Math.max(left + 1, width * (940 / 1080)));
   const safeWidth = right - left;
@@ -51,14 +51,16 @@ export function placePopoutWord(text, grid, { width = 1080, height = 1920, maxCo
   const chars = Math.max(3, String(text || "").length * 0.42);
   const maxFont = Math.min(height * 0.16, safeWidth / chars);
   const minFont = Math.min(maxFont, height * 0.105);
-  const topMin = height * 0.04;
+  // Below the platform's top bar (y 200 at 1920), and searched from the lowest spot up: the first box that passes
+  // is the one tucked furthest behind the head while still readable, which is the point of a pop-out.
+  const topMin = height * (200 / 1920);
   const yStep = height / Math.max(24, cellsOf(grid)?.rows || 48);
   for (let font = maxFont; font >= minFont - 0.5; font -= height * 0.0125) {
     const boxW = Math.min(safeWidth, font * chars);
     const boxH = font * 1.02;
     const x = left + (safeWidth - boxW) / 2;
     const lastTop = height * 0.5 - boxH;
-    for (let y = topMin; y <= lastTop + 0.5; y += yStep) {
+    for (let y = lastTop; y >= topMin - 0.5; y -= yStep) {
       // The matte is in source-frame coordinates. Map the rendered word box back through the same base/punch-in
       // scale and base slide used by the footage wrapper (the conservative strongest zoom during the slam).
       const sourceBox = {
@@ -74,7 +76,7 @@ export function placePopoutWord(text, grid, { width = 1080, height = 1920, maxCo
   const gap = height * 0.018;
   const ceiling = Math.max(1, headTop * height - gap);
   const fontSize = Math.max(1, Math.round(Math.min(height * 0.115, safeWidth / chars, ceiling / 1.02)));
-  return { top: Math.round(Math.max(0, ceiling - fontSize * 1.02)), fontSize, covered: null, fallback: true };
+  return { top: Math.round(Math.max(topMin, ceiling - fontSize * 1.02)), fontSize, covered: null, fallback: true };
 }
 
 export async function makePopoutSlams({ slams, video, fps = 30, outDir, canvas, settings = {}, framing = {}, zoomDuring = () => 1, headTopFor = () => null }) {
@@ -102,14 +104,17 @@ export async function makePopoutSlams({ slams, video, fps = 30, outDir, canvas, 
 }
 
 export async function makeCutoutBroll({ broll, layout, video, fps = 30, outDir }) {
-  if (brollLayout(layout) !== "cutout") return { broll, events: [] };
+  // Every item under the "cutout" layout, or the items the "mix" layout marked as cutouts.
+  const wanted = (b) => brollLayout(layout) === "cutout" || b.layout === "cutout";
+  if (!(broll || []).some(wanted)) return { broll, events: [] };
   const events = [];
   const planned = [];
   for (let i = 0; i < (broll || []).length; i++) {
     const b = broll[i];
+    if (!wanted(b)) { planned.push(b); continue; }
     const cut = await makeCutout({ video, start: b.start, duration: b.duration, fps, outDir, name: `broll-cutout-${i + 1}` });
     if (cut.error) {
-      planned.push(b);
+      planned.push(b.layout === "cutout" ? { ...b, layout: "full" } : b);
       events.push(`cutout b-roll: item ${i + 1} stayed full-frame (${cut.error})`);
     } else {
       planned.push({ ...b, cutout: { file: cut.src, start: cut.start, duration: cut.duration, frames: cut.frames, coverage: cut.coverage } });

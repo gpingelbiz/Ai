@@ -486,6 +486,12 @@ export async function runEdit(input, opts = {}) {
     const placed = planBrollLayouts(broll, { layout: preset.broll.layout, W: canvas0.width, H: canvas0.height, captionTop, face: face || faceBox(detection), detection, zooms, framing });
     broll = placed.shots;
     placed.logs.forEach((line) => log(line));
+    // "mix" marks some items as cutouts; matte just those.
+    if (broll.some((b) => b.layout === "cutout")) {
+      const cutoutBroll = await makeCutoutBroll({ broll, layout: preset.broll.layout, video: videoSrc, fps: preset.render.fps || 30, outDir: workDir });
+      broll = cutoutBroll.broll;
+      cutoutBroll.events.forEach((event) => log(event));
+    }
   }
   // The hook never covers the head either: in front of the speaker (not the text-behind-you cutout) the page measures
   // the real hook text and shrinks it toward its top until it ends above this head top (at the opening push-in).

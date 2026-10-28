@@ -40,7 +40,15 @@ export function planWindowLayout(shot, context = {}) {
   const vertical = captionTop * H - PANEL_GAP - TOP_SAFE;
   const width = Math.floor(Math.min(PANEL_MAX, rooms[0].room, vertical / 1.25));
   if (width < PANEL_MIN) {
-    return { shot: { ...shot, layout: "full" }, skipped: "window skipped: neither side has a clear 280px panel" };
+    // A centred talking head leaves no side room, but the wall above the head often fits a wider 5:4 panel.
+    const above = (head.cy - head.h / 2) * H - PANEL_GAP - TOP_SAFE;
+    const aw = Math.floor(Math.min(SAFE_RIGHT - SAFE_LEFT, PANEL_MAX * 1.5, above * 1.25));
+    if (aw >= PANEL_MIN && Math.round(aw / 1.25) >= PANEL_MIN * 0.8) {
+      const ah = Math.round(aw / 1.25);
+      const ax = Math.round(Math.max(SAFE_LEFT, Math.min(SAFE_RIGHT - aw, head.cx * W - aw / 2)));
+      return { shot: { ...shot, layout: "window", panel: { x: ax, y: TOP_SAFE, w: aw, h: ah, side: "top" } }, note: "window above the head (no room beside it)" };
+    }
+    return { shot: { ...shot, layout: "full" }, skipped: "window skipped: no clear 280px panel beside or above the head" };
   }
 
   const height = Math.round(width * 1.25);
@@ -75,8 +83,19 @@ export function planSplitLayout(shot, context = {}) {
   };
 }
 
+/** "cutout" here only marks the item; the pipeline mattes it next, and a failed matte leaves the full cutaway. */
+export function planCutoutLayout(shot) {
+  return { shot: { ...shot, layout: "cutout" }, note: "the speaker stays cut out over the b-roll" };
+}
+
+/** Window, cutout, split in turn, so several cutaways never repeat one look; a window or split that cannot fit
+ *  becomes the cutout, which fits any frame. */
 export function planMixLayout(shot, context = {}) {
-  return context.index % 2 ? planSplitLayout(shot, context) : planWindowLayout(shot, context);
+  const turn = (context.index || 0) % 3;
+  if (turn === 1) return planCutoutLayout(shot);
+  const result = turn === 2 ? planSplitLayout(shot, context) : planWindowLayout(shot, context);
+  if ((result.shot.layout || "full") !== "full") return result;
+  return { ...planCutoutLayout(shot), skipped: result.skipped };
 }
 
 // One entry per layout keeps parallel additions (such as cutout) to a single, conflict-light map insertion.
