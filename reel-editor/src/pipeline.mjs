@@ -26,6 +26,7 @@ import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { makeGraphics } from "./graphics.mjs";
 import { planSlams } from "./slams.mjs";
+import { iconCandidates, planIcons } from "./icons.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
@@ -490,11 +491,39 @@ export async function runEdit(input, opts = {}) {
   const railPulses = progress.flatMap((g) => (g.pulses || []).filter((p) => !p.hidden).map((p) => ({ start: p.at, duration: 1.4 })));
   const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...railPulses], zooms, tail }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
+  // Spoken icon pops use the final zoom lane and every finished busy window, including a 0.3 s guard around slams.
+  let iconDetection = detection;
+  if (preset.icons?.enabled && sameShape && shownGroups.length) {
+    const times = [...new Set(iconCandidates(shownGroups).map((x) => x.t))];
+    if (times.length) iconDetection = await detectFaces(videoSrc, times) || detection;
+  }
+  const icons = preset.icons?.enabled && shownGroups.length ? planIcons(shownGroups, duration, {
+    ...preset.icons,
+    hook,
+    busy: [
+      ...allCards.map((g) => ({ ...g, kind: "card" })),
+      ...broll.map((b) => ({ ...b, kind: "cutaway" })),
+      ...railPulses.map((p) => ({ ...p, kind: "rail pulse" })),
+      ...slams.map((sl) => ({ start: sl.t, duration: sl.end - sl.t, pad: 0.3, kind: "slam" })),
+    ],
+    zooms,
+    face: face || faceBox(iconDetection),
+    detection: iconDetection,
+    framing,
+    W: canvas0.width,
+    H: canvas0.height,
+    captionTop,
+    tail,
+  }) : [];
+  if (preset.icons?.enabled) {
+    const skipped = Object.entries(icons.skipped || {}).map(([why, n]) => `${n} ${why}`).join(", ");
+    log(`icons: ${icons.length} spoken pop${icons.length === 1 ? "" : "s"}${icons.length ? ": " + icons.map((x) => `"${x.word}" at ${x.t}s`).join(", ") : ""}${skipped ? `; skipped ${skipped}` : ""}`);
+  }
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
   const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
 
   const plan = {
     version: 1,
@@ -514,6 +543,7 @@ export async function runEdit(input, opts = {}) {
     scenes: { schema: sceneSchema },
     broll,
     slams,
+    icons,
     coldOpen,
     lowerThird,
     structure,
@@ -650,6 +680,7 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
     plan.graphics = (plan.graphics || []).filter((g) => g.start < D);
     plan.broll = (plan.broll || []).filter((b) => b.start < D);
     plan.slams = (plan.slams || []).filter((sl) => sl.t < D);
+    plan.icons = (plan.icons || []).filter((icon) => icon.t < D);
     plan.cta = null;
     plan.audio = { ...(plan.audio || {}), tracks: (plan.audio?.tracks || []).filter((t) => t.start < D).map((t) => ({ ...t, duration: Math.min(t.duration || D, D - t.start), lane: t.lane ? t.lane.filter((p) => p.t <= D) : t.lane })) };
     const projectDir = path.join(outDir, `project-${i + 1}`);

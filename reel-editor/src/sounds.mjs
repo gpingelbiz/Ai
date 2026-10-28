@@ -11,6 +11,7 @@ export const SOUNDS = {
   move: { file: "move.wav", duration: 0.16, volume: 0.8 },
   flash: { file: "flash.wav", duration: 0.16, volume: 1.0 },
   marker: { file: "marker.wav", duration: 0.17, volume: 0.45 },
+  icon: { file: "card.wav", duration: 0.3, volume: 0.45 },
 };
 
 /**
@@ -19,12 +20,13 @@ export const SOUNDS = {
  * within 0.35 s of a louder cue.
  * Returns [{id, src, start, duration, volume, track}].
  */
-export function soundCues({ zooms = [], graphics = [], slams = [], coldOpen = null, captions = [], annotate = false, markers = false, level = 0.3, lead = { move: 0.06, slam: 0.02, card: 0.0, flash: 0.05, marker: 0.0 } } = {}) {
+export function soundCues({ zooms = [], graphics = [], slams = [], icons = [], coldOpen = null, captions = [], annotate = false, markers = false, level = 0.3, lead = { move: 0.06, slam: 0.02, card: 0.0, icon: 0.0, flash: 0.05, marker: 0.0 } } = {}) {
   const cues = [];
   const add = (kind, at) => cues.push({ kind, at: r3(Math.max(0, at - (lead[kind] || 0))) });
   for (const z of zooms) if (z.scale > 1 && !z.cut) add("move", z.t);
   for (const g of graphics) if (g.type !== "progress") add("card", g.start + 0.1);
   for (const s of slams) add("slam", s.t + 0.3);
+  for (const icon of icons) add("icon", icon.t);
   if (coldOpen) add("flash", coldOpen.duration);
   if (annotate && markers) {
     for (const g of captions) {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
 import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, numberMotion, progressHTML, progressCSS, PROGRESS_JS } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
+import { inlineIconSVG } from "./icons.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -185,6 +186,13 @@ export function renderHTML(plan, footage) {
     .map((sl, i) => `      <div id="slam-${i}" class="slam clip" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`)
     .join("\n");
 
+  // Spoken icon pops: the plan already chose the word, timing and face-safe square; compose only draws it.
+  const iconList = (plan.icons || []).map((icon) => ({ ...icon, svg: inlineIconSVG(icon.icon) })).filter((icon) => icon.svg);
+  const iconSkin = s.icons?.skin === "glass" ? "glass" : "disc";
+  const iconHTML = iconList
+    .map((icon, i) => `      <div id="icon-${i}" class="icon-pop icon-${iconSkin} clip" style="left:${icon.x}px;top:${icon.y}px;width:${icon.size}px;height:${icon.size}px" data-start="${icon.t}" data-duration="${r3(icon.end - icon.t)}" data-track-index="3" data-layout-allow-overflow aria-label="${esc(icon.word)}"><div class="icon-disc">${icon.svg}</div></div>`)
+    .join("\n");
+
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
   const gfxList = plan.graphics || [];
   const gfxSchema = plan.graphicsSchema ?? gfxList.schema ?? 1;
@@ -254,6 +262,7 @@ export function renderHTML(plan, footage) {
     baseShift: Math.round((plan.framing?.shift || 0) * H),
     behind: behind ? { start: behind.start, duration: behind.duration } : null,
   };
+  if (iconList.length) runtimePlan.icons = iconList.map((icon) => ({ t: icon.t, end: icon.end }));
   if (progressList.length) runtimePlan.progress = progressList.map((g) => ({ start: g.start, duration: g.duration, hookEnd: g.hookEnd, pulses: g.pulses || [] }));
   const framing = plan.framing || { scale: 1, side: "right", face: null };
   const origin = framing.scale > 1 && framing.origin ? framing.origin : s.zooms.origin || "50% 40%";
@@ -309,7 +318,11 @@ export function renderHTML(plan, footage) {
       .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
       .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
       .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
-      .cap .w { position: relative; }
+${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-events: none; }
+      .icon-disc { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; box-sizing: border-box; transform-origin: 50% 50%; will-change: transform, opacity; }
+      .icon-disc svg { width: 55%; height: 55%; overflow: visible; }
+      .icon-disc { color: ${iconSkin === "glass" ? c.accent : c.bg}; background: ${iconSkin === "glass" ? hexA(c.bg || "#0B0B0D", 0.7) : c.accent}; ${iconSkin === "glass" ? `border: 1.5px solid ${c.text};` : ""} }
+` : ""}      .cap .w { position: relative; }
       .an { position: absolute; opacity: 0; overflow: visible; pointer-events: none; }
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
@@ -365,7 +378,7 @@ ${openHTML}
 ${brollHTML}
 ${lowerHTML}
 ${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}
-${slamHTML}
+${slamHTML}${iconHTML ? `\n${iconHTML}` : ""}
 ${hookHTML}
 ${cutoutHTML}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
@@ -551,7 +564,23 @@ ${cardList.length ? GRAPHICS_JS : ""}${progressList.length ? PROGRESS_JS : ""}
           tl.to("#lower-third .lt-bar", { scaleY: 0, duration: 0.25, ease: "power2.in" }, l.at + l.duration - 0.3);
           tl.set("#lower-third", { opacity: 0 }, l.at + l.duration);
         }
-        // Climax words: slam down from 1.6x with expo weight, a three-frame impact shake, a quiet drift, a whip up and out.
+${iconList.length ? `        // Spoken icons: a seven-frame sticker landing, a small float, then a five-frame exit.
+        const iconFrame = 1 / (PLAN.fps || 30);
+        PLAN.icons.forEach((icon, i) => {
+          const el = document.getElementById("icon-" + i);
+          const disc = el.querySelector(".icon-disc");
+          const turn = i % 2 ? 8 : -8;
+          const settled = icon.t + 7 * iconFrame;
+          const outAt = Math.max(settled, icon.end - 5 * iconFrame);
+          tl.set(el, { opacity: 1 }, icon.t);
+          tl.fromTo(disc, { scale: 0, rotation: turn, opacity: 0 }, { scale: 1.12, rotation: -turn * 0.18, opacity: 1, duration: 4 * iconFrame, ease: "back.out(1.8)" }, icon.t);
+          tl.to(disc, { scale: 1, rotation: 0, duration: 3 * iconFrame, ease: "power2.out" }, icon.t + 4 * iconFrame);
+          const floatFor = outAt - settled;
+          if (floatFor > 2 * iconFrame) tl.to(disc, { y: i % 2 ? 3 : -3, duration: floatFor / 2, ease: "sine.inOut", yoyo: true, repeat: 1 }, settled);
+          tl.to(disc, { scale: 0.8, opacity: 0, duration: 5 * iconFrame, ease: "power2.in" }, outAt);
+          tl.set(el, { opacity: 0 }, icon.end);
+        });
+` : ""}        // Climax words: slam down from 1.6x with expo weight, a three-frame impact shake, a quiet drift, a whip up and out.
         const frame = 1 / (PLAN.fps || 30);
         PLAN.slams.forEach((sl, i) => {
           const el = document.getElementById("slam-" + i);

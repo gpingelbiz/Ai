@@ -180,6 +180,15 @@
     "minSpacing": 8,
     "hold": 1.1
   },
+  "icons": {
+    "enabled": false,
+    "max": 4,
+    "minSpacing": 6,
+    "maxPer30": 3,
+    "hold": 1.2,
+    "size": 0.12,
+    "skin": "disc"
+  },
   "coldOpen": {
     "enabled": false,
     "duration": 0.6
