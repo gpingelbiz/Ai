@@ -62,4 +62,10 @@ test("render: pop-out word is between its dim layer and matte; cutout b-roll and
   const script = html.match(/<script>\n([\s\S]*?)\n    <\/script>/)?.[1];
   assert.ok(script);
   assert.doesNotThrow(() => new Function(script));
+  assert.ok(!html.includes("slam-front"), "a word that fits behind the head stays behind it");
+
+  // A fallback word (no readable spot behind the head) is lifted in front of the cutout.
+  const front = renderHTML({ ...plan, slams: [{ ...plan.slams[0], popout: { ...plan.slams[0].popout, placement: { top: 200, fontSize: 200, fallback: true } } }] }, "assets/footage.mp4");
+  assert.match(front, /class="slam clip slam-popout slam-front"/);
+  assert.match(front, /\.slam-front \{ z-index: 2; \}/);
 });

@@ -229,7 +229,7 @@ export function renderHTML(plan, footage) {
     .map((sl, i) => {
       const p = sl.popout?.src ? sl.popout : null;
       const stage = p ? ` style="left:${r3((76 / 1080) * 100)}%;right:${r3(((1080 - 940) / 1080) * 100)}%;top:${p.placement.top}px;height:${Math.round(p.placement.fontSize * 1.05)}px"` : "";
-      return `      <div id="slam-${i}" class="slam clip${p ? " slam-popout" : ""}" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"${stage}><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${p?.placement.fontSize || slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`;
+      return `      <div id="slam-${i}" class="slam clip${p ? " slam-popout" : ""}${p?.placement?.fallback ? " slam-front" : ""}" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"${stage}><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${p?.placement.fontSize || slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`;
     })
     .join("\n");
   const popoutBgHTML = slamList
@@ -399,7 +399,9 @@ ${brollList.map((_, i) => `      #broll-${i} { filter: url(#whip-broll-filter-${
       .lt-text { display: flex; flex-direction: column; justify-content: center; gap: ${Math.round(H * 0.004)}px; padding: ${Math.round(H * 0.008)}px 0; font-family: "Inter", sans-serif; color: ${c.text}; text-shadow: 0 0.06em 0.4em rgba(0,0,0,0.6); }
       .lt-name { font-size: ${Math.round(H * 0.04)}px; font-weight: 850; letter-spacing: -0.01em; line-height: 1; }
       .lt-handle { font-size: ${Math.round(H * 0.022)}px; font-weight: 600; color: ${c.accent}; letter-spacing: 0.04em; }
-      .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+      .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }${slamList.some((sl) => sl.popout?.src && sl.popout.placement?.fallback) ? `
+      /* No spot kept the word readable behind the head (a cap or hair reaches higher than the face says): in front. */
+      .slam-front { z-index: 2; }` : ""}
       .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
       .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
 ${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-events: none; }

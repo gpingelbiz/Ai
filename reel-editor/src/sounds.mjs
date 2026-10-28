@@ -26,7 +26,8 @@ export function soundCues({ zooms = [], graphics = [], slams = [], icons = [], b
   for (const z of zooms) if (z.scale > 1 && !z.cut) add("move", z.t);
   for (const g of graphics) if (g.type !== "progress") add("card", g.start + 0.1);
   for (const s of slams) add("slam", s.t + 0.3);
-  if (brollCut === "whip") for (const b of broll) { add("move", b.start); add("move", b.start + b.duration); }
+  // Window and split cutaways have their own entrance, so only a full or cutout cutaway whips (and whooshes).
+  if (brollCut === "whip") for (const b of broll) if (!["window", "split"].includes(b.layout)) { add("move", b.start); add("move", b.start + b.duration); }
   for (const icon of icons) add("icon", icon.t);
   if (coldOpen) add("flash", coldOpen.duration);
   if (annotate && markers) {
