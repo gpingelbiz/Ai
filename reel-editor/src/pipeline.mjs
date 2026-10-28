@@ -11,7 +11,7 @@ import { runPreflight, writePreflight, describePreflight } from "./preflight.mjs
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook } from "./placement.mjs";
+import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -376,6 +376,7 @@ export async function runEdit(input, opts = {}) {
   let graphics = preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
+  const graphicsSchema = graphics.schema || 1;
   // The reel's look (picked with the cards) themes the rest of it: hook treatment, caption marker, slam style,
   // b-roll grade and cut, camera move. A reel without cards keeps its preset's look.
   const look = graphics.look;
@@ -399,6 +400,23 @@ export async function runEdit(input, opts = {}) {
       }
     }
   }
+  // The payoff rail is laid out after the final hook treatment and caption position are known. The horizontal
+  // band wins; a collision moves it to the empty face side, and an unsafe side strip drops it altogether.
+  if (hook && graphics.some((g) => g.type === "progress")) {
+    const words = hook.words || hook.text.split(/\s+/).map((text) => ({ text }));
+    const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
+    const blockH = hookBlockHeight(words, { W: canvas0.width, H: canvas0.height, fontPx });
+    const hookTop = preset.hook.style === "headline" ? preset.hook.position : Math.max(0, preset.hook.position - 1.2 * preset.hook.fontSizeFrac);
+    const progressFace = face || faceBox(detection);
+    const placement = placeProgressRail({ W: canvas0.width, H: canvas0.height, hookTop, hookBottom: hookTop + blockH, captionTop, face: progressFace, side: progressFace && progressFace.cx >= 0.5 ? "left" : "right" });
+    if (placement.skip) {
+      graphics = graphics.filter((g) => g.type !== "progress");
+      log(`graphics: progress rail skipped (${placement.reason})`);
+    } else {
+      graphics = graphics.map((g) => g.type === "progress" ? { ...g, placement } : g);
+      log(`graphics: progress rail ${placement.orientation === "vertical" ? "moved to the empty face side" : "placed between the hook and captions"}`);
+    }
+  }
   // A card that only restates the hook title shows the same line twice in a row (the render reviewer caught one).
   if (hook && graphics.length) {
     const toks = (t) => String(t || "").toLowerCase().replace(/[*"“”'’.,!?:]/g, "").split(/\s+/).filter(Boolean);
@@ -409,7 +427,12 @@ export async function runEdit(input, opts = {}) {
     if (graphics.length < before) log(`graphics: dropped ${before - graphics.length} card${before - graphics.length === 1 ? "" : "s"} that only repeated the hook`);
   }
   // Structure cards win their slots: a planned card within 6 s of one is dropped.
-  const allCards = [...structureCards, ...graphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2)))].sort((a, b) => a.start - b.start);
+  const progressGraphics = graphics.filter((g) => g.type === "progress");
+  const regularGraphics = graphics.filter((g) => g.type !== "progress");
+  const allCards = [...structureCards, ...regularGraphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2)))].sort((a, b) => a.start - b.start);
+  const progress = progressGraphics.map((g) => ({ ...g, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || allCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) })) }));
+  const allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
+  allGraphics.schema = graphicsSchema;
   // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
   const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail };
   const broll = preset.broll?.enabled && shownGroups.length
@@ -454,7 +477,8 @@ export async function runEdit(input, opts = {}) {
     captions: showCaptions ? shownGroups : [],
     lines: shownGroups,
     zooms,
-    graphics: allCards,
+    graphics: allGraphics,
+    graphicsSchema,
     broll,
     slams,
     coldOpen,

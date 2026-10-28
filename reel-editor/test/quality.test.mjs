@@ -88,3 +88,11 @@ test("pacing checks: shots, first cut, time away and caption flashes from the pl
   const fast = pacingChecks({ ...plan, style: { pacing: { avgShot: [1.1, 1.4], maxShot: 2.8, firstCut: 1, maxAway: 3.5 } } });
   assert.deepEqual(fast.items.map((i) => i.code).sort(), ["caption-speed", "pace-average", "pace-away", "pace-longest"]);
 });
+
+test("pacing: progress milestones are small pulse events, not one long card", async () => {
+  const { pacingChecks } = await import("../src/preflight.mjs");
+  const plan = { video: { duration: 20 }, zooms: [], graphics: [{ type: "progress", start: 0, duration: 15, pulses: [{ at: 4, hidden: false }, { at: 9, hidden: true }, { at: 13, hidden: false }] }], broll: [], captions: [] };
+  const { stats } = pacingChecks(plan);
+  assert.equal(stats.firstCut, 4, "the long rail lifetime is not a card hold");
+  assert.equal(stats.shots, 5, "only the two visible 1.4-second pulses add event boundaries");
+});

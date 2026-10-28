@@ -23,7 +23,7 @@ export function soundCues({ zooms = [], graphics = [], slams = [], coldOpen = nu
   const cues = [];
   const add = (kind, at) => cues.push({ kind, at: r3(Math.max(0, at - (lead[kind] || 0))) });
   for (const z of zooms) if (z.scale > 1 && !z.cut) add("move", z.t);
-  for (const g of graphics) add("card", g.start + 0.1);
+  for (const g of graphics) if (g.type !== "progress") add("card", g.start + 0.1);
   for (const s of slams) add("slam", s.t + 0.3);
   if (coldOpen) add("flash", coldOpen.duration);
   if (annotate && markers) {

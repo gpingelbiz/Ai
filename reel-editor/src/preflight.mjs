@@ -103,7 +103,10 @@ export function pacingChecks(plan) {
   const D = plan.video.duration;
   const changes = new Set([0, D]);
   for (const z of plan.zooms || []) changes.add(z.t);
-  for (const g of plan.graphics || []) { changes.add(g.start); changes.add(g.start + g.duration); }
+  for (const g of plan.graphics || []) {
+    if (g.type === "progress") { for (const p of g.pulses || []) if (!p.hidden) { changes.add(p.at); changes.add(p.at + 1.4); } }
+    else { changes.add(g.start); changes.add(g.start + g.duration); }
+  }
   for (const b of plan.broll || []) { changes.add(b.start); changes.add(b.start + b.duration); }
   if (plan.coldOpen) changes.add(plan.coldOpen.duration);
   const t = [...changes].filter((x) => x >= 0 && x <= D).map((x) => Math.round(x * 1000) / 1000).sort((a, b) => a - b);
