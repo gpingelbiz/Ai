@@ -578,7 +578,8 @@ ${audioHTML}
           tl.set(FOOT, { objectPosition: first.x + "% 50%" }, 0);
           for (let i = 1; i < PLAN.reframe.length; i++) {
             const p = PLAN.reframe[i], q = PLAN.reframe[i - 1];
-            tl.to(FOOT, { objectPosition: p.x + "% 50%", duration: Math.max(0.2, p.t - q.t), ease: "power1.inOut" }, q.t);
+            if (p.cut) tl.set(FOOT, { objectPosition: p.x + "% 50%" }, p.t);
+            else tl.to(FOOT, { objectPosition: p.x + "% 50%", duration: Math.max(0.2, p.t - q.t), ease: "power1.inOut" }, q.t);
           }
         }
         // Base framing (long form): a tighter default frame on a wide shot; every punch-in is relative to it.

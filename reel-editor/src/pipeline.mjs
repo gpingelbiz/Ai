@@ -33,6 +33,8 @@ import { iconCandidates, planIcons } from "./icons.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, duckingLaneFromEnvelope, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
+import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
+import { needsReframe, sampleTimes, faceCentres, smoothTrack, planCropPath, objectPositionLane } from "./reframe.mjs";
 import { makeCover } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
@@ -358,9 +360,31 @@ export async function runEdit(input, opts = {}) {
   let reframe = null;
   const canvas1 = canvasFor(preset.canvas, cleanMeta);
   if (preset.reframe?.enabled !== false && needsReframe(cleanMeta, canvas1)) {
-    const det = await detectFaces(videoSrc, sampleTimes(duration, preset.reframe?.step ?? 0.5));
+    // Face detection runs on clean.mp4: each join is the cumulative length of the kept segments before it.
+    let at = 0;
+    const cutTimes = [];
+    for (let i = 0; i < cuts.segments.length - 1; i++) {
+      at += cuts.segments[i].end - cuts.segments[i].start;
+      if (cuts.segments[i + 1].start > cuts.segments[i].end) cutTimes.push(r3(at));
+    }
+    // Sample the exact first frame of every new shot as well as the regular grid, including a very short last shot.
+    const grid = sampleTimes(duration, preset.reframe?.step ?? 0.25);
+    const times = preset.reframe?.smoother === "average" ? grid : [...new Set([...grid, ...cutTimes])].sort((a, b) => a - b);
+    const det = await detectFaces(videoSrc, times);
     if (det?.frames?.length) {
-      reframe = objectPositionLane(smoothTrack(faceCentres(det)), cleanMeta, canvas1);
+      const centres = faceCentres(det);
+      let track;
+      if (preset.reframe?.smoother === "average") track = smoothTrack(centres);
+      else {
+        try {
+          track = planCropPath(centres, { ...preset.reframe, cuts: cutTimes });
+          if (!track.length) throw new Error("no usable crop points");
+        } catch (e) {
+          warn(`reframe smoother failed: ${String(e.message).split("\n")[0]}; using the average path`);
+          track = smoothTrack(centres);
+        }
+      }
+      reframe = objectPositionLane(track, cleanMeta, canvas1);
       log(`reframe: following the face across ${reframe.length} move${reframe.length === 1 ? "" : "s"} (wide source into ${canvas1.mode})`);
     } else log("reframe: no face found in the wide shot, keeping the centre crop");
   }
