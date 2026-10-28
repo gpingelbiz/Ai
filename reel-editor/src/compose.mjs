@@ -45,6 +45,9 @@ export function composeProject(plan, projectDir) {
   ensureDir(path.join(assets, "fonts"));
   ensureDir(path.join(assets, "vendor"));
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(fontFile(plan.style, f), path.join(assets, "fonts", f));
+  // The brand looks' italic serif (brandlooks.mjs); without it the browser slants the upright face.
+  const italic = plan.style?.fonts?.displayItalic;
+  if (italic && fs.existsSync(italic)) fs.copyFileSync(italic, path.join(assets, "fonts", "DisplayItalic.ttf"));
   // The fonts the reel's card look needs (typewriter, marker, serif).
   for (const f of skinFonts([...(plan.graphics || []).map((g) => g.skin || "glass"), ...themeFontSkins(THEMES[plan.style?.look] || null)], { display: ownDisplay(plan.style) }).files) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(assets, "vendor", "gsap.min.js"));

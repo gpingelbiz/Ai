@@ -50,6 +50,11 @@ for (const [k, label] of [["display", "Display"], ["body", "Body"]]) {
   fonts[k] = `fonts/${label}${ext}`;
   console.log(`font ${k}: ${brand.fonts[k]} (${r.license})${r.note ? `, ${r.note}` : ""}`);
 }
+// The display font's italic, for the keyword in the brand looks (Google Fonts families only; optional).
+if (fonts.display) {
+  const r = await fetchFont(brand.fonts.display, path.join(p.fonts, "DisplayItalic.ttf"), { italic: true }).catch(() => null);
+  if (r) { fonts.displayItalic = "fonts/DisplayItalic.ttf"; console.log(`font display italic: ${r.source}`); }
+}
 json(p.preset, brandPreset(brand, { fonts }));
 json(p.youtube, youtubePreset(brand, { fonts }));
 json(p.dictionary, brandDictionary(brand));

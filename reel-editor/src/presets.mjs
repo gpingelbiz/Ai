@@ -25,7 +25,7 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
   // A brand preset names its fonts relative to itself (a kit installs them next to it in ~/.reel/fonts).
   if (own.fonts) {
     p.fonts = { ...p.fonts };
-    for (const k of ["display", "body"]) if (own.fonts[k] && !path.isAbsolute(own.fonts[k])) p.fonts[k] = path.resolve(path.dirname(file), own.fonts[k]);
+    for (const k of ["display", "displayItalic", "body"]) if (own.fonts[k] && !path.isAbsolute(own.fonts[k])) p.fonts[k] = path.resolve(path.dirname(file), own.fonts[k]);
   }
   return p;
 }

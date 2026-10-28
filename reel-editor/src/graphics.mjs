@@ -264,8 +264,9 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const transcript = groups.map((g) => g.text).join(" ");
     const recent = recentLooks();
     const fixed = settings.look && LOOKS[settings.look] ? settings.look : null;
-    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude: settings.excludeLooks || [] }) }), { timeoutMs: 240000 }));
-    const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude: settings.excludeLooks || [] });
+    const exclude = lookExclusions(settings);
+    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude }) }), { timeoutMs: 240000 }));
+    const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude });
     lookPicked = picked;
     const raw = reply.scenes || [];
     scenes = placeScenes(raw.map(normalizeScene).filter(Boolean).map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail });
@@ -284,7 +285,8 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
 // ---------------------------------------------------------------- rendering
 
 import { esc } from "./text.mjs";
-import { skinHTML, SKINS_JS, looksPrompt, pickLook, recentLooks, rememberLook, skinFor, LOOKS } from "./looks.mjs";
+import { skinHTML, SKINS_JS, looksPrompt, pickLook, recentLooks, rememberLook, skinFor, lookExclusions, LOOKS } from "./looks.mjs";
+import { QUIET_JS } from "./brandlooks.mjs";
 const marked = (s, cls) => esc(s).replace(/\*([^*]+)\*/g, `<span class="${cls}">$1</span>`).replace(/\*/g, "");
 
 /**
@@ -556,8 +558,18 @@ export const GRAPHICS_JS = `
           const el = document.getElementById("gfx-" + i);
           const box = el.querySelector(".g-box");
           const ins = el.querySelectorAll(".g-in");
-          tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power1.out" }, g.start);
-          if (PLAN.graphicsMode === "band") tl.fromTo(box, { y: 28, scale: 0.985 }, { y: 0, scale: 1, duration: 0.32, ease: "power3.out" }, g.start);
+${QUIET_JS}
+          tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: quiet === "note" ? 0.01 : quiet ? 0.4 : 0.16, ease: "power1.out" }, g.start);
+          if (quiet) {
+            // Brand looks (brandlooks.mjs): no bounce, no scale; the cream card fades up, the serif clears from a blur.
+            if (quiet === "atelier") tl.fromTo(box, { y: 28 }, { y: 0, duration: 0.45, ease: "expo.out" }, g.start);
+            if (quiet === "serifonlife") tl.fromTo(box, { filter: "blur(8px)" }, { filter: "blur(0px)", duration: 0.6, ease: "power2.out" }, g.start);
+            if (quiet === "atelier" && PLAN.graphicsMode === "overlay") {
+              tl.to("#video-wrap", { y: PLAN.height * 0.07, duration: 0.45, ease: "power2.out" }, g.start);
+              tl.to("#video-wrap", { y: 0, duration: 0.45, ease: "power2.inOut" }, g.start + g.duration - 0.3);
+            }
+          }
+          else if (PLAN.graphicsMode === "band") tl.fromTo(box, { y: 28, scale: 0.985 }, { y: 0, scale: 1, duration: 0.32, ease: "power3.out" }, g.start);
           else if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
           else {
             tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: 0.3, ease: "power3.out" }, g.start);
@@ -567,10 +579,15 @@ export const GRAPHICS_JS = `
             tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
           }
 ${SKINS_JS}
-          tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: Math.min(0.22, 1.1 / Math.max(1, ins.length)) }, g.start + 0.06);
+          // Note lines pop on one by one across the first half of the card, the way they would be typed as she says them.
+          const step = quiet === "note" ? Math.min(0.9, (g.duration * 0.55) / Math.max(1, ins.length)) : quiet === "serifonlife" ? 0.2 : quiet ? 0.09 : Math.min(0.22, 1.1 / Math.max(1, ins.length));
+          if (quiet === "note") ins.forEach((n, k) => tl.fromTo(n, { opacity: 0 }, { opacity: 1, duration: 0.01, ease: "none" }, g.start + k * step));
+          else if (quiet === "serifonlife") tl.fromTo(ins, { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.5, ease: "power2.out", stagger: step }, g.start + 0.1);
+          else if (quiet) tl.fromTo(ins, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.38, ease: "expo.out", stagger: step }, g.start + 0.08);
+          else tl.fromTo(ins, { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", stagger: step }, g.start + 0.06);
           // Bubbles run on their own clock (typing, then pop), so take them out of the stagger.
           el.querySelectorAll(".g-bubble.g-in").forEach((b) => tl.set(b, { opacity: 0 }, g.start + 0.06));
-          const t1 = g.start + 0.06 + 0.42 + Math.min(0.22, 1.1 / Math.max(1, ins.length)) * Math.max(0, ins.length - 1);
+          const t1 = quiet === "note" ? g.start + step * ins.length : g.start + 0.06 + (quiet ? 0.45 : 0.42) + step * Math.max(0, ins.length - 1);
           el.querySelectorAll(".g-strike-line").forEach((s, k) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 0.3, ease: "power2.inOut" }, t1 + 0.1 + k * 0.18));
           el.querySelectorAll(".g-link").forEach((s, k) => tl.fromTo(s, PLAN.graphicsMode === "overlay" ? { scaleX: 0 } : { scaleY: 0 }, PLAN.graphicsMode === "overlay" ? { scaleX: 1, duration: 0.25, ease: "power2.out" } : { scaleY: 1, duration: 0.25, ease: "power2.out" }, g.start + 0.3 + k * 0.2));
           el.querySelectorAll(".g-hl").forEach((s) => tl.fromTo(s, { backgroundSize: "0% 46%" }, { backgroundSize: "100% 46%", duration: 0.5, ease: "power2.inOut" }, t1 + 0.05));
@@ -581,11 +598,11 @@ ${SKINS_JS}
             p.style.strokeDasharray = L + " " + L;
             const at = g.start + 0.2 + k * Math.min(0.22, 1.1 / Math.max(1, ins.length));
             tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.45, ease: "power2.inOut", immediateRender: false }, at);
-            tl.fromTo(p.closest(".g-icon"), { scale: 1 }, { scale: 1.12, duration: 0.1, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.4);
+            if (!quiet) tl.fromTo(p.closest(".g-icon"), { scale: 1 }, { scale: 1.12, duration: 0.1, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.4);
           });
           // Compare: the accent side wipes over from the divider, the VS badge pops, the bars fill.
-          el.querySelectorAll(".g-side-b").forEach((b) => tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: "sine.inOut", immediateRender: false }, g.start + 0.45));
-          el.querySelectorAll(".g-vs").forEach((v) => tl.to(v, { scale: 1, duration: 0.35, ease: "back.out(2)" }, g.start + 0.95));
+          if (quiet !== "serifonlife") el.querySelectorAll(".g-side-b").forEach((b) => tl.fromTo(b, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: quiet ? "power2.inOut" : "sine.inOut", immediateRender: false }, g.start + 0.45));
+          if (!quiet) el.querySelectorAll(".g-vs").forEach((v) => tl.to(v, { scale: 1, duration: 0.35, ease: "back.out(2)" }, g.start + 0.95));
           el.querySelectorAll(".g-side-fill, .g-bar-fill").forEach((f, k) => tl.fromTo(f, { scaleX: 0 }, { scaleX: 1, duration: 0.85, ease: "power3.out", immediateRender: false }, g.start + 0.5 + k * 0.18));
           // Message thread: typing dots before each incoming bubble, bubbles pop from their tail.
           const bubbles = el.querySelectorAll(".g-bubble");
@@ -597,7 +614,8 @@ ${SKINS_JS}
               dots.querySelectorAll("i").forEach((d, j) => tl.fromTo(d, { y: 0 }, { y: -6, duration: 0.18, ease: "sine.inOut", yoyo: true, repeat: 1, immediateRender: false }, at - 0.5 + j * 0.12));
               tl.set(dots, { opacity: 0 }, at);
             }
-            tl.fromTo(b, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.32, ease: "back.out(1.8)", immediateRender: false }, at);
+            if (quiet) tl.fromTo(b, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.22, ease: "power2.out", immediateRender: false }, at);
+            else tl.fromTo(b, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.32, ease: "back.out(1.8)", immediateRender: false }, at);
           });
           // Post card: the like lands a beat after the text.
           el.querySelectorAll(".g-post-heart").forEach((h) => {
@@ -616,11 +634,14 @@ ${SKINS_JS}
             const last = Math.max(1, Math.round(COUNT * fps));
             for (let f = 0; f <= last; f++) tl.set(n, { textContent: fmt(to * countEase(f / last)) }, at + COUNT * (f / last));
             const stat = n.closest(".g-stat") || n.closest(".g-bar-value");
-            tl.to(stat, { scale: 1.07, duration: 0.165, ease: "power3.out" }, at + COUNT);
-            tl.to(stat, { scale: 1, duration: 0.165, ease: "power2.out" }, at + COUNT + 0.165);
+            if (!quiet) {
+              tl.to(stat, { scale: 1.07, duration: 0.165, ease: "power3.out" }, at + COUNT);
+              tl.to(stat, { scale: 1, duration: 0.165, ease: "power2.out" }, at + COUNT + 0.165);
+            }
             const ring = stat.querySelector(".g-ring");
             if (ring) for (let f = 0; f <= last; f++) tl.set(ring, { "--ring": (parseFloat(ring.dataset.pct) * countEase(f / last)).toFixed(2) + "%" }, at + COUNT * (f / last));
             if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
           });
-          tl.to(el, { opacity: 0, duration: 0.16, ease: "power1.in" }, g.start + g.duration - 0.16);
+          const out = quiet === "note" ? 0.12 : quiet === "serifonlife" ? 0.4 : quiet ? 0.28 : 0.16;
+          tl.to(el, { opacity: 0, duration: out, ease: "power1.in" }, g.start + g.duration - out);
         });`;
