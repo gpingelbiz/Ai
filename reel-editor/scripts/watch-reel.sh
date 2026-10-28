@@ -208,6 +208,7 @@ if [ "$MODE" = long ]; then
     cp "$out" "$folder/Clip $k - ${pretty:-clip}.mp4"
     reel_meta "$(dirname "$(dirname "$out")")" "$folder/.Clip $k.reel.json"
     cdir="$(dirname "$(dirname "$out")")"
+    [ -s "$cdir/analytics-features.json" ] && cp -f "$cdir/analytics-features.json" "$folder/.Clip $k.reel-features.json"
     [ -f "$cdir/covers/Cover.png" ] && cp -f "$cdir/covers/Cover.png" "$folder/Clip $k - Cover.png"
     [ -s "$cdir/review.txt" ] && cp -f "$cdir/review.txt" "$folder/Clip $k - check these words.txt"
     [ -s "$cdir/music.txt" ] && cp -f "$cdir/music.txt" "$folder/Clip $k - music.txt"
@@ -282,6 +283,7 @@ else
   dest="$folder/$title.mp4"
   cp "$work/renders/$name.mp4" "$dest"
   reel_meta "$work" "$folder/.reel.json"
+  [ -s "$work/analytics-features.json" ] && cp -f "$work/analytics-features.json" "$folder/.reel-features.json"
   if [ -n "$shots" ]; then
     i=1
     while IFS= read -r still; do

@@ -79,9 +79,12 @@ export function noteHTML(s, { statHTML }) {
     return `<div class="g-box g-note">${line(text, "nb-quote")}${s.eyebrow ? line(esc(s.eyebrow), "nb-label") : ""}</div>`;
   }
   if (s.type === "list" || s.type === "steps") {
+    // Items timed to the speech (it.at) take the live-item hooks, so each line lands when she says it.
+    const live = s.items?.length && s.items.every((it) => Number.isFinite(it.at));
     const rows = (s.items || []).map((it, k) => {
       const lead = s.type === "steps" ? `<span class="nb-pill">${k + 1}</span>` : it.state === "check" || it.state === "strike" ? "" : `${k + 1}. `;
       const st = it.state === "check" ? " nb-check" : it.state === "strike" ? " nb-strike" : "";
+      if (live) return `<div class="g-live-item"><div class="nb-line nb-item${st}"><span class="g-item-dot"></span><span class="nb g-item-text">${lead}${esc(it.text)}</span></div></div>`;
       return `<div class="nb-line g-in nb-item${st}"><span class="nb">${lead}${esc(it.text)}</span></div>`;
     }).join("");
     return `<div class="g-box g-note g-note-list">${label}${s.title ? line(keyed(s.title), "nb-head") : ""}${rows}</div>`;
@@ -111,6 +114,9 @@ export function brandSkinsCSS({ H, colors, skins = [] }) {
     const s = ".gfx.skin-atelier";
     out.push(`
       ${s}::after { background: none; }
+      ${s} .g-item-text { color: ${INK} !important; }
+      ${s} .g-item-dot { background: ${c.accent}; box-shadow: none; }
+      ${s} .g-live-connector { background: ${INK}; }
       ${s} .g-box { left: 7%; right: 7%; top: 14%; bottom: auto; max-height: 42%; padding: ${px(58)} ${px(62)} ${px(54)}; gap: ${px(22)}; border-radius: 0; background: ${PAPER}f7; color: ${INK}; border: none; box-shadow: 0 ${px(12)} ${px(44)} rgba(17,17,17,0.16); align-items: flex-start; text-align: left; font-family: "Look Sans", sans-serif; }
       ${s} .g-box::before { content: ""; position: absolute; inset: ${px(14)}; border: ${px(1.5)} solid rgba(17,17,17,0.55); pointer-events: none; }
       ${s} .g-eyebrow { align-self: stretch; gap: 0; padding-bottom: ${px(13)}; border-bottom: ${px(1.5)} solid ${INK}; font-family: "Look Sans", sans-serif; font-size: ${px(25)}; font-weight: 600; letter-spacing: 0.32em; color: rgba(17,17,17,0.72); }
@@ -185,6 +191,10 @@ export function brandSkinsCSS({ H, colors, skins = [] }) {
       ${s}::after { background: none; }
       ${s} .g-box { left: 9%; right: 9%; top: 14%; bottom: auto; max-height: 46%; padding: 0; gap: ${px(6)}; border: none; border-radius: 0; background: none; box-shadow: none; color: ${INK}; align-items: center; text-align: center; font-family: "Look Sans", sans-serif; }
       ${s} .g-note-list { align-items: flex-start; text-align: left; }
+      ${s} .g-item-text { color: ${INK} !important; }
+      ${s} .nb-strike .g-item-text { color: rgba(17,17,17,0.5) !important; }
+      ${s} .g-item-dot, ${s} .g-live-connector { display: none; }
+      ${s} .g-live-item { display: block; padding: 0; margin: 0; border: none; background: none; }
       ${s} .nb-line { max-width: 100%; line-height: 1.5; }
       ${s} .nb { display: inline; padding: 0.2em 0.42em; border-radius: 0.3em; background: #FFFFFF; color: ${INK}; -webkit-box-decoration-break: clone; box-decoration-break: clone; box-shadow: 0 ${px(4)} ${px(16)} rgba(0,0,0,0.12); font-size: ${px(42)}; font-weight: 500; letter-spacing: 0; text-transform: none; }
       ${s} .nb-head .nb { font-size: ${px(52)}; font-weight: 600; letter-spacing: -0.005em; }
@@ -221,6 +231,8 @@ export function brandSkinsCSS({ H, colors, skins = [] }) {
     out.push(`
       ${s}::after { background: none; }
       ${s} .g-box { left: 8%; right: 8%; top: 15%; bottom: auto; max-height: 44%; padding: ${px(40)} ${px(30)}; gap: ${px(20)}; border: none; border-radius: 0; background: radial-gradient(ellipse at 50% 50%, rgba(17,17,17,0.62) 0%, rgba(17,17,17,0.42) 45%, rgba(17,17,17,0) 74%); box-shadow: none; color: #FFFFFF; align-items: center; text-align: center; font-family: "Look Sans", sans-serif; text-shadow: 0 ${px(2)} ${px(4)} rgba(0,0,0,0.55), 0 ${px(2)} ${px(18)} rgba(0,0,0,0.5); }
+      ${s} .g-item-text { color: #FFFFFF !important; }
+      ${s} .g-item-dot { background: ${c.accent}; box-shadow: none; }
       ${s}::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 52%; background: linear-gradient(180deg, rgba(17,17,17,0.38) 0%, rgba(17,17,17,0.22) 60%, rgba(17,17,17,0) 100%); pointer-events: none; }
       ${s} .g-eyebrow { gap: 0; font-family: "Look Sans", sans-serif; font-size: ${px(25)}; font-weight: 500; letter-spacing: 0.3em; color: rgba(255,255,255,0.88); }
       ${s} .g-dot { display: none; }

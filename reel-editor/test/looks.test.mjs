@@ -6,7 +6,11 @@ import { sceneHTML } from "../src/graphics.mjs";
 const statHTML = (v) => `<div class="g-stat g-in"><span class="g-count" data-to="1">${v}</span></div>`;
 
 test("looks: every look maps every card type to a skin; the prompt lists them and steers off the last one", () => {
-  for (const id of LOOK_IDS) for (const t of ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter"]) assert.ok(typeof skinFor(id, t) === "string");
+  for (const id of LOOK_IDS) for (const t of ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter", "progress"]) assert.ok(typeof skinFor(id, t) === "string");
+  for (const id of LOOK_IDS) {
+    assert.equal(skinFor(id, "message", "proof"), "proof");
+    assert.match(sceneHTML({ type: "message", mode: "proof", context: "HE MESSAGED US", items: [{ from: "them", text: "I left the jail" }], skin: skinFor(id, "message", "proof") }), /g-box g-proof/, `${id} message skin renders proof mode`);
+  }
   assert.equal(skinFor("receipts", "stat"), "notify");
   assert.equal(skinFor("glass", "stat"), "glass");
   const p = looksPrompt(["phone", "receipts"]);
@@ -38,6 +42,15 @@ test("artifacts: a notification keeps the count-up, a receipt totals only number
   assert.match(sceneHTML({ type: "stat", eyebrow: "X", value: "$5", skin: "notify" }), /g-notify/);
 });
 
+test("timed list rows keep their live-item hooks in every look skin", () => {
+  const card = { type: "list", eyebrow: "THE ORDER", items: [{ text: "First", state: "plain", at: 0 }, { text: "Second", state: "check", at: 2 }] };
+  for (const look of LOOK_IDS) {
+    const html = sceneHTML({ ...card, skin: skinFor(look, "list") });
+    assert.equal((html.match(/class="g-live-item"/g) || []).length, 2, look);
+    assert.equal((html.match(/g-item-text/g) || []).length, 2, look);
+  }
+});
+
 test("styles and fonts only for the skins in use", () => {
   const css = skinsCSS({ H: 1920, colors: { accent: "#C8A24B" }, skins: ["paper", "receipt"] });
   assert.match(css, /skin-paper/);
@@ -46,6 +59,13 @@ test("styles and fonts only for the skins in use", () => {
   const f = skinFonts(["paper", "type", "glass"]);
   assert.deepEqual(f.files.sort(), ["CourierPrime-Bold.ttf", "CourierPrime-Regular.ttf", "PermanentMarker-Regular.ttf"]);
   assert.match(f.css, /Permanent Marker/);
+});
+
+test("every compare skin keeps the staged pivot markup", () => {
+  for (const id of LOOK_IDS) {
+    const html = sceneHTML({ type: "compare", skin: skinFor(id, "compare"), pivotAt: 1, kind: "roles", a: { label: "Seller", value: "", note: "" }, b: { label: "Buyer", value: "", note: "" } });
+    assert.match(html, /g-compare-dynamic g-kind-roles/, id);
+  }
 });
 
 import { THEMES, applyTheme, MARKERS, themeCSS, themeFontSkins } from "../src/looks.mjs";

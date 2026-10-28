@@ -152,6 +152,27 @@ export function placeHook(head, { words, W = 1080, H = 1920, fontPx, topSafe = 0
     : { position: round(head.bottom + gap / 2), fontScale: minScale, zone: "fallback", head };
 }
 
+const rectsOverlap = (a, b, gap = 0) => a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y;
+
+/** Place the payoff rail between hook and captions, or vertically on the empty side of the face. */
+export function placeProgressRail({ W = 1080, H = 1920, hookTop = 0, hookBottom = 0.35, captionTop = 0.68, face = null, side = "right" } = {}) {
+  const hook = { x: 76, y: hookTop * H, w: Math.min(W - 152, 864), h: Math.max(0, (hookBottom - hookTop) * H) };
+  const faceRect = face ? { x: face.cx * W - face.w * W / 2, y: face.cy * H - face.h * H / 2, w: face.w * W, h: face.h * H } : null;
+  const band = { x: 86, y: 820, w: Math.min(814, W - 86 - 140), h: 140, orientation: "horizontal" };
+  const bandBlocked = rectsOverlap(band, hook, 20) || band.y + band.h + 20 > captionTop * H || (faceRect && rectsOverlap(band, faceRect, 18));
+  if (!bandBlocked) return band;
+
+  const x = side === "left" ? 76 : Math.min(680, W - 400);
+  const y = Math.max(200, Math.ceil(hookBottom * H + 24));
+  const bottom = Math.min(captionTop * H - 24, H - 320);
+  const strip = { x, y, w: 260, h: Math.floor(bottom - y), orientation: "vertical" };
+  if (strip.h < 300) return { skip: true, reason: "no 300px gap between the hook and captions" };
+  if (strip.x < 76 || strip.x + strip.w > Math.min(940, W - 76)) return { skip: true, reason: "the empty-side strip would enter the action rail" };
+  if (rectsOverlap(strip, hook, 16)) return { skip: true, reason: "the empty-side strip would hit the hook" };
+  if (faceRect && rectsOverlap(strip, faceRect, 18)) return { skip: true, reason: "the empty-side strip would hit the face" };
+  return strip;
+}
+
 const round = (x) => Math.round(x * 1000) / 1000;
 
 /** Caption lines that only repeat an automatic hook (the clip's own first sentence) while it is on screen. */
