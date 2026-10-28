@@ -86,6 +86,9 @@ export function deepMerge(base, over) {
  * cover titles), style.fonts.body replaces Inter (reveal captions, cards, carousels). The file is copied under the
  * house name, so every composition picks it up unchanged. Returns the path to copy from.
  */
+/** True when the style brings its own display font (a brand kit or client), which then stands in for Anton. */
+export const ownDisplay = (style) => !!(style?.fonts?.display && fs.existsSync(style.fonts.display));
+
 export function fontFile(style, name) {
   const want = name === "Anton-Regular.ttf" ? style?.fonts?.display : name === "Inter.ttf" ? style?.fonts?.body : null;
   if (want && fs.existsSync(want)) return want;

@@ -494,11 +494,18 @@ export function themeCSS({ H, colors, theme }) {
   return `\n      ${hook}\n      ${slam}`;
 }
 
-/** @font-face rules and the font files to copy for the skins in use. */
-export function skinFonts(skins = []) {
+/**
+ * @font-face rules and the font files to copy for the skins in use. With `display` (the brand has its own display
+ * font, already in the project as Anton-Regular.ttf) the serif skin and the serif hook and slam use it instead of
+ * DM Serif Display.
+ */
+export function skinFonts(skins = [], { display = false } = {}) {
   const seen = new Map();
-  for (const sk of skins) for (const [fam, file, weight] of SKIN_FONTS[sk] || []) seen.set(file, [fam, file, weight]);
-  const files = [...seen.keys()];
+  for (const sk of skins) for (const [fam, file, weight] of SKIN_FONTS[sk] || []) {
+    const own = display && sk === "editorial" ? "Anton-Regular.ttf" : file;
+    seen.set(own, [fam, own, weight]);
+  }
+  const files = [...seen.keys()].filter((f) => f !== "Anton-Regular.ttf");
   const css = [...seen.values()].map(([fam, file, weight]) => `@font-face { font-family: "${fam}"; src: url("assets/fonts/${file}") format("truetype"); font-weight: ${weight}; font-style: normal; font-display: block; }`).join("\n      ");
   return { files, css };
 }

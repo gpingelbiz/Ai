@@ -10,7 +10,7 @@
     "bg": "#111114"
   },
   "fonts": {
-    "_note": "A Google Fonts family name (Bebas Neue, Montserrat ExtraBold, Oswald) or a path to a .ttf. display = hook titles, climax words, pop captions, cover titles; body = reveal captions, cards, carousels. Leave out to keep Anton and Inter.",
+    "_note": "A Google Fonts family name (Bebas Neue, Montserrat ExtraBold, Oswald) or a path to a .ttf. display = hook titles, climax words, pop captions, cover titles, and the serif in the briefing look and serif hook (instead of DM Serif Display); body = reveal captions, cards, carousels. Leave out to keep Anton and Inter.",
     "display": "Bebas Neue",
     "body": "Montserrat"
   },
@@ -20,7 +20,14 @@
     "captions": "reveal",
     "annotate": true,
     "slams": true,
-    "behind": true
+    "behind": true,
+    "_case": "hookCase / captionCase: upper (ALL CAPS, the default) | sentence (shown as written or as said, no forced caps; for a serif or script display font).",
+    "hookCase": "upper",
+    "captionCase": "upper",
+    "_hookSeconds": "How long the hook stays on screen: seconds (default 3), or \"reel\" for the whole reel (5-10 s one-line reels).",
+    "hookSeconds": 3,
+    "_pace": "pace: fast (the default: tight silence cuts, punch-ins with jump cuts between them, a cold open on the first b-roll still) | calm (gentler silence cuts, a punch-in at most every 16 s, no jump cuts, no cold open). coldOpen: true or false overrides the pace's cold open.",
+    "pace": "fast"
   },
   "world": "Who they are and where they live and work, for the b-roll: their business, their city, their setting, the things that show up in their life. One or two sentences, concrete.",
   "brollStyle": "",

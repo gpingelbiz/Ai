@@ -35,6 +35,12 @@ export function loadDictionary(file) {
   return fs.existsSync(f) ? readJSON(f) : { terms: [], powerWords: [], corrections: [] };
 }
 
+/** The Runway b-roll timing and budget from presets/pingel-runway.json (clip length, gaps, counts, credit cap). */
+export function runwayTiming() {
+  const { enabled, engine, ...timing } = readJSON(path.join(PRESET_DIR, "pingel-runway.json")).broll || {};
+  return timing;
+}
+
 /** CLI flags win over the preset. */
 /** A pacing overlay (presets/pace-<name>.json) on top of any preset: `--pace fast` is the measured short-form pacing. */
 export function applyPace(preset, pace) {
@@ -93,7 +99,12 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noAnnotate) p.captions.annotate = false;
   if (o.zoomStyle) p.zooms.style = o.zoomStyle;
   if (o.brollCut) p.broll.cut = o.brollCut;
-  if (o.brollEngine) p.broll.engine = o.brollEngine;
+  if (o.brollEngine) {
+    // A preset that is not a Runway preset (a client's brand, from the Runway drop folder) gets the pingel-runway
+    // timing and budget under its own look, instead of the 2-second still timing.
+    if (o.brollEngine === "runway" && p.broll.engine !== "runway") Object.assign(p.broll, runwayTiming());
+    p.broll.engine = o.brollEngine;
+  }
   if (o.noCadence) p.zooms.cadence.enabled = false;
   if (o.coldOpen) p.coldOpen.enabled = true;
   if (o.noColdOpen) p.coldOpen.enabled = false;
