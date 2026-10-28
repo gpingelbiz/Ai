@@ -183,8 +183,19 @@ export function renderHTML(plan, footage) {
   const brollMedia = (b) => (b.video
     ? `<video class="broll-media" src="${esc(b.src)}" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2" muted playsinline${grade}${pullStyle}></video>`
     : `<img class="broll-media" src="${esc(b.src)}" alt=""${grade}${pullStyle} />`);
+  const brollLayout = (b) => ["window", "split"].includes(b.layout) ? b.layout : "full";
+  const sharedBroll = brollList.some((b) => brollLayout(b) !== "full");
+  const splitBroll = brollList.some((b) => brollLayout(b) === "split");
   const brollHTML = brollList
-    .map((b, i) => `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`)
+    .map((b, i) => {
+      const layout = brollLayout(b);
+      if (layout === "window") {
+        const p = b.panel;
+        return `      <div id="broll-${i}" class="broll broll-window clip" style="left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px;--broll-radius:${Math.round(p.w * 0.04)}px" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div></div>`;
+      }
+      if (layout === "split") return `      <div id="broll-${i}" class="broll broll-split clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div><div class="split-divider"></div></div>`;
+      return `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`;
+    })
     .join("\n");
   // A real directional blur for whip cuts. Chromium's SVG filter is seek-stable and `stdDeviation="x 0"` blurs
   // only horizontally; animating the attribute avoids frame-history tricks whose result depends on render order.
@@ -266,7 +277,9 @@ export function renderHTML(plan, footage) {
   const videoAudio = plan.audio?.replaceAudio || !plan.video.hasAudio ? " muted" : ' data-has-audio="true"';
   const footageMedia = `<video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>`;
   const videoWrapHTML = `      <div id="video-wrap" data-layout-allow-overflow>\n        ${motionWrap(footageMedia)}\n      </div>`;
-  const videoLayerHTML = whip ? `      <div id="whip-wrap" data-layout-allow-overflow>\n${videoWrapHTML}\n      </div>` : videoWrapHTML;
+  // Split b-roll moves the whole footage (with its zoom wrap) into the bottom half; the whip slides all of it sideways.
+  const splitWrapHTML = splitBroll ? `      <div id="footage-layout" data-layout-allow-overflow><div id="footage-position" data-layout-allow-overflow>\n${videoWrapHTML}\n      </div></div>` : videoWrapHTML;
+  const videoLayerHTML = whip ? `      <div id="whip-wrap" data-layout-allow-overflow>\n${splitWrapHTML}\n      </div>` : splitWrapHTML;
 
   const runtimePlan = {
     duration: D,
@@ -275,7 +288,10 @@ export function renderHTML(plan, footage) {
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
-    broll: brollList.map((b, i) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}) })),
+    broll: brollList.map((b, i) => {
+      const layout = brollLayout(b);
+      return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY } : {}) } : {}) };
+    }),
     graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}) })),
     graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
@@ -330,7 +346,6 @@ export function renderHTML(plan, footage) {
     : fx
     ? `--gx: ${framing.side === "right" ? `${100 - 4 - gw}%` : "4%"}; --gw: ${gw}%; --gy: ${Math.round(Math.max(6, Math.min(50, (fx.cy - fx.h * 0.6) * 100)))}%; --ly: ${Math.round(Math.max(30, Math.min(80, (fx.cy + fx.h * 0.55) * 100)))}%;`
     : "--gx: 56%; --gw: 40%; --gy: 20%; --ly: 70%;";
-
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -344,7 +359,7 @@ export function renderHTML(plan, footage) {
       ${fontsForSkins.css}
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
-      #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
+${splitBroll ? "      #footage-layout, #footage-position { position: absolute; inset: 0; will-change: transform, clip-path; }\n" : ""}      #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
 ${whip ? `      #whip-wrap { position: absolute; inset: 0; filter: url(#whip-foot-filter); will-change: transform, filter; }
 ${brollList.map((_, i) => `      #broll-${i} { filter: url(#whip-broll-filter-${i}); will-change: transform, filter; }`).join("\n")}
 ` : ""}${hasImpact || hasDrift ? `      .motion-inner { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }\n` : ""}      #cutout-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; pointer-events: none; }${behind?.under ? "\n      #cutout-wrap { z-index: 1; } #hook { z-index: 2; }" : ""}
@@ -361,7 +376,11 @@ ${brollList.map((_, i) => `      #broll-${i} { filter: url(#whip-broll-filter-${
       /* Finish: HyperFrames grades the still (muted editorial, vignette, film grain); the bottom keeps a scrim for the captions. */
       .broll-move { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
       .broll img, .broll video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-      .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%); }
+      .broll-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%); }${sharedBroll ? `
+      .broll-window { inset: auto; box-sizing: border-box; border: ${Math.max(1, Math.round(W / 720))}px solid ${c.text}; border-radius: var(--broll-radius); background: ${c.bg || "#000"}; box-shadow: 0 ${Math.round(H * 0.012)}px ${Math.round(H * 0.03)}px rgba(0,0,0,0.34); }
+      .broll-window .broll-move, .broll-window .broll-shade { border-radius: calc(var(--broll-radius) - 2px); }
+      .broll-split { inset: 0 0 auto 0; height: 50%; }
+      .split-divider { position: absolute; left: 0; right: 0; bottom: 0; height: ${Math.max(2, Math.round(H * 0.002))}px; background: ${c.accent}; box-shadow: 0 1px 5px rgba(0,0,0,0.36); }` : ""}
       .broll-flash { position: absolute; inset: -12%; opacity: 0; background: rgb(255,253,250); pointer-events: none; }
       #open-flash { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
       .broll-flash-core { position: absolute; inset: -18%; opacity: 0; background: radial-gradient(ellipse 68% 92% at 37% 47%, rgb(255,255,255) 0%, rgba(255,255,255,0.98) 20%, rgba(255,253,250,0.86) 45%, rgba(255,174,105,0.32) 67%, rgba(255,174,105,0) 100%); }
@@ -598,7 +617,26 @@ ${cardList.length ? GRAPHICS_JS : ""}${progressList.length ? PROGRESS_JS : ""}
           const m = MOVES[b.motion] || MOVES.in;
           const img = el.querySelector(".broll-media");
           const bEnd = b.start + b.duration;
-          ${whip ? `if (PLAN.brollCut === "whip") {
+${sharedBroll ? `          if (b.layout === "window") {
+            tl.fromTo(el, { opacity: 0, scale: 0.94, y: PLAN.height * 0.0125 }, { opacity: 1, scale: 1, y: 0, duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
+            if (PLAN.focusPull) tl.fromTo(img, { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
+            tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: b.duration * 0.92 }, b.start);
+            tl.to(el, { opacity: 0, scale: 0.98, y: -PLAN.height * 0.006, duration: 5 / 30, ease: "power2.in" }, bEnd - 5 / 30);
+            return;
+          }
+          if (b.layout === "split") {
+            tl.fromTo(el, { opacity: 1, y: -PLAN.height / 2 }, { opacity: 1, y: 0, duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
+            tl.fromTo("#footage-layout", { clipPath: "inset(0% 0 0 0)" }, { clipPath: "inset(50% 0 0 0)", duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
+            tl.fromTo("#footage-position", { y: 0 }, { y: b.footageY, duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
+            if (PLAN.focusPull) tl.fromTo(img, { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
+            tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: b.duration * 0.92 }, b.start);
+            tl.to(el, { y: -PLAN.height / 2, duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
+            tl.to("#footage-layout", { clipPath: "inset(0% 0 0 0)", duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
+            tl.to("#footage-position", { y: 0, duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
+            tl.set(el, { opacity: 0 }, bEnd);
+            return;
+          }
+` : ""}          ${whip ? `if (PLAN.brollCut === "whip") {
             const frames = 7 / (PLAN.fps || 30), peak = 3 / (PLAN.fps || 30), outAt = bEnd - frames;
             const footBlur = document.getElementById("whip-foot-blur"), brollBlur = document.getElementById("whip-broll-blur-" + i);
             const blur = (node, at) => {

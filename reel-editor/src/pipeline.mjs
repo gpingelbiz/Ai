@@ -25,6 +25,7 @@ import { THEMES, applyTheme } from "./looks.mjs";
 
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
+import { planBrollLayouts } from "./layouts.mjs";
 import { makeGraphics } from "./graphics.mjs";
 import { planSlams } from "./slams.mjs";
 import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
@@ -254,7 +255,7 @@ export async function runEdit(input, opts = {}) {
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || ["window", "split", "mix"].includes(preset.broll?.layout));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
     const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
@@ -451,8 +452,9 @@ export async function runEdit(input, opts = {}) {
   const progress = progressGraphics.map((g) => ({ ...g, version: g.version || sceneSchema, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || allCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) })) }));
   const allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
   allGraphics.schema = graphicsSchema;
-  // On a short reel the one card and the one still would never both fit, so the still may sit under the card.
-  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: duration < 20 ? [] : allCards, tail };
+  // Shared-frame layouts never sit under a card. The legacy full cutaway keeps the short-reel exception unchanged.
+  const sharedBrollLayout = ["window", "split", "mix"].includes(preset.broll?.layout);
+  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? allCards : [], tail };
   let broll = preset.broll?.enabled && shownGroups.length
     ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
@@ -477,6 +479,12 @@ export async function runEdit(input, opts = {}) {
       zooms = aimZooms(zooms, { people: framing.people, base: framing.scale, originX: ox, at: tl?.at });
       log(tl ? `speakers: ${tl.turns.length} turn${tl.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
     }
+  }
+  // Shared-frame b-roll is placed after zooms: each panel clears the whole head at the strongest move in its window.
+  if (broll.length && ["window", "split", "mix"].includes(preset.broll?.layout)) {
+    const placed = planBrollLayouts(broll, { layout: preset.broll.layout, W: canvas0.width, H: canvas0.height, captionTop, face: face || faceBox(detection), detection, zooms, framing });
+    broll = placed.shots;
+    placed.logs.forEach((line) => log(line));
   }
   // The hook never covers the head either: in front of the speaker (not the text-behind-you cutout) the page measures
   // the real hook text and shrinks it toward its top until it ends above this head top (at the opening push-in).

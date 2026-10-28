@@ -82,13 +82,13 @@ test("card head guard multiplies the drift scale active in the card window", () 
 test("render: impact and drift use independent inner wrappers, mirror the cutout, and legacy markup is unchanged", () => {
   const behind = { src: "assets/cutout.webm", start: 0, duration: 3 };
   const impact = renderHTML({ ...base, behind, motion: { bumps: [{ t: 6, scale: 1.025, kind: "card" }], drift: [] } }, "assets/footage.mp4");
-  assert.match(impact, /id="impact-wrap" class="motion-inner"/);
-  assert.match(impact, /id="cutout-impact-wrap" class="motion-inner"/);
+  assert.match(impact, /id="impact-wrap" class="motion-inner impact-inner"/);
+  assert.match(impact, /id="cutout-impact-wrap" class="motion-inner impact-inner"/);
   assert.match(impact, /duration: 2 \* MOTION_FRAME, ease: "expo.out"/);
   parseInlineScript(impact);
 
   const drift = renderHTML({ ...base, motion: { bumps: [], drift: [{ start: 3, end: 12, scale: 1.03, reset: "move", out: 0.12 }] } }, "assets/footage.mp4");
-  assert.match(drift, /id="drift-wrap" class="motion-inner"/);
+  assert.match(drift, /id="drift-wrap" class="motion-inner drift-inner"/);
   assert.match(drift, /ease: "sine.inOut"/);
   parseInlineScript(drift);
 
