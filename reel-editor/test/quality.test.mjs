@@ -170,3 +170,8 @@ test("card preflight: a timed card's own hold after its last item is not lingeri
 test("a plan with no cards receives no new graphics warnings", () => {
   assert.deepEqual(graphicChecks(cardPlan([])), []);
 });
+
+test("card preflight: the progress rail is not a card (no long-hold or coverage warning for its lifetime)", () => {
+  const rail = { type: "progress", start: 0, duration: 14.268, placement: { x: 86, y: 200, w: 814, h: 140, at: "top" }, items: [{ line: 1, label: "AT A JAIL" }, { line: 2, label: "SALES" }], pulses: [{ at: 8.1 }, { at: 12.9 }] };
+  assert.deepEqual(graphicChecks(cardPlan([rail], { video: { duration: 25.5 } })), []);
+});

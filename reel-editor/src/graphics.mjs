@@ -711,7 +711,7 @@ export function progressCSS({ H, colors }) {
       .p-fill { width: 100%; height: 100%; background: var(--p-accent); transform: scaleX(0); transform-origin: 0 50%; }
       .p-node { position: relative; z-index: 1; min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: center; gap: ${px(8)}; transform-origin: 50% ${px(12)}; }
       .p-dot { width: ${px(24)}; height: ${px(24)}; box-sizing: border-box; border: ${px(5)} solid var(--p-bg); border-radius: 50%; background: var(--p-text); box-shadow: 0 0 0 ${px(2)} color-mix(in srgb, ${c.text} 54%, transparent); }
-      .p-label { width: 100%; min-height: ${px(48)}; overflow: hidden; font-size: ${px(48)}; font-weight: 800; line-height: 1; text-align: center; text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; }
+      .p-label { width: 100%; min-height: ${px(48)}; overflow: hidden; font-size: ${px(48)}; font-weight: 800; line-height: 1; text-align: center; text-transform: uppercase; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: normal; }
       .progress.vertical .p-shell { padding: ${px(18)} ${px(14)}; }
       .progress.vertical .p-main { flex: 1; align-items: stretch; flex-direction: column; gap: ${px(12)}; }
       .progress.vertical .p-count { min-width: 0; }
@@ -986,9 +986,33 @@ export function proofMessageCSS({ H, colors, captionTop = H * 0.72 }) {
 
 /** GSAP for the cards (runs inside the composition's timeline script; expects PLAN.graphics and tl). */
 export const GRAPHICS_JS = `
+        // A card never covers the head. With a head measurement (g.headTop: the highest the head gets while the card
+        // is up, strongest zoom included) the footage drops just far enough that the head clears the card's real
+        // bottom edge by 2% of the frame. Past a 16% drop the card shrinks from the top (to 72% at most), and a card
+        // that still cannot clear the head is not shown. A plan without a measurement keeps the fixed 11% drop.
+        const headGuard = (g, el, box) => {
+          const base = PLAN.height * 0.11;
+          if (!Number.isFinite(g.headTop) || PLAN.graphicsMode !== "overlay") return { drop: base };
+          const frame = document.getElementById("root").getBoundingClientRect();
+          const k = frame.height ? frame.height / PLAN.height : 1;
+          let top = Infinity, bottom = -Infinity;
+          for (const n of [box || el, ...(box || el).querySelectorAll("*")]) {
+            const r = n.getBoundingClientRect();
+            if (r.width && r.height) { top = Math.min(top, (r.top - frame.top) / k); bottom = Math.max(bottom, (r.bottom - frame.top) / k); }
+          }
+          if (!Number.isFinite(bottom)) return { drop: base };
+          const head = g.headTop * PLAN.height, margin = PLAN.height * 0.02, cap = PLAN.height * 0.16;
+          if (bottom + margin - head <= cap) return { drop: Math.max(base, bottom + margin - head) };
+          // The card layer spans the whole frame, so scaling it from the top centre shrinks the card toward the top.
+          const scale = (head + cap - margin) / bottom;
+          return scale >= 0.72 ? { drop: cap, scale } : { hide: true };
+        };
         PLAN.graphics.forEach((g, i) => {
           const el = document.getElementById("gfx-" + i);
           const box = el.querySelector(".g-box");
+          const guard = headGuard(g, el, box);
+          if (guard.hide) { el.style.opacity = "0"; return; }
+          if (guard.scale) gsap.set(el, { scale: guard.scale, transformOrigin: "50% 0%" });
           const ins = el.querySelectorAll(".g-in");
           const fps = PLAN.fps || 30;
           const liveItems = g.items ? [...el.querySelectorAll(".g-live-item")] : [];
@@ -1020,7 +1044,7 @@ export const GRAPHICS_JS = `
               });
             });
             if (PLAN.graphicsMode === "overlay") {
-              const drop = PLAN.height * 0.11;
+              const drop = guard.drop;
               tl.to("#video-wrap", { y: drop, duration: 8 / fps, ease: "power2.out" }, g.start);
               tl.to("#video-wrap", { y: 0, duration: 8 / fps, ease: "power2.inOut" }, g.start + g.duration - 5 / fps);
             }
@@ -1032,8 +1056,8 @@ export const GRAPHICS_JS = `
             else if (PLAN.graphicsMode !== "overlay") tl.fromTo(box, { scale: 1 }, { scale: 1.035, duration: g.duration, ease: "none" }, g.start);
             else {
               tl.fromTo(box, { y: -24, scale: 0.98 }, { y: 0, scale: 1, duration: proof ? 8 * frame : 0.3, ease: "power3.out" }, g.start);
-              // The footage slides down a little while the card is up, so the card never sits on the forehead.
-              const drop = PLAN.height * 0.11;
+              // The footage slides down while the card is up, far enough that the card never sits on the head.
+              const drop = guard.drop;
               tl.to("#video-wrap", { y: drop, duration: 0.35, ease: "power2.out" }, g.start);
               tl.to("#video-wrap", { y: 0, duration: 0.35, ease: "power2.inOut" }, g.start + g.duration - 0.2);
             }

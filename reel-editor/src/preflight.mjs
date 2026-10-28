@@ -207,7 +207,9 @@ function cardBox(card, plan, W, H) {
 
 /** Retention guardrails for graphic cards. Warnings only; a plan with no cards returns exactly no new items. */
 export function graphicChecks(plan) {
-  const cards = plan?.graphics || [];
+  // The progress rail is not a card: it shows during the hook and for 1.4 s pulses, placed clear of the hook, captions
+  // and head by placeProgressRail, so its lifetime must not count as a long hold or as card coverage.
+  const cards = (plan?.graphics || []).filter((g) => g.type !== "progress");
   if (!cards.length) return [];
   const items = [];
   const rules = { ...CARD_RULES, ...(plan.style?.preflight?.cards || {}) };

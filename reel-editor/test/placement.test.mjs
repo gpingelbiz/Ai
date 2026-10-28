@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { headExtent, placeHook, zoomDuring, hookBlockHeight, captionsRepeatingHook } from "../src/placement.mjs";
+import { headExtent, placeHook, zoomDuring, hookBlockHeight, captionsRepeatingHook, cardHeadTop, headBoxFor, placeProgressRail } from "../src/placement.mjs";
 import { cleanText } from "../src/captions.mjs";
 
 const words = (s) => s.split(" ").map((text) => ({ text, key: text.startsWith("*") }));
@@ -74,4 +74,43 @@ test("progress placement uses the clear band, falls back to the empty side, or s
   const skip = placeProgressRail({ hookTop: 0.1, hookBottom: 0.58, captionTop: 0.64, side: "right", face: { cx: 0.82, cy: 0.62, w: 0.3, h: 0.5 } });
   assert.equal(skip.skip, true);
   assert.match(skip.reason, /gap|face|rail/);
+});
+
+test("cards never cover the head: the head top under a card uses the strongest zoom in its window and the base slide", () => {
+  const zooms = [{ t: 0, scale: 1 }, { t: 6, scale: 1.08 }, { t: 9, scale: 1 }];
+  const still = cardHeadTop(selfie, { zooms, t0: 1, t1: 4 });
+  const cut = cardHeadTop(selfie, { zooms, t0: 5, t1: 8 });
+  assert.equal(still, headExtent(selfie).top + 0, "no zoom in the window: the plain head top");
+  assert.ok(cut < still, "a jump cut 8% tighter inside the window lifts the head, so the card must clear more");
+  assert.equal(cardHeadTop(selfie, { zooms, t0: 1, t1: 4, shift: 0.05 }), Math.round((still + 0.05) * 1000) / 1000, "the base framing slide moves it");
+  assert.equal(cardHeadTop(null, { zooms, t0: 1, t1: 4 }), null, "no face: no measurement, the page keeps its fixed drop");
+});
+
+test("the progress rail clears the whole head, hair included, not just the face box", () => {
+  // Vision's face box starts near the hairline; the head box starts at the top of the upper body (the crown).
+  const face = { cx: 0.5, cy: 0.47, w: 0.3, h: 0.14 };
+  const det = { frames: [{ faces: [{ x: 0.35, y: 0.40, w: 0.3, h: 0.14 }], bodies: [{ x: 0.2, y: 0.36, w: 0.6, h: 0.6 }] }] };
+  const head = headBoxFor(face, det, { zoom: 1.1 });
+  assert.ok(head.cy - head.h / 2 < face.cy - face.h / 2, "the head box starts above the face box");
+  assert.ok(head.w > face.w, "and is wider");
+  // The default band is y 820-990 px. The face box starts at 1027 px, so the face-only check let the band through,
+  // but the crown (top of the upper body, 0.47) reaches up into the band: the head check moves or skips it.
+  const args = { W: 1080, H: 1920, hookTop: 0.1, hookBottom: 0.2, captionTop: 0.68, side: "right" };
+  const lowFace = { cx: 0.5, cy: 0.585, w: 0.16, h: 0.1 };
+  assert.equal(placeProgressRail({ ...args, face: lowFace }).orientation, "horizontal");
+  const withHead = placeProgressRail({ ...args, face: headBoxFor(lowFace, { frames: [{ faces: [{ x: 0.42, y: 0.535, w: 0.16, h: 0.1 }], bodies: [{ x: 0.25, y: 0.47, w: 0.5, h: 0.5 }] }] }, { zoom: 1.1 }) });
+  assert.notEqual(withHead.orientation, "horizontal", "the band would sit on the hair, so it moves or is skipped");
+});
+
+test("the progress rail goes to the top of the frame when the head fills the middle (Clip 5 framing)", () => {
+  // Head 44.5%-60.5% of the frame, hook at 32%, captions at 66%: the middle band sits on the head and the side strip
+  // has no 300 px gap, so before the top band the rail was skipped (and before the head check it covered the head).
+  const head = { cx: 0.5, cy: 0.525, w: 0.3, h: 0.16 };
+  const args = { W: 1080, H: 1920, hookTop: 0.319, hookBottom: 0.42, captionTop: 0.66, face: head, side: "right" };
+  const p = placeProgressRail(args);
+  assert.equal(p.at, "top");
+  assert.equal(p.y, 200, "under Instagram's top bar");
+  assert.ok(p.y + p.h + 24 <= 0.319 * 1920, "above the hook");
+  assert.ok(p.y + p.h < (head.cy - head.h / 2) * 1920, "and above the head");
+  assert.equal(placeProgressRail({ ...args, hookTop: 0.12, hookBottom: 0.22 }).skip, true, "a hook at the top leaves no room up there either");
 });

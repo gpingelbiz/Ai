@@ -12,7 +12,7 @@ import { writeFeatures } from "./features.mjs";
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail } from "./placement.mjs";
+import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -410,13 +410,15 @@ export async function runEdit(input, opts = {}) {
     const blockH = hookBlockHeight(words, { W: canvas0.width, H: canvas0.height, fontPx });
     const hookTop = preset.hook.style === "headline" ? preset.hook.position : Math.max(0, preset.hook.position - 1.2 * preset.hook.fontSizeFrac);
     const progressFace = face || faceBox(detection);
-    const placement = placeProgressRail({ W: canvas0.width, H: canvas0.height, hookTop, hookBottom: hookTop + blockH, captionTop, face: progressFace, side: progressFace && progressFace.cx >= 0.5 ? "left" : "right" });
+    // The rail must clear the whole head (hair included) at the strongest zoom, not only the face box.
+    const railHead = headBoxFor(progressFace, detection, { zoom: Math.max(1.1, ...(preset.zooms?.scales || [1])), scale: framing.scale, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0 });
+    const placement = placeProgressRail({ W: canvas0.width, H: canvas0.height, hookTop, hookBottom: hookTop + blockH, captionTop, face: railHead, side: progressFace && progressFace.cx >= 0.5 ? "left" : "right" });
     if (placement.skip) {
       graphics = graphics.filter((g) => g.type !== "progress");
       log(`graphics: progress rail skipped (${placement.reason})`);
     } else {
       graphics = graphics.map((g) => g.type === "progress" ? { ...g, placement } : g);
-      log(`graphics: progress rail ${placement.orientation === "vertical" ? "moved to the empty face side" : "placed between the hook and captions"}`);
+      log(`graphics: progress rail ${placement.orientation === "vertical" ? "moved to the empty face side" : placement.at === "top" ? "placed at the top, above the hook and clear of the head" : "placed between the hook and captions"}`);
     }
   }
   // A card that only restates the hook title shows the same line twice in a row (the render reviewer caught one).
@@ -458,11 +460,22 @@ export async function runEdit(input, opts = {}) {
       log(tl ? `speakers: ${tl.turns.length} turn${tl.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
     }
   }
+  // Cards never cover the head: each carries the highest the head gets while it is up (strongest zoom in its window),
+  // and the page drops the footage just far enough below the card's real bottom edge (graphics.mjs headGuard).
+  if (detection && sameShape) {
+    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+    for (const g of allCards) {
+      const top = cardHeadTop(detection, { zooms, t0: g.start, t1: g.start + g.duration, scale: framing.scale, originY, shift: framing.shift || 0 });
+      if (top != null) g.headTop = top;
+    }
+  }
   // Cold open: the first b-roll still holds under the hook for a beat before the speaker appears.
   const coldOpen = preset.coldOpen?.enabled && broll.length ? { duration: r3(Math.min(preset.coldOpen.duration || 0.6, Math.max(0.3, duration / 20))), src: broll[0].src, file: broll[0].file } : null;
   if (preset.coldOpen?.enabled) log(coldOpen ? `cold open: ${coldOpen.duration}s on the first still` : "cold open: no still to open on");
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
-  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll], zooms, tail }) : [];
+  // The rail's visible pulses count as busy too: a slam word stamping in at the top would land on the rail.
+  const railPulses = progress.flatMap((g) => (g.pulses || []).filter((p) => !p.hidden).map((p) => ({ start: p.at, duration: 1.4 })));
+  const slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...railPulses], zooms, tail }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
 
   // 5. Audio extras
