@@ -14,7 +14,7 @@ import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
 import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
-import { pickHook, pickCta } from "./hook.mjs";
+import { pickHook, pickCta, hookSeconds } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
@@ -246,7 +246,7 @@ export async function runEdit(input, opts = {}) {
   // srt), so they are always built; whether they show on screen is captions.enabled.
   const groups = markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
   const showCaptions = !!preset.captions.enabled;
-  const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: Math.min(preset.hook.duration, duration) }) : null;
+  const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) }) : null;
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;

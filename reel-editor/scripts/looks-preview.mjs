@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { composeProject } from "../src/compose.mjs";
 import { loadPreset } from "../src/presets.mjs";
-import { LOOKS, LOOK_IDS, skinFor } from "../src/looks.mjs";
+import { LOOKS, LOOK_IDS, skinFor, lookExclusions } from "../src/looks.mjs";
 import { run, PKG_ROOT } from "../src/util.mjs";
 import { hyperframesBin, renderEnv } from "../src/render.mjs";
 
@@ -17,7 +17,8 @@ const OUT = path.resolve(opt("--out", path.join(PKG_ROOT, "dist", "looks-preview
 const FOOT = opt("--footage", "");
 const preset = opt("--preset", "pingel-brand");
 
-const CARDS = [
+// --cards <file.json>: the five sample cards in someone else's words (a client's sheet), same shape as below.
+const CARDS = opt("--cards", "") ? JSON.parse(fs.readFileSync(opt("--cards", ""), "utf8")) : [
   { type: "stat", eyebrow: "WHAT IT COST", value: "$10,000", sub: "one missed follow-up" },
   { type: "list", eyebrow: "AFTER A BAD NUMBER", title: "The first 10 minutes", items: [{ text: "Slam the desk", state: "strike" }, { text: "Blame the leads", state: "strike" }, { text: "Own it first", state: "check" }] },
   { type: "quote", eyebrow: "THE STANDARD", text: "Your team copies *how you react*, not what you say." },
@@ -35,7 +36,9 @@ else await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", `colo
 const style = loadPreset(preset);
 style.audio.sounds = false;
 const rows = [];
-for (const look of LOOK_IDS) {
+// One row per look this preset can use (a brand's looks.only, or every house look).
+const off = lookExclusions(style.graphics);
+for (const look of LOOK_IDS.filter((id) => !off.includes(id))) {
   const plan = {
     version: 1, name: `look-${look}`, preset: style.name, style,
     video: { src: footage, duration: CARDS.length * SLOT + 1, width: 1080, height: 1920, fps: 30, hasAudio: false },

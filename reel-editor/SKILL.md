@@ -61,7 +61,7 @@ Every reel also goes through four quality stages (README "Studio sound, the capt
 
 ## Add-ons: cutouts, b-roll layouts, motion, icon pops
 
-On in `pingel-brand` (so `pingel-v2` too), off in `_defaults` and so on every client preset. Each logs one `[reel]` line saying what it placed or why it skipped.
+On in `pingel-brand`, so `pingel-v2`, `pingel-runway` and client brand kits (which build on it) get them too, drawn in their own colours; a calm brand (`look.pace: "calm"`) keeps plain slams, no icons and no bumps (`CALM` in `src/brandkit.mjs`). Off in `_defaults`. Each logs one `[reel]` line saying what it placed or why it skipped.
 - Pop-out slam (`slams.popout`, `src/cutouts.mjs`): the reel's strongest slam word gets a Vision cutout of its window; the room behind Greg dims and blurs with an accent glow, Greg gets a thin outline, and the word sits behind his head. `scripts/matte.swift --grid` writes an occupancy grid so the word is placed where the head covers at most `maxCovered` (6%) of it, else above the head. `max: 1` per reel.
 - B-roll layouts (`broll.layout`, `src/layouts.mjs`): `full` (the old cutaway), `window` (picture in picture beside the head, or above it when the head is centred), `split` (b-roll top half, Greg bottom half), `cutout` (Greg cut out over the b-roll), `mix` (window, cutout, split in turn; what does not fit becomes the cutout). Greg's preset uses `mix`, so a b-roll reel keeps his face on screen.
 - Motion (`motion.impact`, `motion.drift`, `src/motion.mjs`): a 2+4-frame bump on the footage when a card or slam lands, and a slow 3% push on stretches of 6 s or more with no punch-in or cut. `--broll-cut whip` (not on by default; each card look picks its own cut) slides into and out of b-roll with a horizontal blur and a whoosh.
@@ -71,6 +71,8 @@ On in `pingel-brand` (so `pingel-v2` too), off in `_defaults` and so on every cl
 
 Cards take a per-reel look picked by Claude from the topic (`src/looks.mjs`: receipts, phone, fieldnotes, gregcard, briefing, press, shopfloor, blueprint, casefile, redline, glass), never one of the last three; `--look <id>` / `#look:<id>` sets it. `node scripts/looks-preview.mjs --footage <video>` shows them all. The look also sets the hook treatment, the gold-word marker, the slam style, the b-roll grade and cut, and the camera move (`THEMES` / `applyTheme`; glass keeps the preset's own); captions never change, and `--zoom-style` / `--broll-cut` win. `node scripts/themes-preview.mjs --footage <video> --still <broll.png>` shows every look's whole theme.
 
+Brand looks (`src/brandlooks.mjs`, from the women-coach reel research in Julee Gracey's notes): `atelier` (cream editorial card, hairline frame, serif in sentence case, italic keyword on an accent band), `note` (Instagram-style white line boxes that pop on, the keyword in an accent box) and `serifonlife` (the serif straight on the video). Calm motion, hard cuts, the accent only as a fill or a line, the brand's own fonts ("Look Serif" / "Look Sans", plus `fonts/DisplayItalic.ttf`, which `client.mjs` and `brand-kit.mjs` fetch). They are opt-in: a brand file's `looks.only` lists the looks its reels may use, and Greg's presets never get them. `looks-preview.mjs --preset <theirs> --cards <their five cards.json>` shows only the looks a preset can use. A preset on the brand looks also gets the quiet house pieces: the phone look's labels in ink with serif headings, and the name tag as a serif credit. `look.captions: "quiet"` gives their captions the body font at 600, no outline, the keyword in an accent box. `#hookreel` in a file name (or `--hook-seconds reel`) keeps the hook up for the whole reel: one-liners, and the title strip on podcast and stage clips.
+
 ## Clients
 
 `node scripts/client.mjs add their-brand.json` sets up a client edited on this Mac: drop folders in `~/Desktop/Reels/Clients/<Name>/`, finished reels there too, everything in the client's brand (`src/clients.mjs`, `client.env` per client, scanned by the same `watch-folder.sh` under one lock). The Greg card look, Greg's Sandcastles watchlist and his CTA never reach a client. `client.mjs list` shows them.
@@ -78,6 +80,8 @@ Cards take a per-reel look picked by Claude from the topic (`src/looks.mjs`: rec
 ## Brand kits
 
 `node scripts/brand-kit.mjs <brand.json>` builds `dist/<Name> Reel Editor Kit.zip` with their look, fonts, words and voice built in (template `kit/brand-template.json`; fill it from their Brand & Messaging Guide). Never hand anyone a kit in Greg's look, and never edit someone else's footage in pingel-brand: client work uses the client's kit.
+
+Per-brand options in the brand file's `look` (left out = Greg's behaviour): `hookCase` / `captionCase` `upper | sentence`, `hookSeconds` (seconds, or `"reel"` for one-line reels), `pace` `fast | calm` (calm: gentler silence cuts, a punch-in at most every 16 s, no jump cuts, no cold open) and `coldOpen`. A brand display font also replaces DM Serif Display in the briefing look and the serif hook. A client's Runway reel gets the pingel-runway timing (4-second clips, 6-second gaps) under their own look. After changing a client's brand.json, re-run `node scripts/client.mjs add <brand.json> --no-agent` so their preset updates without restarting their watcher.
 
 ## Publish
 

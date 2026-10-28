@@ -36,6 +36,11 @@ for (const [k, label] of [["display", "Display"], ["body", "Body"]]) {
   credits.push(`${label} font: ${brand.fonts[k]} (${r.license})${r.note ? `; ${r.note}` : ""}\n  ${r.source}`);
   console.log(`font ${k}: ${brand.fonts[k]} (${r.license})${r.note ? `, ${r.note}` : ""}`);
 }
+// The display font's italic, for the keyword in the brand looks (Google Fonts families only; optional).
+if (fonts.display) {
+  const r = await fetchFont(brand.fonts.display, path.join(B, "fonts", "DisplayItalic.ttf"), { italic: true }).catch(() => null);
+  if (r) { fonts.displayItalic = "fonts/DisplayItalic.ttf"; credits.push(`Display italic: ${brand.fonts.display} (${r.license})\n  ${r.source}`); }
+}
 const json = (p, v) => fs.writeFileSync(p, JSON.stringify(v, null, 2) + "\n");
 json(path.join(B, "my-brand.json"), brandPreset(brand, { fonts }));
 json(path.join(B, "my-youtube.json"), youtubePreset(brand, { fonts }));

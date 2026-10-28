@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PKG_ROOT, slug } from "./util.mjs";
+import { LOOKS, LOOK_IDS } from "./looks.mjs";
 
 /**
  * Brand kits: one brand file (kit/brand-template.json) becomes a Reel Editor Kit zip for someone else, with their
@@ -21,25 +22,62 @@ export function checkBrand(b) {
   for (const k of ["text", "accent"]) if (!HEX.test(b.colors?.[k] || "")) out.push(`colors.${k} must be a hex color like #FFFFFF`);
   for (const k of ["stroke", "bg"]) if (b.colors?.[k] && !HEX.test(b.colors[k])) out.push(`colors.${k} must be a hex color like #000000`);
   if (b.look?.hook && !["headline", "gold", "box"].includes(b.look.hook)) out.push('look.hook is "headline", "gold" or "box"');
-  if (b.look?.captions && !["reveal", "pop"].includes(b.look.captions)) out.push('look.captions is "reveal" or "pop"');
+  if (b.look?.captions && !["reveal", "pop", "quiet"].includes(b.look.captions)) out.push('look.captions is "reveal", "pop" or "quiet"');
+  for (const k of ["hookCase", "captionCase"]) if (b.look?.[k] && !["upper", "sentence"].includes(b.look[k])) out.push(`look.${k} is "upper" or "sentence"`);
+  const hs = b.look?.hookSeconds;
+  if (hs != null && hs !== "reel" && !(Number(hs) >= 1 && Number(hs) <= 60)) out.push('look.hookSeconds is a number of seconds (1-60) or "reel"');
+  if (b.look?.pace && !["fast", "calm"].includes(b.look.pace)) out.push('look.pace is "fast" or "calm"');
+  if (b.looks?.only != null) {
+    const only = Array.isArray(b.looks.only) ? b.looks.only.map((x) => String(x).toLowerCase().trim()) : [];
+    for (const x of only) if (!LOOK_IDS.includes(x) || x === "gregcard") out.push(`looks.only: "${x}" is not a look they can use (${LOOK_IDS.filter((id) => id !== "gregcard").join(", ")})`);
+    if (only.filter((x) => LOOK_IDS.includes(x) && x !== "gregcard").length < 2) out.push("looks.only needs at least 2 looks, so reels can vary");
+  }
   return out;
 }
 
 export const kitSlug = (b) => slug(b.name || "brand");
 
+/**
+ * Calm pacing (look.pace "calm"): gentler silence cuts (gaps over 0.6 s instead of 0.35 s), punch-ins at most every
+ * 16 s and two per 30 s with no jump-cut cadence between them, no icon pops or impact bumps, and no cold open unless
+ * look.coldOpen turns it on.
+ * "fast" (the default) keeps Greg's pacing from pingel-brand.
+ */
+export const CALM = { cuts: { silence: "medium" }, zooms: { minSpacing: 16, maxPer30: 2, cadence: { enabled: false } }, icons: { enabled: false }, motion: { impact: { enabled: false } } };
+
+/** The card looks a brand allows: everything but gregcard, or only `looks.only` (brand looks included). */
+export function lookChoice(b) {
+  const only = Array.isArray(b?.looks?.only) ? b.looks.only.map((x) => String(x).toLowerCase().trim()).filter((x) => LOOK_IDS.includes(x) && x !== "gregcard") : [];
+  if (!only.length) return { excludeLooks: ["gregcard"] };
+  return { excludeLooks: LOOK_IDS.filter((id) => !only.includes(id) && !LOOKS[id].brandOnly), includeLooks: only.filter((id) => LOOKS[id].brandOnly) };
+}
+
 /** The reel preset: Greg's full look underneath (so it keeps improving with the editor), every personal field theirs. */
 export function brandPreset(b, { fonts = {} } = {}) {
   const look = b.look || {};
+  const calm = look.pace === "calm";
+  // Only what the brand file asks for is written, so a brand file without these fields keeps Greg's behaviour.
+  const coldOpen = look.coldOpen != null ? look.coldOpen !== false : calm ? false : null;
   return {
     name: `brand-${kitSlug(b)}`,
     extends: "pingel-brand",
     colors: { text: b.colors.text, accent: b.colors.accent, stroke: b.colors.stroke || "#000000", bg: b.colors.bg || "#0B0B0D" },
-    ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
-    captions: { style: look.captions || "reveal", annotate: look.annotate !== false },
-    hook: { style: look.hook || "headline", behind: look.behind !== false },
-    slams: { enabled: look.slams !== false },
-    // The Greg card is Greg's signature look; nobody else's reels get it.
-    graphics: { excludeLooks: ["gregcard"] },
+    ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.displayItalic ? { displayItalic: fonts.displayItalic } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
+    // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
+    captions: { style: look.captions === "quiet" ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(look.captions === "quiet" ? { quiet: true, fontSizeFrac: 0.029 } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
+    hook: {
+      style: look.hook || "headline", behind: look.behind !== false,
+      ...(look.hookCase ? { uppercase: look.hookCase !== "sentence" } : {}),
+      ...(look.hookSeconds != null ? { duration: look.hookSeconds === "reel" ? "reel" : Number(look.hookSeconds) } : {}),
+    },
+    ...(calm ? structuredClone(CALM) : {}),
+    ...(coldOpen != null ? { coldOpen: { enabled: coldOpen } } : {}),
+    // Calm brands keep the slams plain: no pop-out (the dim, outline and word behind the head), no icon stickers
+    // and no impact bumps (CALM); drift and the face-on b-roll layouts stay.
+    slams: { enabled: look.slams !== false, ...(calm ? { popout: { enabled: false } } : {}) },
+    // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
+    // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
+    graphics: { ...lookChoice(b), ...(calm ? { every: 14, max: 4 } : {}) },
     // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
     broll: { world: String(b.world || "").trim(), worldInPrompt: true, style: String(b.brollStyle || "").trim() },
     carousel: { handle: b.handle || "", style: String(b.carouselStyle || "").trim() },
@@ -81,9 +119,10 @@ export function brandVoice(b) {
  * ExtraBold"), fetched from github.com/google/fonts. Only open-licensed (OFL, Apache, UFL) families are taken.
  * Returns {file, license, source} or throws with what to do.
  */
-export async function fetchFont(spec, outFile, { fetchImpl = fetch } = {}) {
+export async function fetchFont(spec, outFile, { fetchImpl = fetch, italic = false } = {}) {
   if (!spec) return null;
   if (/\.(ttf|otf)$/i.test(spec)) {
+    if (italic) return null;
     const src = spec.replace(/^~(?=\/)/, os.homedir());
     if (!fs.existsSync(src)) throw new Error(`font file not found: ${spec}`);
     fs.copyFileSync(src, outFile);
@@ -106,9 +145,13 @@ export async function fetchFont(spec, outFile, { fetchImpl = fetch } = {}) {
     const want = `${fam}-${weight || "Regular"}.ttf`.toLowerCase();
     // No weight named: the variable font first (it carries every weight; reveal captions are drawn at 850).
     const variable = top.find((f) => /\[.*wght.*\]\.ttf$/i.test(f.name) && !/italic/i.test(f.name));
-    const pick = (!weight && variable) || [...top, ...stat].find((f) => f.name.toLowerCase() === want)
-      || top.find((f) => /-regular\.ttf$/i.test(f.name))
-      || top.find((f) => !/italic/i.test(f.name));
+    // italic: the family's italic (the brand looks set the keyword in it), variable first; none means none.
+    const pick = italic
+      ? top.find((f) => /italic\[.*wght.*\]\.ttf$/i.test(f.name)) || [...top, ...stat].find((f) => f.name.toLowerCase() === `${fam}-italic.ttf`.toLowerCase())
+      : (!weight && variable) || [...top, ...stat].find((f) => f.name.toLowerCase() === want)
+        || top.find((f) => /-regular\.ttf$/i.test(f.name))
+        || top.find((f) => !/italic/i.test(f.name));
+    if (!pick && italic) return null;
     if (!pick) continue;
     const res = await fetchImpl(pick.download_url);
     if (!res.ok) throw new Error(`could not download ${pick.name}: HTTP ${res.status}`);
