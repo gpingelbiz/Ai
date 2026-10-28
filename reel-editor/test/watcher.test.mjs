@@ -17,6 +17,11 @@ test("watcher scripts parse under /bin/bash", () => {
   }
 });
 
+test("the drop folder keeps the learning record hidden beside each delivered reel", () => {
+  assert.match(script, /analytics-features\.json" \] && cp -f "\$work\/analytics-features\.json" "\$folder\/\.reel-features\.json"/);
+  assert.match(script, /\.Clip \$k\.reel-features\.json/);
+});
+
 test("a plain drop (no hook, no tags, no CTA) does not trip set -u on an empty flag list", () => {
   const line = script.split("\n").find((l) => l.includes('${flags[@]+"${flags[@]}"}'));
   assert.ok(line, "the reel edit line uses the empty-safe expansion");
@@ -84,7 +89,8 @@ files=""
 case "$*" in *--broll*)
   i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
 esac
-echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > "$work/plan.json"`);
+echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
+echo '{"performance":{}}' > "$work/analytics-features.json"`);
   const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel"), long: path.join(home, "raw-long") };
   for (const [mode, d] of Object.entries(dirs)) { fs.mkdirSync(d); for (const c of clips[mode] || []) fs.writeFileSync(path.join(d, c), "video"); }
   // A .zshrc like Greg's: the CTA is set to empty with a trailing comment, and one line uses a zsh-only expansion.
@@ -110,6 +116,7 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["B-roll 1.png", "B-roll 2.png", "Own it first.mp4"]);
   assert.equal(fs.readFileSync(path.join(r.done, `${r.day} Reel 2 with B-roll`, "Own it first.mp4"), "utf8").trim(), "clip-broll");
   assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Slide 1.png"]);
+  assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 1`, ".reel-features.json")));
   // The plain reel never asks for b-roll; the carousel never renders a reel.
   const lines = r.calls.trim().split("\n");
   assert.ok(lines.some((l) => /^edit .*\/raw\/clip\.mov .*--no-graphics --caption-style pop/.test(l) && !/--broll/.test(l)), "plain reel: classic captions, no cards");
