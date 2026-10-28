@@ -382,7 +382,19 @@ export function sceneHTML(s) {
  * captions keep the bottom); "overlay" is a compact glass panel in the top third while the footage keeps playing,
  * the way explainer reels drop a payroll card or a checklist over the speaker.
  */
-export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
+/** iMessage blue: the "me" bubble on Greg's own glass message cards. */
+export const REPLY_BLUE = "#0a80f8";
+
+/**
+ * The glass "me" bubble: `graphics.replyBubble` ("accent" or a color) when the preset sets it, else the brand accent
+ * on a client's brand preset (brand-*, like the phone skin) and iMessage blue on Greg's own presets.
+ */
+export function replyBubble(style = {}) {
+  const want = style.graphics?.replyBubble || (String(style.name || "").startsWith("brand-") ? "accent" : REPLY_BLUE);
+  return want === "accent" ? { bg: style.colors?.accent || REPLY_BLUE, text: style.colors?.bg || "#0B0B0D" } : { bg: want, text: "#fff" };
+}
+
+export function graphicsCSS({ W, H, colors, mode = "overlay", reply = { bg: REPLY_BLUE, text: "#fff" } }) {
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const u = H / 1920;
   const px = (n) => `${Math.round(n * u)}px`;
@@ -533,7 +545,7 @@ export function graphicsCSS({ W, H, colors, mode = "overlay" }) {
       .g-avatar { width: ${px(48)}; height: ${px(48)}; border-radius: 50%; background: #8e8e93; color: #fff; display: grid; place-items: center; font-size: ${px(26)}; font-weight: 700; }
       .g-bubble { position: relative; max-width: 82%; padding: ${px(18)} ${px(26)}; border-radius: ${px(30)}; font-size: ${px(34)}; font-weight: 500; line-height: 1.25; text-transform: none; letter-spacing: 0; transform-origin: 0 100%; }
       .g-bubble.g-them { align-self: flex-start; background: #2a2a2e; color: #fff; border-bottom-left-radius: ${px(8)}; }
-      .g-bubble.g-me { align-self: flex-end; background: #0a80f8; color: #fff; border-bottom-right-radius: ${px(8)}; transform-origin: 100% 100%; }
+      .g-bubble.g-me { align-self: flex-end; background: ${reply.bg}; color: ${reply.text}; border-bottom-right-radius: ${px(8)}; transform-origin: 100% 100%; }
       .g-typing { position: absolute; left: 0; top: 0; display: flex; gap: ${px(8)}; padding: ${px(18)} ${px(24)}; border-radius: ${px(30)}; background: #2a2a2e; opacity: 0; }
       .g-typing i { width: ${px(14)}; height: ${px(14)}; border-radius: 50%; background: #8e8e93; }
       .g-post { width: 100%; padding: ${px(30)} ${px(32)} ${px(26)}; border-radius: ${px(24)}; background: #15202b; border: ${px(2)} solid #38444d; box-shadow: 0 ${px(18)} ${px(50)} rgba(0,0,0,0.5); text-align: left; text-transform: none; }

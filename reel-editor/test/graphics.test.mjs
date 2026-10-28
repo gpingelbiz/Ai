@@ -171,3 +171,15 @@ test("cards: a quote that carries its own quote marks gets no extra ones; a long
   const c = sceneHTML({ type: "compare", a: { label: "Slam the desk" }, b: { label: "Breathe, lower your voice" } });
   assert.match(c, /g-side g-side-b g-side-long/);
 });
+
+test("glass reply bubble: the client's accent on a brand preset, iMessage blue on Greg's, a preset setting wins", async () => {
+  const { replyBubble, graphicsCSS, REPLY_BLUE } = await import("../src/graphics.mjs");
+  const julee = { name: "brand-julee-gracey", colors: { accent: "#FFB27D", bg: "#111111" } };
+  const greg = { name: "pingel-brand", colors: { accent: "#E8B33C", bg: "#0B0B0D" } };
+  assert.deepEqual(replyBubble(julee), { bg: "#FFB27D", text: "#111111" });
+  assert.deepEqual(replyBubble(greg), { bg: REPLY_BLUE, text: "#fff" });
+  assert.deepEqual(replyBubble({ ...greg, graphics: { replyBubble: "accent" } }), { bg: "#E8B33C", text: "#0B0B0D" });
+  assert.deepEqual(replyBubble({ ...julee, graphics: { replyBubble: "#0a80f8" } }), { bg: "#0a80f8", text: "#fff" });
+  assert.match(graphicsCSS({ W: 1080, H: 1920, colors: julee.colors, reply: replyBubble(julee) }), /\.g-bubble\.g-me \{[^}]*background: #FFB27D; color: #111111;/);
+  assert.match(graphicsCSS({ W: 1080, H: 1920, colors: greg.colors }), /\.g-bubble\.g-me \{[^}]*background: #0a80f8; color: #fff;/);
+});

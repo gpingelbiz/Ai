@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
-import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
+import { sceneHTML, graphicsCSS, replyBubble, GRAPHICS_JS } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 
 export function canvasFor(mode, meta) {
@@ -295,7 +295,7 @@ export function renderHTML(plan, footage) {
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
-${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay" }) + skinsCSS({ H, colors: c, skins: skinsUsed }) : ""}
+${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", reply: replyBubble(s) }) + skinsCSS({ H, colors: c, skins: skinsUsed }) : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
         position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3((cap.rightMarginFrac ?? cap.sideMarginFrac) * 100)}%; top: ${r3(cap.position * 100)}%;

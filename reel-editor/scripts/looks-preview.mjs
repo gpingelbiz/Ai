@@ -16,6 +16,8 @@ const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] :
 const OUT = path.resolve(opt("--out", path.join(PKG_ROOT, "dist", "looks-preview.png")));
 const FOOT = opt("--footage", "");
 const preset = opt("--preset", "pingel-brand");
+// --reply-bubble accent|<color>: try another glass "me" bubble without changing the preset.
+const reply = opt("--reply-bubble", "");
 
 const CARDS = [
   { type: "stat", eyebrow: "WHAT IT COST", value: "$10,000", sub: "one missed follow-up" },
@@ -34,6 +36,7 @@ else await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", `colo
 
 const style = loadPreset(preset);
 style.audio.sounds = false;
+if (reply) style.graphics = { ...style.graphics, replyBubble: reply };
 const rows = [];
 for (const look of LOOK_IDS) {
   const plan = {

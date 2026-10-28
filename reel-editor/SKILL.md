@@ -61,7 +61,7 @@ Cards take a per-reel look picked by Claude from the topic (`src/looks.mjs`: rec
 
 ## Clients
 
-`node scripts/client.mjs add their-brand.json` sets up a client edited on this Mac: drop folders in `~/Desktop/Reels/Clients/<Name>/`, finished reels there too, everything in the client's brand (`src/clients.mjs`, `client.env` per client, scanned by the same `watch-folder.sh` under one lock). The Greg card look, Greg's Sandcastles watchlist and his CTA never reach a client. `client.mjs list` shows them.
+`node scripts/client.mjs add their-brand.json` sets up a client edited on this Mac: drop folders in `~/Desktop/Reels/Clients/<Name>/`, finished reels there too, everything in the client's brand (`src/clients.mjs`, `client.env` per client, scanned by the same `watch-folder.sh` under one lock). The Greg card look, Greg's Sandcastles watchlist and his CTA never reach a client. `client.mjs list` shows them. A client's Runway reel keeps their look with the pingel-runway timing (4-second clips, 6-second gaps, same caps). Their glass message card's reply bubble is their accent; Greg's stays iMessage blue (`graphics.replyBubble`: `accent` or a color overrides either; `looks-preview.mjs --reply-bubble` previews one).
 
 ## Brand kits
 

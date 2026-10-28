@@ -40,3 +40,24 @@ test("the reel command itself honours REEL_PRESET (the CLI used to hard-default 
   assert.match(r.stdout, /preset: clean/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("a client's Runway reel gets the pingel-runway timing under its own look; Greg's Runway preset is unchanged", async () => {
+  const { mergeOverrides, runwayTiming } = await import("../src/presets.mjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-preset-"));
+  const file = path.join(dir, "preset.json");
+  fs.writeFileSync(file, JSON.stringify({ name: "brand-jane", extends: "pingel-brand", colors: { accent: "#FFB27D" }, broll: { world: "her world" } }));
+  try {
+    const before = loadPreset(file);
+    assert.equal(before.broll.duration, 2, "a brand preset alone keeps the still b-roll timing");
+    const p = mergeOverrides(before, { brollEngine: "runway", broll: true });
+    assert.equal(p.broll.engine, "runway");
+    const pick = (b) => ({ duration: b.duration, gap: b.gap, max: b.max, maxWithGraphics: b.maxWithGraphics, every: b.every, videoSeconds: b.videoSeconds, maxCreditsPerReel: b.maxCreditsPerReel });
+    assert.deepEqual(pick(p.broll), { duration: 4, gap: 6, max: 3, maxWithGraphics: 2, every: 12, videoSeconds: 5, maxCreditsPerReel: 150 });
+    assert.equal(p.broll.world, "her world", "the client's world stays");
+    assert.equal(p.colors.accent, "#FFB27D", "the client's brand stays");
+    assert.equal(mergeOverrides(before, { brollEngine: "codex" }).broll.duration, 2, "the codex engine keeps its own timing");
+    const greg = loadPreset("pingel-runway");
+    assert.deepEqual(mergeOverrides(greg, { broll: true }).broll, { ...greg.broll, enabled: true }, "Greg's Runway preset comes out as before");
+    assert.deepEqual(pick(greg.broll), pick(runwayTiming()));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
