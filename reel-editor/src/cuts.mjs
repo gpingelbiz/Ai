@@ -1,5 +1,5 @@
 import { SDR_FILTER, SDR_TAGS } from "./hdr.mjs";
-import { run, r3 } from "./util.mjs";
+import { run, r3, warn } from "./util.mjs";
 
 export const PACE = { off: Infinity, slow: 1.0, medium: 0.6, fast: 0.35, tight: 0.2 };
 const FILLERS = new Set(["um", "uh", "uhm", "umm", "uhh", "erm", "hmm", "mm", "ah", "er", "mhm"]);
@@ -212,6 +212,67 @@ export function remapWords(words, segments) {
   return out;
 }
 
+/** Pick a clean source-timeline room sample from the existing dBFS envelope. */
+export function findRoomTone(env, words, duration, { min = 0.4, max = 1.5, clear = 0.08, trim = 0.05, quietDb = 6, spikeDb = 6 } = {}) {
+  const step = Number(env?.step);
+  const db = Array.isArray(env?.db) ? env.db : [];
+  const limit = Math.min(Number(duration) || 0, db.length * step);
+  if (!(step > 0) || !(limit > 0) || !db.length || max < min || min <= 0) return null;
+  const levels = db.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!levels.length) return null;
+  const floor = levels[Math.floor((levels.length - 1) * 0.1)];
+  const median = (xs) => {
+    const s = [...xs].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+
+  const occupied = (words || [])
+    .filter((w) => Number.isFinite(w?.start) && Number.isFinite(w?.end) && w.end > w.start)
+    .map((w) => ({ start: Math.max(0, w.start - clear), end: Math.min(limit, w.end + clear) }))
+    .filter((span) => span.end > span.start)
+    .sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const span of occupied) {
+    const prev = merged[merged.length - 1];
+    if (prev && span.start <= prev.end) prev.end = Math.max(prev.end, span.end);
+    else merged.push({ ...span });
+  }
+  const gaps = [];
+  let at = 0;
+  for (const span of merged) {
+    if (span.start > at) gaps.push({ start: at, end: span.start, edge: at === 0 });
+    at = Math.max(at, span.end);
+  }
+  if (at < limit) gaps.push({ start: at, end: limit, edge: true });
+
+  // Room-bed selection follows erm's quiet-region idea (MIT), using our envelope instead of decoding again.
+  const candidates = [];
+  const minFrames = Math.ceil(min / step);
+  const maxFrames = Math.max(minFrames, Math.floor(max / step));
+  for (const gap of gaps) {
+    const i0 = Math.max(0, Math.ceil((gap.start - 1e-9) / step));
+    const i1 = Math.min(db.length, Math.floor((gap.end + 1e-9) / step));
+    const longest = Math.min(maxFrames, i1 - i0);
+    for (let n = longest; n >= minFrames; n--) {
+      let found = false;
+      for (let i = i0; i + n <= i1; i++) {
+        const xs = db.slice(i, i + n);
+        if (xs.some((v) => !Number.isFinite(v))) continue;
+        const mid = median(xs);
+        if (mid > floor + quietDb || Math.max(...xs) > mid + spikeDb) continue;
+        candidates.push({ start: i * step, end: (i + n) * step, db: mid, edge: gap.edge });
+        found = true;
+      }
+      if (found) break; // this gap's longest clean windows are enough
+    }
+  }
+  candidates.sort((a, b) => Number(b.edge) - Number(a.edge) || (b.end - b.start) - (a.end - a.start) || a.db - b.db || a.start - b.start);
+  const best = candidates[0];
+  if (!best || best.end - best.start <= trim * 2) return null;
+  return { start: r3(best.start + trim), end: r3(best.end - trim), db: r3(best.db) };
+}
+
 /** One ffmpeg pass: trim+concat the kept segments, optional audio clean-up, constant frame rate.
  *  hdr: convert BT.2020/HLG video to tagged BT.709 SDR (captions disappear in HyperFrames otherwise; see hdr.mjs). */
 /**
@@ -222,17 +283,19 @@ export function remapWords(words, segments) {
  */
 export const VOICE_CHAIN = "pan=mono|c0=0.5*c0+0.5*c1,highpass=f=80,afftdn=nr=12:nf=-45:tn=1,deesser=i=0.4:m=0.5:f=0.5,acompressor=threshold=0.09:ratio=3:attack=10:release=150:makeup=2,alimiter=limit=0.89:attack=5:release=50,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=channel_layouts=stereo";
 
-export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN } = {}) {
+export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN, roomTone = null } = {}) {
   const parts = [];
   const maps = [];
   // audioInput: a denoised voice WAV on the source's timeline replaces the source's own audio track.
   const ain = audioInput ? "[1:a]" : "[0:a]";
+  const cutDuration = segments.reduce((sum, s) => sum + s.end - s.start, 0);
+  const useRoomTone = hasAudio && Number.isFinite(roomTone?.start) && Number.isFinite(roomTone?.end) && roomTone.end > roomTone.start && cutDuration > 0;
   segments.forEach((s, i) => {
     parts.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS[v${i}]`);
     if (hasAudio) {
       const d = s.end - s.start;
       const f = Math.min(0.02, d / 4);
-      parts.push(`${ain}atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=${f},afade=t=out:st=${r3(d - f)}:d=${f}[a${i}]`);
+      parts.push(`${ain}atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=${f}:curve=qsin,afade=t=out:st=${r3(d - f)}:d=${f}:curve=qsin[a${i}]`);
     }
     maps.push(hasAudio ? `[v${i}][a${i}]` : `[v${i}]`);
   });
@@ -243,8 +306,13 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
   const vf = [hdr ? SDR_FILTER : null, scaleTo ? `scale=${scaleTo.width}:${scaleTo.height}:force_original_aspect_ratio=increase:force_divisible_by=2` : null].filter(Boolean).join(",");
   fc += `;[vcat]${vf || "null"}[v]`;
   let audioOut = "[a]";
+  if (useRoomTone) {
+    const samples = Math.max(1, Math.floor((roomTone.end - roomTone.start) * 48000));
+    fc += `;${ain}atrim=start=${roomTone.start}:end=${roomTone.end},asetpts=PTS-STARTPTS,aresample=48000,aloop=loop=-1:size=${samples},atrim=duration=${r3(cutDuration)},asetpts=PTS-STARTPTS,volume=-12dB[room];[a][room]amix=inputs=2:duration=first:normalize=0:dropout_transition=0[abed]`;
+    audioOut = "[abed]";
+  }
   if (hasAudio && cleanAudio) {
-    fc += `;[a]${voiceChain}[ao]`;
+    fc += `;${audioOut}${voiceChain}[ao]`;
     audioOut = "[ao]";
   }
   const common = [
@@ -265,16 +333,22 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
   ];
   // The Apple hardware encoder is several times faster than libx264 for this intermediate; fall back if it is missing.
   const useHw = encoder === "videotoolbox" || (encoder === "auto" && process.platform === "darwin" && process.env.REEL_SW_ENCODE !== "1");
-  if (useHw) {
-    try {
-      await run("ffmpeg", [...common, "-c:v", "h264_videotoolbox", "-q:v", "72", "-allow_sw", "1", ...tail], { quiet: true });
-      return output;
-    } catch (e) {
-      if (encoder === "videotoolbox") throw e;
+  try {
+    if (useHw) {
+      try {
+        await run("ffmpeg", [...common, "-c:v", "h264_videotoolbox", "-q:v", "72", "-allow_sw", "1", ...tail], { quiet: true });
+        return output;
+      } catch (e) {
+        if (encoder === "videotoolbox") throw e;
+      }
     }
+    await run("ffmpeg", [...common, "-c:v", "libx264", "-preset", "medium", "-crf", "18", ...tail]);
+    return output;
+  } catch (e) {
+    if (!useRoomTone) throw e;
+    warn("room tone: mix failed, cuts fade to silence as before");
+    return applyCuts(input, segments, output, { hasAudio, cleanAudio, fps, hdr, scaleTo, encoder, audioInput, voiceChain, roomTone: null });
   }
-  await run("ffmpeg", [...common, "-c:v", "libx264", "-preset", "medium", "-crf", "18", ...tail]);
-  return output;
 }
 
 /** Audio level every `step` seconds, in dBFS, from the first audio track (one ffmpeg pass, mono 16 kHz). */

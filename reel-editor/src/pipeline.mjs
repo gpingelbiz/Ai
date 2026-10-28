@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
-import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments } from "./cuts.mjs";
+import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone } from "./cuts.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
 import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
@@ -226,6 +226,12 @@ export async function runEdit(input, opts = {}) {
   }
   // Studio sound: DeepFilterNet denoises the whole voice on the source timeline; the cut pass then takes that WAV
   // instead of the source audio and runs the leveler chain. Falls back to the spectral denoiser when it is missing.
+  let roomTone = null;
+  if (needsPass && cuts.segments.length > 1 && meta.hasAudio && preset.audio.roomTone !== false) {
+    roomTone = findRoomTone(await early.envelope, words, meta.duration);
+    if (roomTone) log(`room tone: ${r3(roomTone.end - roomTone.start)} s from ${roomTone.start.toFixed(2)} s, ${Math.round(roomTone.db)} dB`);
+    else log("room tone: no clean room found, cuts fade to silence as before");
+  }
   let studio = null;
   if (needsPass && meta.hasAudio && preset.audio.cleanAudio && preset.audio.studio !== false) {
     const res = await studioVoice(cutInput, path.join(workDir, "studio-voice.wav"));
@@ -234,7 +240,7 @@ export async function runEdit(input, opts = {}) {
   }
   if (needsPass) {
     log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? (studio ? " + studio sound" : " + clean audio") : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + ")…");
-    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined });
+    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined, roomTone });
     videoSrc = cleanPath;
     cleanMeta = await probe(cleanPath);
   }

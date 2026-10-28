@@ -27,6 +27,15 @@ test("REEL_PRESET picks the default look: a preset name or a path to a partial .
   }
 });
 
+test("room tone is on by default and can be disabled per preset", () => {
+  assert.equal(loadPreset("clean").audio.roomTone, true);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-preset-room-"));
+  const file = path.join(dir, "quiet.json");
+  fs.writeFileSync(file, JSON.stringify({ audio: { roomTone: false } }));
+  assert.equal(loadPreset(file).audio.roomTone, false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("the reel command itself honours REEL_PRESET (the CLI used to hard-default pingel-brand)", async () => {
   const { spawnSync } = await import("node:child_process");
   const bin = new URL("../bin/reel.mjs", import.meta.url).pathname;
