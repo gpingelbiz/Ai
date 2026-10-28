@@ -7,6 +7,12 @@ const PANEL_GAP = 24;
 const PANEL_MIN = 280;
 const PANEL_MAX = 360;
 const SPLIT_FACE_Y = 2 / 3;
+// Two caption lines below the caption top; the head keeps this gap from the seam and the captions; the chin stays
+// above the platform's bottom strip.
+const SPLIT_CAPTION_BAND = 0.1;
+const SPLIT_GAP = 0.012;
+const SPLIT_CHIN_MAX = 0.86;
+const SPLIT_SEAM_MIN = 0.36;
 
 const round = (n) => Math.round(n * 1000) / 1000;
 
@@ -76,10 +82,31 @@ export function planSplitLayout(shot, context = {}) {
     return { ...fallback, skipped: `split skipped: the zoomed face is too tall for the bottom half${fallback.skipped ? `; ${fallback.skipped}` : ""}` };
   }
 
-  const footageY = Math.round((SPLIT_FACE_Y - currentY) * H);
+  // The head (hair to chin) must miss the caption band, which stays where the reel put it. Try the face centred a
+  // third of the way down the bottom half, then tucked between the seam and the captions, then below the captions.
+  // The footage only ever moves down (moving it up would open a gap at the bottom of the frame).
+  const fh = face.h * strongest, hair = 0.35 * fh;
+  const capTop = context.captionTop ?? 0.68, capBottom = capTop + SPLIT_CAPTION_BAND;
+  const e = 1e-6; // the tucked spot sits exactly on its limits
+  const clear = (cy, seam) => cy - fh / 2 - hair >= seam + SPLIT_GAP - e && cy + fh / 2 <= SPLIT_CHIN_MAX + e && cy >= currentY - e && (cy + fh / 2 <= capTop - SPLIT_GAP + e || cy - fh / 2 - hair >= capBottom + SPLIT_GAP - e);
+  // Between the seam and the captions: the chin just above the captions, the seam raised (to 36% at most) to make
+  // room for the hair.
+  const tuckCy = capTop - SPLIT_GAP - fh / 2;
+  const tuckSeam = Math.max(SPLIT_SEAM_MIN, Math.min(0.5, tuckCy - fh / 2 - hair - SPLIT_GAP));
+  const spots = [
+    [SPLIT_FACE_Y, 0.5, "horizontal split with the face centred in the bottom half"],
+    [tuckCy, tuckSeam, `horizontal split at ${Math.round(tuckSeam * 100)}% with the face between the seam and the captions`],
+    [capBottom + SPLIT_GAP + hair + fh / 2, 0.5, "horizontal split with the face below the captions"],
+  ];
+  const spot = spots.find(([cy, seam]) => clear(cy, seam));
+  if (!spot) {
+    const fallback = planWindowLayout(shot, context);
+    return { ...fallback, skipped: `split skipped: the head cannot clear the captions under the seam${fallback.skipped ? `; ${fallback.skipped}` : ""}` };
+  }
+  const footageY = Math.round((spot[0] - currentY) * H);
   return {
-    shot: { ...shot, layout: "split", split: { seamY: Math.round(H / 2), footageY } },
-    note: "horizontal split with the face centred in the bottom half",
+    shot: { ...shot, layout: "split", split: { seamY: Math.round(spot[1] * H), footageY } },
+    note: spot[2],
   };
 }
 
@@ -106,12 +133,14 @@ export const BROLL_LAYOUTS = {
   mix: planMixLayout,
 };
 
-export function planBrollLayouts(shots = [], { layout = "full", ...context } = {}) {
+/** `perShot[i]` ({face, detection} sampled inside item i's window) wins over the reel-wide face: a reel can change
+ *  framing (a selfie shot after a seated one), and the opening frames say nothing about a cutaway at 0:39. */
+export function planBrollLayouts(shots = [], { layout = "full", perShot = [], ...context } = {}) {
   const mode = BROLL_LAYOUTS[layout] ? layout : "full";
   if (mode === "full") return { shots, logs: [] };
   const logs = [];
   const planned = shots.map((shot, index) => {
-    const result = BROLL_LAYOUTS[mode](shot, { ...context, index });
+    const result = BROLL_LAYOUTS[mode](shot, { ...context, ...(perShot[index] || {}), index });
     const actual = result.shot.layout || "full";
     const detail = result.skipped ? `${result.skipped}; ${result.note || "using a full-frame cutaway"}` : result.note;
     logs.push(`b-roll layout: ${actual} at ${round(shot.start)}s (${detail})`);

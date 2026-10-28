@@ -483,7 +483,14 @@ export async function runEdit(input, opts = {}) {
   }
   // Shared-frame b-roll is placed after zooms: each panel clears the whole head at the strongest move in its window.
   if (broll.length && ["window", "split", "mix"].includes(preset.broll?.layout)) {
-    const placed = planBrollLayouts(broll, { layout: preset.broll.layout, W: canvas0.width, H: canvas0.height, captionTop, face: face || faceBox(detection), detection, zooms, framing });
+    // The face inside each cutaway's own window (three samples), not the reel's opening frames.
+    const perShot = [];
+    for (const b of broll) {
+      const det = sameShape ? await detectFaces(videoSrc, [0.15, 0.5, 0.85].map((f) => r3(b.start + f * b.duration))) : null;
+      const f = faceBox(det);
+      perShot.push(f ? { face: f, detection: det } : null);
+    }
+    const placed = planBrollLayouts(broll, { layout: preset.broll.layout, W: canvas0.width, H: canvas0.height, captionTop, face: face || faceBox(detection), detection, zooms, framing, perShot });
     broll = placed.shots;
     placed.logs.forEach((line) => log(line));
     // "mix" marks some items as cutouts; matte just those.

@@ -55,17 +55,34 @@ test("a centred wide head moves the window above the head, and with no wall abov
   assert.match(result.skipped, /beside or above/);
 });
 
-test("split centres a fitting face in the bottom half and a low face falls back to window", () => {
+test("split keeps the whole head between the seam and the captions, and a low face falls back to window", () => {
   const fit = { cx: 0.25, cy: 0.4, w: 0.16, h: 0.14 };
   const split = planSplitLayout(shot, contextFor(fit));
   assert.equal(split.shot.layout, "split");
-  assert.equal(split.shot.split.seamY, 960);
-  assert.ok(Math.abs(fit.cy + split.shot.split.footageY / 1920 - 2 / 3) < 0.001);
+  const seam = split.shot.split.seamY / 1920;
+  assert.ok(seam >= 0.36 && seam <= 0.5, "the b-roll keeps 36-50% of the frame");
+  const fh = fit.h * 1.1, cy = fit.cy + split.shot.split.footageY / 1920;
+  assert.ok(cy - fh / 2 - 0.35 * fh >= seam, "the hair is under the seam");
+  assert.ok(cy + fh / 2 <= 0.68, "the chin is above the caption top");
+
+  // Captions low enough leave room for the face a third of the way down a 50/50 split.
+  const roomy = planSplitLayout(shot, { ...contextFor(fit), captionTop: 0.78 });
+  assert.equal(roomy.shot.split.seamY, 960);
+  assert.ok(Math.abs(fit.cy + roomy.shot.split.footageY / 1920 - 2 / 3) < 0.001);
 
   const low = { cx: 0.25, cy: 0.78, w: 0.16, h: 0.14 };
   const fallback = planSplitLayout(shot, contextFor(low));
   assert.equal(fallback.shot.layout, "window");
   assert.match(fallback.skipped, /too low/);
+});
+
+test("a face sampled inside the cutaway's window wins over the reel-wide face", () => {
+  const seated = { cx: 0.25, cy: 0.4, w: 0.16, h: 0.14 };
+  const selfie = { cx: 0.5, cy: 0.55, w: 0.5, h: 0.34 };
+  const shots = [{ start: 5, duration: 2 }, { start: 39, duration: 2 }];
+  const planned = planBrollLayouts(shots, { ...contextFor(seated), layout: "split", perShot: [null, { face: selfie, detection: null }] });
+  assert.equal(planned.shots[0].layout, "split", "the seated shot still splits");
+  assert.notEqual(planned.shots[1].layout, "split", "the selfie face is too low and too big for the bottom half");
 });
 
 test("mix rotates window, cutout, split in a fixed order, and a window that cannot fit becomes the cutout", () => {

@@ -198,7 +198,7 @@ export function renderHTML(plan, footage) {
         const p = b.panel;
         return `      <div id="broll-${i}" class="broll broll-window clip" style="left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px;--broll-radius:${Math.round(p.w * 0.04)}px" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div></div>`;
       }
-      if (layout === "split") return `      <div id="broll-${i}" class="broll broll-split clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div><div class="split-divider"></div></div>`;
+      if (layout === "split") return `      <div id="broll-${i}" class="broll broll-split clip" style="height:${b.split?.seamY ?? Math.round(H / 2)}px" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div><div class="split-divider"></div></div>`;
       return `      <div id="broll-${i}" class="broll clip" data-start="${b.start}" data-duration="${b.duration}" data-track-index="2"><div class="broll-move">${brollMedia(b)}</div><div class="broll-shade"></div>${brollCut === "flash" ? '<div class="broll-flash"><div class="broll-flash-core"></div></div>' : ""}</div>`;
     })
     .join("\n");
@@ -304,7 +304,7 @@ export function renderHTML(plan, footage) {
     zooms: plan.zooms || [],
     broll: brollList.map((b, i) => {
       const layout = brollLayout(b);
-      return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY } : {}) } : {}) };
+      return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY, seamY: b.split.seamY ?? Math.round(H / 2) } : {}) } : {}) };
     }),
     graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}) })),
     graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
@@ -648,12 +648,14 @@ ${sharedBroll ? `          if (b.layout === "window") {
             return;
           }
           if (b.layout === "split") {
-            tl.fromTo(el, { opacity: 1, y: -PLAN.height / 2 }, { opacity: 1, y: 0, duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
-            tl.fromTo("#footage-layout", { clipPath: "inset(0% 0 0 0)" }, { clipPath: "inset(50% 0 0 0)", duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
+            // The seam sits where the planner left room for the head above the captions (36-50% down).
+            const seam = b.seamY || PLAN.height / 2;
+            tl.fromTo(el, { opacity: 1, y: -seam }, { opacity: 1, y: 0, duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
+            tl.fromTo("#footage-layout", { clipPath: "inset(0% 0 0 0)" }, { clipPath: "inset(" + (seam / PLAN.height) * 100 + "% 0 0 0)", duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
             tl.fromTo("#footage-position", { y: 0 }, { y: b.footageY, duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
             if (PLAN.focusPull) tl.fromTo(img, { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
             tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: b.duration * 0.92 }, b.start);
-            tl.to(el, { y: -PLAN.height / 2, duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
+            tl.to(el, { y: -seam, duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
             tl.to("#footage-layout", { clipPath: "inset(0% 0 0 0)", duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
             tl.to("#footage-position", { y: 0, duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
             tl.set(el, { opacity: 0 }, bEnd);
