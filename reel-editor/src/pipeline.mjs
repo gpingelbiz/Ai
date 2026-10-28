@@ -32,8 +32,6 @@ import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
 import { iconCandidates, planIcons } from "./icons.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, duckingLaneFromEnvelope, describePick } from "./music.mjs";
-import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
-import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, planCropPath, objectPositionLane } from "./reframe.mjs";
 import { makeCover } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
