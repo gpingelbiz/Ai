@@ -1,4 +1,4 @@
-import { r3 } from "./util.mjs";
+import { r3, warn } from "./util.mjs";
 
 import { norm } from "./text.mjs";
 
@@ -27,6 +27,98 @@ export function balancedSplit(run, per) {
     i += size;
   }
   return out;
+}
+
+const BREAK_START = new Set(["and", "or", "but", "so", "because", "when", "if", "that", "then", "while", "although", "unless", "until", "yet", "after", "before", "once", "without", "with", "from", "in", "on", "at", "for", "to"]);
+const ATTACHED_START = new Set(["of", "than", "as", "your", "my", "our", "their", "his", "her", "its"]);
+
+const rawText = (w) => String(w.rawText ?? w.text ?? "").trim();
+
+function protectedBoundaries(run, phrases) {
+  const blocked = new Set();
+  const toks = run.map((w) => norm(rawText(w)));
+  const list = phrases instanceof Set ? [...phrases] : Array.isArray(phrases) ? phrases : [];
+  for (const value of list) {
+    const phrase = (Array.isArray(value) ? value : String(value).split(/\s+/)).map(norm).filter(Boolean);
+    if (phrase.length < 2) continue;
+    for (let i = 0; i + phrase.length <= toks.length; i++) {
+      if (!phrase.every((t, j) => toks[i + j] === t)) continue;
+      for (let j = 1; j < phrase.length; j++) blocked.add(i + j);
+    }
+  }
+  return blocked;
+}
+
+/**
+ * Split at the strongest phrase boundaries, adding a line only when a strong signal or display penalty earns it.
+ * The ordered regrouping idea comes from stable-ts (MIT); this is a small independent scoring implementation.
+ */
+export function phraseSplit(run, per, { maxChars = 22, protectedPhrases = new Set() } = {}) {
+  const n = run.length;
+  const limit = Math.max(1, Math.floor(per) || 1);
+  if (n <= limit) return n ? [run] : [];
+  const minLines = Math.ceil(n / limit);
+  const blocked = protectedBoundaries(run, protectedPhrases);
+
+  const boundaryScore = (at) => {
+    if (at >= n) return 0;
+    const prev = run[at - 1], next = run[at];
+    const raw = rawText(prev);
+    const gap = Number.isFinite(next.start) && Number.isFinite(prev.end) ? Math.max(0, next.start - prev.end) : 0;
+    let score = 0;
+    if (/[.!?][\])}'\"”’]*$/.test(raw)) score += 4000;
+    if (gap >= 0.7) score += 1200;
+    else if (gap >= 0.35) score += 800;
+    else if (gap >= 0.2) score += 400;
+    if (/[,;:–—-][\])}'\"”’]*$/.test(raw)) score += 250;
+    if (BREAK_START.has(norm(rawText(next)))) score += 120;
+    if (blocked.has(at)) score -= 5000;
+    return score;
+  };
+
+  const lineScore = (start, end) => {
+    const line = run.slice(start, end);
+    const chars = line.map(rawText).join(" ").length;
+    let score = 0;
+    if (chars > maxChars) score -= 400 + (chars - maxChars) * 40;
+    if (GLUE.has(norm(rawText(line[line.length - 1])))) score -= 700;
+    if (ATTACHED_START.has(norm(rawText(line[0])))) score -= 220;
+    if (line.length === 1) {
+      const word = line[0];
+      if (norm(rawText(word)).length < 10 && !word.key && !word.keyword) score -= 1400;
+    }
+    return score;
+  };
+
+  let best = null;
+  for (let lineCount = minLines; lineCount <= n; lineCount++) {
+    const base = Math.floor(n / lineCount), extra = n % lineCount;
+    const desired = Array.from({ length: lineCount }, (_, i) => base + (i < extra ? 1 : 0));
+    let states = new Map([[0, { score: -(lineCount - minLines) * 1600, balance: 0, lines: [] }]]);
+    for (let l = 0; l < lineCount; l++) {
+      const nextStates = new Map();
+      for (const [start, state] of states) {
+        const remainLines = lineCount - l - 1;
+        const minEnd = start + 1;
+        const maxEnd = Math.min(start + limit, n - remainLines);
+        for (let end = minEnd; end <= maxEnd; end++) {
+          const remain = n - end;
+          if (remain < remainLines || remain > remainLines * limit) continue;
+          const candidate = {
+            score: state.score + lineScore(start, end) + boundaryScore(end),
+            balance: state.balance + Math.abs(end - start - desired[l]),
+            lines: [...state.lines, run.slice(start, end)],
+          };
+          const old = nextStates.get(end);
+          if (!old || candidate.score > old.score || (candidate.score === old.score && candidate.balance < old.balance)) nextStates.set(end, candidate);
+        }
+      }
+      states = nextStates;
+    }
+    const candidate = states.get(n);
+    if (candidate && (!best || candidate.score > best.score || (candidate.score === best.score && candidate.balance < best.balance))) best = candidate;
+  }
+  return best?.lines || balancedSplit(run, limit);
 }
 
 // Words a line should not start or end on: a line that reads "OR A" or ends on "the" is a fragment, not a thought.
@@ -58,10 +150,10 @@ export function tidyLines(lines, max = 4) {
 
 /**
  * Group words into caption lines. A run ends at a sentence end or a pause longer than maxGap;
- * each run is split into balanced lines of at most wordsPerLine words.
+ * each run is split into phrase-aware (or fallback balanced) lines of at most wordsPerLine words.
  * Returns [{ words:[{text,start,end,key?}], start, end, text }].
  */
-export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, emojis = false, lead = 0.05, minShow = 0 } = {}) {
+export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, emojis = false, lead = 0.05, minShow = 0, phraseBreaks = false, maxChars = 22, protectedPhrases = new Set() } = {}) {
   const runs = [];
   let run = [];
   for (const w of words) {
@@ -71,14 +163,22 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
       runs.push(run);
       run = [];
     }
-    run.push({ text, start: w.start, end: w.end });
+    run.push({ text, start: w.start, end: w.end, rawText: w.text });
     if (/[.!?]$/.test(w.text.trim())) {
       runs.push(run);
       run = [];
     }
   }
   if (run.length) runs.push(run);
-  let lines = runs.flatMap((r) => tidyLines(balancedSplit(r, Math.max(1, wordsPerLine)), Math.max(2, wordsPerLine + 1)));
+  const per = Math.max(1, wordsPerLine);
+  let split;
+  try {
+    split = runs.flatMap((r) => phraseBreaks ? phraseSplit(r, per, { maxChars, protectedPhrases }) : balancedSplit(r, per));
+  } catch {
+    warn("caption phrase breaks unavailable; using balanced lines");
+    split = runs.flatMap((r) => balancedSplit(r, per));
+  }
+  let lines = tidyLines(split, Math.max(2, wordsPerLine + 1)).map((line) => line.map(({ text, start, end }) => ({ text, start, end })));
   // minShow: a line that would be on screen for less than this joins the next one (fast talkers with short lines
   // otherwise flash a word for a few frames); never past wordsPerLine + 2 words, never across a pause.
   if (minShow > 0) {
@@ -234,4 +334,3 @@ export function hookWords(text, dict = {}) {
   markKeywords(g, dict, { auto: true });
   return { text: raw.join(" "), words: g[0].words.map((w) => ({ text: w.text, key: !!w.key })) };
 }
-

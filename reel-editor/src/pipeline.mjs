@@ -250,7 +250,8 @@ export async function runEdit(input, opts = {}) {
   // 4. Captions, hook, zooms
   // The caption lines are the timing backbone for everything (cards, stills, punch-ins, callouts, chapters, the
   // srt), so they are always built; whether they show on screen is captions.enabled.
-  const groups = markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
+  const protectedPhrases = new Set([...(dict.terms || []), ...(dict.names || []), ...(dict.phrases || [])]);
+  const groups = markKeywords(groupWords(cleanWords, duration, { ...preset.captions, protectedPhrases }), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
   const showCaptions = !!preset.captions.enabled;
   const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) }) : null;
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
