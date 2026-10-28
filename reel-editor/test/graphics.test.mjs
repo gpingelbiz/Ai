@@ -171,3 +171,55 @@ test("cards: a quote that carries its own quote marks gets no extra ones; a long
   const c = sceneHTML({ type: "compare", a: { label: "Slam the desk" }, b: { label: "Breathe, lower your voice" } });
   assert.match(c, /g-side g-side-b g-side-long/);
 });
+
+test("spoken steps: item lines are all-or-nothing, ordered and short", () => {
+  const raw = { type: "steps", line: 2, items: [{ text: "First point" }, { text: "Second point" }] };
+  const legacy = normalizeScene(raw);
+  assert.ok(legacy, "all lines missing falls back to the legacy card");
+  assert.ok(legacy.items.every((it) => !Object.hasOwn(it, "line")));
+  assert.equal(normalizeScene({ ...raw, items: [{ text: "First point", line: 2 }, { text: "Second point" }] }), null, "partial timing is rejected");
+  assert.equal(normalizeScene({ ...raw, items: [{ text: "First point", line: "x" }, { text: "Second point", line: 4 }] }), null, "invalid lines are rejected");
+  assert.equal(normalizeScene({ ...raw, items: [{ text: "First point", line: 4 }, { text: "Second point", line: 3 }] }), null, "cue lines must increase");
+  assert.equal(normalizeScene({ ...raw, items: [{ text: "This item has five words", line: 2 }, { text: "Second point", line: 4 }] }), null, "timed items have four words at most");
+});
+
+test("spoken steps: placement quantizes offsets and derives duration from the final item", () => {
+  const cands = [
+    { i: 2, start: 10.01, text: "first" },
+    { i: 3, start: 10.52, text: "second" },
+    { i: 4, start: 12.38, text: "third" },
+    { i: 5, start: 19.2, text: "later" },
+  ];
+  const scene = normalizeScene({ type: "list", line: 2, items: [{ text: "First", line: 2 }, { text: "Second", line: 3 }, { text: "Third", line: 4 }] });
+  const [placed] = placeScenes([scene], cands, { duration: 30 });
+  assert.deepEqual(placed.items.map((it) => it.at), [0, 0.5, 2.367]);
+  assert.equal(placed.duration, 3.567, "last cue plus a 1.2 second hold, on the frame grid");
+  const tooWide = normalizeScene({ type: "steps", line: 2, items: [{ text: "First", line: 2 }, { text: "Later", line: 5 }] });
+  assert.deepEqual(placeScenes([tooWide], cands, { duration: 30 }), [], "item cues more than eight seconds apart are rejected");
+  const tooManyWords = normalizeScene({ type: "list", line: 2, eyebrow: "THE FULL PLAYBOOK", items: [{ text: "First point", line: 2 }, { text: "Second point", line: 3 }] });
+  assert.deepEqual(placeScenes([tooManyWords], cands, { duration: 30 }), [], "the whole card must fit the reading budget");
+});
+
+test("spoken steps: future text starts hidden, item offsets reach the timeline, legacy stagger stays intact", () => {
+  const plan = {
+    name: "timed",
+    canvas: { width: 1080, height: 1920 },
+    video: { duration: 20, hasAudio: true },
+    style: { colors: { text: "#FAFAFA", accent: "#C8A24B", stroke: "#000", bg: "#0B0B0D" }, captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72, shadow: "none", style: "reveal" }, hook: { fontSizeFrac: 0.05, position: 0.2 }, graphics: { mode: "overlay" }, zooms: {}, cta: {}, render: { fps: 30 } },
+    captions: [],
+    framing: { side: "left" },
+    graphics: [{ type: "steps", eyebrow: "", start: 6, duration: 3.2, items: [{ text: "First", at: 0 }, { text: "Second", at: 2 }] }],
+  };
+  const html = renderHTML(plan, "assets/footage.mp4");
+  assert.match(html, /gfx-steps gfx-timed skin-glass/);
+  assert.match(html, /"items":\[\{"at":0\},\{"at":2\}\]/, "per-item offsets are in runtimePlan.graphics");
+  assert.match(html, /\.gfx\.gfx-timed \.g-item-text \{[^}]*opacity: 0/s, "future item text is hidden before its cue");
+  assert.match(html, /const cue = g\.start \+ g\.items\[k\]\.at/);
+  assert.match(html, /Math\.max\(g\.start, cue - 1 \/ fps\)/, "the dot appears one frame before the cue");
+
+  plan.graphics = [{ type: "list", eyebrow: "", start: 6, duration: 5.9, items: [{ text: "First", state: "plain", tag: "" }, { text: "Second", state: "plain", tag: "" }] }];
+  const legacy = renderHTML(plan, "assets/footage.mp4");
+  assert.doesNotMatch(legacy, /gfx-list gfx-timed/);
+  assert.match(legacy, /g-row g-in g-plain/);
+  assert.match(legacy, /tl\.fromTo\(ins, \{ opacity: 0, y: 46 \}, \{ opacity: 1, y: 0, duration: 0\.42, ease: "power3\.out"/);
+});

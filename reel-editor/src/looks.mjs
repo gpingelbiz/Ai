@@ -197,6 +197,8 @@ const glyph = { stat: "$", headline: "!", quote: "“", post: "@", chapter: "#" 
  * regular count-up number, passed in so the count keeps working.
  */
 export function skinHTML(s, skin, { statHTML }) {
+  const live = (s.type === "list" || s.type === "steps") && s.items?.length && s.items.every((it) => Number.isFinite(it.at));
+  const liveRow = (html, k) => `<div class="g-live-item">${k ? '<span class="g-live-connector"></span>' : ""}<span class="g-item-dot"></span>${html}</div>`;
   if (skin === "notify") {
     const app = plain(s.eyebrow || "Update").toLowerCase().replace(/^./, (c) => c.toUpperCase());
     const title = s.type === "stat" ? statHTML(s.value, Math.round(Math.min(130, 900 / Math.max(1, String(s.value).length)))) : `<div class="n-title">${marked(s.text || s.title || s.value || "", "g-gold")}</div>`;
@@ -208,7 +210,7 @@ export function skinHTML(s, skin, { statHTML }) {
     if (s.type === "compare") items = [{ text: [s.a?.label, s.a?.note].filter(Boolean).join(": "), state: "strike" }, { text: [s.b?.label, s.b?.note].filter(Boolean).join(": "), state: "check" }];
     else if (s.type === "bars") items = (s.items || []).map((it, k) => ({ text: `${it.label}: ${it.value}${s.unit || ""}`, state: k === s.emphasize ? "check" : "plain" }));
     else items = (s.items || []).map((it, k) => ({ text: s.type === "steps" ? `${k + 1}. ${it.text}` : it.text, state: it.state || "plain" }));
-    const rows = items.map((it) => `<div class="n-item g-in n-${it.state}"><span class="n-circle"></span><span class="n-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span></div>`).join("");
+    const rows = items.map((it, k) => live ? liveRow(`<div class="n-item n-${it.state} g-item-text"><span class="n-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span></div>`, k) : `<div class="n-item g-in n-${it.state}"><span class="n-circle"></span><span class="n-text">${esc(it.text)}${it.state === "strike" ? '<span class="g-strike-line"></span>' : ""}</span></div>`).join("");
     return `<div class="g-box g-notes"><div class="n-bar g-in"><span class="n-back">‹ Notes</span><span class="n-done">Done</span></div><div class="n-heading g-in">${marked(s.title || s.eyebrow || "", "g-gold")}</div><div class="n-list">${rows}</div></div>`;
   }
   if (skin === "receipt") {
@@ -217,7 +219,7 @@ export function skinHTML(s, skin, { statHTML }) {
     else if (s.type === "compare") rows = [[s.a?.label, s.a?.value || s.a?.note || "", false], [s.b?.label, s.b?.value || s.b?.note || "", true]];
     else if (s.type === "stat") total = [s.sub || "Total", s.value];
     else rows = (s.items || []).map((it, k) => [s.type === "steps" ? `${k + 1}. ${it.text}` : it.text, it.tag || (it.state === "check" ? "✓" : it.state === "strike" ? "✕" : ""), it.state === "check"]);
-    const row = ([a, b, hi]) => `<div class="r-row g-in${hi ? " r-hi" : ""}"><span class="r-l">${esc(a || "")}</span><span class="r-dots"></span><span class="r-r">${esc(b || "")}</span></div>`;
+    const row = ([a, b, hi], k) => live ? liveRow(`<div class="r-row g-item-text${hi ? " r-hi" : ""}"><span class="r-l">${esc(a || "")}</span><span class="r-dots"></span><span class="r-r">${esc(b || "")}</span></div>`, k) : `<div class="r-row g-in${hi ? " r-hi" : ""}"><span class="r-l">${esc(a || "")}</span><span class="r-dots"></span><span class="r-r">${esc(b || "")}</span></div>`;
     const totalHTML = total ? `<div class="r-total g-in"><span class="r-l">${esc(total[0])}</span>${statHTML(total[1], 92, " r-total-v")}</div>` : "";
     return `<div class="g-box g-receipt"><div class="r-head g-in">${esc(plain(s.eyebrow || s.title || "Receipt"))}</div>${s.title && s.eyebrow ? `<div class="r-sub g-in">${esc(plain(s.title))}</div>` : ""}<div class="r-rule g-in"></div>${rows.map(row).join("")}${rows.length && total ? '<div class="r-rule g-in"></div>' : ""}${totalHTML}<div class="r-foot g-in">* * * thank you * * *</div></div>`;
   }
@@ -227,7 +229,7 @@ export function skinHTML(s, skin, { statHTML }) {
     else if (s.type === "compare") text = `${sentence(s.a?.label)}${s.a?.note ? `: ${plain(s.a.note)}` : ""}.\n${sentence(s.b?.label)}${s.b?.note ? `: ${plain(s.b.note)}` : ""}.`;
     else if (s.type === "stat") text = `${plain(s.value)}${s.value2 ? ` → ${plain(s.value2)}` : ""}.${s.sub ? `\n${sentence(s.sub)}` : ""}`;
     else text = sentence(s.text || s.title || "");
-    const lines = text.split("\n").map((l) => `<div class="t-line">${chars(l)}</div>`).join("");
+    const lines = text.split("\n").map((l, k) => live ? liveRow(`<div class="t-line g-item-text">${esc(l)}</div>`, k) : `<div class="t-line">${chars(l)}</div>`).join("");
     return `<div class="g-box g-type-card"><div class="t-text">${lines}</div>${s.eyebrow ? `<div class="t-sign g-in">— ${esc(plain(s.eyebrow).toLowerCase())}</div>` : ""}</div>`;
   }
   return null;
