@@ -449,6 +449,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     "- A timed list/steps card must fit this whole-card reading budget: floor((seconds on screen - 0.7) / 0.375) words.",
     "- A compare holds 3 to 4.5 seconds. Use at most one compare in the reel, at most 6 words on either side, and keep the whole card inside its reading budget. Set pivotLine to the line that contains the spoken contrast (but, instead, now, what they hear, the real reason, two years later). Side B is the payoff: never reveal or make it readable before pivotLine.",
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
+    "- Fewer cards beat more: the biggest reels in this niche are a face, one premise and captions. Reply with an empty scenes list when the reel is one opinion with no structure, an emotional or identity moment, or a skit. A personal story gets at most a proof message or a progress rail, and only when the speaker gives a real message or a real sequence. Never pick a card that repeats the hook or the line already on screen.",
     "- Offer at most one progress scene. It does not replace or consume one of the requested cards. Its item line anchors must be strictly increasing.",
     "- No emojis, no hashtags, no calls to action.",
     voice ? `\nVoice for labels and trims:\n${voice.trim()}` : "",
