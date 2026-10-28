@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile } from "./util.mjs";
-import { sceneHTML, graphicsCSS, GRAPHICS_JS } from "./graphics.mjs";
+import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, numberMotion, progressHTML, progressCSS, PROGRESS_JS } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 
 export function canvasFor(mode, meta) {
@@ -184,10 +184,20 @@ export function renderHTML(plan, footage) {
 
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
   const gfxList = plan.graphics || [];
+  const gfxSchema = plan.graphicsSchema ?? gfxList.schema ?? 1;
+  const progressList = gfxList.filter((g) => g.type === "progress" && g.placement && !g.placement.skip);
+  const cardList = gfxList.some((g) => g.type === "progress") ? gfxList.filter((g) => g.type !== "progress") : gfxList;
   // Looks (looks.mjs) restyle the overlay cards; the YouTube band layout keeps the glass cards.
   const gfxMode = s.graphics?.mode || "overlay";
-  const skinned = (g) => (gfxMode === "overlay" ? g : { ...g, skin: "glass" });
-  const gfxHTML = gfxList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g))}</div>`).join("\n");
+  const faceSide = plan.framing?.side === "left" ? "right" : "left";
+  const skinned = (g) => ({ ...(gfxMode === "overlay" ? g : { ...g, skin: "glass" }), faceSide });
+  const timed = (g) => (g.type === "list" || g.type === "steps") && g.items?.length && g.items.every((it) => Number.isFinite(it.at));
+  const hasProof = cardList.some((g) => g.type === "message" && g.mode === "proof");
+  const gfxHTML = cardList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type}${timed(g) ? " gfx-timed" : ""}${g.type === "message" && g.mode === "proof" ? " gfx-message-proof" : ""} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g), { schema: gfxSchema })}</div>`).join("\n");
+  const progressRailHTML = progressList.map((g, i) => {
+    const p = g.placement;
+    return `      <div id="progress-${i}" class="progress clip ${p.orientation === "vertical" ? "vertical" : "horizontal"} skin-${g.skin || "glass"}" style="left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px" data-start="${g.start}" data-duration="${g.duration}" data-track-index="3" data-layout-allow-overflow>${progressHTML(g)}</div>`;
+  }).join("\n");
   const skinsUsed = [...new Set(gfxList.map((g) => skinned(g).skin || "glass"))];
   const theme = THEMES[s.look] || null;
   const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme)]);
@@ -216,8 +226,12 @@ export function renderHTML(plan, footage) {
     activeWord: !!cap.activeWord,
     zooms: plan.zooms || [],
     broll: brollList.map((b) => ({ start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video })),
-    graphics: gfxList.map((g) => ({ start: g.start, duration: g.duration })),
+    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}) })),
+    graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
+    graphicsSide: plan.framing?.side || "right",
+    graphicsText: c.text,
+    graphicsAccent: c.accent,
     slams: slamList.map((sl) => ({ t: sl.t, end: sl.end })),
     zoomStyle: s.zooms?.style || "snap",
     focusPull,
@@ -236,6 +250,7 @@ export function renderHTML(plan, footage) {
     baseShift: Math.round((plan.framing?.shift || 0) * H),
     behind: behind ? { start: behind.start, duration: behind.duration } : null,
   };
+  if (progressList.length) runtimePlan.progress = progressList.map((g) => ({ start: g.start, duration: g.duration, hookEnd: g.hookEnd, pulses: g.pulses || [] }));
   const framing = plan.framing || { scale: 1, side: "right", face: null };
   const origin = framing.scale > 1 && framing.origin ? framing.origin : s.zooms.origin || "50% 40%";
   // Cards beside the speaker: the free third, vertically on the face.
@@ -295,7 +310,7 @@ export function renderHTML(plan, footage) {
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
-${gfxList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay" }) + skinsCSS({ H, colors: c, skins: skinsUsed }) : ""}
+${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
         position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3((cap.rightMarginFrac ?? cap.sideMarginFrac) * 100)}%; top: ${r3(cap.position * 100)}%;
@@ -345,7 +360,7 @@ ${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div i
 ${openHTML}
 ${brollHTML}
 ${lowerHTML}
-${gfxHTML}
+${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}
 ${slamHTML}
 ${hookHTML}
 ${cutoutHTML}
@@ -466,7 +481,7 @@ ${audioHTML}
           tl.to(wash, { opacity: 0, duration: 0.18, ease: "power3.out" }, d);
           tl.to(core, { opacity: 0, scale: 1.18, duration: 0.3, ease: "power2.out" }, d + 0.01);
         }
-${gfxList.length ? GRAPHICS_JS : ""}
+${cardList.length ? GRAPHICS_JS : ""}${progressList.length ? PROGRESS_JS : ""}
         // B-roll: hard cut in and out. The push (6%, ease-out, settles before the end) and the Ken Burns pans (a
         // steady drift with a little scale, no ease) run on the wrapper; the cut lands with a short focus pull.
         // A generated clip already moves, so it gets no push: "none" holds the frame.

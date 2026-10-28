@@ -18,7 +18,10 @@ export function sampleTimes(plan, duration, { dense = 2.5, denseStep = 0.25, eve
   for (let x = 0.05; x < Math.min(dense, duration); x += denseStep) t.add(r3(x));
   const changes = [];
   for (const z of plan?.zooms || []) changes.push(z.t);
-  for (const g of plan?.graphics || []) changes.push(g.start, g.start + g.duration);
+  for (const g of plan?.graphics || []) {
+    if (g.type === "progress") { for (const p of g.pulses || []) if (!p.hidden) changes.push(p.at, p.at + 1.4); }
+    else changes.push(g.start, g.start + g.duration);
+  }
   for (const b of plan?.broll || []) changes.push(b.start, b.start + b.duration);
   for (const sl of plan?.slams || []) changes.push(sl.t + 0.2);
   for (const c of changes) if (c + 0.15 < duration - 0.1) t.add(r3(c + 0.15));

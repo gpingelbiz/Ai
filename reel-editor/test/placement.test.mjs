@@ -63,3 +63,15 @@ test("captions sit under the chin, capped low, at the safe line on wide shots, d
   assert.deepEqual([wide.position, wide.zone], [0.56, "safe-zone"]);
   assert.deepEqual(placeCaptions(null, { defaultPosition: 0.6 }).position, 0.6);
 });
+
+test("progress placement uses the clear band, falls back to the empty side, or skips when neither fits", async () => {
+  const { placeProgressRail } = await import("../src/placement.mjs");
+  const band = placeProgressRail({ hookTop: 0.12, hookBottom: 0.3, captionTop: 0.7 });
+  assert.deepEqual([band.orientation, band.x, band.x + band.w], ["horizontal", 86, 900]);
+  const side = placeProgressRail({ hookTop: 0.12, hookBottom: 0.3, captionTop: 0.72, side: "right", face: { cx: 0.42, cy: 0.47, w: 0.3, h: 0.32 } });
+  assert.equal(side.orientation, "vertical");
+  assert.ok(side.x >= 680 && side.x + side.w <= 940);
+  const skip = placeProgressRail({ hookTop: 0.1, hookBottom: 0.58, captionTop: 0.64, side: "right", face: { cx: 0.82, cy: 0.62, w: 0.3, h: 0.5 } });
+  assert.equal(skip.skip, true);
+  assert.match(skip.reason, /gap|face|rail/);
+});
