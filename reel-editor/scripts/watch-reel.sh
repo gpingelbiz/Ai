@@ -294,7 +294,14 @@ else
     done <<< "$shots"
     [ -s "$work/runway usage.txt" ] && cp -f "$work/runway usage.txt" "$folder/runway usage.txt"
   elif [ "$MODE" = runway ]; then
-    printf 'No b-roll this time: Runway made nothing for this clip (balance, cap or a failed generation; see ~/Reels/watch.log and run: reel usage).\n' > "$folder/No b-roll this time.txt"
+    # Say why from the editor's own lines: a short or wordless clip never asks Runway, so it is not a balance problem.
+    if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
+      printf 'No b-roll this time: the reel is under 8 seconds, too short for a Runway clip, so Runway was not asked.\n' > "$folder/No b-roll this time.txt"
+    elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "keeping every frame (no talking to cut around)"; then
+      printf 'No b-roll this time: the clip is mostly not talking, so it kept every frame; Runway b-roll goes under spoken lines.\n' > "$folder/No b-roll this time.txt"
+    else
+      printf 'No b-roll this time: Runway made nothing for this clip (balance, cap or a failed generation; see ~/Reels/watch.log and run: reel usage).\n' > "$folder/No b-roll this time.txt"
+    fi
   elif [ "$MODE" = broll ]; then
     # Say why, from the editor's own lines for this run, instead of guessing at Codex.
     if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then

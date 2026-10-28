@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
-import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope } from "./cuts.mjs";
+import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking } from "./cuts.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
 import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
@@ -187,7 +187,11 @@ export async function runEdit(input, opts = {}) {
   }
 
   // 2. Cut plan
-  const cutsOn = !opts.noCuts && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers);
+  // A clip that is mostly not talking (a walk-up, a vlog shot, a room) has nothing to cut around: cutting the
+  // "silence" would leave only its few words ("Greg? Yeah" out of a 20 s walk-up came back as a 1 s reel).
+  const quiet = mostlyNotTalking(words, meta.duration);
+  if (quiet && !opts.noCuts) log(`cuts: only ${words.length} word${words.length === 1 ? "" : "s"} spoken in ${r3(meta.duration)} s, keeping every frame (no talking to cut around)`);
+  const cutsOn = !opts.noCuts && !quiet && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers);
   let cuts = cutsOn
     ? planCuts(words, meta.duration, preset.cuts)
     : { segments: [{ start: 0, end: r3(meta.duration) }], removed: [], originalDuration: r3(meta.duration), keptDuration: r3(meta.duration), words };

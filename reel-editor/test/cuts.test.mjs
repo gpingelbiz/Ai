@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planCuts, findBadTakes, remapWords, findRoomTone, remapEnvelope } from "../src/cuts.mjs";
+import { planCuts, findBadTakes, remapWords, findRoomTone, remapEnvelope, mostlyNotTalking } from "../src/cuts.mjs";
 import { readFileSync } from "node:fs";
 
 const sample = JSON.parse(readFileSync(new URL("../examples/sample-words.json", import.meta.url))).words;
@@ -182,4 +182,15 @@ test("a recording that stops mid-word ends on its last finished sentence nearby"
   const r = planCuts(words, 2.2, { badTakes: false, fillers: false });
   assert.ok(r.removed.some((x) => x.reason === "cut-off"), JSON.stringify(r.removed));
   assert.ok(r.segments[r.segments.length - 1].end < 1.6, "ends after 'standard,'");
+});
+
+test("a clip that is mostly not talking keeps every frame; a talking clip is still cut", () => {
+  const w = (text, start, end) => ({ text, start, end });
+  // The walk-up: "Greg? Yeah" in a 20 s shot.
+  assert.equal(mostlyNotTalking([w("Greg?", 13.1, 13.5), w("Yeah", 14.0, 14.3)], 20), true);
+  // A 60 s vlog with a couple of sentences (about 6 s of speech).
+  assert.equal(mostlyNotTalking(Array.from({ length: 20 }, (_, i) => w("word", 10 + i * 0.3, 10.3 + i * 0.3)), 60), true);
+  // The sample talking-head clip, and a short clip that is all talking.
+  assert.equal(mostlyNotTalking(sample, Math.max(...sample.map((x) => x.end))), false);
+  assert.equal(mostlyNotTalking([w("Stop", 0.2, 0.6), w("chasing", 0.7, 1.2), w("clients", 1.3, 1.9)], 2.5), false);
 });

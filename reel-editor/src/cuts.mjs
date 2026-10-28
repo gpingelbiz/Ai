@@ -191,6 +191,17 @@ export function snapSegments(segments, fps, duration) {
 }
 
 /** Move kept words onto the cut timeline. Dropped words and words outside every segment disappear. */
+/**
+ * True when a clip is mostly not talking: speech covers under 15% of it, or it has a handful of words (under 8) that
+ * cover under 35%. A walk-up or vlog shot like that has no dead air to cut; the footage is the content.
+ */
+export function mostlyNotTalking(words, duration) {
+  if (!(duration >= 3)) return false;
+  const spoken = (words || []).reduce((s, w) => s + Math.max(0, (w.end ?? 0) - (w.start ?? 0)), 0);
+  const share = spoken / duration;
+  return share < 0.15 || ((words || []).length < 8 && share < 0.35);
+}
+
 export function remapWords(words, segments) {
   let off = 0;
   const map = segments.map((s) => {
