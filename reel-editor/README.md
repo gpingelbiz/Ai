@@ -175,6 +175,19 @@ The gate: a reel whose check note (`check this reel.txt`) shows a failure, whose
 
 By hand: `node scripts/publish-folder.mjs scan` shows what is next; `serve`, `stop`, `done`, `fail` and `slot` are the steps the task runs. `scripts/publish.mjs` (the older review hand-off) needs a public link of your own.
 
+### A second Publish folder that forwards to the first (Greg's MacBook Pro)
+
+The posting task runs on one Mac only (the Mac mini), so one reel a day stays counted in one place. A second Mac gets
+its own `Desktop/Reels/Publish` (a link to `~/Reels/publish`) that SENDS what is dropped in it to the posting Mac:
+`scripts/publish-forward.mjs run` (LaunchAgent `com.pingel.reel-publish-forward`: on every drop plus every 2 minutes).
+A loose video is bundled with its caption, `.reel.json` and check note, found from the delivered folder on THIS Mac
+(the posting Mac has no delivered folders to look in), then copied into `<dest>/.incoming/<token>`, verified by
+checksum and renamed to its real name only when complete, so the posting Mac's scan never sees half a reel. A name
+already waiting there is never overwritten. What went is filed under `Sent to the Mini/<date>/`. Failures retry every
+2 minutes, are logged in `~/Reels/publish-forward.log`, and send a Mac notification after 15 minutes.
+`publish-forward.mjs scan|status` shows what is waiting and whether the Mini answers. Env: `REEL_FORWARD_HOST`,
+`REEL_FORWARD_KEY`, `REEL_FORWARD_DEST` (see the file header).
+
 ## Card looks: every reel gets its own visual direction
 
 The overlay cards change look per reel (`src/looks.mjs`). In the same Claude call that writes the cards, Claude picks one look for the whole reel from what it is about, and each card type takes that look's skin. A look is never reused within three reels (the last 20 are in `~/.cache/reel-editor/looks-recent.json`). `--look <id>` or `#look:<id>` in a dropped file name sets one; `graphics.look` in a preset fixes it for a brand. Plans saved before looks existed keep their glass cards, and the YouTube band layout stays glass.
