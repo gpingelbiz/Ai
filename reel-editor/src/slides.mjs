@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveBrandTokens, tokensCSS } from "./brandtokens.mjs";
+import { resolveBrandTokens, tokensCSS, contrast } from "./brandtokens.mjs";
 import { loadPreset } from "./presets.mjs";
 import { signatureHTML, signatureRulesCSS } from "./signature.mjs";
 import { esc } from "./text.mjs";
@@ -185,7 +185,7 @@ function postcardMarkup(slide, tokens) {
   const handle = clean(slide.handle || tokens.identity?.handle);
   const logo = clean(tokens.identity?.logo);
   const avatar = logo ? `<img src="${esc(logo)}" alt="" />` : `<span>${esc(initials(name || handle))}</span>`;
-  return `<main class="family-main postcard-main"><article class="postcard"><header><div class="postcard-avatar">${avatar}</div><div><strong>${esc(name)}</strong>${handle ? `<small>${esc(handle)}</small>` : ""}</div></header><div class="postcard-copy">${accentHTML(slide.postText || slide.text || slide.body)}</div>${slide.metadata ? `<footer>${accentHTML(slide.metadata)}</footer>` : ""}</article></main>`;
+  return `<main class="family-main postcard-main"><article class="post-card"><header><div class="postcard-avatar">${avatar}</div><div><strong>${esc(name)}</strong>${handle ? `<small>${esc(handle)}</small>` : ""}</div></header><div class="postcard-copy">${accentHTML(slide.postText || slide.text || slide.body)}</div>${slide.metadata ? `<footer>${accentHTML(slide.metadata)}</footer>` : ""}</article></main>`;
 }
 
 function notesMarkup(slide) {
@@ -234,7 +234,10 @@ function slideRules() {
     .splittop::before { top: auto; bottom: 0; height: var(--slide-split); background: linear-gradient(to bottom, var(--brand-surface), rgb(from var(--brand-surface) r g b / .35) 25%, rgb(from var(--brand-surface) r g b / 0) 55%); }
     .cover { --legacy-head-size: 152px; } .body { --legacy-head-size: 108px; } .cta { --legacy-head-size: 120px; }
     .static, .static-light { --legacy-head-size: 116px; }
-    .static-light { background: var(--brand-paper); color: var(--brand-surface); }
+    .slide.evidence { padding: 0; }
+    .slide.evidence .slide-handle { display: none; } /* the evidence frame carries its own source label there */
+    .evidence-embed { position: absolute; inset: 0; }
+    .static-light { background: var(--brand-paper); color: var(--slide-light-ink, var(--brand-surface)); }
     .static-light .slide-handle { color: var(--brand-muted); }
     .family-main { position: relative; z-index: 2; height: 100%; }
     .family-main h1 { font-size: var(--type-xl); }
@@ -256,14 +259,14 @@ function slideRules() {
     .compare-note { margin-top: var(--space-md); color: var(--brand-muted); font-size: 34px; line-height: 1.25; }
     .decision-line { padding: var(--space-md) var(--space-lg); border-radius: var(--brand-radius-md); background: var(--brand-accent); color: var(--brand-accent-ink); font-size: var(--type-md); font-weight: 700; }
     .postcard-main { display: grid; place-items: center; }
-    .postcard { width: 856px; max-height: 910px; padding: var(--space-xl); border: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-stroke); border-radius: var(--brand-radius-lg); background: var(--brand-paper); color: var(--brand-stroke); box-shadow: 0 var(--space-sm) var(--space-xl) rgb(from var(--brand-stroke) r g b / .24); }
-    .postcard header { display: flex; gap: var(--space-md); align-items: center; }
-    .postcard header > div:last-child { display: flex; flex-direction: column; gap: var(--space-xs); }
-    .postcard header strong { font-size: max(34px, var(--type-sm)); } .postcard header small, .postcard footer { color: var(--brand-muted); font-size: max(34px, var(--type-sm)); }
+    .post-card { width: 856px; max-height: 910px; padding: var(--space-xl); border: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-stroke); border-radius: var(--brand-radius-lg); background: var(--brand-paper); color: var(--brand-stroke); box-shadow: 0 var(--space-sm) var(--space-xl) rgb(from var(--brand-stroke) r g b / .24); }
+    .post-card header { display: flex; gap: var(--space-md); align-items: center; }
+    .post-card header > div:last-child { display: flex; flex-direction: column; gap: var(--space-xs); }
+    .post-card header strong { font-size: max(34px, var(--type-sm)); } .post-card header small, .post-card footer { color: var(--brand-muted); font-size: max(34px, var(--type-sm)); }
     .postcard-avatar { width: 64px; height: 64px; display: grid; place-items: center; overflow: hidden; border-radius: var(--brand-radius-pill); background: var(--brand-accent); color: var(--brand-accent-ink); font-size: max(34px, var(--type-sm)); font-weight: 700; }
     .postcard-avatar img { width: 100%; height: 100%; object-fit: contain; }
     .postcard-copy { margin-top: var(--space-lg); font-family: var(--brand-editorial-font, var(--brand-body-font)); font-size: var(--type-lg); line-height: 1.18; }
-    .postcard footer { margin-top: var(--space-lg); padding-top: var(--space-md); border-top: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-stroke); }
+    .post-card footer { margin-top: var(--space-lg); padding-top: var(--space-md); border-top: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-stroke); }
     .notes-main { display: grid; place-items: center; }
     .note-paper { width: 784px; min-height: 620px; padding: var(--space-xl); border-radius: var(--brand-radius-md); background: var(--brand-paper); color: var(--brand-stroke); box-shadow: 0 var(--space-sm) var(--space-xl) rgb(from var(--brand-stroke) r g b / .2); }
     .note-paper header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md); padding-bottom: var(--space-md); border-bottom: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-muted); }
@@ -288,7 +291,7 @@ function slideRules() {
       .family-main h1 { font-size: var(--type-lg); }
       .check-list { margin-top: var(--space-lg); gap: var(--space-sm); }
       .check-row { min-height: 88px; padding: var(--space-sm); }
-      .postcard { max-height: 780px; }
+      .post-card { max-height: 780px; }
       .story-main { left: var(--space-xl); right: var(--space-xl); bottom: calc(var(--space-xl) + var(--space-lg)); }
     }
   `;
@@ -309,8 +312,11 @@ export function slideHTML(slide, tokens, options = {}) {
   else if (kind === "story") content = storyMarkup(slide);
   else if (kind === "evidence" && options.evidenceHTML) {
     try {
-      content = options.evidenceHTML(slide, t, { width: SLIDE_WIDTH, height });
-      if (typeof content !== "string") throw new Error("evidenceSlideHTML did not return HTML");
+      const doc = options.evidenceHTML({ ...slide, src: slide.src || slide.image || slide.file, label: slide.label || slide.sourceLabel }, t, { width: SLIDE_WIDTH, height });
+      if (typeof doc !== "string") throw new Error("evidenceSlideHTML did not return HTML");
+      // The module returns a whole page: keep its own rules (minus the page reset) and its body inside this slide.
+      const rules = (doc.match(/<style>([\s\S]*?)<\/style>/)?.[1] || "").replace(/html,\s*body\s*\{[^}]*\}/, "");
+      content = `<style>${rules}</style><div class="evidence-embed">${doc.match(/<body[^>]*>([\s\S]*)<\/body>/)?.[1] || doc}</div>`;
     } catch (error) {
       warn(`evidence slide: ${error.message}; using the plain framed card`);
       content = evidenceFallbackMarkup(slide);
@@ -319,7 +325,9 @@ export function slideHTML(slide, tokens, options = {}) {
   const photo = slide.photo || slide.image || "";
   const split = Math.max(0, Number(slide.split || 700));
   const position = clean(slide.pos || (kind === "photo" ? "center top" : "center 30%"));
-  const style = `--slide-height:${height}px;--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`;
+  const paper = t.colors?.paper || "#FFFFFF";
+  const lightInk = [t.colors?.surface, t.colors?.stroke, t.colors?.ink].filter(Boolean).sort((a, b) => contrast(b, paper) - contrast(a, paper))[0];
+  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${SLIDE_WIDTH}, height=${height}" /><style>${tokensCSS(t)}\n${slideRules()}\n${signatureRulesCSS()}\n${options.evidenceCSS || ""}</style></head>
 <body><section class="slide ${esc(kind)}" style="${style}">${content}${signature}${commonFooter(t)}</section></body></html>`;
