@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import fs from "node:fs";
 import path from "node:path";
 import { runEdit, buildProject, renderProject, batchEdit } from "./pipeline.mjs";
 import { transcribe, applyCorrections } from "./transcribe.mjs";
@@ -11,6 +12,7 @@ import { makeCover } from "./cover.mjs";
 import { readJSON } from "./util.mjs";
 import { renderHookVariants } from "./pipeline.mjs";
 import { writeJSON, log } from "./util.mjs";
+import { resolveBrandTokens, tokensCSS, validateBrand } from "./brandtokens.mjs";
 
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
 
@@ -33,6 +35,8 @@ Usage
   reel carousel <workdir> [--out <dir>] [--slides 6] [--images 2] [--force]
                                     IG carousel from a finished reel: Codex writes the slides and draws the images
                                     (reusing the reel's b-roll), the editor sets the words; 1080x1350 PNGs
+  reel brand [preset|brand.json] [--css] [--check]
+                                    resolved brand tokens as JSON, reusable CSS, or validation problems
   reel presets                      list presets
   reel doctor                       check ffmpeg, whisper, hyperframes, chrome, keys
 
@@ -312,6 +316,23 @@ export async function main(argv) {
         const x = loadPreset(p);
         console.log(`  ${p.padEnd(14)} captions ${x.captions.enabled ? `${x.captions.wordsPerLine}/line @${x.captions.position}` : "off"}, hook ${x.hook.enabled ? "on" : "off"}, zooms ${x.zooms.enabled ? "on" : "off"}, silence ${x.cuts.silence}, bad takes ${x.cuts.badTakes ? "on" : "off"}`);
       }
+      return;
+    }
+    case "brand": {
+      const { opts, positionals } = parse(rest, { css: { type: "boolean" }, check: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help) return console.log(USAGE);
+      const target = positionals[0];
+      let authored = null;
+      let tokens;
+      if (target && fs.existsSync(target) && target.endsWith(".json")) {
+        const raw = readJSON(path.resolve(target));
+        const isBrand = raw.schemaVersion === 2 || raw.identity || raw.handle || (raw.colors?.text && raw.look);
+        if (isBrand) { authored = raw; tokens = resolveBrandTokens({ brand: raw }); }
+        else tokens = loadPreset(path.resolve(target)).brand;
+      } else tokens = loadPreset(target).brand;
+      if (opts.check) console.log(JSON.stringify(validateBrand(authored || tokens), null, 2));
+      else if (opts.css) console.log(tokensCSS(tokens));
+      else console.log(JSON.stringify(tokens, null, 2));
       return;
     }
     case "doctor":

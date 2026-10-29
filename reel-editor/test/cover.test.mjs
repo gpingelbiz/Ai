@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { coverHTML, fitLines, placeOnFrame, normalizeTitles, titleFits, coverTimes, titlePrompt, lineWidthPx, PALETTES, STYLES } from "../src/cover.mjs";
+import { coverHTML, fitLines, placeOnFrame, normalizeTitles, titleFits, coverTimes, titlePrompt, lineWidthPx, STYLES } from "../src/cover.mjs";
+import { coverPalettes } from "../src/brandtokens.mjs";
+import { loadPreset } from "../src/presets.mjs";
+
+const PALETTES = coverPalettes(loadPreset("pingel-brand").brand);
 
 test("titles: 2-5 words, one starred power word (added when missing), banned words out, hook fallback, fit check", () => {
   const t = normalizeTitles([

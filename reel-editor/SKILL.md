@@ -83,6 +83,8 @@ Brand looks (`src/brandlooks.mjs`, from the women-coach reel research in Julee G
 
 Per-brand options in the brand file's `look` (left out = Greg's behaviour): `hookCase` / `captionCase` `upper | sentence`, `hookSeconds` (seconds, or `"reel"` for one-line reels), `pace` `fast | calm` (calm: gentler silence cuts, a punch-in at most every 16 s, no jump cuts, no cold open) and `coldOpen`. A brand display font also replaces DM Serif Display in the briefing look and the serif hook. A client's Runway reel gets the pingel-runway timing (4-second clips, 6-second gaps) under their own look. After changing a client's brand.json, re-run `node scripts/client.mjs add <brand.json> --no-agent` so their preset updates without restarting their watcher.
 
+The shared schema is in `docs/brand-tokens.md`; Greg's v2 source is `brands/pingel.json`. Inspect what any renderer receives with `reel brand [preset-or-brand.json]`, emit its CSS variables with `--css`, or list validation problems with `--check`. Old `kit/brand-template.json` files are upgraded in memory, so existing client kits keep working.
+
 ## Publish
 
 `Desktop/Reels/Publish` -> `~/Reels/publish`: whatever Greg drops there posts to Instagram through Metricool, one reel a day at the best time, via the scheduled task `reel-publish` (hourly :45) and `scripts/publish-folder.mjs` (scan, slot, serve/stop a Cloudflare quick-tunnel link, done/fail). The caption posts exactly as written in caption.txt. A reel with a failed check, an obvious reviewer finding or no caption becomes a Metricool draft. Never schedule from anywhere else, never edit the caption, never use the review tool.

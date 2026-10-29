@@ -1,5 +1,6 @@
 {
   "name": "default",
+  "brandFile": null,
   "canvas": "auto",
   "transcribe": {
     "engine": "auto",

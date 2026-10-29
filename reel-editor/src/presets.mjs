@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readJSON, deepMerge, PKG_ROOT } from "./util.mjs";
+import { readJSON, deepMerge, PKG_ROOT, warn } from "./util.mjs";
+import { resolveBrandTokens } from "./brandtokens.mjs";
 
 const PRESET_DIR = path.join(PKG_ROOT, "presets");
 
@@ -27,6 +28,18 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
     p.fonts = { ...p.fonts };
     for (const k of ["display", "displayItalic", "body"]) if (own.fonts[k] && !path.isAbsolute(own.fonts[k])) p.fonts[k] = path.resolve(path.dirname(file), own.fonts[k]);
   }
+  let brand = p.brand?.schemaVersion === 2 ? p.brand : null;
+  if (p.brandFile) {
+    const candidates = path.isAbsolute(p.brandFile)
+      ? [p.brandFile]
+      : [path.resolve(PKG_ROOT, p.brandFile), path.resolve(path.dirname(file), p.brandFile)];
+    const brandPath = candidates.find((candidate) => fs.existsSync(candidate));
+    if (brandPath) {
+      try { brand = readJSON(brandPath); }
+      catch (error) { warn(`brand tokens: ${error.message}; using preset colors and fonts`); }
+    } else warn(`brand tokens: file not found: ${p.brandFile}; using preset colors and fonts`);
+  }
+  p.brand = resolveBrandTokens({ preset: p, brand });
   return p;
 }
 

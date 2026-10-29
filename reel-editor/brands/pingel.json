@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 2,
+  "identity": {
+    "name": "Greg Pingel",
+    "handle": "@officialgregpingel",
+    "credential": "Sales trainer",
+    "logo": null,
+    "handlePlacement": "bottom-left"
+  },
+  "colors": {
+    "ink": "#F5F1E8",
+    "accent": "#C8A24B",
+    "accentInk": "#0B0B0D",
+    "surface": "#0B0B0D",
+    "surface2": "#232321",
+    "stroke": "#000000",
+    "muted": "#8B8781",
+    "paper": "#F5F1E8",
+    "warn": "#C8A24B"
+  },
+  "type": {
+    "display": {
+      "family": "Anton",
+      "file": "assets/fonts/Anton-Regular.ttf",
+      "googleFamily": "Anton",
+      "weights": [400],
+      "case": "upper",
+      "tracking": 0.005,
+      "lineHeight": 0.95,
+      "licence": "SIL OFL 1.1",
+      "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/anton"
+    },
+    "body": {
+      "family": "Inter",
+      "file": "assets/fonts/Inter.ttf",
+      "googleFamily": "Inter",
+      "weights": [400, 500, 600, 700, 850],
+      "case": "sentence",
+      "tracking": 0,
+      "lineHeight": 1.32,
+      "licence": "SIL OFL 1.1",
+      "sourceUrl": "https://github.com/rsms/inter"
+    },
+    "editorial": {
+      "family": "DM Serif Display",
+      "file": "assets/fonts/DMSerifDisplay-Regular.ttf",
+      "googleFamily": "DM Serif Display",
+      "weights": [400],
+      "case": "sentence",
+      "tracking": 0,
+      "lineHeight": 1.08,
+      "licence": "SIL OFL 1.1",
+      "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/dmserifdisplay"
+    },
+    "mono": {
+      "family": "Courier Prime",
+      "file": "assets/fonts/CourierPrime-Regular.ttf",
+      "googleFamily": "Courier Prime",
+      "weights": [400, 700],
+      "case": "sentence",
+      "tracking": 0,
+      "lineHeight": 1.2,
+      "licence": "SIL OFL 1.1",
+      "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/courierprime"
+    }
+  },
+  "typeScale": {
+    "xs": 24,
+    "sm": 30,
+    "md": 40,
+    "lg": 54,
+    "xl": 72,
+    "display": 112
+  },
+  "spacing": {
+    "xs": 8,
+    "sm": 16,
+    "md": 24,
+    "lg": 40,
+    "xl": 64,
+    "xxl": 96
+  },
+  "radius": {
+    "sm": 8,
+    "md": 18,
+    "lg": 36,
+    "pill": 999
+  },
+  "texture": {
+    "grain": 0.08,
+    "paper": false
+  },
+  "motion": {
+    "personality": "punchy",
+    "enterMs": 420,
+    "exitMs": 280,
+    "staggerMs": 60,
+    "enterEase": "power3.out",
+    "exitEase": "power2.in"
+  },
+  "signature": {
+    "kind": "none",
+    "position": "none",
+    "colorRole": "accent",
+    "thickness": 0
+  },
+  "imagery": {
+    "grade": "muted-editorial",
+    "intensity": 0.55
+  },
+  "houseLooks": [],
+  "contentModes": {},
+  "coverPalettes": {
+    "brand": { "name": "black+gold", "bg": "#0B0B0D", "bg2": "#000000", "accent": "#C8A24B", "accent2": "#E9C96A" },
+    "navy": { "name": "navy+gold", "bg": "#0B1B33", "bg2": "#060F1F", "accent": "#F7B500", "accent2": "#FFCE45" },
+    "red": { "name": "black+red", "bg": "#0D0D0F", "bg2": "#000000", "accent": "#E5322D", "accent2": "#FF5A3C" }
+  }
+}

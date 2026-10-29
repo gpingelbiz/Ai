@@ -6,6 +6,7 @@ import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
 import { log, warn, run, ensureDir, readJSON, writeJSON, PKG_ROOT, fontFile } from "./util.mjs";
 import { createRequire } from "node:module";
+import { coverPalettes, resolveBrandTokens } from "./brandtokens.mjs";
 
 // Real Anton metrics (fontkit ships with the renderer): cap height and the width of a string in em.
 let anton = null;
@@ -41,12 +42,6 @@ export function lineWidthPx(line, T) {
  * glyph below y=1440 (Instagram's grid crop), a dual stroke and a shadow, grain over everything. Three variants:
  * the top titles across the brand palette, navy+gold and black+red.
  */
-
-export const PALETTES = {
-  brand: { name: "black+gold", bg: "#0B0B0D", bg2: "#000000", accent: "#C8A24B", accent2: "#E9C96A" },
-  navy: { name: "navy+gold", bg: "#0B1B33", bg2: "#060F1F", accent: "#F7B500", accent2: "#FFCE45" },
-  red: { name: "black+red", bg: "#0D0D0F", bg2: "#000000", accent: "#E5322D", accent2: "#FF5A3C" },
-};
 
 const POWER = ["broke", "kills", "costs", "cost", "quit", "lies", "lie", "wrong", "nobody", "expensive", "losing", "lose", "weak", "rich", "pay", "beg", "every", "never", "stop", "fire", "fired", "blame", "own", "truth", "late", "dead", "fail", "failed"];
 const BANNED = ["success", "mindset", "journey", "tips", "hacks", "grind", "10x", "crushing"];
@@ -264,7 +259,18 @@ export async function makeCover(workDir, plan, { handle = "", variants = 3, voic
   for (const f of ["Anton-Regular.ttf", "Inter.ttf"]) fs.copyFileSync(fontFile(plan.style, f), path.join(dir, "assets", "fonts", f));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(dir, "assets", "vendor", "gsap.min.js"));
   fs.copyFileSync(framePng, path.join(dir, "assets", "frame.png"));
-  const pals = [PALETTES.brand, PALETTES.brand, PALETTES.red];
+  let tokens = plan.style?.brand;
+  const planHandle = tokens?.identity?.handle || plan.style?.carousel?.handle || "";
+  if ((!tokens || !tokens.coverPalettes) && String(planHandle).toLowerCase() === "@officialgregpingel") {
+    try { tokens = resolveBrandTokens({ preset: plan.style, brand: readJSON(path.join(PKG_ROOT, "brands", "pingel.json")) }); }
+    catch (error) { warn(`cover palettes: ${error.message}; using the preset palette`); }
+  }
+  tokens ||= resolveBrandTokens({ preset: plan.style || {} });
+  const paletteSet = coverPalettes(tokens);
+  // Greg's second cover has historically repeated the brand palette. Preserve that output while the unused navy
+  // slot remains available to Phase 1; other brands receive all three role-derived variants.
+  const greg = String(tokens.identity?.handle || "").toLowerCase() === "@officialgregpingel";
+  const pals = greg ? [paletteSet.brand, paletteSet.brand, paletteSet.red] : [paletteSet.brand, paletteSet.navy, paletteSet.red];
   const outs = [];
   const bin2 = hyperframesBin();
   for (let v = 0; v < Math.min(variants, 3); v++) {

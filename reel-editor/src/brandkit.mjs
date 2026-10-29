@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { PKG_ROOT, slug } from "./util.mjs";
 import { LOOKS, LOOK_IDS } from "./looks.mjs";
+import { upgradeBrandV1 } from "./brandtokens.mjs";
 
 /**
  * Brand kits: one brand file (kit/brand-template.json) becomes a Reel Editor Kit zip for someone else, with their
@@ -35,7 +36,7 @@ export function checkBrand(b) {
   return out;
 }
 
-export const kitSlug = (b) => slug(b.name || "brand");
+export const kitSlug = (b) => slug(b.name || b.identity?.name || "brand");
 
 /**
  * Calm pacing (look.pace "calm"): gentler silence cuts (gaps over 0.6 s instead of 0.35 s), punch-ins at most every
@@ -54,14 +55,25 @@ export function lookChoice(b) {
 
 /** The reel preset: Greg's full look underneath (so it keeps improving with the editor), every personal field theirs. */
 export function brandPreset(b, { fonts = {} } = {}) {
-  const look = b.look || {};
+  const tokens = upgradeBrandV1(b);
+  const compat = tokens.compat?.reel || {};
+  const identity = tokens.identity || {};
+  const colors = tokens.colors || {};
+  const look = b.schemaVersion === 2
+    ? { hookCase: tokens.type?.display?.case, captionCase: tokens.type?.body?.case, pace: tokens.motion?.personality, ...(compat.look || {}) }
+    : compat.look || {};
+  const legacy = b.schemaVersion === 2
+    ? { ...b, name: identity.name, handle: identity.handle, looks: compat.looks || { only: tokens.houseLooks || [] } }
+    : b;
   const calm = look.pace === "calm";
   // Only what the brand file asks for is written, so a brand file without these fields keeps Greg's behaviour.
   const coldOpen = look.coldOpen != null ? look.coldOpen !== false : calm ? false : null;
   return {
     name: `brand-${kitSlug(b)}`,
     extends: "pingel-brand",
-    colors: { text: b.colors.text, accent: b.colors.accent, stroke: b.colors.stroke || "#000000", bg: b.colors.bg || "#0B0B0D" },
+    brandFile: "",
+    ...(b.schemaVersion === 2 ? { brand: tokens } : {}),
+    colors: { text: colors.ink, accent: colors.accent, stroke: colors.stroke || "#000000", bg: colors.surface || "#0B0B0D" },
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.displayItalic ? { displayItalic: fonts.displayItalic } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
     // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
     captions: { style: look.captions === "quiet" ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(look.captions === "quiet" ? { quiet: true, fontSizeFrac: 0.029 } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
@@ -77,11 +89,11 @@ export function brandPreset(b, { fonts = {} } = {}) {
     slams: { enabled: look.slams !== false, ...(calm ? { popout: { enabled: false } } : {}) },
     // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
-    graphics: { ...lookChoice(b), ...(calm ? { every: 14, max: 4 } : {}) },
+    graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : {}) },
     // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
-    broll: { world: String(b.world || "").trim(), worldInPrompt: true, style: String(b.brollStyle || "").trim() },
-    carousel: { handle: b.handle || "", style: String(b.carouselStyle || "").trim() },
-    lowerThird: { name: b.name, handle: b.handle || "" },
+    broll: { world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
+    carousel: { handle: identity.handle || "", style: String(compat.carouselStyle ?? b.carouselStyle ?? "").trim() },
+    lowerThird: { name: identity.name, handle: identity.handle || "", ...(identity.credential ? { credential: identity.credential } : {}) },
   };
 }
 
