@@ -103,11 +103,11 @@ Sign-offs ("thanks for watching", "see you in the next one", "link in bio"...) i
 
 ## Publishing
 
-`scripts/publish.mjs <work dir> --media-url <public link> [--trial] [--date <iso>] [--reviewer you@x.com]` writes `post.json` (caption and 5 hashtags from `caption.json`, cover frame at the hook, `isAiGenerated` when the reel has AI stills, as Instagram requires) and sends the reel to Metricool for your approval through headless Claude with only the Metricool review tool allowed. Metricool needs the video as a public link (Dropbox or Google Drive links are uploaded by it), so upload the MP4 first. It never auto-posts: a reviewer approves in Metricool.
+`scripts/publish.mjs <work dir> --media-url <public link> [--trial] [--date <iso>] [--reviewer you@x.com]` writes `post.json` (caption and 5 hashtags from `caption.json`, the scored cover-frame time, `isAiGenerated` when the reel has AI stills, as Instagram requires) and sends the reel to Metricool for your approval through headless Claude with only the Metricool review tool allowed. Metricool needs the video as a public link (Dropbox or Google Drive links are uploaded by it), so upload the MP4 first. It never auto-posts: a reviewer approves in Metricool.
 
 ## Punch-ins, caption lines and the cover
 
-The cover is the reel's first frame, `Cover.png`: with b-roll on that is the cold-open still with the hook on it; otherwise the speaker under the hook (`cover.at` picks the time). The designed three-cover set (`src/cover.mjs`) is kept behind `cover.style: "designed"`.
+The frame cover is `Cover.png` at the best Vision-scored time, not a fixed first blink. `cover.style: "archetypes"` builds the brand-token native-premise, verdict, interview, proof/reaction, and editorial families; `--cover-style` switches it per reel. Every chosen cover exports reel, 3:4 grid, 4:5 feed, square, and landscape crops plus `covers/manifest.json` and a phone-size `grid-preview.png`.
 
 Punch-ins fire only on lines that carry a gold word (the claims), at least 10 s apart and at most 3 per 30 s, never under a card or a cutaway, never in the hook or the last second; each one is released at the next line start. A tight frame (the head fills more than 40% of the height) gets gentle zooms (1.07 / 1.10) instead of 1.14 / 1.22, so the chin stays off the captions.
 

@@ -33,7 +33,7 @@ import { iconCandidates, planIcons } from "./icons.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, duckingLaneFromEnvelope, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, planCropPath, objectPositionLane } from "./reframe.mjs";
-import { makeCover } from "./cover.mjs";
+import { makeCover, makeFrameCover, scoreCoverFrames } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
@@ -652,26 +652,24 @@ export async function runEdit(input, opts = {}) {
   const output = await renderProject(workDir, opts);
   let cover = null;
   if (preset.cover?.enabled !== false && hook) {
-    // The cover is the reel's own first frame (the cold-open still with the hook on it, or the speaker under the
-    // hook); the designed Cover 1-3 set is behind cover.style "designed" (Greg: they were not turning out right).
+    // Pick an open-eyed, sharp frame that survives the grid crop. Archetypes build a separate cover composition;
+    // frame keeps the existing rendered-reel cover, only at the scored time instead of a fixed first blink.
     try {
-      cover = preset.cover?.style === "designed"
-        ? await makeCover(workDir, plan, { handle: preset.carousel?.handle || "" })
-        : await frameCover(workDir, output, { at: preset.cover?.at ?? 0.05 });
+      let selection;
+      const fallbackMs = Math.round((preset.cover?.at ?? 0.05) * 1000);
+      try { selection = preset.cover?.scoreFrames === false ? { frameTimeMs: fallbackMs, scores: { total: 0 }, face: null, faces: [], ranked: [] } : await scoreCoverFrames(workDir, plan, { fallbackMs }); }
+      catch (error) {
+        selection = { frameTimeMs: fallbackMs, scores: { total: 0 }, face: null, faces: [], ranked: [] };
+        warn(`cover scoring: ${String(error.message).split("\n")[0]}; using ${selection.frameTimeMs}ms`);
+      }
+      plan.cover = { style: preset.cover?.style || "frame", frameTimeMs: selection.frameTimeMs, scores: selection.scores };
+      writeJSON(path.join(workDir, "plan.json"), plan);
+      cover = ["designed", "archetypes"].includes(preset.cover?.style)
+        ? await makeCover(workDir, plan, { handle: preset.carousel?.handle || "", selection })
+        : await makeFrameCover(workDir, output, plan, selection);
     } catch (e) { warn(`cover skipped: ${String(e.message).split("\n")[0]}`); }
   }
   return { workDir, plan, output, cover };
-}
-
-/** Cover from the finished render: its first frame as covers/Cover.png and cover.png. */
-async function frameCover(workDir, output, { at = 0.05 } = {}) {
-  const dir = ensureDir(path.join(workDir, "covers"));
-  for (const f of fs.readdirSync(dir)) if (/^Cover( \d+)?\.png$/.test(f)) fs.rmSync(path.join(dir, f), { force: true });
-  const png = path.join(dir, "Cover.png");
-  await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(at), "-i", output, "-frames:v", "1", png], { quiet: true });
-  fs.copyFileSync(png, path.join(workDir, "cover.png"));
-  log(`cover: the first frame (${at}s) → ${png}`);
-  return [png];
 }
 
 function readVoice(plan) {

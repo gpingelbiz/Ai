@@ -104,6 +104,8 @@ Options (edit / batch)
                            captions over the face, Instagram safe zones); the report is preflight.txt either way
   --behind                 the hook sits behind you: Apple Vision cuts you out so the text runs behind your head
                            and shoulders. --no-behind off (on in the pingel-brand and pingel-runway presets)
+  --cover-style <s>        frame (scored rendered frame) | archetypes (five brand-token cover families) |
+                           designed (compatibility alias for archetypes)
   --no-review              skip the render reviewer (Claude looks at frames of the finished reel and notes what
                            looks wrong, with times, in preflight.txt; it never changes the reel)
   --look <id>              the look for this reel (cards, hook, gold-word marker, slams, b-roll grade and cut, camera move):
@@ -199,6 +201,7 @@ const EDIT_OPTIONS = {
   look: { type: "string" },
   "no-review": { type: "boolean" },
   "no-behind": { type: "boolean" },
+  "cover-style": { type: "string" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   check: { type: "boolean" },

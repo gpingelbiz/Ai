@@ -91,7 +91,7 @@ The shared schema is in `docs/brand-tokens.md`; Greg's v2 source is `brands/ping
 
 ## Cover
 
-Every reel gets `covers/Cover 1-3.png` in its work dir (the drop folder copies them into the reel folder), built on the real frame like the top-performing covers in this lane (frame scored with Vision, face big, 2-4 word Anton title with one accent word, outline / bar / box styles, inside the 3:4 grid crop); no image model, no cut-out plates. Tell Greg to upload Cover 1. `reel cover <workdir>` remakes them.
+`reel cover <workdir>` builds the brand-token cover archetypes from Vision-scored real frames and exports reel, 3:4 grid, 4:5 feed, square, and landscape PNGs. `covers/manifest.json` records the chosen frame time and `grid-preview.png` shows it at phone-tile size beside recent covers. Proof/reaction is eligible only when the plan already has proof content; every other word comes from the hook or transcript. Tell Greg to upload Cover 1.
 
 ## Long recordings and hook tests
 

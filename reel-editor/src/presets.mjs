@@ -138,5 +138,6 @@ export function mergeOverrides(preset, o = {}) {
   if (o.look) p.graphics = { ...(p.graphics || {}), look: o.look === "auto" ? null : o.look };
   if (o.behind) p.hook.behind = true;
   if (o.noBehind) p.hook.behind = false;
+  if (["frame", "designed", "archetypes"].includes(o.coverStyle)) p.cover.style = o.coverStyle;
   return p;
 }

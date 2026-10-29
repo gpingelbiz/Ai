@@ -41,6 +41,11 @@ export function parseCaption(raw) {
 
 export const postText = (c) => [c.caption, c.hashtags.length ? "" : null, c.hashtags.join(" ") || null].filter((x) => x != null).join("\n").trim();
 
+/** The watcher carries the Vision-scored frame time; old hand-made folders keep the historical 50 ms fallback. */
+export function coverMilliseconds(meta = {}, fallback = 50) {
+  return Number.isFinite(meta.coverMs) ? Math.max(0, Math.round(meta.coverMs)) : fallback;
+}
+
 /** One dropped item: a folder or a loose video. Returns null when it holds no usable video yet. */
 export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000, sourceRoots = SOURCE_ROOTS } = {}) {
   const full = path.join(root, entry);
@@ -94,7 +99,7 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   // reviewer flags intended effects too); they go into the receipt to look at.
   const notes = meta.obvious ? [meta.obvious] : [];
   if (!caption.caption) { draft = true; why = "there is no caption"; }
-  return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: meta.coverMs ?? 50, draft, why, droppedAt: Math.round(st.mtimeMs) };
+  return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, droppedAt: Math.round(st.mtimeMs) };
 }
 
 // Where delivered reels live: the Desktop Reels folder (where the drop folders deliver).
