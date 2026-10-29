@@ -1,0 +1,28 @@
+{
+  "name": "Sample Coach",
+  "handle": "@samplecoach",
+  "credential": "Leadership coach",
+  "colors": {
+    "text": "#2E2925",
+    "accent": "#B97867",
+    "stroke": "#2E2925",
+    "bg": "#F8F1E8"
+  },
+  "fonts": {
+    "display": "Cormorant Garamond",
+    "body": "Inter"
+  },
+  "look": {
+    "hook": "headline",
+    "captions": "quiet",
+    "hookCase": "sentence",
+    "captionCase": "sentence",
+    "pace": "calm"
+  },
+  "looks": {
+    "only": []
+  },
+  "world": "A quiet studio with warm daylight, books and natural materials.",
+  "brollStyle": "warm, grounded and lightly textured",
+  "carouselStyle": "cream paper, fine rules and restrained rose accents"
+}

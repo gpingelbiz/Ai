@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import fs from "node:fs";
 import path from "node:path";
 import { runEdit, buildProject, renderProject, batchEdit } from "./pipeline.mjs";
 import { transcribe, applyCorrections } from "./transcribe.mjs";
@@ -11,6 +12,7 @@ import { makeCover } from "./cover.mjs";
 import { readJSON } from "./util.mjs";
 import { renderHookVariants } from "./pipeline.mjs";
 import { writeJSON, log } from "./util.mjs";
+import { resolveBrandTokens, tokensCSS, validateBrand } from "./brandtokens.mjs";
 
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
 
@@ -33,6 +35,8 @@ Usage
   reel carousel <workdir> [--out <dir>] [--slides 6] [--images 2] [--force]
                                     IG carousel from a finished reel: Codex writes the slides and draws the images
                                     (reusing the reel's b-roll), the editor sets the words; 1080x1350 PNGs
+  reel brand [preset|brand.json] [--css] [--check]
+                                    resolved brand tokens as JSON, reusable CSS, or validation problems
   reel presets                      list presets
   reel doctor                       check ffmpeg, whisper, hyperframes, chrome, keys
 
@@ -45,11 +49,18 @@ Options (edit / batch)
   --no-verify              skip the second-opinion transcript and review.txt
   --language <code>        default en
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
+  --premise "<text>"       persistent premise after the hook (truth-checked against the transcript)
+                           --no-premise turns preset/automatic premise planning off; #premise enables auto in a dropped file
   --title-style <s>        headline (brand default: words rise on a soft scrim, one gold phrase, gold rule) |
                            gold | outline (Bone text, black outline) | box (Bone on Obsidian backing)
                            Mark the gold phrase by hand with asterisks: --hook "The *10 minutes* after a bad number"
   --hook-position <0-1>    hook height from the top (default 0.22); 0.40 clears the head on wide shots
   --hook-seconds <n|reel>  how long the hook stays up (default 3); reel = the whole reel (one-liners, podcast titles)
+  --credit "Name | Credential | Organisation [| Source | verified]"
+                           credential lower third from supplied facts; repeat once per person
+  --credit-at <seconds>    when that person is on screen; repeat in the same order. Needed when two or more people
+                           are on camera (names are never guessed); a one-person clip uses their first long turn.
+                           --credit-self uses the brand identity (#credit in a file name)
   --caption-position <0-1> caption height from the top; by default they sit just under the chin (0.56-0.76)
   --no-auto-keywords       gold only on dictionary terms, numbers and power words (no automatic picks)
   --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)
@@ -100,6 +111,8 @@ Options (edit / batch)
                            captions over the face, Instagram safe zones); the report is preflight.txt either way
   --behind                 the hook sits behind you: Apple Vision cuts you out so the text runs behind your head
                            and shoulders. --no-behind off (on in the pingel-brand and pingel-runway presets)
+  --cover-style <s>        frame (scored rendered frame) | archetypes (five brand-token cover families) |
+                           designed (compatibility alias for archetypes)
   --no-review              skip the render reviewer (Claude looks at frames of the finished reel and notes what
                            looks wrong, with times, in preflight.txt; it never changes the reel)
   --look <id>              the look for this reel (cards, hook, gold-word marker, slams, b-roll grade and cut, camera move):
@@ -107,6 +120,9 @@ Options (edit / batch)
                            casefile | redline | glass;
                            auto (default) lets Claude pick it from the topic, never the same as the last reel.
                            #look:receipts in a dropped file name does the same
+  --no-signature           hide this brand's edge rule, corner mark or title plate for this reel. --signature on
+  --no-house-looks         let auto use the full look catalog for this reel. --house-looks restores the brand set;
+                           an explicit --look always wins either way
   --pace fast              the measured short-form pacing on top of the look: shots of 1.1-1.4 s (never over 2.8),
                            the first cut by 1 s, no dead air over 0.2 s, 1-2 word captions that hard-swap two
                            frames early (presets/pace-fast.json). #fast in a dropped file name does the same
@@ -129,9 +145,15 @@ const EDIT_OPTIONS = {
   language: { type: "string" },
   hook: { type: "string" },
   "no-hook": { type: "boolean" },
+  premise: { type: "string" },
+  "premise-mode": { type: "string" },
+  "no-premise": { type: "boolean" },
   "title-style": { type: "string" },
   "hook-position": { type: "string" },
   "hook-seconds": { type: "string" },
+  credit: { type: "string", multiple: true },
+  "credit-at": { type: "string", multiple: true },
+  "credit-self": { type: "boolean" },
   "caption-position": { type: "string" },
   "no-auto-keywords": { type: "boolean" },
   cta: { type: "string" },
@@ -193,8 +215,13 @@ const EDIT_OPTIONS = {
   behind: { type: "boolean" },
   pace: { type: "string" },
   look: { type: "string" },
+  signature: { type: "boolean" },
+  "no-signature": { type: "boolean" },
+  "house-looks": { type: "boolean" },
+  "no-house-looks": { type: "boolean" },
   "no-review": { type: "boolean" },
   "no-behind": { type: "boolean" },
+  "cover-style": { type: "string" },
   "no-render": { type: "boolean" },
   "no-check": { type: "boolean" },
   check: { type: "boolean" },
@@ -312,6 +339,23 @@ export async function main(argv) {
         const x = loadPreset(p);
         console.log(`  ${p.padEnd(14)} captions ${x.captions.enabled ? `${x.captions.wordsPerLine}/line @${x.captions.position}` : "off"}, hook ${x.hook.enabled ? "on" : "off"}, zooms ${x.zooms.enabled ? "on" : "off"}, silence ${x.cuts.silence}, bad takes ${x.cuts.badTakes ? "on" : "off"}`);
       }
+      return;
+    }
+    case "brand": {
+      const { opts, positionals } = parse(rest, { css: { type: "boolean" }, check: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help) return console.log(USAGE);
+      const target = positionals[0];
+      let authored = null;
+      let tokens;
+      if (target && fs.existsSync(target) && target.endsWith(".json")) {
+        const raw = readJSON(path.resolve(target));
+        const isBrand = raw.schemaVersion === 2 || raw.identity || raw.handle || (raw.colors?.text && raw.look);
+        if (isBrand) { authored = raw; tokens = resolveBrandTokens({ brand: raw }); }
+        else tokens = loadPreset(path.resolve(target)).brand;
+      } else tokens = loadPreset(target).brand;
+      if (opts.check) console.log(JSON.stringify(validateBrand(authored || tokens), null, 2));
+      else if (opts.css) console.log(tokensCSS(tokens));
+      else console.log(JSON.stringify(tokens, null, 2));
       return;
     }
     case "doctor":

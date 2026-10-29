@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadPreset } from "../src/presets.mjs";
+import { loadPreset, mergeOverrides } from "../src/presets.mjs";
+
+test("cover archetypes are opt-in for pingel-v2 and switchable per reel", () => {
+  assert.equal(loadPreset("pingel-brand").cover.style, "frame");
+  assert.equal(loadPreset("pingel-v2").cover.style, "archetypes");
+  assert.equal(mergeOverrides(loadPreset("clean"), { coverStyle: "archetypes" }).cover.style, "archetypes");
+  assert.deepEqual(loadPreset("clean").cover.targets, ["reel", "grid-3x4", "feed-4x5", "square", "landscape"]);
+});
 
 test("voice envelope music ducking is on by default", () => {
   assert.equal(loadPreset("clean").audio.duckFrom, "voice");
@@ -38,6 +45,19 @@ test("room tone is on by default and can be disabled per preset", () => {
   fs.writeFileSync(file, JSON.stringify({ audio: { roomTone: false } }));
   assert.equal(loadPreset(file).audio.roomTone, false);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("signature and house-look switches are preset defaults with per-reel overrides", () => {
+  const base = loadPreset("pingel-v2");
+  assert.equal(base.signature.enabled, true);
+  assert.equal(base.houseLooks.enabled, true);
+  const off = mergeOverrides(base, { noSignature: true, noHouseLooks: true });
+  assert.equal(off.signature.enabled, false);
+  assert.equal(off.houseLooks.enabled, false);
+  const on = mergeOverrides(off, { signature: true, houseLooks: true, look: "blueprint" });
+  assert.equal(on.signature.enabled, true);
+  assert.equal(on.houseLooks.enabled, true);
+  assert.equal(on.graphics.look, "blueprint", "an explicit look remains the final per-reel choice");
 });
 
 test("the reel command itself honours REEL_PRESET (the CLI used to hard-default pingel-brand)", async () => {

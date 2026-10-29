@@ -5,6 +5,7 @@ import { loadPreset } from "./presets.mjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, PKG_ROOT, fontFile } from "./util.mjs";
+import { signatureCSS, signatureHTML } from "./signature.mjs";
 
 /**
  * An Instagram carousel from a finished reel: Codex writes the slides from the transcript (cover, one point per
@@ -102,9 +103,14 @@ export function titleSize(text, kind) {
   return n <= 16 ? 92 : n <= 28 ? 82 : 72;
 }
 
-export function carouselHTML(slides, { colors, handle = "" }) {
+export function carouselHTML(slides, { colors, handle = "", tokens, signature = true }) {
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const n = slides.length;
+  const signatureTokens = tokens ? structuredClone(tokens) : null;
+  if (signatureTokens?.type?.display) signatureTokens.type.display.file = "assets/fonts/Anton-Regular.ttf";
+  if (signatureTokens?.type?.body) signatureTokens.type.body.file = "assets/fonts/Inter.ttf";
+  const signatureLayer = signature ? signatureHTML(signatureTokens, { format: "carousel", width: W, height: H }) : "";
+  const signatureStyle = signatureLayer ? signatureCSS(signatureTokens) : "";
   const body = slides
     .map((s, k) => {
       const kind = k === 0 ? "cover" : k === n - 1 ? "close" : "point";
@@ -114,7 +120,7 @@ export function carouselHTML(slides, { colors, handle = "" }) {
       const rule = kind !== "point" ? `<div class="rule"></div>` : "";
       const tag = handle ? `<div class="handle">${esc(handle)}</div>` : "";
       return `      <section id="s${k}" class="slide clip ${kind}${s.img ? " has-img" : ""}" data-start="${k}" data-duration="1" data-track-index="0">
-        ${img}${count}
+        ${img}${signatureLayer ? `${signatureLayer}` : ""}${count}
         <div class="copy">${num}${kind === "close" ? rule : ""}<h1 class="title fit" data-max="${kind === "cover" ? 600 : kind === "point" && !s.img ? 640 : 520}" style="font-size:${Math.round(titleSize(s.title, kind) * (kind === "point" && !s.img ? 1.2 : 1))}px">${markGold(s.title)}</h1>${kind === "cover" ? rule : ""}${s.body ? `<p class="body fit" data-max="330">${markGold(s.body)}</p>` : ""}</div>
         ${tag}
       </section>`;
@@ -152,7 +158,7 @@ export function carouselHTML(slides, { colors, handle = "" }) {
       .rule { width: 132px; height: 10px; border-radius: 5px; background: ${c.accent}; }
       .count { position: absolute; top: 54px; right: 64px; font-size: 28px; font-weight: 600; letter-spacing: 0.06em; color: ${c.text}; opacity: 0.8; text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
       .handle { position: absolute; left: 84px; bottom: 64px; font-size: 28px; font-weight: 600; letter-spacing: 0.02em; color: ${c.text}; opacity: 0.62; }
-      .close .handle { left: 0; right: 0; text-align: center; }
+      .close .handle { left: 0; right: 0; text-align: center; }${signatureStyle}
     </style>
   </head>
   <body>
@@ -261,7 +267,7 @@ export async function makeCarousel(workDir, { out, force = false, slides: count,
     fs.copyFileSync(file, path.join(projectDir, rel));
     return { ...s, img: rel };
   });
-  fs.writeFileSync(path.join(projectDir, "index.html"), carouselHTML(placed, { colors: plan.style?.colors, handle: settings.handle || "" }));
+  fs.writeFileSync(path.join(projectDir, "index.html"), carouselHTML(placed, { colors: plan.style?.colors, handle: settings.handle || "", tokens: plan.style?.brand, signature: plan.style?.signature?.enabled !== false }));
   log("carousel: rendering slides…");
   const files = await snapshotSlides(projectDir, placed.length, out);
   fs.writeFileSync(path.join(out, "carousel.txt"), carouselText(slides, { hook }));

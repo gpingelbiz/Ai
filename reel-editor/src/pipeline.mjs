@@ -12,9 +12,10 @@ import { writeFeatures } from "./features.mjs";
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, cardHeadTop, headBoxFor } from "./placement.mjs";
+import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta, hookSeconds } from "./hook.mjs";
+import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
@@ -22,6 +23,7 @@ import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
+import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
 
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
@@ -33,7 +35,7 @@ import { iconCandidates, planIcons } from "./icons.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
 import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, duckingLaneFromEnvelope, describePick } from "./music.mjs";
 import { needsReframe, sampleTimes, faceCentres, smoothTrack, planCropPath, objectPositionLane } from "./reframe.mjs";
-import { makeCover } from "./cover.mjs";
+import { makeCover, makeFrameCover, scoreCoverFrames } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
@@ -69,6 +71,15 @@ export async function runEdit(input, opts = {}) {
   ensureDir(workDir);
   const preset = mergeOverrides(loadPreset(opts.preset), opts);
   const dict = loadDictionary(opts.dictionary);
+  let requestedCredits = [];
+  try {
+    const supplied = parseCredits(opts.credit, opts.creditAt);
+    const own = opts.creditSelf ? brandCredit(preset.brand) : null;
+    if (opts.creditSelf && !own) warn("credential lower third: the brand identity needs both name and credential; using the old lower third");
+    requestedCredits = [...(own ? [own] : []), ...supplied];
+  } catch (error) {
+    warn(`credential lower third: ${error.message}; using the old lower third`);
+  }
   log(`work dir: ${workDir}`);
   log(`preset: ${preset.name}`);
 
@@ -261,16 +272,19 @@ export async function runEdit(input, opts = {}) {
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
+  let premise = await makePremise({ workDir, groups, hook, duration, settings: preset.premise, force: !!opts.force });
 
   // Face: captions sit just under the chin (never over the mouth), the hook stays off the head.
   let shownGroups = groups;
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || ["window", "split", "mix"].includes(preset.broll?.layout));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || premise || requestedCredits.length || ["window", "split", "mix"].includes(preset.broll?.layout));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
-    const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
+    const times = premise
+      ? Array.from({ length: 12 }, (_, i) => r3(Math.min(duration - 0.05, 0.1 + (i * Math.max(0, duration - 0.2)) / 11)))
+      : [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
     detection = await detectFaces(videoSrc, times);
   }
   // Base framing (long form): the face sampled across the whole video sets a tighter default frame on a wide
@@ -419,7 +433,7 @@ export async function runEdit(input, opts = {}) {
     }
   }
   let graphics = preset.graphics?.enabled && shownGroups.length
-    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
+    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [], modes: preset.brand?.modes || preset.brand?.contentModes || {} }, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
   const graphicsSchema = graphics.schema || 1;
   const sceneSchema = graphicsSchema;
@@ -500,6 +514,7 @@ export async function runEdit(input, opts = {}) {
     if (cutoutBroll.events.length) cutoutBroll.events.forEach((event) => log(event));
     else log("cutout b-roll: no cutaways to matte");
   }
+  let speakerPlan = null;
   if (preset.zooms.enabled) {
     zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
@@ -508,12 +523,13 @@ export async function runEdit(input, opts = {}) {
       log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
     }
     if (framing.multi) {
-      const tl = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
+      speakerPlan = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
       const ox = parseFloat(framing.origin) / 100;
-      zooms = aimZooms(zooms, { people: framing.people, base: framing.scale, originX: ox, at: tl?.at });
-      log(tl ? `speakers: ${tl.turns.length} turn${tl.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
+      zooms = aimZooms(zooms, { people: framing.people, base: framing.scale, originX: ox, at: speakerPlan?.at });
+      log(speakerPlan ? `speakers: ${speakerPlan.turns.length} turn${speakerPlan.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
     }
   }
+  if (requestedCredits.length && framing.multi && !speakerPlan) speakerPlan = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
   // Shared-frame b-roll is placed after zooms: each panel clears the whole head at the strongest move in its window.
   if (broll.length && ["window", "split", "mix"].includes(preset.broll?.layout)) {
     // The face inside each cutaway's own window (three samples), not the reel's opening frames.
@@ -580,6 +596,20 @@ export async function runEdit(input, opts = {}) {
       if (top != null) g.headTop = top;
     }
   }
+  // The premise is one fixed band, measured against the highest head position across its full lifetime. It does not
+  // count as a card; only cards and slams that occupy the band make it duck for their exact window.
+  if (premise) {
+    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+    const headTop = sameShape ? cardHeadTop(detection, { zooms, drift: driftPlan.stretches, t0: premise.start, t1: duration, scale: framing.scale, originY, shift: framing.shift || 0 }) : null;
+    const geometry = premiseGeometry({ brand: preset.brand, W: canvas0.width, H: canvas0.height, sections: premise.sections, headTop, captionTop: captionTop * canvas0.height });
+    if (geometry.skip) {
+      log(`premise: skipped (${geometry.reason})`);
+      premise = null;
+    } else {
+      Object.assign(premise, geometry, { ...(headTop != null ? { headTop } : {}) });
+      premise.duck = premiseDuckSchedule({ box: premise.box, cards: allCards, slams, start: premise.start, end: duration, fps: preset.render.fps || 30 });
+    }
+  }
   // Spoken icon pops use the final zoom lane and every finished busy window, including a 0.3 s guard around slams.
   let iconDetection = detection;
   if (preset.icons?.enabled && sameShape && shownGroups.length) {
@@ -611,8 +641,66 @@ export async function runEdit(input, opts = {}) {
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
-  const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
+  const legacyLowerThird = () => preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
+  let lowerThird = legacyLowerThird();
+  if (preset.lowerThird?.credential && requestedCredits.length) {
+    try {
+      const scheduled = scheduleCredits(requestedCredits, {
+        turns: speakerPlan?.turns || [],
+        hook,
+        cards: allCards,
+        chapters: structure?.chapters || [],
+        duration,
+        at: preset.lowerThird.at ?? 4,
+        hold: preset.lowerThird.duration ?? 5,
+        fps: preset.render.fps || 30,
+        youtube: !!preset.youtube?.chapters,
+        offscreen: preset.lowerThird.reshowAfter ?? 180,
+        minTurn: preset.lowerThird.longTurn ?? 3,
+        tail,
+      });
+      const items = [];
+      for (const item of scheduled.items) {
+        if (!sameShape) {
+          scheduled.skipped.push({ credit: item, reason: "face-safe placement is unavailable for a reframed source" });
+          continue;
+        }
+        let itemDetection = detection;
+        const times = [0.12, 0.5, 0.88].map((part) => Math.min(duration - 0.05, item.at + part * item.duration));
+        itemDetection = await detectFaces(videoSrc, times) || detection;
+        if (!itemDetection) {
+          scheduled.skipped.push({ credit: item, reason: "face detection unavailable" });
+          continue;
+        }
+        const itemFace = framing.multi ? framing.face : faceBox(itemDetection) || face;
+        const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+        const head = headBoxFor(itemFace, itemDetection, { zoom: zoomDuring(zooms, item.at, item.at + item.duration), scale: framing.scale, originY, shift: framing.shift || 0 });
+        const size = credentialDimensions(preset.brand, item, { W: canvas0.width, H: canvas0.height });
+        const noCaptionTop = canvas0.height > canvas0.width ? 0.833 : 0.92;
+        const creditCaptionTop = showCaptions ? captionTop : noCaptionTop;
+        const placement = placeCredentialLowerThird({ W: canvas0.width, H: canvas0.height, ...size, captionTop: creditCaptionTop, face: head, gap: preset.brand.spacing?.md });
+        if (placement.skip) {
+          scheduled.skipped.push({ credit: item, reason: placement.reason });
+          continue;
+        }
+        items.push({ ...item, placement: { ...placement, captionTop: Math.round(creditCaptionTop * canvas0.height) }, head });
+      }
+      if (items.length) lowerThird = { credential: true, items };
+      else lowerThird = legacyLowerThird();
+      // A credential placed up in the premise band would sit under the strip: the strip steps aside for it, as it
+      // does for cards and slams.
+      if (premise && items.length) premise.duck = premiseDuckSchedule({ box: premise.box, cards: [...allCards, ...items.map((item) => ({ start: item.at, duration: item.duration, box: item.placement }))], slams, start: premise.start, end: duration, fps: preset.render.fps || 30 });
+      if (scheduled.skipped.length) warn(`credential lower third: skipped ${scheduled.skipped.length} (${[...new Set(scheduled.skipped.map((x) => x.reason))].join("; ")})`);
+      log(items.length ? `credential lower third: ${items.length} grounded appearance${items.length === 1 ? "" : "s"} at ${items.map((item) => `${item.at}s`).join(", ")}` : "credential lower third: no safe grounded appearance; using the old lower third");
+    } catch (error) {
+      warn(`credential lower third: ${String(error.message).split("\n")[0]}; using the old lower third`);
+      lowerThird = legacyLowerThird();
+    }
+  }
   const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  const signatureHead = preset.signature?.enabled !== false && preset.brand?.signature?.kind !== "none"
+    ? headBoxFor(face || faceBox(detection), detection, { zoom: Math.max(1, ...zooms.map((z) => z.scale || 1)), scale: framing.scale, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0 })
+    : null;
 
   const plan = {
     version: 1,
@@ -623,6 +711,7 @@ export async function runEdit(input, opts = {}) {
     canvas: canvasFor(preset.canvas, cleanMeta),
     style: preset,
     hook,
+    premise,
     cta,
     captions: showCaptions ? shownGroups : [],
     lines: shownGroups,
@@ -637,7 +726,7 @@ export async function runEdit(input, opts = {}) {
     coldOpen,
     lowerThird,
     structure,
-    framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right" },
+    framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right", ...(signatureHead ? { headBox: signatureHead } : {}) },
     reframe,
     behind: behindPlan,
     head: (() => { const h = zoomedHead(detection, 1); return h ? { top: r3(h.top), bottom: r3(h.bottom) } : null; })(),
@@ -652,26 +741,24 @@ export async function runEdit(input, opts = {}) {
   const output = await renderProject(workDir, opts);
   let cover = null;
   if (preset.cover?.enabled !== false && hook) {
-    // The cover is the reel's own first frame (the cold-open still with the hook on it, or the speaker under the
-    // hook); the designed Cover 1-3 set is behind cover.style "designed" (Greg: they were not turning out right).
+    // Pick an open-eyed, sharp frame that survives the grid crop. Archetypes build a separate cover composition;
+    // frame keeps the existing rendered-reel cover, only at the scored time instead of a fixed first blink.
     try {
-      cover = preset.cover?.style === "designed"
-        ? await makeCover(workDir, plan, { handle: preset.carousel?.handle || "" })
-        : await frameCover(workDir, output, { at: preset.cover?.at ?? 0.05 });
+      let selection;
+      const fallbackMs = Math.round((preset.cover?.at ?? 0.05) * 1000);
+      try { selection = preset.cover?.scoreFrames === false ? { frameTimeMs: fallbackMs, scores: { total: 0 }, face: null, faces: [], ranked: [] } : await scoreCoverFrames(workDir, plan, { fallbackMs, frameMode: !["designed", "archetypes"].includes(preset.cover?.style) }); }
+      catch (error) {
+        selection = { frameTimeMs: fallbackMs, scores: { total: 0 }, face: null, faces: [], ranked: [] };
+        warn(`cover scoring: ${String(error.message).split("\n")[0]}; using ${selection.frameTimeMs}ms`);
+      }
+      plan.cover = { style: preset.cover?.style || "frame", frameTimeMs: selection.frameTimeMs, scores: selection.scores };
+      writeJSON(path.join(workDir, "plan.json"), plan);
+      cover = ["designed", "archetypes"].includes(preset.cover?.style)
+        ? await makeCover(workDir, plan, { handle: preset.carousel?.handle || "", selection })
+        : await makeFrameCover(workDir, output, plan, selection);
     } catch (e) { warn(`cover skipped: ${String(e.message).split("\n")[0]}`); }
   }
   return { workDir, plan, output, cover };
-}
-
-/** Cover from the finished render: its first frame as covers/Cover.png and cover.png. */
-async function frameCover(workDir, output, { at = 0.05 } = {}) {
-  const dir = ensureDir(path.join(workDir, "covers"));
-  for (const f of fs.readdirSync(dir)) if (/^Cover( \d+)?\.png$/.test(f)) fs.rmSync(path.join(dir, f), { force: true });
-  const png = path.join(dir, "Cover.png");
-  await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(at), "-i", output, "-frames:v", "1", png], { quiet: true });
-  fs.copyFileSync(png, path.join(workDir, "cover.png"));
-  log(`cover: the first frame (${at}s) → ${png}`);
-  return [png];
 }
 
 function readVoice(plan) {

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readJSON, deepMerge, PKG_ROOT } from "./util.mjs";
+import { readJSON, deepMerge, PKG_ROOT, warn } from "./util.mjs";
+import { resolveBrandTokens } from "./brandtokens.mjs";
 
 const PRESET_DIR = path.join(PKG_ROOT, "presets");
 
@@ -26,6 +27,22 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
   if (own.fonts) {
     p.fonts = { ...p.fonts };
     for (const k of ["display", "displayItalic", "body"]) if (own.fonts[k] && !path.isAbsolute(own.fonts[k])) p.fonts[k] = path.resolve(path.dirname(file), own.fonts[k]);
+  }
+  let brand = p.brand?.schemaVersion === 2 ? p.brand : null;
+  if (p.brandFile) {
+    const candidates = path.isAbsolute(p.brandFile)
+      ? [p.brandFile]
+      : [path.resolve(PKG_ROOT, p.brandFile), path.resolve(path.dirname(file), p.brandFile)];
+    const brandPath = candidates.find((candidate) => fs.existsSync(candidate));
+    if (brandPath) {
+      try { brand = readJSON(brandPath); }
+      catch (error) { warn(`brand tokens: ${error.message}; using preset colors and fonts`); }
+    } else warn(`brand tokens: file not found: ${p.brandFile}; using preset colors and fonts`);
+  }
+  p.brand = resolveBrandTokens({ preset: p, brand });
+  if (!["none", "edge-rule", "corner-mark", "title-plate"].includes(p.brand.signature?.kind)) {
+    warn(`brand signature: unknown kind "${p.brand.signature.kind}"; disabled`);
+    p.brand.signature = { ...p.brand.signature, kind: "none" };
   }
   return p;
 }
@@ -62,6 +79,9 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noCaptions) p.captions.enabled = false;
   if (o.captions) p.captions.enabled = true;
   if (o.noHook) p.hook.enabled = false;
+  if (o.premise) p.premise = { ...(p.premise || {}), mode: "on", text: o.premise };
+  if (["auto", "on", "off"].includes(o.premiseMode)) p.premise = { ...(p.premise || {}), mode: o.premiseMode };
+  if (o.noPremise) p.premise = { ...(p.premise || {}), mode: "off", text: null };
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;
   if (num(o.hookPosition) != null) p.hook.position = num(o.hookPosition);
@@ -122,8 +142,14 @@ export function mergeOverrides(preset, o = {}) {
   if (o.align) p.transcribe.align = "always";
   if (o.noAlign) p.transcribe.align = false;
   if (o.noPreflight) p.preflight = { ...(p.preflight || {}), enabled: false };
+  if ((Array.isArray(o.credit) ? o.credit.length : o.credit) || o.creditSelf) p.lowerThird.credential = true;
   if (o.look) p.graphics = { ...(p.graphics || {}), look: o.look === "auto" ? null : o.look };
+  if (o.signature) p.signature = { ...(p.signature || {}), enabled: true };
+  if (o.noSignature) p.signature = { ...(p.signature || {}), enabled: false };
+  if (o.houseLooks) p.houseLooks = { ...(p.houseLooks || {}), enabled: true };
+  if (o.noHouseLooks) p.houseLooks = { ...(p.houseLooks || {}), enabled: false };
   if (o.behind) p.hook.behind = true;
   if (o.noBehind) p.hook.behind = false;
+  if (["frame", "designed", "archetypes"].includes(o.coverStyle)) p.cover.style = o.coverStyle;
   return p;
 }

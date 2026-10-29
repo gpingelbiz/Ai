@@ -16,6 +16,8 @@
 # "#low" drops the hook to chest height (wide shots where the default sits on your head),
 # "#top" lifts it above the head (close-up selfies where your face fills the middle). "#fast" adds the measured
 # short-form pacing (presets/pace-fast.json). "#hookreel" keeps the hook up the whole reel (one-liners, podcast titles).
+# "#premise" enables the transcript-grounded persistent premise strip.
+# "#credit" shows the creator name and credential exactly as supplied by the active brand identity.
 # Music: the editor picks a track from REEL_WATCH_MUSIC (default ~/Reels/music; Desktop/Reels/Music is a shortcut) by
 # the mood of what is said, at REEL_WATCH_MUSIC_VOLUME (default 0.10) under the voice. "#music:calm" asks for the track
 # whose name contains "calm"; "#nomusic" skips it. Nothing happens when the folder is empty. music.txt names the track.
@@ -83,7 +85,7 @@ notify() { local t m; t=$(printf '%s%s' "${REEL_CLIENT:+$REEL_CLIENT: }" "$1" | 
 # Publish metadata next to a delivered reel (read by the Publish folder, src/publish-folder.mjs): whether the reel
 # has AI pictures (Instagram's AI label), the preflight result and anything obvious the reviewer saw.
 reel_meta() { # $1 work dir, $2 output json
-  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{};const hi=(wt.issues||[]).find((i)=>i.severity==="high");fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,obvious:hi?hi.note:null,coverMs:50}))' "$1" "$2" 2>/dev/null || true
+  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{};const hi=(wt.issues||[]).find((i)=>i.severity==="high"),coverMs=Math.round(plan.cover&&Number.isFinite(plan.cover.frameTimeMs)?plan.cover.frameTimeMs:((plan.style&&plan.style.cover&&Number.isFinite(plan.style.cover.at)?plan.style.cover.at:.05)*1000));fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,obvious:hi?hi.note:null,coverMs}))' "$1" "$2" 2>/dev/null || true
 }
 
 # Create and print a brand-new "<today> <kind> <n><suffix>" folder under $1 ("2026-10-21 Reel 3",
@@ -115,10 +117,12 @@ case "$base" in *"#nocta"*) ;; *) [ -n "$CTA" ] && flags+=(--cta "$CTA");; esac
 case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 # "#hookreel": the hook stays up the whole reel (one-line reels, podcast and stage clips with a title strip).
 case "$base" in *"#hookreel"*) flags+=(--hook-seconds reel);; esac
+case "$base" in *"#credit"*) flags+=(--credit-self);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
 case "$base" in *"#fast"*) flags+=(--pace fast);; esac
+case "$base" in *"#premise"*) flags+=(--premise-mode auto);; esac
 case "$base" in *"#look:"*) lk="${base#*#look:}"; lk="${lk%%[ .#]*}"; flags+=(--look "$lk");; esac
 # "#v2": Greg's test look from the Oct 28 design teardown (presets/pingel-v2.json). Never on a client's reel (their
 # brand kit wins) or in the Runway folder, which has its own preset.

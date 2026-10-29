@@ -1,5 +1,6 @@
 {
   "name": "pingel-brand",
+  "brandFile": "brands/pingel.json",
   "canvas": "auto",
   "colors": {
     "text": "#F5F1E8",

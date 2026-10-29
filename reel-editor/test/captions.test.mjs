@@ -140,7 +140,7 @@ test("the hook never covers the head: a measured head top reaches the page, the 
   assert.doesNotMatch(plain, /"headTop"/, "no measurement, nothing moves");
 });
 
-test("pingel-v2 builds on pingel-brand: same colours and b-roll world, the teardown's caption, hook, framing and pacing values", async () => {
+test("pingel-v2 builds on pingel-brand: same colours and b-roll world, plus the opt-in house system", async () => {
   const { loadPreset } = await import("../src/presets.mjs");
   const v2 = loadPreset("pingel-v2"), brand = loadPreset("pingel-brand");
   assert.deepEqual(v2.colors, brand.colors);
@@ -152,5 +152,10 @@ test("pingel-v2 builds on pingel-brand: same colours and b-roll world, the teard
   assert.equal(v2.framing.enabled, true);
   assert.equal(v2.zooms.cadence.enabled, false);
   assert.equal(v2.coldOpen.enabled, false);
+  assert.equal(v2.brand.signature.kind, "edge-rule");
+  assert.deepEqual(v2.brand.houseLooks, ["gregcard", "press", "receipts"]);
+  assert.deepEqual(v2.brand.modes, { authority: "gregcard", editorial: "press", proof: "receipts" });
+  assert.equal(brand.brand.signature.kind, "none");
+  assert.deepEqual(brand.brand.houseLooks, []);
   assert.equal(brand.captions.uppercase, true, "the default look is unchanged");
 });

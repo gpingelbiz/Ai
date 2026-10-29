@@ -1,7 +1,8 @@
 {
   "name": "pingel-v2",
   "extends": "pingel-brand",
-  "_about": "Test look from the Oct 28 design teardown of 36 top niche reels (~/Reels/research/design-teardown/DESIGN_SPEC.md). Same brand colours; sentence-case captions higher up, a smaller hook clear of the head, tighter and higher framing, one-take pacing, less b-roll. Opt in with --preset pingel-v2 or #v2 in a dropped file name.",
+  "brandFile": "brands/pingel-house.json",
+  "_about": "Test look from the Oct 28 creator-design study. Same brand colours; a small gold edge rule; gregcard, press and receipts house looks; sentence-case captions higher up; a smaller hook clear of the head; tighter framing; one-take pacing; less b-roll. Opt in with --preset pingel-v2 or #v2 in a dropped file name.",
   "captions": {
     "position": 0.65,
     "placeMin": 0.58,
@@ -19,6 +20,9 @@
     "fontSizeFrac": 0.041,
     "maxWords": 12,
     "behind": false
+  },
+  "premise": {
+    "mode": "auto"
   },
   "framing": {
     "enabled": true,
@@ -41,5 +45,8 @@
   },
   "coldOpen": {
     "enabled": false
+  },
+  "cover": {
+    "style": "archetypes"
   }
 }

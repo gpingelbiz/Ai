@@ -32,7 +32,7 @@ export function buildPost(workDir, { mediaUrl = "", date = "", trial = false } =
     instagramType: trial ? "TRIAL_REEL" : "REEL",
     isAiGenerated: ai,
     aiNote: ai ? "This reel has AI-generated b-roll stills, so the post is flagged as AI-altered (Instagram's disclosure rule)." : "",
-    coverMs: Math.round(((plan.hook?.start ?? 0) + 0.5) * 1000),
+    coverMs: Math.round(plan.cover?.frameTimeMs ?? ((plan.hook?.start ?? 0) + 0.5) * 1000),
   };
 }
 

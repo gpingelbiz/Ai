@@ -1,5 +1,6 @@
 {
   "name": "default",
+  "brandFile": null,
   "canvas": "auto",
   "transcribe": {
     "engine": "auto",
@@ -68,6 +69,9 @@
     "behind": false,
     "behindOverlap": 0.4,
     "behindScale": 1.12
+  },
+  "premise": {
+    "mode": "off"
   },
   "zooms": {
     "enabled": true,
@@ -147,6 +151,12 @@
     "every": 10,
     "gap": 3
   },
+  "signature": {
+    "enabled": true
+  },
+  "houseLooks": {
+    "enabled": true
+  },
   "broll": {
     "enabled": false,
     "layout": "full",
@@ -221,14 +231,20 @@
   "cover": {
     "enabled": true,
     "style": "frame",
-    "at": 0.05
+    "at": 0.05,
+    "scoreFrames": true,
+    "targets": ["reel", "grid-3x4", "feed-4x5", "square", "landscape"],
+    "gridPreview": true
   },
   "lowerThird": {
     "enabled": false,
+    "credential": false,
     "name": "",
     "handle": "",
     "at": 4,
-    "duration": 5
+    "duration": 5,
+    "longTurn": 3,
+    "reshowAfter": 180
   },
   "youtube": {
     "endSafe": 0,
