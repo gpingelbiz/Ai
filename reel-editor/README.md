@@ -93,7 +93,7 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 ## Wide shots
 
-A source wider than the canvas (a landscape or wide clip into 9:16) is reframed: Apple Vision samples the face every half second, the x centre is smoothed with a dead band, and the crop window follows the speaker (an object-position lane on the footage) instead of staying on the middle of the frame. `reframe.enabled: false` in a preset keeps the centre crop.
+A source wider than the canvas (a landscape or wide clip into 9:16) is reframed: Apple Vision samples the face every quarter second, a low-lag One Euro path holds still through detector noise and resets at jump cuts, and the crop window follows the speaker (an object-position lane on the footage) instead of staying on the middle of the frame. `reframe.smoother: "average"` restores the old path; `reframe.enabled: false` keeps the centre crop.
 
 ## Voice and speed
 

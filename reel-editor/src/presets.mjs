@@ -81,9 +81,12 @@ export function mergeOverrides(preset, o = {}) {
   if (o.musicDir) p.audio.musicDir = o.musicDir;
   if (o.musicWant) p.audio.musicWant = o.musicWant;
   if (o.noDuck) p.audio.duck = false;
+  if (o.duckFrom === "voice" || o.duckFrom === "words") p.audio.duckFrom = o.duckFrom;
   if (num(o.musicVolume) != null) p.audio.musicVolume = num(o.musicVolume);
   if (o.sfx) p.audio.sfx = true;
   if (o.noCleanAudio) p.audio.cleanAudio = false;
+  if (o.roomTone) p.audio.roomTone = true;
+  if (o.noRoomTone) p.audio.roomTone = false;
   if (o.voice) p.audio.voiceId = o.voice;
   if (o.engine) p.transcribe.engine = o.engine;
   if (o.model) p.transcribe.model = o.model;

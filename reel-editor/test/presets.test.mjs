@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { loadPreset } from "../src/presets.mjs";
 
+test("voice envelope music ducking is on by default", () => {
+  assert.equal(loadPreset("clean").audio.duckFrom, "voice");
+});
+
 test("REEL_PRESET picks the default look: a preset name or a path to a partial .json", () => {
   const saved = process.env.REEL_PRESET;
   try {
@@ -25,6 +29,15 @@ test("REEL_PRESET picks the default look: a preset name or a path to a partial .
   } finally {
     if (saved === undefined) delete process.env.REEL_PRESET; else process.env.REEL_PRESET = saved;
   }
+});
+
+test("room tone is on by default and can be disabled per preset", () => {
+  assert.equal(loadPreset("clean").audio.roomTone, true);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-preset-room-"));
+  const file = path.join(dir, "quiet.json");
+  fs.writeFileSync(file, JSON.stringify({ audio: { roomTone: false } }));
+  assert.equal(loadPreset(file).audio.roomTone, false);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("the reel command itself honours REEL_PRESET (the CLI used to hard-default pingel-brand)", async () => {

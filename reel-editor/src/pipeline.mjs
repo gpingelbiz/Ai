@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
-import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments } from "./cuts.mjs";
+import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking } from "./cuts.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
 import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
@@ -31,8 +31,8 @@ import { planSlams } from "./slams.mjs";
 import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
 import { iconCandidates, planIcons } from "./icons.mjs";
 import { voiceFile } from "../scripts/write-caption.mjs";
-import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, describePick } from "./music.mjs";
-import { needsReframe, sampleTimes, faceCentres, smoothTrack, objectPositionLane } from "./reframe.mjs";
+import { listTracks, moodsOf, pickTrack, chooseMoods, duckingLane, duckingLaneFromEnvelope, describePick } from "./music.mjs";
+import { needsReframe, sampleTimes, faceCentres, smoothTrack, planCropPath, objectPositionLane } from "./reframe.mjs";
 import { makeCover } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
@@ -187,7 +187,11 @@ export async function runEdit(input, opts = {}) {
   }
 
   // 2. Cut plan
-  const cutsOn = !opts.noCuts && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers);
+  // A clip that is mostly not talking (a walk-up, a vlog shot, a room) has nothing to cut around: cutting the
+  // "silence" would leave only its few words ("Greg? Yeah" out of a 20 s walk-up came back as a 1 s reel).
+  const quiet = mostlyNotTalking(words, meta.duration);
+  if (quiet && !opts.noCuts) log(`cuts: only ${words.length} word${words.length === 1 ? "" : "s"} spoken in ${r3(meta.duration)} s, keeping every frame (no talking to cut around)`);
+  const cutsOn = !opts.noCuts && !quiet && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers);
   let cuts = cutsOn
     ? planCuts(words, meta.duration, preset.cuts)
     : { segments: [{ start: 0, end: r3(meta.duration) }], removed: [], originalDuration: r3(meta.duration), keptDuration: r3(meta.duration), words };
@@ -226,6 +230,12 @@ export async function runEdit(input, opts = {}) {
   }
   // Studio sound: DeepFilterNet denoises the whole voice on the source timeline; the cut pass then takes that WAV
   // instead of the source audio and runs the leveler chain. Falls back to the spectral denoiser when it is missing.
+  let roomTone = null;
+  if (needsPass && cuts.segments.length > 1 && meta.hasAudio && preset.audio.roomTone !== false) {
+    roomTone = findRoomTone(await early.envelope, words, meta.duration);
+    if (roomTone) log(`room tone: ${r3(roomTone.end - roomTone.start)} s from ${roomTone.start.toFixed(2)} s, ${Math.round(roomTone.db)} dB`);
+    else log("room tone: no clean room found, cuts fade to silence as before");
+  }
   let studio = null;
   if (needsPass && meta.hasAudio && preset.audio.cleanAudio && preset.audio.studio !== false) {
     const res = await studioVoice(cutInput, path.join(workDir, "studio-voice.wav"));
@@ -234,7 +244,7 @@ export async function runEdit(input, opts = {}) {
   }
   if (needsPass) {
     log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? (studio ? " + studio sound" : " + clean audio") : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + ")…");
-    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined });
+    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined, roomTone });
     videoSrc = cleanPath;
     cleanMeta = await probe(cleanPath);
   }
@@ -244,7 +254,8 @@ export async function runEdit(input, opts = {}) {
   // 4. Captions, hook, zooms
   // The caption lines are the timing backbone for everything (cards, stills, punch-ins, callouts, chapters, the
   // srt), so they are always built; whether they show on screen is captions.enabled.
-  const groups = markKeywords(groupWords(cleanWords, duration, preset.captions), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
+  const protectedPhrases = new Set([...(dict.terms || []), ...(dict.names || []), ...(dict.phrases || [])]);
+  const groups = markKeywords(groupWords(cleanWords, duration, { ...preset.captions, protectedPhrases }), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
   const showCaptions = !!preset.captions.enabled;
   const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) }) : null;
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
@@ -351,9 +362,31 @@ export async function runEdit(input, opts = {}) {
   let reframe = null;
   const canvas1 = canvasFor(preset.canvas, cleanMeta);
   if (preset.reframe?.enabled !== false && needsReframe(cleanMeta, canvas1)) {
-    const det = await detectFaces(videoSrc, sampleTimes(duration, preset.reframe?.step ?? 0.5));
+    // Face detection runs on clean.mp4: each join is the cumulative length of the kept segments before it.
+    let at = 0;
+    const cutTimes = [];
+    for (let i = 0; i < cuts.segments.length - 1; i++) {
+      at += cuts.segments[i].end - cuts.segments[i].start;
+      if (cuts.segments[i + 1].start > cuts.segments[i].end) cutTimes.push(r3(at));
+    }
+    // Sample the exact first frame of every new shot as well as the regular grid, including a very short last shot.
+    const grid = sampleTimes(duration, preset.reframe?.step ?? 0.25);
+    const times = preset.reframe?.smoother === "average" ? grid : [...new Set([...grid, ...cutTimes])].sort((a, b) => a - b);
+    const det = await detectFaces(videoSrc, times);
     if (det?.frames?.length) {
-      reframe = objectPositionLane(smoothTrack(faceCentres(det)), cleanMeta, canvas1);
+      const centres = faceCentres(det);
+      let track;
+      if (preset.reframe?.smoother === "average") track = smoothTrack(centres);
+      else {
+        try {
+          track = planCropPath(centres, { ...preset.reframe, cuts: cutTimes });
+          if (!track.length) throw new Error("no usable crop points");
+        } catch (e) {
+          warn(`reframe smoother failed: ${String(e.message).split("\n")[0]}; using the average path`);
+          track = smoothTrack(centres);
+        }
+      }
+      reframe = objectPositionLane(track, cleanMeta, canvas1);
       log(`reframe: following the face across ${reframe.length} move${reframe.length === 1 ? "" : "s"} (wide source into ${canvas1.mode})`);
     } else log("reframe: no face found in the wide shot, keeping the centre crop");
   }
@@ -579,7 +612,7 @@ export async function runEdit(input, opts = {}) {
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
   const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
 
   const plan = {
     version: 1,
@@ -645,7 +678,7 @@ function readVoice(plan) {
   try { return fs.readFileSync(voiceFile(plan), "utf8"); } catch { return ""; }
 }
 
-async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], transcript = "", cues = null }) {
+async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], envelope = null, segments = [], transcript = "", cues = null }) {
   const assets = ensureDir(path.join(projectDir, "assets"));
   const audio = { tracks: [], replaceAudio: !!opts.replaceAudio };
 
@@ -674,7 +707,23 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
     // Trim (or loop a short track) to the reel length and normalize the bed, so the level means the same for
     // a loud trap beat and a soft pad: -16 LUFS like the voice, then `level` under it.
     await run("ffmpeg", ["-y", "-loglevel", "error", "-stream_loop", "-1", "-i", src, "-t", String(r3(duration - startAt)), "-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "192k", dst]);
-    const lane = preset.audio.duck === false ? null : duckingLane(words, { duration, level, start: startAt });
+    let lane = null;
+    if (preset.audio.duck !== false) {
+      if ((preset.audio.duckFrom || "voice") === "words") {
+        lane = duckingLane(words, { duration, level, start: startAt });
+        log("music ducking: transcript words");
+      } else {
+        try {
+          const mapped = remapEnvelope(await envelope, segments);
+          if (!mapped.db.length || mapped.db.length * mapped.step < duration - Math.max(0.1, mapped.step * 2)) throw new Error("level scan does not cover the reel");
+          lane = duckingLaneFromEnvelope(mapped, { duration, words, level, start: startAt });
+          log("music ducking: voice envelope + transcript words");
+        } catch (e) {
+          lane = duckingLane(words, { duration, level, start: startAt });
+          warn(`music ducking: voice envelope unavailable (${String(e.message).split("\n")[0]}); using transcript words`);
+        }
+      }
+    } else log("music ducking: off");
     audio.tracks.push({ id: "music", src: "assets/music.m4a", start: startAt, duration: r3(duration - startAt), volume: level, fadeIn: 1, fadeOut: 1.5, lane, track: 8 });
     fs.writeFileSync(path.join(workDir, "music.txt"), `Music: ${path.basename(src)}\n`);
     log(`music: ${pickNote || path.basename(src)} at ${level}${lane ? ", swelling in the pauses" : ""}`);
