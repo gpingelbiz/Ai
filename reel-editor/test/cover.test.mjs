@@ -90,3 +90,19 @@ test("manifest has the publish contract and normalized focal box", () => {
   assert.equal(manifest.targets.length, 5);
   assert.equal(manifest.brand, "@officialgregpingel");
 });
+
+test("a frame cover comes from inside the hook window, even when the hook sits behind the head", () => {
+  const face = { x: 0.3, y: 0.2, w: 0.3, h: 0.25 };
+  const frames = [0.2, 1.1, 2.0, 3.2, 6.2].map((t) => ({ t, face, faces: [face], parts: { eyes: t === 3.2 ? 1 : 0.8, size: 0.8, center: 0.9, sharp: t === 3.2 ? 0.4 : 0.2 }, hookOverlap: 0.3 }));
+  const ranked = scoreFrameCandidates(frames, { duration: 19, hookEnd: 3, hookBehind: true, frameMode: true });
+  assert.ok(ranked[0].t < 3, `picked ${ranked[0].t}s, after the hook`);
+  assert.ok(ranked.every((c) => c.t <= 2.8));
+  // Archetype covers compose their own title, so they still skip hook-behind-head frames.
+  assert.equal(scoreFrameCandidates(frames, { duration: 19, hookEnd: 3, hookBehind: true })[0].t, 3.2);
+});
+
+test("a frame cover prefers the hook frames before the first caption appears", () => {
+  const face = { x: 0.3, y: 0.2, w: 0.3, h: 0.25 };
+  const frames = [0.2, 0.8, 1.4].map((t) => ({ t, face, faces: [face], parts: { eyes: t === 0.2 ? 0.85 : 1, size: 0.75, center: 0.95, sharp: 0.15 } }));
+  assert.equal(scoreFrameCandidates(frames, { duration: 19, hookEnd: 3, frameMode: true, captionFrom: 0.5 })[0].t, 0.2);
+});

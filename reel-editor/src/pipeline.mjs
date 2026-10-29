@@ -743,7 +743,7 @@ export async function runEdit(input, opts = {}) {
     try {
       let selection;
       const fallbackMs = Math.round((preset.cover?.at ?? 0.05) * 1000);
-      try { selection = preset.cover?.scoreFrames === false ? { frameTimeMs: fallbackMs, scores: { total: 0 }, face: null, faces: [], ranked: [] } : await scoreCoverFrames(workDir, plan, { fallbackMs }); }
+      try { selection = preset.cover?.scoreFrames === false ? { frameTimeMs: fallbackMs, scores: { total: 0 }, face: null, faces: [], ranked: [] } : await scoreCoverFrames(workDir, plan, { fallbackMs, frameMode: !["designed", "archetypes"].includes(preset.cover?.style) }); }
       catch (error) {
         selection = { frameTimeMs: fallbackMs, scores: { total: 0 }, face: null, faces: [], ranked: [] };
         warn(`cover scoring: ${String(error.message).split("\n")[0]}; using ${selection.frameTimeMs}ms`);

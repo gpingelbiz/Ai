@@ -196,8 +196,11 @@ function centeredInGrid(face) {
 function inWindow(t, item, pad = 0) { return t >= Number(item.start ?? item.t ?? 0) - pad && t <= Number(item.start ?? item.t ?? 0) + Number(item.duration || 0) + pad; }
 
 /** Pure ranking used by the Vision path and synthetic unit tests. */
-export function scoreFrameCandidates(candidates, { duration = Infinity, hookEnd = 3, broll = [], cuts = [], hookBehind = false, cutPad = 4 / 30 } = {}) {
-  const scored = (candidates || []).map((candidate) => {
+export function scoreFrameCandidates(candidates, { duration = Infinity, hookEnd = 3, broll = [], cuts = [], hookBehind = false, cutPad = 4 / 30, frameMode = false, captionFrom = Infinity } = {}) {
+  // A frame cover IS the reel's frame: its title is the hook, so it must come from inside the hook window, and the
+  // hook sitting behind the head is how the reel looks rather than a reason to skip the frame.
+  const pool = frameMode ? (candidates || []).filter((c) => Number(c.t ?? (c.frameTimeMs || 0) / 1000) <= Math.max(0.2, hookEnd - 0.2)) : candidates || [];
+  const scored = (pool.length ? pool : candidates || []).map((candidate) => {
     const t = Number(candidate.t ?? (candidate.frameTimeMs || 0) / 1000);
     const face = candidate.face || largestFace(candidate.faces);
     const parts = candidate.parts || {};
@@ -215,11 +218,13 @@ export function scoreFrameCandidates(candidates, { duration = Infinity, hookEnd 
     const blocked = {
       broll: broll.some((item) => inWindow(t, item)),
       jumpCut: cuts.some((cut) => Math.abs(t - Number(cut.t ?? cut.start ?? cut)) <= cutPad),
-      hookBehind: !!candidate.hookBehind || (hookBehind && t <= hookEnd),
-      hookOverlap: Number(candidate.hookOverlap || 0) > 0.02,
+      hookBehind: !frameMode && (!!candidate.hookBehind || (hookBehind && t <= hookEnd)),
+      hookOverlap: !frameMode && Number(candidate.hookOverlap || 0) > 0.02,
     };
     const eligible = !Object.values(blocked).some(Boolean);
-    const total = 2.5 * scores.eyesOpen + 1.25 * scores.expression + 1.5 * scores.faceSize + 1.5 * scores.gridCenter + 2 * scores.sharpness + 0.75 * scores.light + 0.75 * scores.angle + 1.5 * scores.firstThree + scores.promise;
+    // A frame cover before the first caption carries only the hook, never a half caption line ("IF IF YOU'RE").
+    const clean = frameMode && t < captionFrom ? 3 : 0;
+    const total = 2.5 * scores.eyesOpen + 1.25 * scores.expression + 1.5 * scores.faceSize + 1.5 * scores.gridCenter + 2 * scores.sharpness + 0.75 * scores.light + 0.75 * scores.angle + 1.5 * scores.firstThree + scores.promise + clean;
     return { ...candidate, t, frameTimeMs: Math.round(t * 1000), face, scores: { ...scores, total: round(total) }, blocked, eligible };
   });
   const usable = scored.filter((candidate) => candidate.eligible);
@@ -250,10 +255,14 @@ function faceOverlapWithHook(face, plan, t) {
 }
 
 /** Run Apple Vision and return the chosen time plus every component score. */
-export async function scoreCoverFrames(workDir, plan, { fallbackMs = 50 } = {}) {
+export async function scoreCoverFrames(workDir, plan, { fallbackMs = 50, frameMode = false } = {}) {
   const duration = Number(plan.video?.duration || 0), fps = Number(plan.video?.fps || plan.style?.render?.fps || 30);
   const hookEnd = Math.min(duration, Number(plan.hook?.start || 0) + Number(plan.hook?.duration || 3));
-  const times = coverTimes(duration, { fps, hookEnd });
+  const firstCaption = plan.style?.captions?.enabled === false ? Infinity : Math.min(Infinity, ...(plan.captions || []).map((c) => Number(c.start)).filter(Number.isFinite));
+  // A frame cover also tries the very start (the old fixed 0.05 s) and the last frame before the first caption, the
+  // frames that show the hook with no caption line yet.
+  const early = frameMode && plan.hook ? [0.05, firstCaption - 1 / fps].map((t) => Math.floor(t * fps) / fps).filter((t) => t >= 1 / fps && t < Math.min(hookEnd, firstCaption)) : [];
+  const times = [...new Set([...early, ...coverTimes(duration, { fps, hookEnd })])].sort((x, y) => x - y);
   const dir = ensureDir(path.join(path.resolve(workDir), "covers"));
   const bin = await personBinary();
   let person = null, personError = null;
@@ -289,7 +298,8 @@ export async function scoreCoverFrames(workDir, plan, { fallbackMs = 50 } = {}) 
   } catch {}
   const ranked = scoreFrameCandidates(candidates, {
     duration, hookEnd, broll: plan.broll || [], cuts: [...editCuts, ...(plan.zooms || []).filter((zoom) => zoom.cut)],
-    hookBehind: !!plan.behind || !!plan.style?.hook?.behind, cutPad: 4 / fps,
+    hookBehind: !!plan.behind || !!plan.style?.hook?.behind, cutPad: 4 / fps, frameMode: frameMode && !!plan.hook,
+    captionFrom: firstCaption,
   });
   const best = ranked[0];
   if (!best) return { frameTimeMs: fallbackMs, scores: { total: 0 }, ranked: [] };
@@ -629,11 +639,9 @@ export async function makeFrameCover(workDir, output, plan, selection) {
   workDir = path.resolve(workDir);
   const dir = ensureDir(path.join(workDir, "covers"));
   const master = path.join(dir, "frame-master.png");
-  const hookEndMs = Math.round((Number(plan.hook?.start || 0) + Number(plan.hook?.duration || 0)) * 1000);
-  // A rendered hook-behind frame is never a cover. On a very short reel where no later frame exists, keep the
-  // scored photography and omit the composited hook rather than hiding title glyphs behind the head.
-  const source = (plan.behind || plan.style?.hook?.behind) && selection.frameTimeMs <= hookEndMs ? plan.video.src : output;
-  await extractFrame(source, selection.frameTimeMs, master);
+  // The frame cover is the finished reel's own frame, hook and all (the scorer keeps it inside the hook window).
+  // Covers that must never hide their title behind the head are the archetypes, which draw their own title.
+  await extractFrame(output, selection.frameTimeMs, master);
   const outputs = {};
   const coverTargets = targetsFor(plan);
   for (const targetSpec of coverTargets) {
