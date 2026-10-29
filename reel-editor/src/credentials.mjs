@@ -78,7 +78,10 @@ function clearStart(wanted, hold, busy, { min = 0, max = Infinity, fps = 30 } = 
     changed = false;
     const hit = blocks.find((block) => overlap({ start, duration: hold }, block, 1 / fps));
     if (hit) {
-      start = frame(hit.start + hit.duration + 1 / fps, fps);
+      // Round up past the block and its one-frame gap: rounding to the nearest frame could land back inside the gap
+      // (a block ending off the frame grid) and loop forever on the same start.
+      const next = Math.ceil((hit.start + hit.duration + 1 / fps) * fps - 1e-6) / fps;
+      start = next > start ? next : start + 1 / fps;
       changed = true;
     }
   }

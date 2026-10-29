@@ -140,3 +140,12 @@ test("preset and flags keep credential mode switchable", () => {
   assert.equal(loadPreset("youtube").brand.identity.credential, "Sales trainer");
   assert.equal(mergeOverrides(loadPreset("clean"), { credit: ["A | Role"] }).lowerThird.credential, true);
 });
+
+test("a busy block ending off the frame grid never stalls the credential scheduler", () => {
+  // A card ending at 9.01 s once made the next start round back into the one-frame gap and loop forever.
+  const out = scheduleCredits([{ name: "Greg Pingel", credential: "Sales trainer", input: { kind: "brand.identity", text: "Greg Pingel | Sales trainer" } }], {
+    hook: { start: 0, duration: 3.01 }, cards: [{ start: 3.6, duration: 5.41 }, { start: 9.05, duration: 2.003 }], duration: 20, at: 4, hold: 4, fps: 30,
+  });
+  assert.equal(out.items.length, 1);
+  assert.ok(out.items[0].at >= 11.05, `scheduled at ${out.items[0].at}`);
+});
