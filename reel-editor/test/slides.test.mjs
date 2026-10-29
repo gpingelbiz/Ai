@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tokensCSS } from "../src/brandtokens.mjs";
+import { contrast, resolveBrandTokens, tokensCSS, upgradeBrandV1 } from "../src/brandtokens.mjs";
 import { loadPreset, mergeOverrides } from "../src/presets.mjs";
 import { SLIDES_SCHEMA, normalizeSlides, slidesPrompt } from "../src/carousel.mjs";
 import { checkSequence, expandSlides, LEGACY_SLIDE_KINDS, FAMILY_SLIDE_KINDS, normalizeSlideSpec, slideHTML } from "../src/slides.mjs";
@@ -120,4 +120,18 @@ test("slide family switches are declared in preset defaults", () => {
   assert.deepEqual(preset.slides, { enabled: true, signature: true, height: 1350 });
   assert.equal(mergeOverrides(preset, { noFamilies: true }).carousel.families, false);
   assert.equal(mergeOverrides(preset, { families: true }).carousel.families, true);
+});
+
+test("paper layouts get an accent that reads on paper: a pale peach deepens, a dark oxblood stays", () => {
+  const brand = (accent) => resolveBrandTokens({ brand: upgradeBrandV1({ name: "Light Test", handle: "@light", colors: { text: "#FFFFFF", accent, stroke: "#111111", bg: "#111111" } }) });
+  const lightAccent = (html) => html.match(/--slide-light-accent:(#[0-9A-F]{6})/i)?.[1];
+  const peach = brand("#FFB27D");
+  for (const kind of ["static-light", "postcard", "notes"]) {
+    const value = lightAccent(slideHTML({ kind, ...examples[kind] }, peach));
+    assert.ok(value && contrast(value, peach.colors.paper) >= 4.5, `${kind}: ${value} on ${peach.colors.paper}`);
+  }
+  const html = slideHTML({ kind: "static-light", ...examples["static-light"] }, peach);
+  assert.match(html, /\.static-light \.accent[^{]*\{ color: var\(--slide-light-accent/);
+  const oxblood = brand("#9E3D3D");
+  assert.equal(lightAccent(slideHTML({ kind: "static-light", ...examples["static-light"] }, oxblood)), "#9E3D3D");
 });

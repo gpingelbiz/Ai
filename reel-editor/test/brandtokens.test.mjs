@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BRAND_SCHEMA, coverPalettes, resolveBrandTokens, tokensCSS, upgradeBrandV1, validateBrand } from "../src/brandtokens.mjs";
+import { BRAND_SCHEMA, contrast, coverPalettes, readableOn, resolveBrandTokens, tokensCSS, upgradeBrandV1, validateBrand } from "../src/brandtokens.mjs";
 import { brandPreset } from "../src/brandkit.mjs";
 import { loadPreset } from "../src/presets.mjs";
 
@@ -110,4 +110,15 @@ test("all repository presets keep their legacy colors and fonts after token atta
     assert.deepEqual(after.fonts, before.fonts, `${name} fonts`);
     assert.equal(after.brand.schemaVersion, 2, `${name} brand tokens`);
   }
+});
+
+test("readableOn keeps a color that already reads and deepens a pale one just enough, keeping its hue", () => {
+  assert.equal(readableOn("#9E3D3D", "#F5F1EB"), "#9E3D3D");
+  const peach = readableOn("#FFB27D", "#FFFFFF");
+  assert.ok(contrast(peach, "#FFFFFF") >= 4.5, peach);
+  assert.ok(contrast(peach, "#FFFFFF") < 5.5, `${peach} is darker than it needs to be`);
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(peach.slice(i, i + 2), 16));
+  assert.ok(r > g && g > b, `${peach} is still a peach`);
+  assert.ok(contrast(readableOn("#3A2B27", "#111111"), "#111111") >= 4.5, "a dark color on a dark field is lightened");
+  assert.ok(contrast(readableOn("#C8A24B", "#F5F1E8", 3), "#F5F1E8") >= 3);
 });

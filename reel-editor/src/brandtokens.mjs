@@ -39,6 +39,20 @@ export function contrast(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/**
+ * The color itself when it reads on `background` (at least `min`:1), else the same hue darkened (light background) or
+ * lightened (dark background) just enough to reach it. A pale accent like peach on white paper becomes a deep peach.
+ */
+export function readableOn(color, background, min = 4.5) {
+  if (contrast(color, background) >= min) return color;
+  const toward = luminance(background) > 0.18 ? "#000000" : "#FFFFFF";
+  for (let step = 1; step <= 50; step += 1) {
+    const next = mixHex(color, toward, step / 50);
+    if (contrast(next, background) >= min) return next;
+  }
+  return toward;
+}
+
 function familyFromFile(file, fallback) {
   if (!file) return fallback;
   const name = String(file).split(/[\\/]/).pop().replace(/\.(?:ttf|otf|woff2?)$/i, "");
