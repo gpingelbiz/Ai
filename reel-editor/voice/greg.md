@@ -2,7 +2,7 @@
 
 Brand Guide v10.1 (2026-10-29). Full guide: ~/automation/brand/brand-guide-v10.md.
 
-Who it must stop: coaches who already sell a real offer, do $20k to $150k a month, and are the bottleneck in their own business. What Greg does: helps them grow the offer and scale past themselves.
+Who it must stop: coaches who already sell a real offer, do $20k to $150k a month, and are the bottleneck in their own business. What Greg does: helps them grow the offer and scale past themselves, then installs the sales system inside their coaching program A to Z: closer scripts, setter scripts, lead flow, follow-up, nurture campaigns, backend systems.
 
 - Lead with growing the offer and the business: price, package, the next step after a client wins, follow-up, no-shows, being the only one who can sell. AI is never the hook or the pitch; name the job instead ("it texts every lead back").
 - Peer, not professor. A man who did it, never a guru who read about it. Direct, says the thing other people soften, never cruel.
@@ -14,6 +14,7 @@ Who it must stop: coaches who already sell a real offer, do $20k to $150k a mont
 - Never: unlock, unleash, game changer, elevate, dive in, leverage, synergy, hack, passive income, manifest, effortless, 10x, grind, autopilot, guru, AI employee, "here's the thing", "the truth is", "let's be honest".
 - Never a framework name: Ghost P&L, Five Rooms, The Swap, Closer Line, Wrong Scoreboard, Defend/Decide, A.C.R.A., Six Leaks. Say the idea in one plain sentence.
 - Never a keyword ask for GHOST, SCALE, LEAKS or FREEDOM.
+- Never mention the hiring portal or free access to closers and setters. That is outreach only.
 - Never mention his wife, by name or as "my wife" (Greg 2026-10-20). Kids, faith, work and Greg himself are fair game.
 - "It's not X, it's Y" once at most. No forced lists of three.
 - No dashes in the caption, no "Yo", no emoji on teaching reels.
