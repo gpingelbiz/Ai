@@ -1,13 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile, ownDisplay } from "./util.mjs";
-import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, numberMotion, progressHTML, progressCSS, PROGRESS_JS } from "./graphics.mjs";
+import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, STRUCTURE_GRAPHICS_JS, numberMotion, progressHTML, progressCSS, PROGRESS_JS, isPersistentScene } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 import { inlineIconSVG } from "./icons.mjs";
 import { brandQuietCSS } from "./brandlooks.mjs";
 import { tokensCSS } from "./brandtokens.mjs";
 import { signatureCSS, signatureHTML } from "./signature.mjs";
 import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
+import { timeLabelHTML, TIME_LABELS_JS } from "./time-labels.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -122,9 +123,12 @@ export function renderHTML(plan, footage) {
   const hookStroke = r3((hk.strokeWidthFrac ?? cap.strokeWidthFrac) * H);
   const captions = plan.captions || [];
   const premise = plan.premise?.box && s.brand ? plan.premise : null;
-  const premiseTokens = premise ? structuredClone(s.brand) : null;
-  if (premiseTokens?.type?.display) premiseTokens.type.display.file = "assets/fonts/Anton-Regular.ttf";
-  if (premiseTokens?.type?.body) premiseTokens.type.body.file = "assets/fonts/Inter.ttf";
+  const premiseHasIcons = !!premise?.sections?.some((section) => inlineIconSVG(section.icon));
+  const timeLabelList = (plan.timeLabels || []).filter((item) => item.box && s.brand);
+  const needsBrandTokens = !!(premise || timeLabelList.length || (plan.graphics || []).some(isPersistentScene));
+  const structureTokens = needsBrandTokens ? structuredClone(s.brand) : null;
+  if (structureTokens?.type?.display) structureTokens.type.display.file = "assets/fonts/Anton-Regular.ttf";
+  if (structureTokens?.type?.body) structureTokens.type.body.file = "assets/fonts/Inter.ttf";
   const hookStyle = hk.style || "gold";
   const hookColor = hookStyle === "gold" ? c.accent : c.text;
   const headline = hookStyle === "headline";
@@ -174,9 +178,17 @@ export function renderHTML(plan, footage) {
     ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
     : "";
 
-  const premiseHTML = premise
-    ? `      <div id="premise-strip" class="clip premise-${esc(premise.shape)}${premise.sections.length ? " premise-with-sections" : ""}" data-start="${premise.start}" data-duration="${premise.duration}" data-track-index="3" data-layout-allow-overflow><div id="premise-copy">${esc(premise.premise)}</div>${premise.sections.length ? `<div id="premise-sections">${premise.sections.map((section, i) => `<div id="premise-section-${i}" class="premise-section">${esc(section.label)}</div>`).join("")}</div>` : ""}</div>`
+  const premiseSectionsHTML = premise?.sections?.length
+    ? premise.sections.map((section, i) => {
+      if (!premiseHasIcons) return `<div id="premise-section-${i}" class="premise-section">${esc(section.label)}</div>`;
+      const icon = section.icon ? inlineIconSVG(section.icon) : "";
+      return `<div id="premise-section-${i}" class="premise-section">${icon ? `<span class="premise-section-icon">${icon}</span>` : ""}<span>${esc(section.label)}</span></div>`;
+    }).join("")
     : "";
+  const premiseHTML = premise
+    ? `      <div id="premise-strip" class="clip premise-${esc(premise.shape)}${premise.sections.length ? " premise-with-sections" : ""}" data-start="${premise.start}" data-duration="${premise.duration}" data-track-index="3" data-layout-allow-overflow><div id="premise-copy">${esc(premise.premise)}</div>${premiseSectionsHTML ? `<div id="premise-sections">${premiseSectionsHTML}</div>` : ""}</div>`
+    : "";
+  const timeLabelsHTML = timeLabelList.map(timeLabelHTML).join("\n");
 
   const ctaHTML = plan.cta
     ? `      <div id="cta" class="clip" data-start="${plan.cta.start}" data-duration="${plan.cta.duration}" data-track-index="4" data-layout-allow-overflow><span id="cta-text">${esc(plan.cta.text)}</span></div>`
@@ -296,13 +308,18 @@ export function renderHTML(plan, footage) {
   const gfxSchema = plan.graphicsSchema ?? gfxList.schema ?? 1;
   const progressList = gfxList.filter((g) => g.type === "progress" && g.placement && !g.placement.skip);
   const cardList = gfxList.some((g) => g.type === "progress") ? gfxList.filter((g) => g.type !== "progress") : gfxList;
+  const hasPersistent = cardList.some(isPersistentScene);
   // Looks (looks.mjs) restyle the overlay cards; the YouTube band layout keeps the glass cards.
   const gfxMode = s.graphics?.mode || "overlay";
   const faceSide = plan.framing?.side === "left" ? "right" : "left";
   const skinned = (g) => ({ ...(gfxMode === "overlay" ? g : { ...g, skin: "glass" }), faceSide });
-  const timed = (g) => (g.type === "list" || g.type === "steps") && g.items?.length && g.items.every((it) => Number.isFinite(it.at));
+  const timed = (g) => ((g.type === "list" || g.type === "steps") && g.items?.length && g.items.every((it) => Number.isFinite(it.at))) || (g.type === "ladder" && g.rungs?.length && g.rungs.every((it) => Number.isFinite(it.at)));
   const hasProof = cardList.some((g) => g.type === "message" && g.mode === "proof");
-  const gfxHTML = cardList.map((g, i) => `      <div id="gfx-${i}" class="gfx clip gfx-${g.type}${timed(g) ? " gfx-timed" : ""}${g.type === "message" && g.mode === "proof" ? " gfx-message-proof" : ""} skin-${skinned(g).skin || "glass"}" data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g), { schema: gfxSchema })}</div>`).join("\n");
+  const gfxHTML = cardList.map((g, i) => {
+    const p = g.placement;
+    const vars = isPersistentScene(g) && p ? ` style="--structure-x:${p.x}px;--structure-y:${p.y}px;--structure-w:${p.w}px;--structure-h:${p.h}px;--structure-font:${Math.max(40, Number(g.fontSize || s.brand?.typeScale?.md) || 40)}px"` : "";
+    return `      <div id="gfx-${i}" class="gfx clip gfx-${g.type}${timed(g) ? " gfx-timed" : ""}${isPersistentScene(g) ? " gfx-persistent" : ""}${g.type === "message" && g.mode === "proof" ? " gfx-message-proof" : ""} skin-${skinned(g).skin || "glass"}"${vars} data-start="${g.start}" data-duration="${g.duration}" data-track-index="2">${sceneHTML(skinned(g), { schema: gfxSchema })}</div>`;
+  }).join("\n");
   const progressRailHTML = progressList.map((g, i) => {
     const p = g.placement;
     return `      <div id="progress-${i}" class="progress clip ${p.orientation === "vertical" ? "vertical" : "horizontal"} skin-${g.skin || "glass"}" style="left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px" data-start="${g.start}" data-duration="${g.duration}" data-track-index="3" data-layout-allow-overflow>${progressHTML(g)}</div>`;
@@ -350,7 +367,7 @@ export function renderHTML(plan, footage) {
       const layout = brollLayout(b);
       return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY, seamY: b.split.seamY ?? Math.round(H / 2) } : {}) } : {}) };
     }),
-    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}) })),
+    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: (g.type === "ladder" ? g.rungs : g.items).map((it) => ({ at: it.at })) } : {}), ...(isPersistentScene(g) ? { persistent: true, duck: g.duck || [], enterEase: s.brand?.motion?.enterEase || "none", exitEase: s.brand?.motion?.exitEase || "none" } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}) })),
     graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
     graphicsSide: plan.framing?.side || "right",
@@ -402,6 +419,7 @@ export function renderHTML(plan, footage) {
   };
   if (iconList.length) runtimePlan.icons = iconList.map((icon) => ({ t: icon.t, end: icon.end }));
   if (progressList.length) runtimePlan.progress = progressList.map((g) => ({ start: g.start, duration: g.duration, hookEnd: g.hookEnd, pulses: g.pulses || [] }));
+  if (timeLabelList.length) runtimePlan.timeLabels = timeLabelList.map((item) => ({ at: item.at, duration: item.duration, enter: item.enter, enterEase: item.enterEase, exitEase: item.exitEase, slide: s.brand?.spacing?.sm || 0 }));
   const framing = plan.framing || { scale: 1, side: "right", face: null };
   const origin = framing.scale > 1 && framing.origin ? framing.origin : s.zooms.origin || "50% 40%";
   // Cards beside the speaker: the free third, vertically on the face.
@@ -430,7 +448,7 @@ export function renderHTML(plan, footage) {
       @font-face { font-family: "Anton"; src: url("assets/fonts/Anton-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: block; }
       @font-face { font-family: "Inter"; src: url("assets/fonts/Inter.ttf") format("truetype"); font-weight: 100 900; font-style: normal; font-display: block; }
       ${fontsForSkins.css}
-${premise ? tokensCSS(premiseTokens) : ""}
+${needsBrandTokens ? tokensCSS(structureTokens) : ""}
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
 ${splitBroll ? "      #footage-layout, #footage-position { position: absolute; inset: 0; will-change: transform, clip-path; }\n" : ""}      #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
@@ -490,7 +508,7 @@ ${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-e
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
-${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}
+${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H, persistent: hasPersistent }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}
 ${premise ? `      #premise-strip {
         position: absolute; left: ${premise.box.x}px; top: ${premise.box.y}px; width: ${premise.box.w}px; height: ${premise.box.h}px;
         display: flex; flex-direction: column; justify-content: center; gap: ${premise.gap}px; box-sizing: border-box;
@@ -501,6 +519,11 @@ ${premise ? `      #premise-strip {
       #premise-copy { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: clip; font-family: var(--brand-display-font); font-size: ${premise.fontSize}px; font-weight: var(--brand-display-weight); line-height: var(--brand-display-line-height); letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); text-align: center; }
       #premise-sections { position: relative; min-height: calc(${premise.sectionFontSize}px * var(--brand-body-line-height)); overflow: hidden; }
       .premise-section { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; white-space: nowrap; overflow: hidden; text-overflow: clip; font-family: var(--brand-body-font); font-size: ${premise.sectionFontSize}px; font-weight: var(--brand-body-weight); line-height: var(--brand-body-line-height); letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); color: var(--brand-accent); }
+${premiseHasIcons ? `      .premise-section-icon { flex: 0 0 ${premise.sectionFontSize}px; width: ${premise.sectionFontSize}px; height: ${premise.sectionFontSize}px; margin-right: var(--space-sm); color: var(--brand-accent); }
+      .premise-section-icon svg { width: 100%; height: 100%; }
+` : ""}` : ""}${timeLabelList.length ? `      .time-label { position: absolute; left: ${timeLabelList[0].box.x}px; top: ${timeLabelList[0].box.y}px; width: ${timeLabelList[0].box.w}px; min-height: ${timeLabelList[0].box.h}px; display: flex; align-items: center; gap: var(--space-sm); box-sizing: border-box; padding: ${timeLabelList[0].padY}px ${timeLabelList[0].padX}px; overflow: hidden; opacity: 0; color: var(--brand-ink); background: var(--brand-surface); border: calc(var(--space-xs) / 4) solid var(--brand-stroke); border-radius: ${timeLabelList[0].radius}; font-family: var(--brand-body-font); font-size: ${timeLabelList[0].fontSize}px; font-weight: var(--brand-body-weight); line-height: var(--brand-body-line-height); white-space: nowrap; pointer-events: none; }
+      .time-label-icon { flex: 0 0 ${timeLabelList[0].fontSize}px; width: ${timeLabelList[0].fontSize}px; height: ${timeLabelList[0].fontSize}px; color: var(--brand-accent); }
+      .time-label-icon svg { width: 100%; height: 100%; }
 ` : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
@@ -554,7 +577,7 @@ ${brollHTML}${signatureLayerHTML ? `
 ${popoutBgHTML}
 ${lowerHTML}
 ${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}
-${premiseHTML}
+${premiseHTML}${timeLabelsHTML ? `\n${timeLabelsHTML}` : ""}
 ${slamHTML}${iconHTML ? `\n${iconHTML}` : ""}
 ${hookHTML}
 ${cutoutHTML}
@@ -651,7 +674,7 @@ ${audioHTML}
             tl.set(strip, { opacity: 0 }, d.hiddenAt);
             tl.to(strip, { opacity: 1, duration: d.shownAt - d.inAt, ease: p.enterEase }, d.inAt);
           });
-        }
+        }${timeLabelList.length ? `\n${TIME_LABELS_JS}` : ""}
         // Hand-drawn markers: measure each stroke once so the draw-on is a plain dash offset (seek-safe).
         if (PLAN.annotate) document.querySelectorAll(".an path").forEach((p) => { const L = p.getTotalLength(); p.style.strokeDasharray = L + " " + L; p.style.strokeDashoffset = L; });
         PLAN.captions.forEach((g, i) => {
@@ -742,7 +765,7 @@ ${hasDrift ? `        const DRIFT = ".drift-inner";
           tl.to(wash, { opacity: 0, duration: 0.18, ease: "power3.out" }, d);
           tl.to(core, { opacity: 0, scale: 1.18, duration: 0.3, ease: "power2.out" }, d + 0.01);
         }
-${cardList.length ? GRAPHICS_JS : ""}${progressList.length ? PROGRESS_JS : ""}
+${cardList.length ? (hasPersistent ? STRUCTURE_GRAPHICS_JS : GRAPHICS_JS) : ""}${progressList.length ? PROGRESS_JS : ""}
         // B-roll: hard cut in and out. The push (6%, ease-out, settles before the end) and the Ken Burns pans (a
         // steady drift with a little scale, no ease) run on the wrapper; the cut lands with a short focus pull.
         // A generated clip already moves, so it gets no push: "none" holds the frame.

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
+import { lucideIconNames, validLucideIcon } from "./icons.mjs";
 import { log, warn, readJSON, writeJSON, r3, sha1 } from "./util.mjs";
 
 const FILLERS = new Set(["ah", "er", "erm", "hmm", "mhm", "mm", "uh", "uhh", "uhm", "um", "umm"]);
@@ -53,7 +54,10 @@ export function parsePremiseReply(text) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const premise = clean(value.premise);
   const sections = Array.isArray(value.sections)
-    ? value.sections.map((section) => ({ label: clean(section?.label), line: Number.isInteger(section?.line) ? section.line : parseInt(section?.line, 10) }))
+    ? value.sections.map((section) => {
+      const icon = clean(section?.icon).toLowerCase();
+      return { label: clean(section?.label), line: Number.isInteger(section?.line) ? section.line : parseInt(section?.line, 10), ...(icon ? { icon } : {}) };
+    })
     : [];
   return { premise, sections };
 }
@@ -62,7 +66,7 @@ export function parsePremiseReply(text) {
  * Truth-check and ground one reply. Generated copy is strict; a CLI-forced premise stays on screen and reports
  * its truth/length problem as a warning. Section labels always need an exact spoken landing point.
  */
-export function planPremise(raw, { lines = [], hook = "", duration = 0, forced = false, minSpacing = 4, maxSections = 6, fps = 30 } = {}) {
+export function planPremise(raw, { lines = [], hook = "", duration = 0, forced = false, icons = false, minSpacing = 4, maxSections = 6, fps = 30 } = {}) {
   const dropped = [];
   const warnings = [];
   let parsed;
@@ -96,7 +100,9 @@ export function planPremise(raw, { lines = [], hook = "", duration = 0, forced =
     const line = matches.sort((a, b) => Math.abs(a - hinted) - Math.abs(b - hinted) || a - b)[0];
     const at = frame(Number(byLine.get(line)?.start), fps);
     if (!Number.isFinite(at)) { dropped.push(`section "${section.label}" has no usable line time`); continue; }
-    grounded.push({ label: section.label, line, at });
+    const icon = icons && section.icon ? validLucideIcon(section.icon) : "";
+    if (icons && section.icon && !icon) dropped.push(`section "${section.label}" requested unknown Lucide icon "${section.icon}"`);
+    grounded.push({ label: section.label, line, at, ...(icon ? { icon } : {}) });
   }
 
   grounded.sort((a, b) => a.at - b.at || a.line - b.line);
@@ -115,17 +121,20 @@ export function planPremise(raw, { lines = [], hook = "", duration = 0, forced =
   return { plan: { premise: parsed.premise, sections, start, duration: frame(duration - start, fps), forced: !!forced }, dropped, warnings };
 }
 
-export function premisePrompt({ lines = [], hook = "" } = {}) {
+export function premisePrompt({ lines = [], hook = "", icons = false } = {}) {
   return [
     "You are planning one compact persistent premise strip for a talking-head reel. Reply with JSON only and never use tools.",
     "Return a premise only when the whole reel has a clear running premise, a numbered or stepwise structure, or distinct sections. Otherwise return {\"premise\":null,\"sections\":[]}.",
     "premise is 2-6 words. Every word must be copied from the transcript or the supplied hook; you may drop filler words but may not paraphrase.",
     "sections is optional and has at most 6 items. Each label is 1-4 consecutive spoken words and line is the transcript line where those words begin. Use sections only for real section changes, at least 4 seconds apart.",
+    ...(icons ? [
+      `Each section may have one Lucide icon from this exact allow-list: ${lucideIconNames().join(", ")}. Leave icon empty when none is clearly correct. These are generic line icons, never app or company logos.`,
+    ] : []),
     "Do not invent, summarize, add credentials, numbers, names, quotes, or calls to action.",
     `Hook: ${hook || "(none)"}`,
     "Transcript lines:",
     ...indexedLines(lines).map((line) => `${line.i}: ${Number(line.start || 0).toFixed(2)}s ${line.text || ""}`),
-    'Reply: {"premise":"2-6 copied words","sections":[{"label":"1-4 copied words","line":0}]}',
+    `Reply: {"premise":"2-6 copied words","sections":[{"label":"1-4 copied words","line":0${icons ? ',"icon":"lucide-name-or-empty"' : ""}}]}`,
   ].join("\n");
 }
 
@@ -210,7 +219,7 @@ export async function makePremise({ workDir, groups = [], hook = null, duration 
   if (mode === "off") return null;
   const lines = indexedLines(groups).map((line) => ({ i: line.i, start: line.start, text: line.text }));
   const forcedText = clean(settings.text);
-  const context = { lines, hook, duration, forced: !!forcedText };
+  const context = { lines, hook, duration, forced: !!forcedText, icons: settings.icons === true };
   if (hook && (+hook.start || 0) + (+hook.duration || 0) >= duration) { log("premise: the hook stays to the end, skipped"); return null; }
   if (forcedText) {
     const result = planPremise({ premise: forcedText, sections: [] }, context);
@@ -221,7 +230,7 @@ export async function makePremise({ workDir, groups = [], hook = null, duration 
   if (!lines.length) { log("premise: no transcript lines, skipped"); return null; }
   if (!hasClaude()) { warn("premise needs the Claude Code CLI (claude) signed in; skipped"); return null; }
 
-  const key = sha1(JSON.stringify({ lines: lines.map((line) => [line.start, line.text]), hook: hook?.text || "" }));
+  const key = sha1(JSON.stringify({ lines: lines.map((line) => [line.start, line.text]), hook: hook?.text || "", icons: settings.icons === true }));
   const planPath = path.join(workDir, "premise.json");
   let raw = null;
   if (!force && fs.existsSync(planPath)) {
@@ -233,7 +242,7 @@ export async function makePremise({ workDir, groups = [], hook = null, duration 
   try {
     if (raw === null) {
       log("premise: Claude is checking for a running premise…");
-      raw = parsePremiseReply(await claudeText(premisePrompt({ lines, hook: hook?.text || "" }), { timeoutMs: 120000 }));
+      raw = parsePremiseReply(await claudeText(premisePrompt({ lines, hook: hook?.text || "", icons: settings.icons === true }), { timeoutMs: 120000 }));
       writeJSON(planPath, { schema: 1, key, raw });
     }
     const result = planPremise(raw, context);

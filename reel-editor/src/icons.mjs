@@ -4,6 +4,18 @@ import { faceBox, headBoxFor, zoomDuring } from "./placement.mjs";
 import { norm } from "./text.mjs";
 import { PKG_ROOT, r3 } from "./util.mjs";
 
+const ICON_DIR = path.join(PKG_ROOT, "assets", "icons");
+
+/** The checked-in Lucide set is the complete icon allow-list. Unknown names and logos fail closed. */
+export function lucideIconNames() {
+  return fs.readdirSync(ICON_DIR).filter((file) => /^[a-z0-9-]+\.svg$/.test(file)).map((file) => file.replace(/\.svg$/, "")).sort();
+}
+
+export function validLucideIcon(value) {
+  const name = String(value || "").replace(/\.svg$/i, "").toLowerCase();
+  return lucideIconNames().includes(name) ? `${name}.svg` : "";
+}
+
 /** Spoken words with one unambiguous picture in Greg's world. Longer phrases win over their individual words. */
 export const ICON_MAP = [
   { words: [["booked"], ["call", "calls"]], icon: "calendar-check.svg", kind: "noun" },
@@ -156,9 +168,9 @@ export function planIcons(groups, duration, { hook = null, busy = [], zooms = []
 
 /** Inline a vendored Lucide icon. Only its drawing elements survive; color and width come from the icon skin. */
 export function inlineIconSVG(file) {
-  const name = path.basename(String(file));
-  if (!/^[a-z0-9-]+\.svg$/.test(name)) return "";
-  const src = path.join(PKG_ROOT, "assets", "icons", name);
+  const name = validLucideIcon(path.basename(String(file)));
+  if (!name) return "";
+  const src = path.join(ICON_DIR, name);
   if (!fs.existsSync(src)) return "";
   const body = fs.readFileSync(src, "utf8").match(/<svg\b[^>]*>([\s\S]*?)<\/svg>/i)?.[1] || "";
   const paths = (body.match(/<(?:path|line|polyline|polygon|circle|ellipse|rect)\b[^>]*\/?\s*>/gi) || []).join("");

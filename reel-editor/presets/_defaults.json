@@ -71,7 +71,11 @@
     "behindScale": 1.12
   },
   "premise": {
-    "mode": "off"
+    "mode": "off",
+    "icons": false
+  },
+  "timeLabels": {
+    "enabled": false
   },
   "zooms": {
     "enabled": true,
@@ -146,6 +150,8 @@
   },
   "graphics": {
     "enabled": false,
+    "persistent": false,
+    "ladder": false,
     "mode": "overlay",
     "max": 6,
     "every": 10,

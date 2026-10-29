@@ -89,6 +89,10 @@ Options (edit / batch)
                            quote, the key line, a step diagram. Claude writes them from the transcript, the
                            editor sets them in the brand colors (needs the Claude Code CLI). --no-graphics off,
                            --new-graphics replans them. With cards on, --broll adds at most 2 photos in the gaps
+  --persistent-graphics    allow one spoken 3-7 item checklist to stay beside the head   --no-persistent-graphics off
+  --ladder                 allow a persistent ladder of spoken numeric levels            --no-ladder off
+  --premise-icons          allow validated Lucide section icons in the premise strip      --no-premise-icons off
+  --time-labels            show exact spoken story times after the hook                    --no-time-labels off
   --caption-style <s>      pop (Anton, black outline) | reveal (heavy Inter, each word lights up as it is said)
   --slams                  climax words: a gold word slams in big in the top third for a second as it is said
                            (at most 5, 8 s apart, never under a card). --no-slams off
@@ -192,6 +196,14 @@ const EDIT_OPTIONS = {
   graphics: { type: "boolean" },
   "no-graphics": { type: "boolean" },
   "new-graphics": { type: "boolean" },
+  "persistent-graphics": { type: "boolean" },
+  "no-persistent-graphics": { type: "boolean" },
+  ladder: { type: "boolean" },
+  "no-ladder": { type: "boolean" },
+  "premise-icons": { type: "boolean" },
+  "no-premise-icons": { type: "boolean" },
+  "time-labels": { type: "boolean" },
+  "no-time-labels": { type: "boolean" },
   "caption-style": { type: "string" },
   slams: { type: "boolean" },
   "no-slams": { type: "boolean" },

@@ -109,7 +109,7 @@ test("brand-token geometry and rendering produce the fixed strip, section swaps 
   assert.equal(geometry.box.x, 76);
   assert.ok(geometry.box.y >= 200 && geometry.box.y + geometry.box.h <= 330);
 
-  const premise = { premise: "three ways < lead", sections: [{ label: "make the calls", line: 1, at: 5 }], start: 3, duration: 17, forced: false, ...geometry, headTop: 0.3, duck: [{ outAt: 7.8, hiddenAt: 8, inAt: 10, shownAt: 10.2 }] };
+  const premise = { premise: "three ways < lead", sections: [{ label: "make the calls", line: 1, at: 5, icon: "phone-call.svg" }], start: 3, duration: 17, forced: false, ...geometry, headTop: 0.3, duck: [{ outAt: 7.8, hiddenAt: 8, inAt: 10, shownAt: 10.2 }] };
   const plan = {
     name: "premise", canvas: { width: 1080, height: 1920 }, video: { duration: 20, hasAudio: false }, style,
     hook: { text: "Three ways to lead", start: 0, duration: 3 }, premise, captions: [], graphics: [], zooms: [], broll: [], slams: [], audio: { tracks: [] },
@@ -117,11 +117,15 @@ test("brand-token geometry and rendering produce the fixed strip, section swaps 
   const html = renderHTML(plan, "assets/footage.mp4");
   assert.match(html, /id="premise-strip"/);
   assert.match(html, /three ways &lt; lead/);
+  assert.match(html, /premise-section-icon"><svg/);
   assert.match(html, /--brand-accent: #C8A24B/);
   assert.match(html, /const swap = 8 \/ \(PLAN\.fps \|\| 30\)/);
   assert.match(html, /d\.hiddenAt - d\.outAt/);
   assert.deepEqual(premiseChecks(plan), []);
   assert.ok(!layoutChecks(plan).some((item) => item.code.startsWith("card-")), "the full strip lifetime is exempt from card hold and occupancy rules");
+  const noIconHTML = renderHTML({ ...plan, premise: { ...premise, sections: premise.sections.map(({ icon, ...section }) => section) } }, "assets/footage.mp4");
+  assert.doesNotMatch(noIconHTML, /premise-section-icon/);
+  assert.match(noIconHTML, /class="premise-section">make the calls<\/div>/, "icons off keeps the legacy section markup");
 });
 
 test("premise preflight checks minimum size, safe bounds and the measured head top", () => {
@@ -139,7 +143,20 @@ test("premise preset and CLI overrides leave every existing preset off except pi
   assert.equal(loadPreset("pingel-brand").premise.mode, "off");
   assert.equal(loadPreset("pingel-v2").premise.mode, "auto");
   const base = loadPreset("clean");
-  assert.deepEqual(mergeOverrides(base, { premise: "own the outcome" }).premise, { mode: "on", text: "own the outcome" });
-  assert.deepEqual(mergeOverrides(base, { premiseMode: "auto" }).premise, { mode: "auto" });
-  assert.deepEqual(mergeOverrides(loadPreset("pingel-v2"), { noPremise: true }).premise, { mode: "off", text: null });
+  assert.deepEqual(mergeOverrides(base, { premise: "own the outcome" }).premise, { mode: "on", icons: false, text: "own the outcome" });
+  assert.deepEqual(mergeOverrides(base, { premiseMode: "auto" }).premise, { mode: "auto", icons: false });
+  assert.deepEqual(mergeOverrides(loadPreset("pingel-v2"), { noPremise: true }).premise, { mode: "off", icons: true, text: null });
+});
+
+test("section icons are validated Lucide names and invalid logos disappear without dropping the section", () => {
+  const result = planPremise({ premise: "three ways to lead", sections: [
+    { label: "make the calls", line: 1, icon: "phone-call" },
+    { label: "ask what happened", line: 3, icon: "instagram" },
+  ] }, { lines, hook: "Three ways to lead", duration: 35, icons: true });
+  assert.equal(result.plan.sections[0].icon, "phone-call.svg");
+  assert.equal(result.plan.sections[1].icon, undefined);
+  assert.ok(result.dropped.some((reason) => /unknown Lucide icon/.test(reason)));
+  const prompt = premisePrompt({ lines: lines.slice(0, 2), icons: true });
+  assert.match(prompt, /phone-call/);
+  assert.match(prompt, /never app or company logos/);
 });
