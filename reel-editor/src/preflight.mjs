@@ -99,6 +99,7 @@ export function layoutChecks(plan) {
     const p = plan.cta.position ?? st.cta?.position ?? 0.62;
     if (p + 0.06 > 1 - SAFE.bottom) items.push({ level: "warn", code: "cta-safe-zone", message: `the CTA at ${pct(p)} is inside the Instagram caption strip` });
   }
+  items.push(...premiseChecks(plan));
   items.push(...graphicChecks(plan));
   return items;
 }
@@ -106,6 +107,29 @@ export function layoutChecks(plan) {
 const pct = (f) => `${Math.round(f * 100)}%`;
 
 const words = (text) => String(text || "").replace(/\*/g, "").trim().split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
+
+/** The persistent strip is not a card hold, but it still has to clear the face, captions and platform-safe bounds. */
+export function premiseChecks(plan) {
+  const premise = plan?.premise;
+  if (!premise?.box) return [];
+  const items = [];
+  const W = plan.canvas?.width || 1080, H = plan.canvas?.height || 1920;
+  const box = premise.box;
+  const right = box.x + box.w, bottom = box.y + box.h;
+  const fontSize = Math.min(+premise.fontSize || 0, premise.sections?.length ? +premise.sectionFontSize || 0 : Infinity);
+  const cap = plan.style?.captions || {};
+  const captionTop = plan.captions?.length && cap.enabled !== false ? (cap.position ?? 0.6) * H - 0.6 * (cap.fontSizeFrac || 0.04) * H : H;
+  const bad = [];
+  if (box.x < 76) bad.push(`left ${Math.round(box.x)}px`);
+  if (right > Math.min(940, W - 76)) bad.push(`right ${Math.round(right)}px`);
+  if (box.y < 200) bad.push(`top ${Math.round(box.y)}px`);
+  if (bottom > captionTop) bad.push(`bottom ${Math.round(bottom)}px past captions at ${Math.round(captionTop)}px`);
+  if (bad.length) items.push({ level: "warn", code: "premise-bounds", message: `premise strip is outside x 76-${Math.min(940, W - 76)}px / y 200px-caption top (${bad.join(", ")})` });
+  if (fontSize < 44) items.push({ level: "warn", code: "premise-size", message: `premise strip text is ${fontSize}px (minimum 44px)` });
+  if (Number.isFinite(premise.headTop) && bottom > premise.headTop * H) items.push({ level: "warn", code: "premise-head", message: `premise strip ends at ${Math.round(bottom)}px, over the head at ${Math.round(premise.headTop * H)}px` });
+  if (right > W - 140 && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "premise-right-rail", message: "premise strip reaches Instagram's right action rail" });
+  return items;
+}
 
 /** The words a viewer must read on a card, excluding decorative skin chrome. */
 export function cardWords(card) {

@@ -49,6 +49,8 @@ Options (edit / batch)
   --no-verify              skip the second-opinion transcript and review.txt
   --language <code>        default en
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
+  --premise "<text>"       persistent premise after the hook (truth-checked against the transcript)
+                           --no-premise turns preset/automatic premise planning off; #premise enables auto in a dropped file
   --title-style <s>        headline (brand default: words rise on a soft scrim, one gold phrase, gold rule) |
                            gold | outline (Bone text, black outline) | box (Bone on Obsidian backing)
                            Mark the gold phrase by hand with asterisks: --hook "The *10 minutes* after a bad number"
@@ -133,6 +135,9 @@ const EDIT_OPTIONS = {
   language: { type: "string" },
   hook: { type: "string" },
   "no-hook": { type: "boolean" },
+  premise: { type: "string" },
+  "premise-mode": { type: "string" },
+  "no-premise": { type: "boolean" },
   "title-style": { type: "string" },
   "hook-position": { type: "string" },
   "hook-seconds": { type: "string" },

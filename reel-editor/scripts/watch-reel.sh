@@ -16,6 +16,7 @@
 # "#low" drops the hook to chest height (wide shots where the default sits on your head),
 # "#top" lifts it above the head (close-up selfies where your face fills the middle). "#fast" adds the measured
 # short-form pacing (presets/pace-fast.json). "#hookreel" keeps the hook up the whole reel (one-liners, podcast titles).
+# "#premise" enables the transcript-grounded persistent premise strip.
 # Music: the editor picks a track from REEL_WATCH_MUSIC (default ~/Reels/music; Desktop/Reels/Music is a shortcut) by
 # the mood of what is said, at REEL_WATCH_MUSIC_VOLUME (default 0.10) under the voice. "#music:calm" asks for the track
 # whose name contains "calm"; "#nomusic" skips it. Nothing happens when the folder is empty. music.txt names the track.
@@ -119,6 +120,7 @@ case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
 case "$base" in *"#fast"*) flags+=(--pace fast);; esac
+case "$base" in *"#premise"*) flags+=(--premise-mode auto);; esac
 case "$base" in *"#look:"*) lk="${base#*#look:}"; lk="${lk%%[ .#]*}"; flags+=(--look "$lk");; esac
 # "#v2": Greg's test look from the Oct 28 design teardown (presets/pingel-v2.json). Never on a client's reel (their
 # brand kit wins) or in the Runway folder, which has its own preset.

@@ -75,6 +75,9 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noCaptions) p.captions.enabled = false;
   if (o.captions) p.captions.enabled = true;
   if (o.noHook) p.hook.enabled = false;
+  if (o.premise) p.premise = { ...(p.premise || {}), mode: "on", text: o.premise };
+  if (["auto", "on", "off"].includes(o.premiseMode)) p.premise = { ...(p.premise || {}), mode: o.premiseMode };
+  if (o.noPremise) p.premise = { ...(p.premise || {}), mode: "off", text: null };
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;
   if (num(o.hookPosition) != null) p.hook.position = num(o.hookPosition);

@@ -15,6 +15,7 @@ import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./
 import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta, hookSeconds } from "./hook.mjs";
+import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
@@ -261,16 +262,19 @@ export async function runEdit(input, opts = {}) {
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
+  let premise = await makePremise({ workDir, groups, hook, duration, settings: preset.premise, force: !!opts.force });
 
   // Face: captions sit just under the chin (never over the mouth), the hook stays off the head.
   let shownGroups = groups;
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || ["window", "split", "mix"].includes(preset.broll?.layout));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || premise || ["window", "split", "mix"].includes(preset.broll?.layout));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
-    const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
+    const times = premise
+      ? Array.from({ length: 12 }, (_, i) => r3(Math.min(duration - 0.05, 0.1 + (i * Math.max(0, duration - 0.2)) / 11)))
+      : [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
     detection = await detectFaces(videoSrc, times);
   }
   // Base framing (long form): the face sampled across the whole video sets a tighter default frame on a wide
@@ -580,6 +584,20 @@ export async function runEdit(input, opts = {}) {
       if (top != null) g.headTop = top;
     }
   }
+  // The premise is one fixed band, measured against the highest head position across its full lifetime. It does not
+  // count as a card; only cards and slams that occupy the band make it duck for their exact window.
+  if (premise) {
+    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+    const headTop = sameShape ? cardHeadTop(detection, { zooms, drift: driftPlan.stretches, t0: premise.start, t1: duration, scale: framing.scale, originY, shift: framing.shift || 0 }) : null;
+    const geometry = premiseGeometry({ brand: preset.brand, W: canvas0.width, H: canvas0.height, sections: premise.sections, headTop, captionTop: captionTop * canvas0.height });
+    if (geometry.skip) {
+      log(`premise: skipped (${geometry.reason})`);
+      premise = null;
+    } else {
+      Object.assign(premise, geometry, { ...(headTop != null ? { headTop } : {}) });
+      premise.duck = premiseDuckSchedule({ box: premise.box, cards: allCards, slams, start: premise.start, end: duration, fps: preset.render.fps || 30 });
+    }
+  }
   // Spoken icon pops use the final zoom lane and every finished busy window, including a 0.3 s guard around slams.
   let iconDetection = detection;
   if (preset.icons?.enabled && sameShape && shownGroups.length) {
@@ -623,6 +641,7 @@ export async function runEdit(input, opts = {}) {
     canvas: canvasFor(preset.canvas, cleanMeta),
     style: preset,
     hook,
+    premise,
     cta,
     captions: showCaptions ? shownGroups : [],
     lines: shownGroups,

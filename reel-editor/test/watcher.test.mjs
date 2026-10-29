@@ -155,6 +155,12 @@ test("music: an empty folder means no music.txt, no error", () => {
   assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4"]);
 });
 
+test("#premise enables automatic premise planning and is stripped from a written hook", () => {
+  const r = fakeDrops({ brollShots: 0, clips: { reel: ["a__Own the outcome #premise.mov"], broll: [], carousel: [] } });
+  const call = r.calls.trim().split("\n").find((line) => line.includes("a__Own the outcome #premise.mov"));
+  assert.match(call, /--hook Own the outcome --premise-mode auto/);
+});
+
 test("an empty CTA with a trailing comment in .zshrc still means no CTA; a command substitution is skipped", () => {
   const r = fakeDrops({ brollShots: 0 });
   assert.doesNotMatch(r.calls, /--cta/, "no Comment GHOST pill when REEL_WATCH_CTA is set empty in .zshrc");

@@ -5,6 +5,7 @@ import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, numberMotion, pro
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 import { inlineIconSVG } from "./icons.mjs";
 import { brandQuietCSS } from "./brandlooks.mjs";
+import { tokensCSS } from "./brandtokens.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -101,6 +102,10 @@ export function renderHTML(plan, footage) {
   const hookFont = Math.round(hk.fontSizeFrac * H);
   const hookStroke = r3((hk.strokeWidthFrac ?? cap.strokeWidthFrac) * H);
   const captions = plan.captions || [];
+  const premise = plan.premise?.box && s.brand ? plan.premise : null;
+  const premiseTokens = premise ? structuredClone(s.brand) : null;
+  if (premiseTokens?.type?.display) premiseTokens.type.display.file = "assets/fonts/Anton-Regular.ttf";
+  if (premiseTokens?.type?.body) premiseTokens.type.body.file = "assets/fonts/Inter.ttf";
   const hookStyle = hk.style || "gold";
   const hookColor = hookStyle === "gold" ? c.accent : c.text;
   const headline = hookStyle === "headline";
@@ -148,6 +153,10 @@ export function renderHTML(plan, footage) {
     : `<span id="hook-text">${esc(plan.hook?.text || "")}</span>`;
   const hookHTML = plan.hook
     ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
+    : "";
+
+  const premiseHTML = premise
+    ? `      <div id="premise-strip" class="clip premise-${esc(premise.shape)}${premise.sections.length ? " premise-with-sections" : ""}" data-start="${premise.start}" data-duration="${premise.duration}" data-track-index="3" data-layout-allow-overflow><div id="premise-copy">${esc(premise.premise)}</div>${premise.sections.length ? `<div id="premise-sections">${premise.sections.map((section, i) => `<div id="premise-section-${i}" class="premise-section">${esc(section.label)}</div>`).join("")}</div>` : ""}</div>`
     : "";
 
   const ctaHTML = plan.cta
@@ -318,6 +327,16 @@ export function renderHTML(plan, footage) {
     brollCut,
     coldOpen: open ? { duration: open.duration } : null,
     lowerThird: lt && lt.name ? { at: lt.at, duration: lt.duration } : null,
+    premise: premise ? {
+      start: premise.start,
+      duration: premise.duration,
+      enter: premise.enter,
+      enterEase: premise.enterEase,
+      exitEase: premise.exitEase,
+      slide: premise.slide,
+      sections: premise.sections.map((section) => ({ at: section.at })),
+      duck: premise.duck || [],
+    } : null,
     annotate,
     width: W,
     height: H,
@@ -372,6 +391,7 @@ export function renderHTML(plan, footage) {
       @font-face { font-family: "Anton"; src: url("assets/fonts/Anton-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: block; }
       @font-face { font-family: "Inter"; src: url("assets/fonts/Inter.ttf") format("truetype"); font-weight: 100 900; font-style: normal; font-display: block; }
       ${fontsForSkins.css}
+${premise ? tokensCSS(premiseTokens) : ""}
       html, body { margin: 0; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
 ${splitBroll ? "      #footage-layout, #footage-position { position: absolute; inset: 0; will-change: transform, clip-path; }\n" : ""}      #video-wrap { position: absolute; inset: 0; transform-origin: ${origin}; will-change: transform; }
@@ -420,6 +440,17 @@ ${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-e
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
 ${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}
+${premise ? `      #premise-strip {
+        position: absolute; left: ${premise.box.x}px; top: ${premise.box.y}px; width: ${premise.box.w}px; height: ${premise.box.h}px;
+        display: flex; flex-direction: column; justify-content: center; gap: ${premise.gap}px; box-sizing: border-box;
+        padding: ${premise.pad}px var(--space-md); overflow: hidden; opacity: 0; pointer-events: none;
+        color: var(--brand-ink); background: var(--brand-surface);
+        border-top: ${premise.rule}px solid var(--brand-${premise.ruleColor.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}); border-radius: ${premise.shape === "pill" ? "var(--brand-radius-pill)" : "var(--brand-radius-md)"};
+      }
+      #premise-copy { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: clip; font-family: var(--brand-display-font); font-size: ${premise.fontSize}px; font-weight: var(--brand-display-weight); line-height: var(--brand-display-line-height); letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); text-align: center; }
+      #premise-sections { position: relative; min-height: calc(${premise.sectionFontSize}px * var(--brand-body-line-height)); overflow: hidden; }
+      .premise-section { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; white-space: nowrap; overflow: hidden; text-overflow: clip; font-family: var(--brand-body-font); font-size: ${premise.sectionFontSize}px; font-weight: var(--brand-body-weight); line-height: var(--brand-body-line-height); letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); color: var(--brand-accent); }
+` : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
         position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3((cap.rightMarginFrac ?? cap.sideMarginFrac) * 100)}%; top: ${r3(cap.position * 100)}%;
@@ -471,6 +502,7 @@ ${brollHTML}
 ${popoutBgHTML}
 ${lowerHTML}
 ${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}
+${premiseHTML}
 ${slamHTML}${iconHTML ? `\n${iconHTML}` : ""}
 ${hookHTML}
 ${cutoutHTML}
@@ -540,6 +572,33 @@ ${audioHTML}
           tl.fromTo("#cta-text", { opacity: 0, scale: 0.6, y: 24 }, { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: "back.out(2.2)" }, k.start + 0.02);
           tl.to("#cta-text", { scale: 1.06, duration: 0.18, ease: "power1.inOut", yoyo: true, repeat: 1 }, k.start + 0.9);
           if (k.duration > 1.2) tl.to("#cta-text", { opacity: 0, scale: 0.9, duration: 0.18, ease: "power2.in" }, k.start + k.duration - 0.22);
+        }
+        if (PLAN.premise) {
+          const p = PLAN.premise;
+          const strip = document.getElementById("premise-strip");
+          // Keep every truthful word visible. The token size may shrink to the requested 44px floor, never below it.
+          strip.querySelectorAll("#premise-copy, .premise-section").forEach((line) => {
+            let size = parseFloat(getComputedStyle(line).fontSize);
+            while (line.scrollWidth > line.clientWidth && size > 44) { size--; line.style.fontSize = size + "px"; }
+          });
+          const blockedAtEntry = p.duck.find((d) => d.hiddenAt <= p.start && d.inAt > p.start);
+          const enterAt = blockedAtEntry ? blockedAtEntry.inAt : p.start;
+          tl.fromTo(strip, { opacity: 0, y: p.slide }, { opacity: 1, y: 0, duration: p.enter, ease: p.enterEase, immediateRender: false }, enterAt);
+          let current = -1;
+          for (let i = 0; i < p.sections.length; i++) if (p.sections[i].at <= enterAt) current = i;
+          if (current >= 0) tl.set("#premise-section-" + current, { opacity: 1, x: 0 }, enterAt);
+          const swap = 8 / (PLAN.fps || 30);
+          for (let i = current + 1; i < p.sections.length; i++) {
+            const at = Math.max(enterAt, p.sections[i].at);
+            if (current >= 0) tl.to("#premise-section-" + current, { opacity: 0, x: -p.slide, duration: swap, ease: p.exitEase }, at);
+            tl.fromTo("#premise-section-" + i, { opacity: 0, x: p.slide }, { opacity: 1, x: 0, duration: swap, ease: p.enterEase, immediateRender: false }, at);
+            current = i;
+          }
+          p.duck.forEach((d) => {
+            if (d.outAt > enterAt) tl.to(strip, { opacity: 0, duration: d.hiddenAt - d.outAt, ease: p.exitEase }, d.outAt);
+            tl.set(strip, { opacity: 0 }, d.hiddenAt);
+            tl.to(strip, { opacity: 1, duration: d.shownAt - d.inAt, ease: p.enterEase }, d.inAt);
+          });
         }
         // Hand-drawn markers: measure each stroke once so the draw-on is a plain dash offset (seek-safe).
         if (PLAN.annotate) document.querySelectorAll(".an path").forEach((p) => { const L = p.getTotalLength(); p.style.strokeDasharray = L + " " + L; p.style.strokeDashoffset = L; });

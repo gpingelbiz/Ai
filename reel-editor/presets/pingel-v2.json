@@ -21,6 +21,9 @@
     "maxWords": 12,
     "behind": false
   },
+  "premise": {
+    "mode": "auto"
+  },
   "framing": {
     "enabled": true,
     "faceHeight": 0.2,
