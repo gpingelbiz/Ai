@@ -6,7 +6,7 @@ import path from "node:path";
 // The delivered-reels lookup must never read the real ~/Desktop/Reels (an iCloud folder can stall the whole run):
 // point it at an empty folder before the module reads REEL_WATCH_DONE.
 process.env.REEL_WATCH_DONE = fs.mkdtempSync(path.join(os.tmpdir(), "reel-desk-"));
-const { parseCaption, postText, readItem, scan, fileItem, pickSlot, coverMilliseconds } = await import("../src/publish-folder.mjs");
+const { parseCaption, postText, readItem, scan, fileItem, pickSlot, coverMilliseconds, bannedInCaption } = await import("../src/publish-folder.mjs");
 const { buildPost } = await import("../scripts/publish.mjs");
 
 const CAPTION_TXT = `HOOK
@@ -120,4 +120,21 @@ test("a clip dragged in on its own takes its caption from the delivered Clips fo
   assert.equal(it.draft, false);
   fs.writeFileSync(path.join(root, "Other.mp4"), "different"); old(path.join(root, "Other.mp4"));
   assert.equal(readItem("Other.mp4", { root, sourceRoots: [desk] }).why, "there is no caption");
+});
+
+test("caption gate: Ghost P&L, the GHOST keyword and any mention of his wife hold a reel as a draft", () => {
+  assert.equal(bannedInCaption("Your Ghost P&L is bigger than your real one."), "it mentions the Ghost P&L");
+  assert.equal(bannedInCaption("ghost pnl"), "it mentions the Ghost P&L");
+  assert.equal(bannedInCaption("Comment GHOST and I'll send it."), "it mentions the Ghost P&L");
+  assert.equal(bannedInCaption("My wife sent me the photo."), "it mentions his wife");
+  assert.equal(bannedInCaption("Maria and the kids at the park."), "it mentions his wife");
+  assert.equal(bannedInCaption("He said yes, then ghosted me. Your wife needs to see this."), "", "a prospect ghosting or someone else's wife is fine");
+  assert.equal(bannedInCaption("Never send the PDF and hope."), "");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "reel-gate-"));
+  fs.writeFileSync(path.join(root, "banned.mp4"), "x"); fs.writeFileSync(path.join(root, "banned.txt"), "Comment GHOST for the map.");
+  const old = (f) => { const d = new Date(Date.now() - 600000); fs.utimesSync(f, d, d); };
+  old(path.join(root, "banned.mp4")); old(path.join(root, "banned.txt"));
+  const it = readItem("banned.mp4", { root });
+  assert.equal(it.draft, true);
+  assert.equal(it.why, "it mentions the Ghost P&L");
 });
