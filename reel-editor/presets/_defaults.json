@@ -231,7 +231,10 @@
   "cover": {
     "enabled": true,
     "style": "frame",
-    "at": 0.05
+    "at": 0.05,
+    "scoreFrames": true,
+    "targets": ["reel", "grid-3x4", "feed-4x5", "square", "landscape"],
+    "gridPreview": true
   },
   "lowerThird": {
     "enabled": false,

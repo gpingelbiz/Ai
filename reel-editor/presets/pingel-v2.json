@@ -45,5 +45,8 @@
   },
   "coldOpen": {
     "enabled": false
+  },
+  "cover": {
+    "style": "archetypes"
   }
 }

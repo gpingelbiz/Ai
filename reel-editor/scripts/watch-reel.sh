@@ -84,7 +84,7 @@ notify() { local t m; t=$(printf '%s%s' "${REEL_CLIENT:+$REEL_CLIENT: }" "$1" | 
 # Publish metadata next to a delivered reel (read by the Publish folder, src/publish-folder.mjs): whether the reel
 # has AI pictures (Instagram's AI label), the preflight result and anything obvious the reviewer saw.
 reel_meta() { # $1 work dir, $2 output json
-  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{};const hi=(wt.issues||[]).find((i)=>i.severity==="high");fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,obvious:hi?hi.note:null,coverMs:50}))' "$1" "$2" 2>/dev/null || true
+  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{};const hi=(wt.issues||[]).find((i)=>i.severity==="high"),coverMs=Math.round(plan.cover&&Number.isFinite(plan.cover.frameTimeMs)?plan.cover.frameTimeMs:((plan.style&&plan.style.cover&&Number.isFinite(plan.style.cover.at)?plan.style.cover.at:.05)*1000));fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,obvious:hi?hi.note:null,coverMs}))' "$1" "$2" 2>/dev/null || true
 }
 
 # Create and print a brand-new "<today> <kind> <n><suffix>" folder under $1 ("2026-10-21 Reel 3",

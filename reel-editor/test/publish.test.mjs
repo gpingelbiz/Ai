@@ -6,7 +6,8 @@ import path from "node:path";
 // The delivered-reels lookup must never read the real ~/Desktop/Reels (an iCloud folder can stall the whole run):
 // point it at an empty folder before the module reads REEL_WATCH_DONE.
 process.env.REEL_WATCH_DONE = fs.mkdtempSync(path.join(os.tmpdir(), "reel-desk-"));
-const { parseCaption, postText, readItem, scan, fileItem, pickSlot } = await import("../src/publish-folder.mjs");
+const { parseCaption, postText, readItem, scan, fileItem, pickSlot, coverMilliseconds } = await import("../src/publish-folder.mjs");
+const { buildPost } = await import("../scripts/publish.mjs");
 
 const CAPTION_TXT = `HOOK
 Post copy from what is winning on Sandcastles (2026-10-22).
@@ -35,6 +36,13 @@ test("caption: the CAPTION and HASHTAGS sections of the editor's caption.txt, or
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "reel-publish-")); }
 const old = (f) => { const t = new Date(Date.now() - 3600e3); fs.utimesSync(f, t, t); };
+
+test("publish post takes the scored cover time from plan.json", () => {
+  const work = tmp();
+  fs.writeFileSync(path.join(work, "plan.json"), JSON.stringify({ name: "t", hook: { text: "Own it", start: 0 }, cover: { frameTimeMs: 1733 }, broll: [] }));
+  assert.equal(buildPost(work).coverMs, 1733);
+  assert.equal(coverMilliseconds({ coverMs: 1733.4 }), 1733);
+});
 
 test("items: a reel folder, a loose video with its caption, the check-note gate, and a file still copying", () => {
   const root = tmp();

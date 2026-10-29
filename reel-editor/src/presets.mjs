@@ -149,5 +149,6 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noHouseLooks) p.houseLooks = { ...(p.houseLooks || {}), enabled: false };
   if (o.behind) p.hook.behind = true;
   if (o.noBehind) p.hook.behind = false;
+  if (["frame", "designed", "archetypes"].includes(o.coverStyle)) p.cover.style = o.coverStyle;
   return p;
 }

@@ -89,7 +89,7 @@ files=""
 case "$*" in *--broll*)
   i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
 esac
-echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
+echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"cover\\":{\\"frameTimeMs\\":1733},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
 echo '{"performance":{}}' > "$work/analytics-features.json"`);
   const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel"), long: path.join(home, "raw-long") };
   for (const [mode, d] of Object.entries(dirs)) { fs.mkdirSync(d); for (const c of clips[mode] || []) fs.writeFileSync(path.join(d, c), "video"); }
@@ -117,6 +117,7 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   assert.equal(fs.readFileSync(path.join(r.done, `${r.day} Reel 2 with B-roll`, "Own it first.mp4"), "utf8").trim(), "clip-broll");
   assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Slide 1.png"]);
   assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 1`, ".reel-features.json")));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(r.done, `${r.day} Reel 1`, ".reel.json"), "utf8")).coverMs, 1733, "the scored frame time reaches publishing metadata");
   // The plain reel never asks for b-roll; the carousel never renders a reel.
   const lines = r.calls.trim().split("\n");
   assert.ok(lines.some((l) => /^edit .*\/raw\/clip\.mov .*--no-graphics --caption-style pop/.test(l) && !/--broll/.test(l)), "plain reel: classic captions, no cards");
