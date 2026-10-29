@@ -153,12 +153,25 @@ export function planMixLayout(shot, context = {}) {
   return { ...planCutoutLayout(shot), skipped: result.skipped };
 }
 
+/** What top reels do (2026-10-29 study of 107: 97 of 163 cutaways were full screen, splits held about 6 s came
+ *  next, none put the b-roll behind the speaker): short full-screen cutaways, and the one shot `holdForSplit`
+ *  marked becomes a held split. A split that cannot fit goes back to a normal-length full cutaway, never a window
+ *  or a cutout. */
+export function planFullSplitLayout(shot, context = {}) {
+  if (!shot.hold) return planFullLayout(shot);
+  const result = planSplitLayout(shot, context);
+  if (result.shot.layout === "split") return { ...result, note: `${result.note}, held ${round(shot.duration)}s` };
+  const { hold, baseDuration, ...rest } = shot;
+  return { shot: { ...rest, duration: baseDuration ?? shot.duration, layout: "full" }, skipped: String(result.skipped || "split skipped").split(";")[0], note: "full-frame cutaway" };
+}
+
 // One entry per layout keeps parallel additions (such as cutout) to a single, conflict-light map insertion.
 export const BROLL_LAYOUTS = {
   full: planFullLayout,
   window: planWindowLayout,
   split: planSplitLayout,
   mix: planMixLayout,
+  "full-split": planFullSplitLayout,
 };
 
 /** `perShot[i]` ({face, detection} sampled inside item i's window) wins over the reel-wide face: a reel can change

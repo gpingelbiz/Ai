@@ -26,7 +26,7 @@ import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
 
-import { makeBroll } from "./broll.mjs";
+import { makeBroll, holdForSplit } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { planBrollLayouts, planPersistentLayout } from "./layouts.mjs";
 import { isPersistentScene, makeGraphics, persistentDuckSchedule } from "./graphics.mjs";
@@ -530,11 +530,13 @@ export async function runEdit(input, opts = {}) {
   let allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
   allGraphics.schema = graphicsSchema;
   // Shared-frame layouts never sit under a card. The legacy full cutaway keeps the short-reel exception unchanged.
-  const sharedBrollLayout = ["window", "split", "mix"].includes(preset.broll?.layout);
+  const sharedBrollLayout = ["window", "split", "mix", "full-split"].includes(preset.broll?.layout);
   const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...transientCards, ...evidence] : evidence, tail };
   let broll = preset.broll?.enabled && shownGroups.length
     ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
+  // "full-split": one cutaway with clear time after it is held longer, to become a split once the face is known.
+  if (preset.broll?.layout === "full-split" && broll.length) broll = holdForSplit(broll, { duration, cta, busy: brollArgs.busy, tail, gap: preset.broll.gap ?? 4, hold: preset.broll.hold ?? 5, clipSeconds: preset.broll.videoSeconds ?? 5 });
   // Cutout layout: the generated still or clip remains the moving background; a window-matched person matte stays
   // registered over it. Each failed matte falls back to the established full-frame cutaway.
   if (brollLayout(preset.broll?.layout) === "cutout") {
@@ -560,10 +562,12 @@ export async function runEdit(input, opts = {}) {
   }
   if (requestedCredits.length && framing.multi && !speakerPlan) speakerPlan = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
   // Shared-frame b-roll is placed after zooms: each panel clears the whole head at the strongest move in its window.
-  if (broll.length && ["window", "split", "mix"].includes(preset.broll?.layout)) {
-    // The face inside each cutaway's own window (three samples), not the reel's opening frames.
+  if (broll.length && ["window", "split", "mix", "full-split"].includes(preset.broll?.layout)) {
+    // The face inside each cutaway's own window (three samples), not the reel's opening frames. "full-split" only
+    // needs it for the held shot; its full-screen cutaways have no face to clear.
     const perShot = [];
     for (const b of broll) {
+      if (preset.broll.layout === "full-split" && !b.hold) { perShot.push(null); continue; }
       const det = sameShape ? await detectFaces(videoSrc, [0.15, 0.5, 0.85].map((f) => r3(b.start + f * b.duration))) : null;
       const f = faceBox(det);
       perShot.push(f ? { face: f, detection: det } : null);

@@ -385,8 +385,9 @@ export function pacingChecks(plan) {
   const avgShot = shots.length ? shots.reduce((a, s) => a + s.len, 0) / shots.length : D;
   const longest = shots.reduce((a, s) => (s.len > a.len ? s : a), { len: 0, start: 0 });
   const firstCut = t.find((x) => x > 0.05 && x < D) ?? D;
-  // Away: the speaker is off screen under a full-frame cutaway (cards sit over the speaker).
-  const away = [...(plan.broll || []).map((b) => [b.start, b.start + b.duration]), ...(plan.coldOpen ? [[0, plan.coldOpen.duration]] : [])].sort((a, b) => a[0] - b[0]);
+  // Away: the speaker is off screen under a full-frame cutaway (cards sit over the speaker; a window, split or
+  // cutout keeps the speaker in frame).
+  const away = [...(plan.broll || []).filter((b) => !b.layout || b.layout === "full").map((b) => [b.start, b.start + b.duration]), ...(plan.coldOpen ? [[0, plan.coldOpen.duration]] : [])].sort((a, b) => a[0] - b[0]);
   let maxAway = 0, run = null;
   for (const [a, b] of away) { if (run && a <= run[1] + 0.05) run[1] = Math.max(run[1], b); else { if (run) maxAway = Math.max(maxAway, run[1] - run[0]); run = [a, b]; } }
   if (run) maxAway = Math.max(maxAway, run[1] - run[0]);
