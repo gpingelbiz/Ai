@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LOOKS, LOOK_IDS, skinFor, looksPrompt, pickLook, skinHTML, skinsCSS, skinFonts } from "../src/looks.mjs";
+import { LOOKS, LOOK_IDS, contentModeFor, skinFor, looksPrompt, pickLook, skinHTML, skinsCSS, skinFonts } from "../src/looks.mjs";
 import { sceneHTML } from "../src/graphics.mjs";
 
 const statHTML = (v) => `<div class="g-stat g-in"><span class="g-count" data-to="1">${v}</span></div>`;
@@ -25,6 +25,24 @@ test("pick: Claude's look when valid, else one from the topic words that is not 
   assert.notEqual(pickLook({}, { transcript: "price revenue profit", recent: ["receipts"] }).look, "receipts");
   const cool = pickLook({}, { transcript: "price revenue profit", recent: ["receipts", "phone", "press"] }).look;
   assert.ok(!["receipts", "phone", "press"].includes(cool), "none of the last three");
+});
+
+test("house looks: auto stays inside the set, follows content modes and avoids only the last house look", () => {
+  const houseLooks = ["gregcard", "press", "receipts"];
+  const modes = { authority: "gregcard", editorial: "press", proof: "receipts" };
+  assert.equal(contentModeFor("the case study is proof of the revenue result"), "proof");
+  assert.equal(contentModeFor("the lesson nobody tells you"), "editorial");
+  assert.equal(contentModeFor("leadership standards for your team"), "authority");
+  assert.equal(pickLook({ look: "blueprint" }, { transcript: "proof from the revenue result", houseLooks, modes }).look, "receipts", "a Claude pick outside the house cannot escape it");
+  assert.equal(pickLook({ mode: "editorial", look: "press" }, { transcript: "leadership standards", houseLooks, modes }).look, "press", "Claude's topic mode guides the mapped look");
+  const afterProof = pickLook({}, { transcript: "proof from the revenue result", recent: ["phone", "receipts"], houseLooks, modes }).look;
+  assert.ok(houseLooks.includes(afterProof));
+  assert.notEqual(afterProof, "receipts");
+  assert.equal(pickLook({}, { transcript: "proof", recent: ["receipts"], houseLooks: ["receipts"], modes }).look, "receipts", "one-look houses skip the repeat rule");
+  const prompt = looksPrompt(["blueprint", "press"], { houseLooks, modes });
+  assert.match(prompt, /House modes: authority=gregcard, editorial=press, proof=receipts/);
+  assert.match(prompt, /last house look was press\. Do not use it again/);
+  assert.doesNotMatch(prompt, /blueprint: Sales schematic/);
 });
 
 test("artifacts: a notification keeps the count-up, a receipt totals only numbers the speaker gave, the typewriter types", () => {

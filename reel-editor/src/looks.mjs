@@ -173,19 +173,51 @@ export function rememberLook(look) {
   } catch {}
 }
 
+const houseSet = (houseLooks = [], exclude = []) => [...new Set((Array.isArray(houseLooks) ? houseLooks : []).map((id) => String(id).toLowerCase().trim()).filter((id) => LOOKS[id] && !exclude.includes(id)))];
+
+/** The semantic content mode for a topic. It only steers a brand's own mapped house looks. */
+export function contentModeFor(transcript = "") {
+  const text = String(transcript).toLowerCase();
+  const score = (words) => words.reduce((sum, word) => sum + (text.includes(word) ? 1 : 0), 0);
+  const proof = score(["proof", "evidence", "receipt", "result", "case study", "before and after", "revenue", "profit", "close rate", "scorecard", "data"]);
+  const editorial = score(["story", "lesson", "myth", "truth", "believe", "opinion", "nobody tells", "what happened", "learned"]);
+  if (proof > editorial && proof > 0) return "proof";
+  if (editorial > 0) return "editorial";
+  return "authority";
+}
+
 /** The lines added to the card prompt: the catalog, the recent looks to avoid, the reply field. */
-export function looksPrompt(recent = [], { exclude = [] } = {}) {
+export function looksPrompt(recent = [], { exclude = [], houseLooks = [], modes = {} } = {}) {
+  const house = houseSet(houseLooks, exclude);
+  const ids = house.length ? house : LOOK_IDS.filter((id) => !exclude.includes(id));
+  const last = house.length > 1 ? [...recent].reverse().find((id) => house.includes(id)) : null;
   return [
     "Also pick ONE look for all the cards of this reel, from what the reel is about. Looks:",
-    ...LOOK_IDS.filter((id) => !exclude.includes(id)).map((id) => `- ${id}: ${LOOKS[id].label}, for ${LOOKS[id].fits}`),
-    recent.length ? `The last reels used, most recent last: ${recent.join(", ")}. Do not use any of the last three (${recent.slice(-3).join(", ")}), and prefer a look not in the list at all, unless this reel's topic plainly calls for one of them.` : "",
-    'Put it in the reply as "look": "<id>", with "lookWhy": a short reason tied to the topic.',
+    ...ids.map((id) => `- ${id}: ${LOOKS[id].label}, for ${LOOKS[id].fits}`),
+    house.length && Object.keys(modes || {}).length ? `House modes: ${Object.entries(modes).filter(([, id]) => house.includes(id)).map(([mode, id]) => `${mode}=${id}`).join(", ")}. Use the mode that best fits the topic.` : "",
+    house.length ? (last ? `The last house look was ${last}. Do not use it again; choose another look in the house set.` : "") : recent.length ? `The last reels used, most recent last: ${recent.join(", ")}. Do not use any of the last three (${recent.slice(-3).join(", ")}), and prefer a look not in the list at all, unless this reel's topic plainly calls for one of them.` : "",
+    house.length && Object.keys(modes || {}).length ? 'Put it in the reply as "mode": "authority|editorial|proof", "look": "<id>", and "lookWhy": a short reason tied to the topic.' : 'Put it in the reply as "look": "<id>", with "lookWhy": a short reason tied to the topic.',
   ].filter(Boolean).join("\n");
 }
 
 /** A look from Claude's reply, checked; otherwise one from the topic words, never the most recent. */
-export function pickLook(reply, { transcript = "", recent = [], exclude = [] } = {}) {
+export function pickLook(reply, { transcript = "", recent = [], exclude = [], houseLooks = [], modes = {} } = {}) {
   const asked = String(reply?.look || "").toLowerCase().replace(/[^a-z]/g, "");
+  const house = houseSet(houseLooks, exclude);
+  if (house.length) {
+    if (house.length === 1) return { look: house[0], why: "the brand has one house look", source: "house" };
+    const last = [...recent].reverse().find((id) => house.includes(id));
+    const eligible = house.filter((id) => id !== last);
+    const askedMode = String(reply?.mode || "").toLowerCase().trim();
+    const mode = modes?.[askedMode] ? askedMode : contentModeFor(transcript);
+    const mapped = modes?.[mode];
+    if (eligible.includes(mapped)) return { look: mapped, why: `${mode} mode fits the topic`, source: "mode", mode };
+    if (eligible.includes(asked)) return { look: asked, why: String(reply?.lookWhy || "").trim(), source: "claude", mode };
+    const text = transcript.toLowerCase();
+    const score = (id) => LOOKS[id].fits.split(/,\s*/).reduce((sum, word) => sum + (text.includes(word.split(" ").pop()) ? 1 : 0), 0);
+    const ranked = eligible.sort((a, b) => score(b) - score(a));
+    return { look: ranked[0], why: "picked from the house set and topic words", source: "house", mode };
+  }
   if (LOOKS[asked] && !exclude.includes(asked)) return { look: asked, why: String(reply?.lookWhy || "").trim(), source: "claude" };
   const t = transcript.toLowerCase();
   const score = (id) => LOOKS[id].fits.split(/,\s*/).reduce((a, w) => a + (t.includes(w.split(" ").pop()) ? 1 : 0), 0);

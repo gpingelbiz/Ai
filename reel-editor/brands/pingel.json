@@ -109,7 +109,7 @@
     "intensity": 0.55
   },
   "houseLooks": [],
-  "contentModes": {},
+  "modes": {},
   "coverPalettes": {
     "brand": { "name": "black+gold", "bg": "#0B0B0D", "bg2": "#000000", "accent": "#C8A24B", "accent2": "#E9C96A" },
     "navy": { "name": "navy+gold", "bg": "#0B1B33", "bg2": "#060F1F", "accent": "#F7B500", "accent2": "#FFCE45" },

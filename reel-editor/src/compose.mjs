@@ -5,6 +5,7 @@ import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, numberMotion, pro
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 import { inlineIconSVG } from "./icons.mjs";
 import { brandQuietCSS } from "./brandlooks.mjs";
+import { signatureCSS, signatureHTML } from "./signature.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -273,6 +274,11 @@ export function renderHTML(plan, footage) {
   // A preset on the brand looks also gets the quiet house pieces (phone labels, name tag) and the brand fonts for them.
   const brandQuiet = (s.graphics?.includeLooks || []).length > 0;
   const fontsForSkins = skinFonts([...skinsUsed, ...themeFontSkins(theme), ...(brandQuiet ? ["atelier"] : [])], { display: ownDisplay(s) });
+  const signatureTokens = s.brand ? structuredClone(s.brand) : null;
+  if (signatureTokens?.type?.display) signatureTokens.type.display.file = "assets/fonts/Anton-Regular.ttf";
+  if (signatureTokens?.type?.body) signatureTokens.type.body.file = "assets/fonts/Inter.ttf";
+  const signatureLayerHTML = s.signature?.enabled === false ? "" : signatureHTML(signatureTokens, { format: W > H ? "thumbnail" : "reel", width: W, height: H, captionTop: cap.position * H, headBox: plan.framing?.headBox });
+  const signatureStyle = signatureLayerHTML ? signatureCSS(signatureTokens) : "";
 
   const tracks = plan.audio?.tracks || [];
   const audioHTML = tracks
@@ -459,7 +465,7 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
         text-transform: ${ct.uppercase === false ? "none" : "uppercase"}; text-align: center;
       }
       #cta-text { display: inline-block; max-width: 100%; transform-origin: 50% 50%; ${ctaLook} }
-      .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}
+      .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}
     </style>
   </head>
   <body>
@@ -467,7 +473,8 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
 ${whipFiltersHTML}${videoLayerHTML}
 ${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div id="defocus"></div>` : ""}
 ${openHTML}
-${brollHTML}
+${brollHTML}${signatureLayerHTML ? `
+      ${signatureLayerHTML}` : ""}
 ${popoutBgHTML}
 ${lowerHTML}
 ${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}

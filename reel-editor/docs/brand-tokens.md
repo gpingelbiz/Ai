@@ -15,10 +15,10 @@ Use `reel brand <preset-or-brand.json>` to inspect the resolved object, `--css` 
 - `spacing`: `xs` through `xxl`, in pixels. `radius`: `sm`, `md`, `lg`, and `pill`, in pixels.
 - `texture`: `grain` from 0 to 1 and `paper` on/off.
 - `motion`: `personality` (`punchy` or `calm`), integer `enterMs`, `exitMs`, and `staggerMs`, plus GSAP `enterEase` and `exitEase` names.
-- `signature`: `kind` (`none`, `edge-rule`, `corner-mark`, or `title-plate`), `position`, `colorRole`, and `thickness`.
+- `signature`: `kind` (`none`, `edge-rule`, `corner-mark`, or `title-plate`), `position`, `colorRole`, `thickness`, optional partial-rule `length`, and `opacity`. A corner mark uses the brand handle or monogram; title-plate geometry comes from the brand radius and spacing tokens.
 - `imagery`: grade `grade` name and `intensity` from 0 to 1.
 - `houseLooks`: look IDs allowed during automatic selection; an empty list allows all looks.
-- `contentModes`: semantic mode names such as `authority`, `editorial`, or `proof`, mapped to look IDs.
+- `modes`: semantic mode names such as `authority`, `editorial`, or `proof`, mapped to look IDs. `contentModes` is accepted as a compatibility alias.
 
 `coverPalettes` is a temporary compatibility field in Greg's file. It preserves the designed-cover palettes until the Phase 1 cover adapter consumes semantic roles directly. Other brands never inherit it; their three compatibility variants are derived from their own `surface/accent`, `paper/ink`, and `accent/surface` roles.
 

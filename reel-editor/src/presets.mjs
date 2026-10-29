@@ -40,6 +40,10 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
     } else warn(`brand tokens: file not found: ${p.brandFile}; using preset colors and fonts`);
   }
   p.brand = resolveBrandTokens({ preset: p, brand });
+  if (!["none", "edge-rule", "corner-mark", "title-plate"].includes(p.brand.signature?.kind)) {
+    warn(`brand signature: unknown kind "${p.brand.signature.kind}"; disabled`);
+    p.brand.signature = { ...p.brand.signature, kind: "none" };
+  }
   return p;
 }
 
@@ -136,6 +140,10 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noAlign) p.transcribe.align = false;
   if (o.noPreflight) p.preflight = { ...(p.preflight || {}), enabled: false };
   if (o.look) p.graphics = { ...(p.graphics || {}), look: o.look === "auto" ? null : o.look };
+  if (o.signature) p.signature = { ...(p.signature || {}), enabled: true };
+  if (o.noSignature) p.signature = { ...(p.signature || {}), enabled: false };
+  if (o.houseLooks) p.houseLooks = { ...(p.houseLooks || {}), enabled: true };
+  if (o.noHouseLooks) p.houseLooks = { ...(p.houseLooks || {}), enabled: false };
   if (o.behind) p.hook.behind = true;
   if (o.noBehind) p.hook.behind = false;
   return p;
