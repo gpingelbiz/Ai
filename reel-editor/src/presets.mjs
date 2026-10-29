@@ -142,6 +142,7 @@ export function mergeOverrides(preset, o = {}) {
   if (o.align) p.transcribe.align = "always";
   if (o.noAlign) p.transcribe.align = false;
   if (o.noPreflight) p.preflight = { ...(p.preflight || {}), enabled: false };
+  if ((Array.isArray(o.credit) ? o.credit.length : o.credit) || o.creditSelf) p.lowerThird.credential = true;
   if (o.look) p.graphics = { ...(p.graphics || {}), look: o.look === "auto" ? null : o.look };
   if (o.signature) p.signature = { ...(p.signature || {}), enabled: true };
   if (o.noSignature) p.signature = { ...(p.signature || {}), enabled: false };

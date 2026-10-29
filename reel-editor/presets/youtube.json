@@ -1,5 +1,6 @@
 {
   "name": "youtube",
+  "brandFile": "brands/pingel.json",
   "canvas": "landscape",
   "colors": {
     "text": "#F5F1E8",
@@ -120,6 +121,7 @@
   },
   "lowerThird": {
     "enabled": true,
+    "credential": true,
     "name": "Greg Pingel",
     "handle": "@officialgregpingel",
     "at": 4,

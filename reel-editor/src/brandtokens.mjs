@@ -202,7 +202,7 @@ function tokensFromPreset(preset = {}) {
     identity: {
       name: preset.lowerThird?.name || "",
       handle: preset.carousel?.handle || preset.lowerThird?.handle || "",
-      credential: preset.lowerThird?.credential || "",
+      credential: typeof preset.lowerThird?.credential === "string" ? preset.lowerThird.credential : "",
     },
     personality: calm ? "calm" : "punchy",
   });

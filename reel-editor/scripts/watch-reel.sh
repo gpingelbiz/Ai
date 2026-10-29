@@ -17,6 +17,7 @@
 # "#top" lifts it above the head (close-up selfies where your face fills the middle). "#fast" adds the measured
 # short-form pacing (presets/pace-fast.json). "#hookreel" keeps the hook up the whole reel (one-liners, podcast titles).
 # "#premise" enables the transcript-grounded persistent premise strip.
+# "#credit" shows the creator name and credential exactly as supplied by the active brand identity.
 # Music: the editor picks a track from REEL_WATCH_MUSIC (default ~/Reels/music; Desktop/Reels/Music is a shortcut) by
 # the mood of what is said, at REEL_WATCH_MUSIC_VOLUME (default 0.10) under the voice. "#music:calm" asks for the track
 # whose name contains "calm"; "#nomusic" skips it. Nothing happens when the folder is empty. music.txt names the track.
@@ -116,6 +117,7 @@ case "$base" in *"#nocta"*) ;; *) [ -n "$CTA" ] && flags+=(--cta "$CTA");; esac
 case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 # "#hookreel": the hook stays up the whole reel (one-line reels, podcast and stage clips with a title strip).
 case "$base" in *"#hookreel"*) flags+=(--hook-seconds reel);; esac
+case "$base" in *"#credit"*) flags+=(--credit-self);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac

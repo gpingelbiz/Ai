@@ -143,6 +143,11 @@ export function settleTurns(turns, { hold = 2.0 } = {}) {
   return out;
 }
 
+/** First sustained turn for a diarized speaker. `person` is the finished group timeline; `track` is the raw scan. */
+export function firstLongTurn(turns = [], speaker = 0, { min = 3 } = {}) {
+  return turns.find((turn) => (turn.person ?? turn.track) === speaker && turn.end - turn.start >= min) || null;
+}
+
 /**
  * Stretches where two people trade lines inside one shot: inside any 5 s window both speak at least 0.6 s and both
  * faces are in frame for 90% of the samples. Returns [[start, end, trackA, trackB]] of at least `min` seconds.
