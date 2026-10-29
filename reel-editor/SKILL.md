@@ -44,7 +44,7 @@ Run everything with the `reel` CLI in this folder (`node bin/reel.mjs` if it is 
 After the render, write the caption, hashtags and hook options from Sandcastles:
 
 ```bash
-node scripts/write-caption.mjs videos/<name> "<where the reel is> - caption.txt"
+node scripts/write-caption.mjs videos/<name> "<where the reel is>/caption.txt"   # the post caption only; hook ideas go to videos/<name>/post notes.txt
 ```
 
 It runs Claude Code headless with only the Sandcastles hook and format lookups allowed, in the voice from `voice/greg.md`. No CTA unless `REEL_WATCH_CTA` is set. The drop folder does this on its own after every reel.
@@ -99,7 +99,7 @@ The shared schema is in `docs/brand-tokens.md`; Greg's v2 source is `brands/ping
 
 ## Music
 
-Licensed tracks live in `~/Reels/music` (Desktop/Reels/Music). For a chat edit pass one with `--music`; the drop folders pick at random and note the track in `music.txt`. Never add music from anywhere else.
+Licensed tracks live in `~/Reels/music` (Desktop/Reels/Music). For a chat edit pass one with `--music`; the drop folders pick by mood and note the track in the work folder's `music.txt`. Never add music from anywhere else.
 
 ## B-roll and carousel
 
@@ -111,7 +111,7 @@ For scheduled carousels and statics, `reel slides <spec.json> [--brand brands/x.
 
 ## Deliver
 
-Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> Reel <n>`, numbered through the day (the drop folder keeps the count in `~/Reels/videos/reel-count-<date>`; bump it when you add one by hand). Inside: the MP4 named after its hook, `caption.txt`, and `check these words.txt` when review.txt has spots. A b-roll reel's folder is `<YYYY-MM-DD> Reel <n> with B-roll` and also holds `B-roll 1.png`...; a carousel goes in `<YYYY-MM-DD> Carousel <n>` (count in `carousel-count-<date>`). The drop folders do the same: Desktop/Reels has `Raw - Reel`, `Raw - Reel with B-roll` and `Raw - Carousel`, and the folder a clip is dropped into decides which of the three it gets.
+Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> Reel <n>`, numbered through the day (the drop folder keeps the count in `~/Reels/videos/reel-count-<date>`; bump it when you add one by hand). Inside: the MP4 named after its hook and `caption.txt` (the post caption from what the reel says, hashtags at the end), nothing else (Greg 2026-10-29); the hidden `.reel.json` / `.reel-features.json` stay for Publish and the analytics. The cover, b-roll stills, music pick, review.txt, preflight.txt and post notes.txt (hook ideas) stay in `~/Reels/videos/<name>`. A b-roll reel's folder is `<YYYY-MM-DD> Reel <n> with B-roll`; a carousel goes in `<YYYY-MM-DD> Carousel <n>` (count in `carousel-count-<date>`). The drop folders do the same: Desktop/Reels has `Raw - Reel`, `Raw - Reel with B-roll` and `Raw - Carousel`, and the folder a clip is dropped into decides which of the three it gets.
 
 
 Give Greg the render path, the before/after duration, and anything that looked off (a mis-heard word, a caption on the face, a weak auto hook). Offer thumbnail-agent as the optional next step.
