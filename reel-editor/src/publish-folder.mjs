@@ -64,6 +64,7 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   let st;
   try { st = fs.statSync(full); } catch { return null; }
   let video = null, captionFile = null, dir = null, metaFrom = null, checkFrom = null;
+  let metaPath = null;
   if (st.isDirectory()) {
     if (entry === SCHEDULED || entry === FAILED || entry.startsWith(".")) return null;
     dir = full;
@@ -96,9 +97,9 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   // The watcher leaves .reel.json in a reel folder and ".Clip 2.reel.json" per clip in a Clips folder.
   const prefix = path.basename(video).split(" - ")[0];
   for (const f of [dir && /^Clip \d+$/.test(prefix) ? `.${prefix}.reel.json` : null, ".reel.json"].filter(Boolean)) {
-    try { meta = JSON.parse(fs.readFileSync(path.join(dir || root, f), "utf8")); break; } catch {}
+    try { meta = JSON.parse(fs.readFileSync(path.join(dir || root, f), "utf8")); metaPath = path.join(dir || root, f); break; } catch {}
   }
-  if (metaFrom) { try { meta = JSON.parse(fs.readFileSync(metaFrom, "utf8")); } catch {} }
+  if (metaFrom) { try { meta = JSON.parse(fs.readFileSync(metaFrom, "utf8")); metaPath = metaFrom; } catch {} }
   const files = dir ? fs.readdirSync(dir) : [];
   const ai = meta.isAiGenerated ?? files.some((f) => /^b-roll \d+/i.test(f) || /runway usage/i.test(f));
   // The gate: a delivered check note with a failure means a draft for Greg to look at, not a post.
@@ -113,7 +114,7 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   if (!caption.caption) { draft = true; why = "there is no caption"; }
   const banned = bannedInCaption(postText(caption));
   if (banned && !draft) { draft = true; why = banned; }
-  return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, droppedAt: Math.round(st.mtimeMs) };
+  return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, metaFile: metaPath, checkFile: noteFile || null, droppedAt: Math.round(st.mtimeMs) };
 }
 
 // Where delivered reels live: the Desktop Reels folder (where the drop folders deliver).
