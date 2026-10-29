@@ -113,6 +113,9 @@ Options (edit / batch)
                            casefile | redline | glass;
                            auto (default) lets Claude pick it from the topic, never the same as the last reel.
                            #look:receipts in a dropped file name does the same
+  --no-signature           hide this brand's edge rule, corner mark or title plate for this reel. --signature on
+  --no-house-looks         let auto use the full look catalog for this reel. --house-looks restores the brand set;
+                           an explicit --look always wins either way
   --pace fast              the measured short-form pacing on top of the look: shots of 1.1-1.4 s (never over 2.8),
                            the first cut by 1 s, no dead air over 0.2 s, 1-2 word captions that hard-swap two
                            frames early (presets/pace-fast.json). #fast in a dropped file name does the same
@@ -202,6 +205,10 @@ const EDIT_OPTIONS = {
   behind: { type: "boolean" },
   pace: { type: "string" },
   look: { type: "string" },
+  signature: { type: "boolean" },
+  "no-signature": { type: "boolean" },
+  "house-looks": { type: "boolean" },
+  "no-house-looks": { type: "boolean" },
   "no-review": { type: "boolean" },
   "no-behind": { type: "boolean" },
   "no-render": { type: "boolean" },

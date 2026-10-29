@@ -113,9 +113,10 @@ function baseTokens({ colors = {}, display, body, identity = {}, personality = "
     radius: clone(RADIUS),
     texture: { grain: calm ? 0.025 : 0.08, paper: calm },
     motion: motionTokens(personality),
-    signature: { kind: "none", position: "none", colorRole: "accent", thickness: 0 },
+    signature: { kind: "none", position: "none", colorRole: "accent", thickness: 0, opacity: 0.68 },
     imagery: { grade: "muted-editorial", intensity: calm ? 0.3 : 0.55 },
     houseLooks: [],
+    modes: {},
     contentModes: {},
   };
 }
@@ -150,7 +151,8 @@ export function upgradeBrandV1(v1) {
   if (source.fonts?.display && !source.fontLicences?.display) out.type.display.licence = "";
   if (source.fonts?.body && !source.fontLicences?.body) out.type.body.licence = "";
   out.houseLooks = Array.isArray(source.looks?.only) ? clone(source.looks.only) : [];
-  out.contentModes = clone(source.contentModes || {});
+  out.modes = clone(source.modes || source.contentModes || {});
+  out.contentModes = clone(source.contentModes || source.modes || {});
   out.compat = {
     reel: {
       look: clone(source.look || {}),
@@ -214,6 +216,8 @@ export function resolveBrandTokens({ preset = {}, brand = null } = {}) {
   const fromPreset = tokensFromPreset(preset);
   if (!brand) return fromPreset;
   const authored = brand.schemaVersion === BRAND_SCHEMA ? clone(brand) : upgradeBrandV1(brand);
+  if (!authored.modes && authored.contentModes) authored.modes = clone(authored.contentModes);
+  if (!authored.contentModes && authored.modes) authored.contentModes = clone(authored.modes);
   const resolved = merge(fromPreset, authored);
   resolved.schemaVersion = BRAND_SCHEMA;
   resolved.colors = derivedColors(resolved.colors);

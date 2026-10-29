@@ -423,7 +423,7 @@ export async function runEdit(input, opts = {}) {
     }
   }
   let graphics = preset.graphics?.enabled && shownGroups.length
-    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: preset.graphics, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
+    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [], modes: preset.brand?.modes || preset.brand?.contentModes || {} }, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
   const graphicsSchema = graphics.schema || 1;
   const sceneSchema = graphicsSchema;
@@ -631,6 +631,9 @@ export async function runEdit(input, opts = {}) {
   const projectDir = path.join(workDir, "project");
   const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
   const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  const signatureHead = preset.signature?.enabled !== false && preset.brand?.signature?.kind !== "none"
+    ? headBoxFor(face || faceBox(detection), detection, { zoom: Math.max(1, ...zooms.map((z) => z.scale || 1)), scale: framing.scale, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0 })
+    : null;
 
   const plan = {
     version: 1,
@@ -656,7 +659,7 @@ export async function runEdit(input, opts = {}) {
     coldOpen,
     lowerThird,
     structure,
-    framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right" },
+    framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right", ...(signatureHead ? { headBox: signatureHead } : {}) },
     reframe,
     behind: behindPlan,
     head: (() => { const h = zoomedHead(detection, 1); return h ? { top: r3(h.top), bottom: r3(h.bottom) } : null; })(),

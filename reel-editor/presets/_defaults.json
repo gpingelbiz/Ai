@@ -151,6 +151,12 @@
     "every": 10,
     "gap": 3
   },
+  "signature": {
+    "enabled": true
+  },
+  "houseLooks": {
+    "enabled": true
+  },
   "broll": {
     "enabled": false,
     "layout": "full",

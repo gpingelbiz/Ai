@@ -495,7 +495,10 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     if ((saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
-      const look = settings.look && LOOKS[settings.look] ? settings.look : saved.look || "glass";
+      const transcript = groups.map((g) => g.text).join(" ");
+      const houseLooks = Array.isArray(settings.houseLooks) ? settings.houseLooks : [];
+      const savedLook = houseLooks.length && !houseLooks.includes(saved.look) ? pickLook({}, { transcript, recent: recentLooks(), exclude: lookExclusions(settings), houseLooks, modes: settings.modes }).look : saved.look;
+      const look = settings.look && LOOKS[settings.look] ? settings.look : savedLook || "glass";
       const schema = saved.schema || 1;
       // A timed item follows its line by time too (its saved offset from the card start).
       const relined = (s) => ({ ...s, items: s.items?.map((it) => ({ ...it, ...(Number.isInteger(it.line) && Number.isFinite(it.at) ? { line: candidates.find((c) => Math.abs(c.start - (s.start + it.at)) < 0.05)?.i ?? it.line } : {}) })) });
@@ -524,8 +527,10 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const recent = recentLooks();
     const fixed = settings.look && LOOKS[settings.look] ? settings.look : null;
     const exclude = lookExclusions(settings);
-    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude }) }), { timeoutMs: 240000 }));
-    const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude });
+    const houseLooks = Array.isArray(settings.houseLooks) ? settings.houseLooks : [];
+    if (houseLooks.length && !houseLooks.some((id) => LOOKS[id] && !exclude.includes(id))) warn("graphics: no valid house looks; using the full look catalog");
+    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude, houseLooks, modes: settings.modes }) }), { timeoutMs: 240000 }));
+    const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude, houseLooks, modes: settings.modes });
     lookPicked = picked;
     const raw = (reply.scenes || []).map(normalizeScene).filter(Boolean);
     const cards = placeScenes(raw.filter((s) => s.type !== "progress").map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
