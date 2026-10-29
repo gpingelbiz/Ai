@@ -8,6 +8,7 @@ import { hyperframesBin, renderEnv } from "./render.mjs";
 import { log, warn, run, ensureDir, readJSON, writeJSON, PKG_ROOT, fontFile } from "./util.mjs";
 import { resolveBrandTokens, tokensCSS } from "./brandtokens.mjs";
 import { detectFaces, headBoxFor } from "./placement.mjs";
+import { signatureRulesCSS, signatureHTML } from "./signature.mjs";
 
 const GREG_HANDLE = "@officialgregpingel";
 const POWER = ["broke", "kills", "costs", "cost", "quit", "lies", "lie", "wrong", "nobody", "expensive", "losing", "lose", "weak", "rich", "pay", "beg", "every", "never", "stop", "fire", "fired", "blame", "own", "truth", "late", "dead", "fail", "failed"];
@@ -429,10 +430,11 @@ html, body { margin: 0; background: var(--brand-surface); }
 #proof { padding: var(--space-lg); gap: var(--space-sm); background: color-mix(in srgb, var(--brand-paper) 94%, transparent); color: var(--brand-surface); border: max(2px, calc(var(--space-xs) / 2)) solid var(--brand-accent); border-radius: var(--brand-radius); font-family: var(--brand-body-font); text-transform: var(--brand-body-case); font-size: max(48px, var(--type-lg)); line-height: var(--brand-body-line-height); }
 .proof-label { font-family: var(--brand-display-font); color: var(--brand-accent); }
 .proof-item, .proof-outcome { padding-block: var(--space-xs); border-block-end: 1px solid var(--brand-muted); }
-[data-slot="signature"] { position: absolute; z-index: 3; }
+[data-slot="signature"] { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+${signatureRulesCSS()}
 </style></head>
 <body><div id="root" class="${styleClass}" data-composition-id="cover" data-start="0" data-width="${W}" data-height="${H}" data-duration="1" data-fps="30">
-  ${photo}${content}<div data-slot="signature"></div>
+  ${photo}${content}<div data-slot="signature">${signatureHTML(tokens, { format: W > H ? "thumbnail" : "cover", width: W, height: H, head })}</div>
 </div><script>window.__timelines = window.__timelines || {}; window.__timelines.cover = gsap.timeline({ paused: true });</script></body></html>`;
 }
 

@@ -130,6 +130,7 @@ export function premiseChecks(plan) {
   if (fontSize < 44) items.push({ level: "warn", code: "premise-size", message: `premise strip text is ${fontSize}px (minimum 44px)` });
   if (Number.isFinite(premise.headTop) && bottom > premise.headTop * H) items.push({ level: "warn", code: "premise-head", message: `premise strip ends at ${Math.round(bottom)}px, over the head at ${Math.round(premise.headTop * H)}px` });
   if (right > W - 140 && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "premise-right-rail", message: "premise strip reaches Instagram's right action rail" });
+  return items;
 }
 
 const rectOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;

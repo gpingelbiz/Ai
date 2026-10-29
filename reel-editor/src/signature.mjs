@@ -171,7 +171,12 @@ export function signatureHTML(tokens, options = {}) {
 export function signatureCSS(tokens) {
   const t = resolveBrandTokens({ brand: tokens });
   if (!KINDS.has(String(t.signature?.kind || "none"))) return "";
-  return `${tokensCSS(t)}
+  return `${tokensCSS(t)}${signatureRulesCSS()}`;
+}
+
+/** The device rules alone, for a page that already carries tokensCSS (covers). */
+export function signatureRulesCSS() {
+  return `
       .signature-layer { position: absolute; inset: 0; pointer-events: none; }
       .signature-device { position: absolute; left: var(--sig-x); top: var(--sig-y); width: var(--sig-w); height: var(--sig-h); box-sizing: border-box; opacity: var(--sig-opacity); color: var(--brand-ink); }
       .signature-edge-rule { background: var(--sig-color); border-radius: var(--brand-radius-sm); }

@@ -68,14 +68,15 @@ test("all five archetypes keep title and face inside every delivered crop", () =
   }
 });
 
-test("archetype templates use brand variables, escape copy, and leave the signature slot empty", () => {
+test("archetype templates use brand variables, escape copy, and carry the brand signature in its slot", () => {
   for (const template of ARCHETYPES) {
     const html = archetypeHTML({ template, target: "reel", frame: "assets/frame.png", face: { x: 0.2, y: 0.2, w: 0.4, h: 0.3 }, title: "Own <this> *first*", brand: GREG, proof: { context: "A real message", items: [{ text: "Their words" }] } });
     const rules = html.slice(html.indexOf("html, body")); // token declarations legitimately contain the brand's authored values.
     assert.doesNotMatch(rules, /#[0-9a-f]{3,8}\b|\brgba?\(/i, `${template} has a literal colour outside tokensCSS`);
     assert.doesNotMatch(rules, /\bAnton\b|\bInter\b|DM Serif Display/, `${template} has a literal font outside tokensCSS`);
     assert.match(rules, /var\(--brand-/);
-    assert.match(html, /data-slot="signature"><\/div>/);
+    assert.match(html, /data-slot="signature"><div class="signature-layer"/, "pingel-v2 has a signature device");
+    assert.match(archetypeHTML({ template, target: "reel", frame: "assets/frame.png", title: "Own it", brand: loadPreset("pingel-brand").brand }), /data-slot="signature"><\/div>/, "no device, empty slot");
     if (template === "proof-reaction") assert.match(html, /A real message/);
     else { assert.match(html, /Own/); assert.match(html, /&lt;this&gt;/); }
   }

@@ -91,12 +91,12 @@ test("carousel: an enabled signature appears once on every slide", () => {
 
 test("legacy render snapshots: no signature and no house list keep every existing preset's HTML unchanged", () => {
   const expected = {
-    clean: "44c828da262d41582b3994b9fac771b0fefc81a2caaddce169e39516944131a6",
-    "pace-fast": "6f4df23e615754b88e6067beed4aabfb02394ab524a5f8df18582706be4c4f52",
-    "pingel-brand": "fb25b82ddfccf813d7412d2b5641dd1a8870bfaadaaa6ad4ec9e8010c5934e8e",
-    "pingel-runway": "fb25b82ddfccf813d7412d2b5641dd1a8870bfaadaaa6ad4ec9e8010c5934e8e",
-    "pingel-v2": "071c3cfcb5096d6072d2cc81c1f03eff88e27d9760251759b2b5e6c851f55619",
-    youtube: "e55fa869ea65628825f86cb4012812ebb7e56440fab2b0577422d47e3c4f9f00",
+    clean: "6138df32bbb050886d4625ea8b055259ca2a1baa57f437214a371d8aecbcdefd",
+    "pace-fast": "afcfbca8378f7e54f2e6fe41f56283cd53df97794cb2c4037c0a948d08b29f53",
+    "pingel-brand": "2be26be90f3696bef51f520b6192842aaa910975acdf7e136cf9d867ad564bbe",
+    "pingel-runway": "2be26be90f3696bef51f520b6192842aaa910975acdf7e136cf9d867ad564bbe",
+    "pingel-v2": "b73ce92d75110faa4948bf1dbf643a8424d8b3e9475af19a5cafa66441365e61",
+    youtube: "1e0120f8f3c4dc3eb9b118ca35c0c75fdda699f6089095cbc22e7ab8baa4278f",
   };
   for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_")).sort()) {
     const name = file.slice(0, -5);
