@@ -107,3 +107,13 @@ test("evidence defaults and CLI-only redaction escape hatch preserve no-evidence
   const plan = { name: "plain", canvas: { width: 1080, height: 1920 }, video: { duration: 3, hasAudio: false }, style, hook: null, premise: null, cta: null, captions: [], graphics: [], zooms: [], broll: [], slams: [], audio: { tracks: [] } };
   assert.equal(renderHTML(plan, "assets/footage.mp4"), renderHTML({ ...plan, evidence: [] }, "assets/footage.mp4"));
 });
+
+test("an unquoted screenshot fits between its label and the caption band", async () => {
+  const { layoutGeometry } = await import("../src/evidence.mjs");
+  const { loadPreset } = await import("../src/presets.mjs");
+  const tokens = loadPreset("pingel-v2").brand;
+  const item = { layout: "over", ocr: { width: 1080, height: 1350, lines: [] }, timing: { quoted: [] }, start: 6, duration: 5 };
+  const g = layoutGeometry(item, { W: 1080, H: 1920, captionTop: 1152, tokens, zoomScale: 1 });
+  assert.ok(g.imageBox.y >= g.labelBox.y + g.labelBox.h, "below its label");
+  assert.ok(g.imageBox.y + g.imageBox.h <= 1152, `ends at ${g.imageBox.y + g.imageBox.h}, past the captions`);
+});

@@ -240,7 +240,9 @@ function focusGeometry(item, media, target, tokens) {
   const imageBox = containBox(item.ocr, media);
   const quotedBoxes = item.timing.quoted.map((match) => item.ocr.lines[match.ocr]?.box).filter(Boolean);
   const quote = unionBoxes(quotedBoxes);
-  if (!quote) return { imageBox, zoom: 1, x: 0, y: 0, quote: null };
+  // Nothing quoted: the whole screenshot sits between its label and the caption band, so captions never land on
+  // the screenshot's own text.
+  if (!quote) return { imageBox: containBox(item.ocr, target), zoom: 1, x: 0, y: 0, quote: null };
   const padX = (tokens.spacing?.md || 0) / item.ocr.width, padY = (tokens.spacing?.md || 0) / item.ocr.height;
   const q = { x: clamp(quote.x - padX, 0, 1), y: clamp(quote.y - padY, 0, 1), w: clamp(quote.w + 2 * padX, 0.001, 1), h: clamp(quote.h + 2 * padY, 0.001, 1) };
   const natural = Math.max(1, Math.min(item.ocr.width / imageBox.w, item.ocr.height / imageBox.h));
@@ -251,7 +253,7 @@ function focusGeometry(item, media, target, tokens) {
   return { imageBox, zoom, x, y, quote: q };
 }
 
-function layoutGeometry(item, { W, H, captionTop, tokens, face, detection, framing, zoomScale }) {
+export function layoutGeometry(item, { W, H, captionTop, tokens, face, detection, framing, zoomScale }) {
   const plate = titlePlate(tokens, { format: "reel", width: W });
   const labelH = Math.max(48, Number(tokens.typeScale?.lg) || 48) + 2 * plate.paddingY + (["top", "bottom"].includes(plate.rulePosition) ? plate.ruleThickness : 0);
   if (item.layout === "card") {
