@@ -12,7 +12,7 @@ import { writeFeatures } from "./features.mjs";
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, cardHeadTop, headBoxFor } from "./placement.mjs";
+import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta, hookSeconds } from "./hook.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -22,6 +22,7 @@ import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
+import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
 
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
@@ -69,6 +70,15 @@ export async function runEdit(input, opts = {}) {
   ensureDir(workDir);
   const preset = mergeOverrides(loadPreset(opts.preset), opts);
   const dict = loadDictionary(opts.dictionary);
+  let requestedCredits = [];
+  try {
+    const supplied = parseCredits(opts.credit, opts.creditAt);
+    const own = opts.creditSelf ? brandCredit(preset.brand) : null;
+    if (opts.creditSelf && !own) warn("credential lower third: the brand identity needs both name and credential; using the old lower third");
+    requestedCredits = [...(own ? [own] : []), ...supplied];
+  } catch (error) {
+    warn(`credential lower third: ${error.message}; using the old lower third`);
+  }
   log(`work dir: ${workDir}`);
   log(`preset: ${preset.name}`);
 
@@ -267,7 +277,7 @@ export async function runEdit(input, opts = {}) {
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || ["window", "split", "mix"].includes(preset.broll?.layout));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || requestedCredits.length || ["window", "split", "mix"].includes(preset.broll?.layout));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
     const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
@@ -500,6 +510,7 @@ export async function runEdit(input, opts = {}) {
     if (cutoutBroll.events.length) cutoutBroll.events.forEach((event) => log(event));
     else log("cutout b-roll: no cutaways to matte");
   }
+  let speakerPlan = null;
   if (preset.zooms.enabled) {
     zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
@@ -508,12 +519,13 @@ export async function runEdit(input, opts = {}) {
       log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
     }
     if (framing.multi) {
-      const tl = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
+      speakerPlan = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
       const ox = parseFloat(framing.origin) / 100;
-      zooms = aimZooms(zooms, { people: framing.people, base: framing.scale, originX: ox, at: tl?.at });
-      log(tl ? `speakers: ${tl.turns.length} turn${tl.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
+      zooms = aimZooms(zooms, { people: framing.people, base: framing.scale, originX: ox, at: speakerPlan?.at });
+      log(speakerPlan ? `speakers: ${speakerPlan.turns.length} turn${speakerPlan.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
     }
   }
+  if (requestedCredits.length && framing.multi && !speakerPlan) speakerPlan = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
   // Shared-frame b-roll is placed after zooms: each panel clears the whole head at the strongest move in its window.
   if (broll.length && ["window", "split", "mix"].includes(preset.broll?.layout)) {
     // The face inside each cutaway's own window (three samples), not the reel's opening frames.
@@ -611,7 +623,59 @@ export async function runEdit(input, opts = {}) {
 
   // 5. Audio extras
   const projectDir = path.join(workDir, "project");
-  const lowerThird = preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
+  const legacyLowerThird = () => preset.lowerThird?.enabled && preset.lowerThird.name ? { name: preset.lowerThird.name, handle: preset.lowerThird.handle || "", at: Math.min(preset.lowerThird.at ?? 4, Math.max(0, duration - 8)), duration: preset.lowerThird.duration ?? 5 } : null;
+  let lowerThird = legacyLowerThird();
+  if (preset.lowerThird?.credential && requestedCredits.length) {
+    try {
+      const scheduled = scheduleCredits(requestedCredits, {
+        turns: speakerPlan?.turns || [],
+        hook,
+        cards: allCards,
+        chapters: structure?.chapters || [],
+        duration,
+        at: preset.lowerThird.at ?? 4,
+        hold: preset.lowerThird.duration ?? 5,
+        fps: preset.render.fps || 30,
+        youtube: !!preset.youtube?.chapters,
+        offscreen: preset.lowerThird.reshowAfter ?? 180,
+        minTurn: preset.lowerThird.longTurn ?? 3,
+        tail,
+      });
+      const items = [];
+      for (const item of scheduled.items) {
+        if (!sameShape) {
+          scheduled.skipped.push({ credit: item, reason: "face-safe placement is unavailable for a reframed source" });
+          continue;
+        }
+        let itemDetection = detection;
+        const times = [0.12, 0.5, 0.88].map((part) => Math.min(duration - 0.05, item.at + part * item.duration));
+        itemDetection = await detectFaces(videoSrc, times) || detection;
+        if (!itemDetection) {
+          scheduled.skipped.push({ credit: item, reason: "face detection unavailable" });
+          continue;
+        }
+        const itemFace = framing.multi ? framing.face : faceBox(itemDetection) || face;
+        const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+        const head = headBoxFor(itemFace, itemDetection, { zoom: zoomDuring(zooms, item.at, item.at + item.duration), scale: framing.scale, originY, shift: framing.shift || 0 });
+        const size = credentialDimensions(preset.brand, item, { W: canvas0.width, H: canvas0.height });
+        const noCaptionTop = canvas0.height > canvas0.width ? 0.833 : 0.92;
+        const creditCaptionTop = showCaptions ? captionTop : noCaptionTop;
+        const placement = placeCredentialLowerThird({ W: canvas0.width, H: canvas0.height, ...size, captionTop: creditCaptionTop, face: head, gap: preset.brand.spacing?.md });
+        if (placement.skip) {
+          scheduled.skipped.push({ credit: item, reason: placement.reason });
+          continue;
+        }
+        items.push({ ...item, placement: { ...placement, captionTop: Math.round(creditCaptionTop * canvas0.height) }, head });
+      }
+      if (items.length) lowerThird = { credential: true, items };
+      else lowerThird = legacyLowerThird();
+      if (scheduled.skipped.length) warn(`credential lower third: skipped ${scheduled.skipped.length} (${[...new Set(scheduled.skipped.map((x) => x.reason))].join("; ")})`);
+      log(items.length ? `credential lower third: ${items.length} grounded appearance${items.length === 1 ? "" : "s"} at ${items.map((item) => `${item.at}s`).join(", ")}` : "credential lower third: no safe grounded appearance; using the old lower third");
+    } catch (error) {
+      warn(`credential lower third: ${String(error.message).split("\n")[0]}; using the old lower third`);
+      lowerThird = legacyLowerThird();
+    }
+  }
   const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
 
   const plan = {

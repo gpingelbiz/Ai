@@ -226,10 +226,13 @@
   },
   "lowerThird": {
     "enabled": false,
+    "credential": false,
     "name": "",
     "handle": "",
     "at": 4,
-    "duration": 5
+    "duration": 5,
+    "longTurn": 3,
+    "reshowAfter": 180
   },
   "youtube": {
     "endSafe": 0,

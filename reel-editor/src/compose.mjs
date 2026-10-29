@@ -5,6 +5,8 @@ import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, numberMotion, pro
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 import { inlineIconSVG } from "./icons.mjs";
 import { brandQuietCSS } from "./brandlooks.mjs";
+import { tokensCSS } from "./brandtokens.mjs";
+import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -52,6 +54,23 @@ export function composeProject(plan, projectDir) {
   if (italic && fs.existsSync(italic)) fs.copyFileSync(italic, path.join(assets, "fonts", "DisplayItalic.ttf"));
   // The fonts the reel's card look needs (typewriter, marker, serif).
   for (const f of skinFonts([...(plan.graphics || []).map((g) => g.skin || "glass"), ...themeFontSkins(THEMES[plan.style?.look] || null)], { display: ownDisplay(plan.style) }).files) fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", f), path.join(assets, "fonts", f));
+  // Credential plates use the semantic font families. Copy their exact files into the project; the established
+  // display/body aliases remain a safe fallback for old client kits whose token file path is no longer present.
+  if (plan.lowerThird?.credential && plan.lowerThird.items?.length && plan.style?.brand) {
+    const brand = structuredClone(plan.style.brand);
+    for (const [role, fallback] of [["display", "Anton-Regular.ttf"], ["body", "Inter.ttf"]]) {
+      const spec = brand.type?.[role];
+      if (!spec) continue;
+      const candidates = spec.file ? [spec.file, path.resolve(PKG_ROOT, spec.file)] : [];
+      const source = candidates.find((file) => fs.existsSync(file));
+      const ext = path.extname(source || fallback) || ".ttf";
+      const name = `credential-${role}${ext}`;
+      if (source) fs.copyFileSync(source, path.join(assets, "fonts", name));
+      else fs.copyFileSync(path.join(assets, "fonts", fallback), path.join(assets, "fonts", name));
+      spec.file = `assets/fonts/${name}`;
+    }
+    plan.style.brand = brand;
+  }
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(assets, "vendor", "gsap.min.js"));
   const sfxUsed = new Set((plan.audio?.tracks || []).map((t) => t.src).filter((s) => s.startsWith("assets/sfx/")));
   if (sfxUsed.size) ensureDir(path.join(assets, "sfx"));
@@ -222,7 +241,18 @@ export function renderHTML(plan, footage) {
 
   // Lower third: the name and handle once, early in the first chapter (long-form).
   const lt = plan.lowerThird;
-  const lowerHTML = lt && lt.name
+  const rawCredentialItems = lt?.credential && Array.isArray(lt.items) ? lt.items : [];
+  const grounded = (item, key) => (item.input?.kind === "cli" || item.input?.kind === "brand.identity") && creditValueGrounded(item, key);
+  const credentialItems = rawCredentialItems.filter((item) => item.name && grounded(item, "name") && [item.placement?.x, item.placement?.y, item.placement?.w, item.placement?.h].every(Number.isFinite));
+  const credentialMode = credentialItems.length > 0;
+  const credentialHTML = credentialItems.map((item, i) => {
+    const p = item.placement;
+    const verified = creditVerifiedGrounded(item) ? `<span class="lt-verified" aria-label="Verified"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 2.5 2.5L16 9"></path></svg></span>` : "";
+    return `      <div id="credential-lower-third-${i}" class="credential-lower-third clip" style="--lt-x:${p.x}px;--lt-y:${p.y}px;--lt-w:${p.w}px;--lt-h:${p.h}px" data-start="${item.at}" data-duration="${item.duration}" data-track-index="3" data-layout-allow-overflow><div class="lt-plate"><div class="lt-rule"></div><div class="lt-copy"><div class="lt-name-row"><div class="lt-name">${esc(item.name)}</div>${verified}</div>${grounded(item, "credential") ? `<div class="lt-credential">${esc(item.credential)}</div>` : ""}${grounded(item, "organisation") ? `<div class="lt-organisation">${esc(item.organisation)}</div>` : ""}${grounded(item, "source") ? `<div class="lt-source">${esc(item.source)}</div>` : ""}</div></div></div>`;
+  }).join("\n");
+  const lowerHTML = credentialMode
+    ? credentialHTML
+    : lt && lt.name
     ? `      <div id="lower-third" class="clip" data-start="${lt.at}" data-duration="${lt.duration}" data-track-index="3" data-layout-allow-overflow><div class="lt-bar"></div><div class="lt-text"><div class="lt-name">${esc(lt.name)}</div>${lt.handle ? `<div class="lt-handle">${esc(lt.handle)}</div>` : ""}</div></div>`
     : "";
 
@@ -317,7 +347,11 @@ export function renderHTML(plan, footage) {
     focusPull,
     brollCut,
     coldOpen: open ? { duration: open.duration } : null,
-    lowerThird: lt && lt.name ? { at: lt.at, duration: lt.duration } : null,
+    lowerThird: !credentialMode && lt && lt.name ? { at: lt.at, duration: lt.duration } : null,
+    ...(credentialMode ? {
+      credentialLowerThird: credentialItems.map((item, i) => ({ i, at: item.at, duration: item.duration })),
+      credentialMotion: { enterEase: s.brand?.motion?.enterEase || "power3.out", exitEase: s.brand?.motion?.exitEase || "power2.in" },
+    } : {}),
     annotate,
     width: W,
     height: H,
@@ -405,7 +439,19 @@ ${brollList.map((_, i) => `      #broll-${i} { filter: url(#whip-broll-filter-${
       .lt-text { display: flex; flex-direction: column; justify-content: center; gap: ${Math.round(H * 0.004)}px; padding: ${Math.round(H * 0.008)}px 0; font-family: "Inter", sans-serif; color: ${c.text}; text-shadow: 0 0.06em 0.4em rgba(0,0,0,0.6); }
       .lt-name { font-size: ${Math.round(H * 0.04)}px; font-weight: 850; letter-spacing: -0.01em; line-height: 1; }
       .lt-handle { font-size: ${Math.round(H * 0.022)}px; font-weight: 600; color: ${c.accent}; letter-spacing: 0.04em; }
-      .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }${slamList.some((sl) => sl.popout?.src && sl.popout.placement?.fallback) ? `
+${credentialMode ? `${tokensCSS(s.brand)}
+      .credential-lower-third { position: absolute; left: var(--lt-x); top: var(--lt-y); width: var(--lt-w); min-height: var(--lt-h); opacity: 0; overflow: hidden; pointer-events: none; }
+      .credential-lower-third .lt-plate { width: 100%; min-height: var(--lt-h); display: grid; grid-template-columns: var(--space-xs) 1fr; gap: var(--space-md); box-sizing: border-box; padding: var(--space-md); overflow: hidden; color: var(--brand-ink); background: var(--brand-surface); border: calc(var(--space-xs) / 4) solid var(--brand-stroke); border-radius: var(--brand-radius-md); }
+      .credential-lower-third .lt-rule { width: var(--space-xs); height: 100%; background: var(--brand-accent); border-radius: var(--brand-radius-sm); transform-origin: 50% 100%; }
+      .credential-lower-third .lt-copy { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: var(--space-xs); font-family: var(--brand-body-font); font-weight: var(--brand-body-weight); line-height: var(--brand-body-line-height); }
+      .credential-lower-third .lt-name-row { display: flex; align-items: center; gap: var(--space-sm); }
+      .credential-lower-third .lt-name { overflow: hidden; font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); font-size: var(--type-lg); line-height: var(--brand-display-line-height); letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); text-overflow: ellipsis; white-space: nowrap; }
+      .credential-lower-third .lt-credential { font-size: calc(var(--type-sm) + var(--space-xs) / 2); line-height: var(--brand-body-line-height); }
+      .credential-lower-third .lt-organisation, .credential-lower-third .lt-source { font-size: var(--type-xs); line-height: var(--brand-body-line-height); color: var(--brand-muted); }
+      .credential-lower-third .lt-source { padding-top: var(--space-xs); border-top: calc(var(--space-xs) / 4) solid var(--brand-stroke); }
+      .credential-lower-third .lt-verified { flex: 0 0 var(--type-sm); width: var(--type-sm); height: var(--type-sm); color: var(--brand-accent); }
+      .credential-lower-third .lt-verified svg { width: 100%; height: 100%; fill: var(--brand-surface); stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+` : ""}      .slam { position: absolute; inset: 0; opacity: 0; pointer-events: none; }${slamList.some((sl) => sl.popout?.src && sl.popout.placement?.fallback) ? `
       /* No spot kept the word readable behind the head (a cap or hair reaches higher than the face says): in front. */
       .slam-front { z-index: 2; }` : ""}
       .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
@@ -709,6 +755,21 @@ ${sharedBroll ? `          if (b.layout === "window") {
           tl.to("#lower-third .lt-text", { x: -30, opacity: 0, duration: 0.3, ease: "power2.in" }, l.at + l.duration - 0.45);
           tl.to("#lower-third .lt-bar", { scaleY: 0, duration: 0.25, ease: "power2.in" }, l.at + l.duration - 0.3);
           tl.set("#lower-third", { opacity: 0 }, l.at + l.duration);
+        }
+        if (PLAN.credentialLowerThird) {
+          const frame = 1 / (PLAN.fps || 30);
+          PLAN.credentialLowerThird.forEach((item) => {
+            const root = "#credential-lower-third-" + item.i;
+            const plate = root + " .lt-plate";
+            const enter = 8 * frame, exit = 5 * frame;
+            const out = item.at + item.duration - exit;
+            tl.set(root, { opacity: 1 }, item.at);
+            tl.fromTo(plate, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: enter, ease: PLAN.credentialMotion.enterEase, immediateRender: false }, item.at);
+            tl.fromTo(root + " .lt-rule", { scaleY: 0 }, { scaleY: 1, duration: enter, ease: PLAN.credentialMotion.enterEase, immediateRender: false }, item.at);
+            tl.to(plate, { clipPath: "inset(0 100% 0 0)", duration: exit, ease: PLAN.credentialMotion.exitEase }, out);
+            tl.to(root + " .lt-rule", { scaleY: 0, duration: exit, ease: PLAN.credentialMotion.exitEase }, out);
+            tl.set(root, { opacity: 0 }, item.at + item.duration);
+          });
         }
 ${iconList.length ? `        // Spoken icons: a seven-frame sticker landing, a small float, then a five-frame exit.
         const iconFrame = 1 / (PLAN.fps || 30);

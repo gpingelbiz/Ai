@@ -30,6 +30,10 @@ test("a plain drop (no hook, no tags, no CTA) does not trip set -u on an empty f
   assert.equal(r.stdout, "[x]<--hook><a b>");
 });
 
+test("#credit asks the editor for the active brand identity credential", () => {
+  assert.match(script, /\*"#credit"\*\) flags\+=\(--credit-self\)/);
+});
+
 test("notify() survives quotes and apostrophes in titles", () => {
   const fn = script.split("\n").find((l) => l.startsWith("notify()"));
   assert.ok(fn);

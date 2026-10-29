@@ -4,6 +4,7 @@ import { run, r3 } from "./util.mjs";
 import { probe } from "./probe.mjs";
 import { hookBlockHeight } from "./placement.mjs";
 import { numberMotion, sceneDuration } from "./graphics.mjs";
+import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
 
 /**
  * Preflight: checks on the finished file before it reaches the Desktop. Sound (integrated loudness, true peak,
@@ -99,6 +100,7 @@ export function layoutChecks(plan) {
     const p = plan.cta.position ?? st.cta?.position ?? 0.62;
     if (p + 0.06 > 1 - SAFE.bottom) items.push({ level: "warn", code: "cta-safe-zone", message: `the CTA at ${pct(p)} is inside the Instagram caption strip` });
   }
+  items.push(...credentialChecks(plan));
   items.push(...graphicChecks(plan));
   return items;
 }
@@ -106,6 +108,39 @@ export function layoutChecks(plan) {
 const pct = (f) => `${Math.round(f * 100)}%`;
 
 const words = (text) => String(text || "").replace(/\*/g, "").trim().split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
+
+const rectOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+/** Credential truth and collision checks. Every displayed fact must retain its exact input text in plan.json. */
+export function credentialChecks(plan) {
+  const credits = plan?.lowerThird?.credential && Array.isArray(plan.lowerThird.items) ? plan.lowerThird.items : [];
+  if (!credits.length) return [];
+  const items = [];
+  const W = plan.canvas?.width || 1080, H = plan.canvas?.height || 1920;
+  for (const credit of credits) {
+    const label = `credential lower third at ${fmt(credit.at || 0)}`;
+    const input = credit.input;
+    const allowed = input?.kind === "cli" || input?.kind === "brand.identity";
+    const fields = ["name", "credential", "organisation", "source"].filter((key) => credit[key]);
+    if (!allowed || !String(input?.text || "").trim() || fields.some((key) => !creditValueGrounded(credit, key)) || (credit.verified && !creditVerifiedGrounded(credit))) {
+      items.push({ level: "warn", code: "credential-grounding", message: `${label} contains text or a verified mark not preserved from --credit or brand identity` });
+    }
+    const p = credit.placement;
+    if (!p || ![p.x, p.y, p.w, p.h].every(Number.isFinite)) {
+      items.push({ level: "warn", code: "credential-bounds", message: `${label} has no measured placement` });
+      continue;
+    }
+    const box = { x: p.x, y: p.y, w: p.w, h: p.h };
+    const head = credit.head;
+    if (head) {
+      const face = { x: (head.cx - head.w / 2) * W, y: (head.cy - head.h / 2) * H, w: head.w * W, h: head.h * H };
+      if (rectOverlap(box, face)) items.push({ level: "warn", code: "credential-face", message: `${label} overlaps the measured head` });
+    }
+    const captionTop = Number.isFinite(p.captionTop) ? p.captionTop : (plan.style?.captions?.position ?? 0.6) * H;
+    if (p.y + p.h > captionTop) items.push({ level: "warn", code: "credential-caption", message: `${label} reaches the caption band at ${Math.round(captionTop)}px` });
+    if (H > W && (p.x < 76 || p.x + p.w > 940 || p.y < 200)) items.push({ level: "warn", code: "credential-safe-zone", message: `${label} is outside x 76-940px / y 200px-caption top` });
+  }
+  return items;
+}
 
 /** The words a viewer must read on a card, excluding decorative skin chrome. */
 export function cardWords(card) {

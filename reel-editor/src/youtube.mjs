@@ -5,6 +5,9 @@ import { descriptionText, srtText, v3Timeline, thumbnailFrames, endScreenPlan, f
 import { personBinary } from "./cover.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
 
+// Kept here as the long-form public surface; the scheduler itself is shared with reel credential planning.
+export { youtubeReshowStarts } from "./credentials.mjs";
+
 /**
  * A whole video for YouTube: the normal edit with the `youtube` preset (16:9, chapters with title cards, re-hooks,
  * sparse cards and b-roll, 112% punch-ins, no burned-in captions, a clean last 20 s), then the package: the

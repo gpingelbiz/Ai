@@ -72,7 +72,7 @@ export function brandPreset(b, { fonts = {} } = {}) {
     name: `brand-${kitSlug(b)}`,
     extends: "pingel-brand",
     brandFile: "",
-    ...(b.schemaVersion === 2 ? { brand: tokens } : {}),
+    brand: tokens,
     colors: { text: colors.ink, accent: colors.accent, stroke: colors.stroke || "#000000", bg: colors.surface || "#0B0B0D" },
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.displayItalic ? { displayItalic: fonts.displayItalic } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
     // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
@@ -93,20 +93,26 @@ export function brandPreset(b, { fonts = {} } = {}) {
     // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
     broll: { world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
     carousel: { handle: identity.handle || "", style: String(compat.carouselStyle ?? b.carouselStyle ?? "").trim() },
-    lowerThird: { name: identity.name, handle: identity.handle || "", ...(identity.credential ? { credential: identity.credential } : {}) },
+    lowerThird: { name: identity.name, handle: identity.handle || "" },
   };
 }
 
 /** Their YouTube look: the youtube preset with their name tag, colors and fonts. */
 export function youtubePreset(b, { fonts = {} } = {}) {
+  const tokens = upgradeBrandV1(b);
+  const identity = tokens.identity || {};
+  const colors = tokens.colors || {};
+  const compat = tokens.compat?.reel || {};
   return {
     name: `brand-${kitSlug(b)}-youtube`,
     extends: "youtube",
-    colors: { text: b.colors.text, accent: b.colors.accent, stroke: b.colors.stroke || "#000000", bg: b.colors.bg || "#0B0B0D" },
+    brandFile: "",
+    brand: tokens,
+    colors: { text: colors.ink, accent: colors.accent, stroke: colors.stroke || "#000000", bg: colors.surface || "#0B0B0D" },
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
-    broll: { world: String(b.world || "").trim() },
-    carousel: { handle: b.handle || "" },
-    lowerThird: { name: b.name, handle: b.handle || "" },
+    broll: { world: String(compat.world ?? b.world ?? "").trim() },
+    carousel: { handle: identity.handle || "" },
+    lowerThird: { name: identity.name, handle: identity.handle || "" },
   };
 }
 

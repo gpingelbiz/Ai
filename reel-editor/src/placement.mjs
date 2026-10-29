@@ -175,6 +175,31 @@ export function placeHook(head, { words, W = 1080, H = 1920, fontPx, topSafe = 0
 
 const rectsOverlap = (a, b, gap = 0) => a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y;
 
+/** Place a credential plate inside the content-safe rectangle, above captions and on the empty side of the head. */
+export function placeCredentialLowerThird({ W = 1080, H = 1920, width = 864, height = 190, captionTop = 0.72, face = null, gap = 24 } = {}) {
+  const landscape = W > H;
+  const left = landscape ? 90 : 76;
+  const right = landscape ? W - 90 : Math.min(940, W - 76);
+  const top = landscape ? Math.round(H * 0.1) : 200;
+  const bottom = Math.min(captionTop * H - gap, landscape ? H * 0.9 : H - 320);
+  const faceRect = face ? { x: face.cx * W - face.w * W / 2, y: face.cy * H - face.h * H / 2, w: face.w * W, h: face.h * H } : null;
+  const xs = face && face.cx < 0.5 ? [right - width, left] : [left, right - width];
+  const ys = [Math.floor(bottom - height)];
+  if (faceRect) {
+    ys.push(Math.floor(faceRect.y - height - gap));
+    ys.push(Math.ceil(faceRect.y + faceRect.h + gap));
+  }
+  for (const y of [...new Set(ys)]) {
+    if (y < top || y + height > bottom) continue;
+    for (const x of xs) {
+      const box = { x: Math.round(x), y: Math.round(y), w: Math.round(width), h: Math.round(height) };
+      if (box.x < left || box.x + box.w > right) continue;
+      if (!faceRect || !rectsOverlap(box, faceRect, gap)) return { ...box, faceOverlap: false, captionOverlap: false };
+    }
+  }
+  return { skip: true, reason: "no safe plate position clear of the head and captions" };
+}
+
 /** Place the payoff rail between hook and captions, or vertically on the empty side of the face. */
 export function placeProgressRail({ W = 1080, H = 1920, hookTop = 0, hookBottom = 0.35, captionTop = 0.68, face = null, side = "right" } = {}) {
   const hook = { x: 76, y: hookTop * H, w: Math.min(W - 152, 864), h: Math.max(0, (hookBottom - hookTop) * H) };

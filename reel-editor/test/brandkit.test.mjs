@@ -27,6 +27,7 @@ test("kit presets: Greg's look underneath, nothing of Greg's left on top", () =>
   assert.equal(p.carousel.handle, "@janedoe");
   assert.equal(p.carousel.style, "");
   assert.equal(p.lowerThird.name, "Jane Doe");
+  assert.equal(p.lowerThird.credential, false, "identity text does not replace the credential-mode switch");
   assert.equal(p.zooms.style, "camera", "the full look comes from pingel-brand");
   assert.equal(p.fonts.display, path.join(dir, "fonts", "Display.ttf"), "font paths resolve next to the preset");
   assert.equal(fontFile(p, "Anton-Regular.ttf"), path.join(dir, "fonts", "Display.ttf"));
@@ -36,7 +37,17 @@ test("kit presets: Greg's look underneath, nothing of Greg's left on top", () =>
   const y = loadPreset(path.join(dir, "my-youtube.json"));
   assert.equal(y.canvas, "landscape");
   assert.equal(y.lowerThird.handle, "@janedoe");
+  assert.equal(y.lowerThird.credential, true);
   assert.ok(!JSON.stringify(y).includes("officialgregpingel"));
+});
+
+test("kit credentials stay in resolved brand identity", () => {
+  const reel = brandPreset({ ...jane, credential: "Leadership coach" });
+  const youtube = youtubePreset({ ...jane, credential: "Leadership coach" });
+  assert.equal(reel.brand.identity.credential, "Leadership coach");
+  assert.equal(reel.lowerThird.credential, undefined);
+  assert.equal(youtube.brand.identity.credential, "Leadership coach");
+  assert.equal(youtube.lowerThird.credential, undefined);
 });
 
 test("kit words and voice are theirs: no Greg frameworks, their name spelled right", () => {
