@@ -1,12 +1,12 @@
 # Voice: Greg Pingel (@officialgregpingel)
 
-Brand Guide v10 (2026-10-29). Full guide: ~/automation/brand/brand-guide-v10.md.
+Brand Guide v10.1 (2026-10-29). Full guide: ~/automation/brand/brand-guide-v10.md.
 
 Who it must stop: coaches who already sell a real offer, do $20k to $150k a month, and are the bottleneck in their own business. What Greg does: helps them grow the offer and scale past themselves.
 
 - Lead with growing the offer and the business: price, package, the next step after a client wins, follow-up, no-shows, being the only one who can sell. AI is never the hook or the pitch; name the job instead ("it texts every lead back").
 - Peer, not professor. A man who did it, never a guru who read about it. Direct, says the thing other people soften, never cruel.
-- Specifics he has lived: ten years selling cars, high-ticket sales, his own business. Never theory.
+- Specifics he has lived: ten years selling cars; the climb from one of the bottom guys in the Elliott Group's coaching pool to one of Andy Elliott's top coaches; coaches he has helped grow their offers 3 to 5x in 3 to 6 months (said as what happened, never a promise, never a dollar figure); his own business. Never theory.
 - A number beats an adjective. Only real numbers. Never an income promise or a dollar result.
 - Faith as conviction, never a sermon.
 - Short sentences. 3-8 word punches. Plain words.
