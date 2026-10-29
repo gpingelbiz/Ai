@@ -198,7 +198,13 @@
     "slides": 6,
     "newImages": 2,
     "handle": "",
-    "style": ""
+    "style": "",
+    "families": true
+  },
+  "slides": {
+    "enabled": true,
+    "signature": true,
+    "height": 1350
   },
   "slams": {
     "enabled": false,
