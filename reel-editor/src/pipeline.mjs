@@ -16,6 +16,7 @@ import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captions
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta, hookSeconds } from "./hook.mjs";
 import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
+import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
@@ -27,8 +28,8 @@ import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from
 
 import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
-import { planBrollLayouts } from "./layouts.mjs";
-import { makeGraphics } from "./graphics.mjs";
+import { planBrollLayouts, planPersistentLayout } from "./layouts.mjs";
+import { isPersistentScene, makeGraphics, persistentDuckSchedule } from "./graphics.mjs";
 import { makeEvidence } from "./evidence.mjs";
 import { planSlams } from "./slams.mjs";
 import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
@@ -274,16 +275,17 @@ export async function runEdit(input, opts = {}) {
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
   let premise = await makePremise({ workDir, groups, hook, duration, settings: preset.premise, force: !!opts.force });
+  let timeLabels = await makeTimeLabels({ workDir, groups, hook, duration, settings: preset.timeLabels, force: !!opts.newGraphics });
 
   // Face: captions sit just under the chin (never over the mouth), the hook stays off the head.
   let shownGroups = groups;
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || premise || requestedCredits.length || ["window", "split", "mix"].includes(preset.broll?.layout));
+  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || premise || timeLabels.length || preset.graphics?.persistent || preset.graphics?.ladder || requestedCredits.length || ["window", "split", "mix"].includes(preset.broll?.layout));
   if (wantFace) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
-    const times = premise
+    const times = premise || timeLabels.length || preset.graphics?.persistent || preset.graphics?.ladder
       ? Array.from({ length: 12 }, (_, i) => r3(Math.min(duration - 0.05, 0.1 + (i * Math.max(0, duration - 0.2)) / 11)))
       : [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
     detection = await detectFaces(videoSrc, times);
@@ -496,7 +498,7 @@ export async function runEdit(input, opts = {}) {
   const regularGraphics = graphics.filter((g) => g.type !== "progress");
   let allCards = [
     ...structureCards.map((g) => ({ ...g, version: g.version || 1 })),
-    ...regularGraphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2))).map((g) => ({ ...g, version: g.version || sceneSchema })),
+    ...regularGraphics.filter((g) => isPersistentScene(g) || !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2))).map((g) => ({ ...g, version: g.version || sceneSchema })),
   ].sort((a, b) => a.start - b.start);
   const evidence = await makeEvidence({
     specs: preset.evidence?.items || [],
@@ -523,12 +525,13 @@ export async function runEdit(input, opts = {}) {
   });
   const duckedCards = allCards.filter((item) => item.evidenceDuck?.length);
   if (coveredProof.length || duckedCards.length) log(`evidence: removed ${coveredProof.length} rebuilt proof card${coveredProof.length === 1 ? "" : "s"}; ducked ${duckedCards.length} other card${duckedCards.length === 1 ? "" : "s"} during real source material`);
-  const progress = progressGraphics.map((g) => ({ ...g, version: g.version || sceneSchema, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || allCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) || overlapsEvidence({ start: p.at, duration: 1.4 }) })) }));
-  const allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
+  let transientCards = allCards.filter((g) => !isPersistentScene(g));
+  const progress = progressGraphics.map((g) => ({ ...g, version: g.version || sceneSchema, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || transientCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) || overlapsEvidence({ start: p.at, duration: 1.4 }) })) }));
+  let allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
   allGraphics.schema = graphicsSchema;
   // Shared-frame layouts never sit under a card. The legacy full cutaway keeps the short-reel exception unchanged.
   const sharedBrollLayout = ["window", "split", "mix"].includes(preset.broll?.layout);
-  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...allCards, ...evidence] : evidence, tail };
+  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...transientCards, ...evidence] : evidence, tail };
   let broll = preset.broll?.enabled && shownGroups.length
     ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
@@ -542,7 +545,7 @@ export async function runEdit(input, opts = {}) {
   }
   let speakerPlan = null;
   if (preset.zooms.enabled) {
-    zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll, ...evidence], hook, tight: tightFrame });
+    zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...transientCards, ...broll, ...evidence], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
     if (preset.zooms.cadence?.enabled) {
       zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: [...broll, ...evidence], hook, tight: tightFrame, tail });
@@ -575,6 +578,28 @@ export async function runEdit(input, opts = {}) {
       cutoutBroll.events.forEach((event) => log(event));
     }
   }
+  // Persistent teaching structure shares the established window lane. If the head leaves no safe 40px panel,
+  // fail open by dropping only this new overlay.
+  if (allCards.some(isPersistentScene)) {
+    const kept = [];
+    const persistentFace = face || faceBox(detection);
+    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+    const driftScale = preset.motion?.drift?.enabled ? 1 + (preset.motion.drift.scale || 0) : 1;
+    const persistentFraming = { ...framing, scale: framing.scale * driftScale };
+    for (const card of allCards) {
+      if (!isPersistentScene(card)) { kept.push(card); continue; }
+      const placed = planPersistentLayout(card, { W: canvas0.width, H: canvas0.height, captionTop, face: persistentFace, detection, zooms, framing: persistentFraming, brand: preset.brand });
+      if (placed.skip) { log(`graphics: persistent ${card.type} skipped (${placed.reason})`); continue; }
+      const head = headBoxFor(persistentFace, detection, { zoom: zoomDuring(zooms, card.start, card.start + card.duration), scale: persistentFraming.scale, originY, shift: framing.shift || 0 });
+      Object.assign(card, { placement: placed.placement, box: { x: placed.placement.x, y: placed.placement.y, w: placed.placement.w, h: placed.placement.h }, fontSize: placed.fontSize, ...(head ? { head } : {}) });
+      kept.push(card);
+      log(`graphics: ${placed.note}`);
+    }
+    allCards = kept;
+    transientCards = allCards.filter((g) => !isPersistentScene(g));
+    allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
+    allGraphics.schema = graphicsSchema;
+  }
   // The hook never covers the head either: in front of the speaker (not the text-behind-you cutout) the page measures
   // the real hook text and shrinks it toward its top until it ends above this head top (at the opening push-in).
   if (hook && !behindPlan && detection && sameShape) {
@@ -587,7 +612,7 @@ export async function runEdit(input, opts = {}) {
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
   // The rail's visible pulses count as busy too: a slam word stamping in at the top would land on the rail.
   const railPulses = progress.flatMap((g) => (g.pulses || []).filter((p) => !p.hidden).map((p) => ({ start: p.at, duration: 1.4 })));
-  let slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...evidence, ...railPulses], zooms, tail, includeRank: !!preset.slams?.popout?.enabled }) : [];
+  let slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...transientCards, ...broll, ...evidence, ...railPulses], zooms, tail, includeRank: !!preset.slams?.popout?.enabled }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
   // Pop-out slams reuse the already-spaced slam plan: only its highest-ranked words pay the Vision cost.
   if (preset.slams?.popout?.enabled) {
@@ -597,10 +622,11 @@ export async function runEdit(input, opts = {}) {
     if (popouts.events.length) popouts.events.forEach((event) => log(event));
     else log(`pop-out slams: none ranked at least ${preset.slams.popout.minRank ?? 2.5}`);
   }
+  for (const card of allCards.filter(isPersistentScene)) card.duck = persistentDuckSchedule({ scene: card, cards: allCards, broll: [...broll, ...evidence], slams, fps: preset.render.fps || 30 });
 
   // Motion accents live on inner wrappers, independent of the punch-in transform. Drift is planned from the final
   // zoom/cutaway lanes; bumps use the exact card and slam landing times.
-  const bumpPlan = planBumps(allCards, slams, zooms, { ...preset.motion?.impact, broll, hook, duration, tail });
+  const bumpPlan = planBumps(transientCards, slams, zooms, { ...preset.motion?.impact, broll, hook, duration, tail });
   const driftPlan = planDrift(zooms, broll, duration, { ...preset.motion?.drift, hook, tail, zoomStyle: preset.zooms.style });
   const motion = preset.motion?.impact?.enabled || preset.motion?.drift?.enabled ? { bumps: bumpPlan.bumps, drift: driftPlan.stretches } : null;
   if (preset.motion?.impact?.enabled) {
@@ -618,6 +644,7 @@ export async function runEdit(input, opts = {}) {
   if (detection && sameShape) {
     const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
     for (const g of allCards) {
+      if (isPersistentScene(g)) continue;
       const top = cardHeadTop(detection, { zooms, drift: driftPlan.stretches, t0: g.start, t1: g.start + g.duration, scale: framing.scale, originY, shift: framing.shift || 0 });
       if (top != null) g.headTop = top;
     }
@@ -635,6 +662,15 @@ export async function runEdit(input, opts = {}) {
       Object.assign(premise, geometry, { ...(headTop != null ? { headTop } : {}) });
       premise.duck = premiseDuckSchedule({ box: premise.box, cards: allCards, slams, busy: evidence, start: premise.start, end: duration, fps: preset.render.fps || 30 });
     }
+  }
+  if (timeLabels.length) {
+    const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
+    const labelHead = sameShape ? headBoxFor(face || faceBox(detection), detection, { zoom: Math.max(1, ...zooms.map((z) => z.scale || 1)), scale: framing.scale, originY, shift: framing.shift || 0 }) : null;
+    const geometry = timeLabelGeometry({ brand: preset.brand, W: canvas0.width, H: canvas0.height, premise, captionTop: captionTop * canvas0.height, head: labelHead });
+    if (geometry.skip) {
+      log(`time labels: skipped (${geometry.reason})`);
+      timeLabels = [];
+    } else timeLabels = timeLabels.map((item) => ({ ...item, ...geometry }));
   }
   // Spoken icon pops use the final zoom lane and every finished busy window, including a 0.3 s guard around slams.
   let iconDetection = detection;
@@ -739,6 +775,7 @@ export async function runEdit(input, opts = {}) {
     style: preset,
     hook,
     premise,
+    timeLabels,
     cta,
     captions: showCaptions ? shownGroups : [],
     lines: shownGroups,
@@ -902,6 +939,7 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
     plan.broll = (plan.broll || []).filter((b) => b.start < D);
     plan.slams = (plan.slams || []).filter((sl) => sl.t < D);
     plan.icons = (plan.icons || []).filter((icon) => icon.t < D);
+    plan.timeLabels = (plan.timeLabels || []).filter((item) => item.at < D);
     plan.cta = null;
     plan.audio = { ...(plan.audio || {}), tracks: (plan.audio?.tracks || []).filter((t) => t.start < D).map((t) => ({ ...t, duration: Math.min(t.duration || D, D - t.start), lane: t.lane ? t.lane.filter((p) => p.t <= D) : t.lane })) };
     const projectDir = path.join(outDir, `project-${i + 1}`);

@@ -59,6 +59,38 @@ export function planWindowLayout(shot, context = {}) {
   return { shot: { ...shot, layout: "window", panel }, note: panel.side === "top" ? "window above the head" : `window on the ${panel.side} of the head` };
 }
 
+/** A persistent teaching panel uses the same empty-side/above-head decision as a b-roll window, then grows only
+ * along that safe lane. Its row metric never drops below the 40px mobile-reading floor. */
+export function planPersistentLayout(scene, context = {}) {
+  const result = planWindowLayout({ start: scene.start, duration: scene.duration }, context);
+  let panel = result.shot.panel;
+  if (!panel) return { skip: true, reason: result.skipped || "no clear panel beside or above the head" };
+  const count = scene.type === "ladder" ? (scene.rungs || []).length : (scene.items || []).length;
+  const spacing = context.brand?.spacing || {};
+  const fontSize = Math.max(40, Number(context.brand?.typeScale?.md) || 40);
+  const row = Math.max(48, fontSize) + 2 * (Number(spacing.xs) || 0);
+  const chrome = 2 * (Number(spacing.md) || 0) + (scene.title || scene.eyebrow ? Math.max(44, Number(context.brand?.typeScale?.md) || 40) + (Number(spacing.sm) || 0) : 0);
+  const required = Math.ceil(chrome + count * row + Math.max(0, count - 1) * (Number(spacing.xs) || 0));
+  const bottom = Math.min((context.captionTop ?? 0.68) * (context.H || 1920) - 24, (context.H || 1920) - 320);
+  // A landscape panel above the head can win on area yet be too short for the rows. In that case retry the clear
+  // side lane, whose height may grow down to the caption band.
+  if (panel.side === "top" && panel.h < required) {
+    const head = headFor({ start: scene.start, duration: scene.duration }, context);
+    if (head) {
+      const W = context.W || 1080;
+      const rooms = [
+        { side: "left", room: (head.cx - head.w / 2) * W - PANEL_GAP - SAFE_LEFT },
+        { side: "right", room: SAFE_RIGHT - (head.cx + head.w / 2) * W - PANEL_GAP },
+      ].sort((a, b) => b.room - a.room);
+      const width = Math.floor(Math.min(PANEL_MAX, rooms[0].room));
+      if (width >= PANEL_MIN && bottom - TOP_SAFE >= required) panel = { x: rooms[0].side === "left" ? SAFE_LEFT : SAFE_RIGHT - width, y: TOP_SAFE, w: width, h: required, side: rooms[0].side };
+    }
+  }
+  const height = panel.side === "top" ? panel.h : Math.min(required, bottom - panel.y);
+  if (height < required) return { skip: true, reason: `${count} rows do not fit at 40px in the clear ${panel.side} lane` };
+  return { placement: { x: panel.x, y: panel.y, w: panel.w, h: height, side: panel.side }, fontSize, note: panel.side === "top" ? "persistent structure above the head" : `persistent structure on the ${panel.side} of the head` };
+}
+
 /** Split at the halfway seam. The outer footage position moves; #video-wrap keeps owning every punch-in. */
 export function planSplitLayout(shot, context = {}) {
   const { face, H = 1920, framing = {} } = context;

@@ -84,6 +84,10 @@ export function mergeOverrides(preset, o = {}) {
   if (o.premise) p.premise = { ...(p.premise || {}), mode: "on", text: o.premise };
   if (["auto", "on", "off"].includes(o.premiseMode)) p.premise = { ...(p.premise || {}), mode: o.premiseMode };
   if (o.noPremise) p.premise = { ...(p.premise || {}), mode: "off", text: null };
+  if (o.premiseIcons) p.premise = { ...(p.premise || {}), icons: true };
+  if (o.noPremiseIcons) p.premise = { ...(p.premise || {}), icons: false };
+  if (o.timeLabels) p.timeLabels = { ...(p.timeLabels || {}), enabled: true };
+  if (o.noTimeLabels) p.timeLabels = { ...(p.timeLabels || {}), enabled: false };
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;
   if (num(o.hookPosition) != null) p.hook.position = num(o.hookPosition);
@@ -118,6 +122,10 @@ export function mergeOverrides(preset, o = {}) {
   if (o.broll) p.broll.enabled = true;
   if (o.graphics) p.graphics.enabled = true;
   if (o.noGraphics) p.graphics.enabled = false;
+  if (o.persistentGraphics) { p.graphics.enabled = true; p.graphics.persistent = true; }
+  if (o.noPersistentGraphics) p.graphics.persistent = false;
+  if (o.ladder) { p.graphics.enabled = true; p.graphics.ladder = true; }
+  if (o.noLadder) p.graphics.ladder = false;
   if (o.captionStyle) p.captions.style = o.captionStyle;
   if (o.noBroll) p.broll.enabled = false;
   if (o.slams) p.slams.enabled = true;

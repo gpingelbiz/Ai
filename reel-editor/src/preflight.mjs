@@ -3,7 +3,7 @@ import path from "node:path";
 import { run, r3 } from "./util.mjs";
 import { probe } from "./probe.mjs";
 import { hookBlockHeight } from "./placement.mjs";
-import { numberMotion, sceneDuration } from "./graphics.mjs";
+import { isPersistentScene, numberMotion, sceneDuration } from "./graphics.mjs";
 import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
 
 /**
@@ -197,6 +197,7 @@ export function cardWords(card) {
   else if (card.type === "bars") for (const item of card.items || []) out.push(item.label, `${item.value || ""}${card.unit || ""}`);
   else if (card.type === "message") { out.push(card.contact); for (const item of card.items || []) out.push(item.text); }
   else if (["list", "steps"].includes(card.type)) for (const item of card.items || []) out.push(item.text, item.tag);
+  else if (card.type === "ladder") for (const rung of card.rungs || []) out.push(rung.value, rung.label);
   else out.push(card.text);
   return words(out.filter(Boolean).join(" "));
 }
@@ -215,7 +216,7 @@ export function cardOccupancy(cards, duration) {
 
 export function majorEventStarts(plan) {
   return [
-    ...(plan.graphics || []).map((g, i) => ({ t: +g.start || 0, kind: "card", label: `${g.type || "card"} ${i + 1}` })),
+    ...(plan.graphics || []).filter((g) => !isPersistentScene(g)).map((g, i) => ({ t: +g.start || 0, kind: "card", label: `${g.type || "card"} ${i + 1}` })),
     ...(plan.broll || []).map((b, i) => ({ t: +b.start || 0, kind: "cutaway", label: `cutaway ${i + 1}` })),
     ...(plan.evidence || []).map((item, i) => ({ t: +item.start || 0, kind: "evidence", label: `evidence ${i + 1}` })),
     ...(plan.coldOpen ? [{ t: 0, kind: "cutaway", label: "cold open" }] : []),
@@ -269,7 +270,7 @@ function estimatedCardBox(card, plan, W, H) {
   const mode = plan.style?.graphics?.mode || "overlay";
   if (mode === "full") return { x: 0.08 * W, y: 0.15 * H, width: 0.81 * W, height: 0.39 * H, estimated: true };
   const n = (card.items || []).length;
-  const heights = { stat: 300, headline: 250, quote: 330, compare: 380, bars: 210 + n * 80, list: 190 + n * 78, steps: 300, message: 190 + n * 105, post: 360, chapter: 250 };
+  const heights = { stat: 300, headline: 250, quote: 330, compare: 380, bars: 210 + n * 80, list: 190 + n * 78, steps: 300, ladder: 500, message: 190 + n * 105, post: 360, chapter: 250 };
   const height = Math.min((mode === "band" ? 0.62 : 0.4) * H, heights[card.type] || 340);
   if (mode !== "band") return { x: 0.04 * W, y: 0.055 * H, width: 0.92 * W, height, estimated: true };
   const f = plan.framing || {}, face = f.face;
@@ -300,15 +301,18 @@ export function graphicChecks(plan) {
   const W = plan.canvas?.width || 1080, H = plan.canvas?.height || 1920;
   const at = (g) => fmt(+g.start || 0);
   for (const card of cards) {
-    const count = cardWords(card).length;
-    const budget = Math.max(0, Math.floor(((+card.duration || 0) - rules.orientationSeconds) / (60 / rules.readingWpm)));
-    if (count > budget) items.push({ level: "warn", code: "card-reading-budget", message: `${card.type || "card"} at ${at(card)} shows ${count} words; its ${r3(+card.duration || 0)} s hold fits ${budget}` });
-    if ((+card.duration || 0) > rules.maxHold) items.push({ level: "warn", code: "card-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s (keep cards at or under ${rules.maxHold} s)` });
-    const timed = itemTimedDuration(card);
-    // A timed card holds after its last item by design (1.2 s for steps, the reading time for a proof thread);
-    // only a hold past what the card's own rule gives is lingering.
-    const v2Timed = card.mode === "proof" || (card.items?.length && card.items.every((it) => Number.isFinite(it.at)));
-    if (timed != null && (+card.duration || 0) > (v2Timed ? Math.max(timed, sceneDuration(card)) : timed) + 1 / 30) items.push({ level: "warn", code: "card-item-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s, past its last item at ${r3(timed)} s` });
+    const persistent = isPersistentScene(card);
+    if (!persistent) {
+      const count = cardWords(card).length;
+      const budget = Math.max(0, Math.floor(((+card.duration || 0) - rules.orientationSeconds) / (60 / rules.readingWpm)));
+      if (count > budget) items.push({ level: "warn", code: "card-reading-budget", message: `${card.type || "card"} at ${at(card)} shows ${count} words; its ${r3(+card.duration || 0)} s hold fits ${budget}` });
+      if ((+card.duration || 0) > rules.maxHold) items.push({ level: "warn", code: "card-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s (keep cards at or under ${rules.maxHold} s)` });
+      const timed = itemTimedDuration(card);
+      // A timed card holds after its last item by design (1.2 s for steps, the reading time for a proof thread);
+      // only a hold past what the card's own rule gives is lingering.
+      const v2Timed = card.mode === "proof" || (card.items?.length && card.items.every((it) => Number.isFinite(it.at)));
+      if (timed != null && (+card.duration || 0) > (v2Timed ? Math.max(timed, sceneDuration(card)) : timed) + 1 / 30) items.push({ level: "warn", code: "card-item-hold", message: `${card.type || "card"} at ${at(card)} holds ${r3(+card.duration)} s, past its last item at ${r3(timed)} s` });
+    }
 
     const box = cardBox(card, plan, W, H), right = box.x + box.width, bottom = box.y + box.height;
     const cap = plan.style?.captions || {};
@@ -321,6 +325,11 @@ export function graphicChecks(plan) {
     const source = box.estimated ? `estimated ${card.type || "card"} box` : `${card.type || "card"} box`;
     if (bad.length) items.push({ level: "warn", code: "card-bounds", message: `${source} at ${at(card)} is outside x ${rules.left}-${rules.right}px / y ${rules.top}px-caption top (${bad.join(", ")})` });
     if (right > rules.right && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "card-right-rail", message: `${source} at ${at(card)} reaches the right action rail below ${pct(SAFE.rightFrom)}` });
+    if (persistent && (+card.fontSize || 0) < 40) items.push({ level: "warn", code: "persistent-size", message: `${card.type || "persistent card"} at ${at(card)} uses ${+card.fontSize || 0}px item text (minimum 40px)` });
+    if (persistent && card.head) {
+      const face = { x: (card.head.cx - card.head.w / 2) * W, y: (card.head.cy - card.head.h / 2) * H, w: card.head.w * W, h: card.head.h * H };
+      if (rectOverlap({ x: box.x, y: box.y, w: box.width, h: box.height }, face)) items.push({ level: "warn", code: "persistent-face", message: `${card.type || "persistent card"} at ${at(card)} overlaps the measured head` });
+    }
 
     // Only the legacy zero count-up shows numbers that were never said; a v2 reveal prints the exact value and a
     // growth count starts at the spoken starting number.
@@ -329,8 +338,9 @@ export function graphicChecks(plan) {
     if (countUp) items.push({ level: "warn", code: "card-truth-countup", message: `stat at ${at(card)} counts through numbers Greg did not say before it reaches "${card.value}"` });
   }
 
-  const saveWorthy = cards.some((g) => g.saveWorthy === true || g.reference === true || g.informationRole === "reference" || g.role === "reference");
-  const occupancy = cardOccupancy(cards, D), maxOccupancy = saveWorthy ? rules.saveWorthyOccupancy : rules.maxOccupancy;
+  const occupancyCards = cards.filter((g) => !isPersistentScene(g));
+  const saveWorthy = occupancyCards.some((g) => g.saveWorthy === true || g.reference === true || g.informationRole === "reference" || g.role === "reference");
+  const occupancy = cardOccupancy(occupancyCards, D), maxOccupancy = saveWorthy ? rules.saveWorthyOccupancy : rules.maxOccupancy;
   if (occupancy > maxOccupancy) items.push({ level: "warn", code: "card-occupancy", message: `cards occupy ${pct(occupancy)} of the reel (keep ${saveWorthy ? "one save-worthy reference reel" : "cards"} at or under ${pct(maxOccupancy)})` });
 
   const events = majorEventStarts(plan);
@@ -364,7 +374,7 @@ export function pacingChecks(plan) {
   for (const z of plan.zooms || []) changes.add(z.t);
   for (const g of plan.graphics || []) {
     if (g.type === "progress") { for (const p of g.pulses || []) if (!p.hidden) { changes.add(p.at); changes.add(p.at + 1.4); } }
-    else { changes.add(g.start); changes.add(g.start + g.duration); }
+    else if (!isPersistentScene(g)) { changes.add(g.start); changes.add(g.start + g.duration); }
   }
   for (const b of plan.broll || []) { changes.add(b.start); changes.add(b.start + b.duration); }
   for (const item of plan.evidence || []) { changes.add(item.start); changes.add(item.start + item.duration); }
