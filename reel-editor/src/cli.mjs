@@ -35,6 +35,10 @@ Usage
   reel carousel <workdir> [--out <dir>] [--slides 6] [--images 2] [--force]
                                     IG carousel from a finished reel: Codex writes the slides and draws the images
                                     (reusing the reel's b-roll), the editor sets the words; 1080x1350 PNGs
+                                    --families / --no-families allows or forbids semantic slide families
+  reel slides <spec.json> [--brand brands/x.json] [--out <dir>]
+                                    render the content-engine slide JSON; prints one PNG path per line
+  reel slides --sample [--out <dir>] render every kind for Greg and the calm fixture for visual review
   reel brand [preset|brand.json] [--css] [--check]
                                     resolved brand tokens as JSON, reusable CSS, or validation problems
   reel presets                      list presets
@@ -286,10 +290,21 @@ export async function main(argv) {
       return;
     }
     case "carousel": {
-      const { opts, positionals } = parse(rest, { out: { type: "string" }, slides: { type: "string" }, images: { type: "string" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts, positionals } = parse(rest, { out: { type: "string" }, slides: { type: "string" }, images: { type: "string" }, families: { type: "boolean" }, "no-families": { type: "boolean" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" } });
       if (opts.help || !positionals[0]) return console.log(USAGE);
+      if (opts.noFamilies) opts.families = false;
       const files = await makeCarousel(positionals[0], opts);
       console.log(path.dirname(files[0]));
+      return;
+    }
+    case "slides": {
+      const { opts, positionals } = parse(rest, { brand: { type: "string" }, out: { type: "string" }, sample: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || (!opts.sample && !positionals[0])) return console.log(USAGE);
+      const { renderSlides, renderSlideSamples } = await import("./slides.mjs");
+      const files = opts.sample
+        ? await renderSlideSamples(opts.out || "slides-samples")
+        : await renderSlides(readJSON(path.resolve(positionals[0])), { brand: opts.brand, outDir: opts.out });
+      files.forEach((file) => console.log(file));
       return;
     }
     case "youtube": {

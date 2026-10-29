@@ -16,6 +16,7 @@ import { signatureCSS, signatureHTML } from "./signature.mjs";
 
 export const W = 1080;
 export const H = 1350;
+export const CAROUSEL_FAMILY_KINDS = ["checklist", "compare", "postcard", "story"];
 
 export const SLIDES_SCHEMA = {
   type: "object",
@@ -24,7 +25,23 @@ export const SLIDES_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        properties: { title: { type: "string" }, body: { type: "string" }, reuse: { type: "integer" }, scene: { type: "string" }, file: { type: "string" } },
+        properties: {
+          kind: { type: "string", enum: CAROUSEL_FAMILY_KINDS },
+          title: { type: "string" },
+          body: { type: "string" },
+          reuse: { type: "integer" },
+          scene: { type: "string" },
+          file: { type: "string" },
+          items: { type: "array", items: { type: "object", properties: { text: { type: "string" }, checked: { type: "boolean" }, note: { type: "string" } }, required: ["text"], additionalProperties: false } },
+          left: { type: "object", properties: { label: { type: "string" }, value: { type: "string" }, note: { type: "string" } }, required: ["label", "value"], additionalProperties: false },
+          right: { type: "object", properties: { label: { type: "string" }, value: { type: "string" }, note: { type: "string" } }, required: ["label", "value"], additionalProperties: false },
+          decisionLine: { type: "string" },
+          orientation: { type: "string", enum: ["side-by-side", "stacked"] },
+          postText: { type: "string" },
+          caption: { type: "string" },
+          chapter: { type: "string" },
+          focalPoint: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false },
+        },
         required: ["title", "body", "reuse", "scene", "file"],
         additionalProperties: false,
       },
@@ -34,7 +51,7 @@ export const SLIDES_SCHEMA = {
   additionalProperties: false,
 };
 
-export function slidesPrompt({ transcript, hook, voice, count, cta, stills, maxNew = 2, style = "" }) {
+export function slidesPrompt({ transcript, hook, voice, count, cta, stills, maxNew = 2, style = "", families = true }) {
   return [
     "You turn one talking-head Instagram reel into an Instagram carousel. Do not create or edit any files.",
     `Write exactly ${count} slides.`,
@@ -45,6 +62,14 @@ export function slidesPrompt({ transcript, hook, voice, count, cta, stills, maxN
     "- No emojis, no hashtags, no invented numbers, results or stories: only what the transcript says.",
     "- When the speaker quotes someone else or acts out a message or line, never present those words as the speaker's own.",
     cta ? `- End the closing slide's body with this call to action, word for word: ${cta}` : "- No call to action anywhere (no comment, DM, follow, share, save or swipe asks).",
+    families ? [
+      "- A slide may optionally carry one semantic kind when the reel actually supplies that structure: checklist, compare, postcard, or story. Leave kind out for the established photo/text composition.",
+      "- checklist: 3-6 supplied items as {text, checked, note}; do not turn ordinary prose into a checklist.",
+      "- compare: directly commensurable left/right {label, value, note}, plus a decisionLine and side-by-side or stacked orientation.",
+      "- postcard: postText must be the speaker's own exact or lightly trimmed words. Leave identity to the brand renderer; never add metrics or a verification badge.",
+      "- story: use only when reuse points to a real supplied photograph, never a generated scene; caption is the speaker's narration, chapter is optional, focalPoint is {x,y} from 0 to 1.",
+      "- Every structured field still comes only from the transcript. Do not invent a name, credential, number, result, quote, or source.",
+    ].join("\n") : "- Leave kind out on every slide; use the established photo/text composition.",
     "",
     `Images: a slide can reuse one of the reel's stills by its number (only when it truly fits; each still once), get a new image (at most ${maxNew} new images in the whole carousel, the cover first), or have none (it is set as a bold text card, which looks good). The last slide has none.`,
     "For a reused still: reuse = its number, scene = \"\", file = \"\". For a new image: reuse = 0, scene = one or two sentences describing it, file = slide-<slide number>.png. For none: reuse = 0, scene = \"\", file = \"\".",
@@ -60,7 +85,7 @@ export function slidesPrompt({ transcript, hook, voice, count, cta, stills, maxN
     "Transcript:",
     transcript,
     "",
-    'When the images are saved, reply with JSON: {"slides":[{"title":"...","body":"...","reuse":0,"scene":"...","file":"..."}]}',
+    'When the images are saved, reply with JSON: {"slides":[{"title":"...","body":"...","reuse":0,"scene":"...","file":"...","kind":"optional"}]}',
   ].join("\n");
 }
 
@@ -71,7 +96,26 @@ const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
  * most `maxNew` new images (the first ones); any other slide without a still is set as a text card.
  */
 export function normalizeSlides(raw, { count, stills = [], hook = "", maxNew = 2 }) {
-  let slides = (raw || []).map((s) => ({ title: clean(s.title), body: clean(s.body), reuse: Number.isInteger(s.reuse) ? s.reuse : 0, scene: clean(s.scene) }));
+  let slides = (raw || []).map((s) => {
+    const kind = CAROUSEL_FAMILY_KINDS.includes(s.kind) ? s.kind : undefined;
+    const slide = { title: clean(s.title), body: clean(s.body), reuse: Number.isInteger(s.reuse) ? s.reuse : 0, scene: clean(s.scene) };
+    if (!kind) return slide;
+    slide.kind = kind;
+    if (kind === "checklist") slide.items = (Array.isArray(s.items) ? s.items : []).slice(0, 8).map((item) => ({ text: clean(item?.text), checked: item?.checked === true, note: clean(item?.note) })).filter((item) => item.text);
+    if (kind === "compare") {
+      slide.left = { label: clean(s.left?.label), value: clean(s.left?.value), note: clean(s.left?.note) };
+      slide.right = { label: clean(s.right?.label), value: clean(s.right?.value), note: clean(s.right?.note) };
+      slide.decisionLine = clean(s.decisionLine);
+      slide.orientation = s.orientation === "stacked" ? "stacked" : "side-by-side";
+    }
+    if (kind === "postcard") slide.postText = clean(s.postText || s.body);
+    if (kind === "story") {
+      slide.caption = clean(s.caption || s.body || s.title);
+      slide.chapter = clean(s.chapter);
+      if (Number.isFinite(s.focalPoint?.x) && Number.isFinite(s.focalPoint?.y)) slide.focalPoint = { x: Math.max(0, Math.min(1, s.focalPoint.x)), y: Math.max(0, Math.min(1, s.focalPoint.y)) };
+    }
+    return slide;
+  });
   slides = slides.filter((s) => s.title);
   if (slides.length < 3) throw new Error(`only ${slides.length} usable slides`);
   slides = slides.slice(0, Math.max(3, count));
@@ -186,7 +230,7 @@ ${body}
 }
 
 /** Render each slide to a PNG with `hyperframes snapshot` (one 1-second scene per slide). */
-async function snapshotSlides(projectDir, count, outDir) {
+export async function snapshotSlides(projectDir, count, outDir) {
   const bin = hyperframesBin();
   const shots = ensureDir(path.join(projectDir, "shots"));
   for (const f of fs.readdirSync(shots)) fs.rmSync(path.join(shots, f), { force: true });
@@ -218,11 +262,12 @@ export function carouselText(slides, { hook }) {
  * Make the carousel for a finished reel's work dir. Writes <workDir>/carousel/ (slides.json, images, project)
  * and the PNGs plus carousel.txt into `out` (default <workDir>/carousel/slides). Returns the PNG paths.
  */
-export async function makeCarousel(workDir, { out, force = false, slides: count, images } = {}) {
+export async function makeCarousel(workDir, { out, force = false, slides: count, images, families: familyOverride } = {}) {
   workDir = path.resolve(workDir);
   const plan = readJSON(path.join(workDir, "plan.json"));
   const preset = plan.style?.name ? safePreset(plan.style.name) : null;
   const settings = { ...(preset?.carousel || {}), ...(plan.style?.carousel || {}) };
+  const families = familyOverride ?? settings.families ?? true;
   count = Math.max(4, Math.min(8, parseInt(count || settings.slides || 6, 10)));
   const dir = ensureDir(path.join(workDir, "carousel"));
   out = path.resolve(out || path.join(dir, "slides"));
@@ -247,12 +292,18 @@ export async function makeCarousel(workDir, { out, force = false, slides: count,
     const t0 = Date.now();
     log(`carousel: Codex is writing ${count} slides and drawing up to ${maxNew} new image${maxNew === 1 ? "" : "s"}…`);
     const cta = process.env.REEL_WATCH_CTA || "";
-    const prompt = slidesPrompt({ transcript, hook, voice: fs.readFileSync(voiceFile(plan), "utf8"), count, cta, stills, maxNew, style: settings.style || "" });
+    const prompt = slidesPrompt({ transcript, hook, voice: fs.readFileSync(voiceFile(plan), "utf8"), count, cta, stills, maxNew, style: settings.style || "", families });
     const reply = await codexExec(prompt, { cwd: imgDir, schema: SLIDES_SCHEMA, timeoutMs: 600000 });
     slides = normalizeSlides(JSON.parse(reply).slides, { count, stills, hook, maxNew });
     writeJSON(slidesPath, { transcript, slides });
     log(`carousel: Codex done in ${Math.round((Date.now() - t0) / 1000)}s`);
   }
+
+  if (!families) slides = slides.map((slide) => {
+    const legacy = { ...slide };
+    delete legacy.kind;
+    return legacy;
+  });
 
   const projectDir = ensureDir(path.join(dir, "project"));
   ensureDir(path.join(projectDir, "assets", "fonts"));
@@ -262,15 +313,56 @@ export async function makeCarousel(workDir, { out, force = false, slides: count,
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(projectDir, "assets", "vendor", "gsap.min.js"));
   const placed = slides.map((s, k) => {
     const file = s.reuse ? stills[s.reuse - 1]?.file : s.scene ? savedImage(imgDir, `slide-${k + 1}.png`) : null;
-    if (!file || !fs.existsSync(file)) return { ...s, img: null };
+    if (!file || !fs.existsSync(file)) return { ...s, img: null, sourceFile: null };
     const rel = `assets/img/slide-${k + 1}${path.extname(file)}`;
     fs.copyFileSync(file, path.join(projectDir, rel));
-    return { ...s, img: rel };
+    return { ...s, img: rel, sourceFile: file };
   });
   fs.writeFileSync(path.join(projectDir, "index.html"), carouselHTML(placed, { colors: plan.style?.colors, handle: settings.handle || "", tokens: plan.style?.brand, signature: plan.style?.signature?.enabled !== false }));
   log("carousel: rendering slides…");
-  const files = await snapshotSlides(projectDir, placed.length, out);
-  fs.writeFileSync(path.join(out, "carousel.txt"), carouselText(slides, { hook }));
+  let files;
+  let textSlides = slides;
+  if (!placed.some((slide) => slide.kind)) {
+    files = await snapshotSlides(projectDir, placed.length, out);
+  } else {
+    const scratch = ensureDir(path.join(dir, `.slide-render-${process.pid}`));
+    try {
+      const oldFiles = placed.some((slide) => !slide.kind) ? await snapshotSlides(projectDir, placed.length, path.join(scratch, "legacy")) : [];
+      const ordered = [];
+      const { checkSequence, expandSlides, renderSlides } = await import("./slides.mjs");
+      const sequence = placed.map((slide) => slide.kind ? { ...slide, photo: slide.sourceFile } : { kind: "body", headline: slide.title, body: slide.body });
+      checkSequence(sequence).forEach((message) => warn(`slides: ${message}`));
+      textSlides = expandSlides(slides);
+      for (let k = 0; k < placed.length; k++) {
+        const slide = placed[k];
+        if (!slide.kind) { ordered.push(oldFiles[k]); continue; }
+        const semantic = { ...slide };
+        delete semantic.img;
+        delete semantic.sourceFile;
+        if (slide.kind === "story") semantic.photo = slide.sourceFile;
+        const rendered = await renderSlides({ width: W, height: H, slides: [semantic] }, {
+          brand: plan.style?.brand,
+          outDir: path.join(scratch, `semantic-${k + 1}`),
+          signature: plan.style?.signature?.enabled !== false,
+          warnings: false,
+        });
+        ordered.push(...rendered);
+      }
+      ensureDir(out);
+      files = ordered.map((source, k) => {
+        const target = path.join(out, `Slide ${k + 1}.png`);
+        fs.copyFileSync(source, target);
+        return target;
+      });
+    } catch (error) {
+      warn(`carousel families: ${error.message}; rendering the established carousel layout`);
+      textSlides = slides;
+      files = await snapshotSlides(projectDir, placed.length, out);
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+  fs.writeFileSync(path.join(out, "carousel.txt"), carouselText(textSlides, { hook }));
   log(`carousel: ${files.length} slides in ${out}`);
   return files;
 }
