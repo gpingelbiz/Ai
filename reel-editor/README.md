@@ -50,8 +50,8 @@ Or run `npx -y @elevenlabs/cli@latest onboard init` in this folder: it signs you
 ```bash
 reel edit raw.mov
 reel edit raw.mov --hook "You don't have a sales problem"
-reel edit raw.mov --hook "..." --cta "Comment GHOST"                 # gold pill at chest level, last 3s
-reel edit raw.mov --title-style box --cta "Comment FREEDOM" --cta-last 4
+reel edit raw.mov --hook "..." --cta "DM me"                         # gold pill at chest level, last 3s
+reel edit raw.mov --title-style box --cta "DM me" --cta-last 4
 reel edit raw.mov --music beds/drive.mp3 --sfx
 reel edit raw.mov --silence medium --no-bad-takes          # lighter touch
 reel edit raw.mov --preset clean --canvas landscape          # plain subtitles, no hook, no zooms
@@ -309,7 +309,7 @@ Rate limits: the first 429 from Codex pauses every Codex call from the editor fo
 
 `--title-style` picks the hook look. `headline` is the brand default: the words rise in one by one on a soft dark glow (no box), one phrase in Signet Gold and slightly larger, and a short gold rule draws in under it. The gold phrase is picked like a caption keyword (a dictionary term, a number with its unit, or the strongest word); mark it yourself with asterisks: `--hook "The *10 minutes* after a bad number"`. The older looks are `gold` (all Signet Gold), `outline` (Bone with the black outline) and `box` (Bone on an Obsidian backing). The hook places itself on the brand preset: Apple Vision finds the face in the hook's frames (punch-in zoom included), and the hook goes above the head when there is room, otherwise between the chin and the captions, with the text shrunk to as little as 70% if neither gap fits. `--hook-position` overrides it (the drop folder's `#top` and `#low` tags do the same). An automatic hook (the opening sentence) hides the caption lines that repeat it while it is on screen.
 
-`--cta "Comment GHOST"` adds the pop-up call to action for the last 3 seconds (`--cta-last 4`, or `--cta-at 10 --cta-duration 3` for a fixed window). It sits at chest level (`--cta-position 0.62`). Styles: `pill` (Obsidian text on a Signet Gold pill, default), `box` (Bone on Obsidian with a gold border), `text` (plain gold text with the caption stroke). One keyword per reel: GHOST for operator pieces, FREEDOM only on its own post.
+`--cta "DM me"` adds the pop-up call to action for the last 3 seconds (`--cta-last 4`, or `--cta-at 10 --cta-duration 3` for a fixed window). It sits at chest level (`--cta-position 0.62`). Styles: `pill` (Obsidian text on a Signet Gold pill, default), `box` (Bone on Obsidian with a gold border), `text` (plain gold text with the caption stroke). One keyword per reel: GHOST for operator pieces, FREEDOM only on its own post.
 
 ## Hook titles
 
