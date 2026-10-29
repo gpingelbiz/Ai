@@ -40,6 +40,8 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
     } else warn(`brand tokens: file not found: ${p.brandFile}; using preset colors and fonts`);
   }
   p.brand = resolveBrandTokens({ preset: p, brand });
+  // Privacy is the preset-safe default. Only the explicit CLI escape hatch may turn it off for one edit.
+  p.evidence = { ...(p.evidence || {}), redact: true };
   if (!["none", "edge-rule", "corner-mark", "title-plate"].includes(p.brand.signature?.kind)) {
     warn(`brand signature: unknown kind "${p.brand.signature.kind}"; disabled`);
     p.brand.signature = { ...p.brand.signature, kind: "none" };
@@ -151,5 +153,10 @@ export function mergeOverrides(preset, o = {}) {
   if (o.behind) p.hook.behind = true;
   if (o.noBehind) p.hook.behind = false;
   if (["frame", "designed", "archetypes"].includes(o.coverStyle)) p.cover.style = o.coverStyle;
+  if (o.noEvidence) p.evidence.enabled = false;
+  if (Array.isArray(o.evidence) ? o.evidence.length : o.evidence) p.evidence.items = Array.isArray(o.evidence) ? o.evidence : [o.evidence];
+  if (["auto", "card", "focus", "over"].includes(o.evidenceLayout)) p.evidence.layout = o.evidenceLayout;
+  if (Array.isArray(o.redact) ? o.redact.length : o.redact) p.evidence.extraWords = Array.isArray(o.redact) ? o.redact : [o.redact];
+  if (o.noRedact) p.evidence.redact = false;
   return p;
 }

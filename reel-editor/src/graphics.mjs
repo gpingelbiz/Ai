@@ -175,7 +175,7 @@ const cleanWords = (s, maxWords, maxChars = 160) => {
 const proofTokens = (s) => String(s || "").toLowerCase().match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) || [];
 
 /** The first transcript line where an exact spoken phrase begins, including phrases that cross caption lines. */
-function firstExactLine(lines, phrase, from = -Infinity) {
+export function firstExactLine(lines, phrase, from = -Infinity) {
   const needle = proofTokens(phrase);
   if (!needle.length) return null;
   const words = [];

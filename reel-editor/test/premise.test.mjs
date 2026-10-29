@@ -101,6 +101,16 @@ test("duck schedule merges overlapping cards and slams, ignores a card outside t
   ]);
 });
 
+test("real evidence is an extra busy box for the premise strip", () => {
+  assert.deepEqual(premiseDuckSchedule({
+    box: { x: 76, y: 200, w: 864, h: 120 },
+    busy: [{ start: 5, duration: 4, box: { x: 76, y: 200, w: 864, h: 900 } }],
+    start: 3,
+    end: 12,
+    fps: 30,
+  }), [{ outAt: 4.8, hiddenAt: 5, inAt: 9, shownAt: 9.2 }]);
+});
+
 test("brand-token geometry and rendering produce the fixed strip, section swaps and no card warnings", () => {
   const style = loadPreset("pingel-v2");
   const geometry = premiseGeometry({ brand: style.brand, sections: [{ label: "make the calls" }], headTop: 0.3, captionTop: 1200 });

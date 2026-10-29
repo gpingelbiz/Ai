@@ -134,9 +134,9 @@ function rectsOverlap(a, b) {
 }
 
 /** Fade windows for cards and slams that occupy the strip. Windows are merged and quantized to whole frames. */
-export function premiseDuckSchedule({ box, cards = [], slams = [], start = 0, end = Infinity, fps = 30 } = {}) {
+export function premiseDuckSchedule({ box, cards = [], slams = [], busy = [], start = 0, end = Infinity, fps = 30 } = {}) {
   const events = [];
-  for (const card of cards) {
+  for (const card of [...cards, ...busy]) {
     if (card?.type === "progress") continue;
     const b = card?.box || card?.bounds;
     if (box && b && [b.x, b.y, b.w ?? b.width, b.h ?? b.height].every(Number.isFinite)) {

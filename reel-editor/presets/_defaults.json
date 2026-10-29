@@ -151,6 +151,11 @@
     "every": 10,
     "gap": 3
   },
+  "evidence": {
+    "enabled": true,
+    "layout": "auto",
+    "redact": true
+  },
   "signature": {
     "enabled": true
   },

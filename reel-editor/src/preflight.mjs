@@ -102,6 +102,7 @@ export function layoutChecks(plan) {
   }
   items.push(...premiseChecks(plan));
   items.push(...credentialChecks(plan));
+  items.push(...evidenceChecks(plan));
   items.push(...graphicChecks(plan));
   return items;
 }
@@ -134,6 +135,28 @@ export function premiseChecks(plan) {
 }
 
 const rectOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+/** Real evidence must keep its source and privacy audit, stay legible, and own its display window. */
+export function evidenceChecks(plan) {
+  const evidence = plan?.evidence || [];
+  if (!evidence.length) return [];
+  const items = [];
+  for (const item of evidence) {
+    const at = fmt(item.start || 0);
+    if (!item.sourceFile || !fs.existsSync(item.sourceFile)) items.push({ level: "warn", code: "evidence-source", message: `evidence at ${at} has no supplied source file` });
+    let record = null;
+    try { record = item.recordFile && JSON.parse(fs.readFileSync(item.recordFile, "utf8")); } catch {}
+    if (!record) items.push({ level: "warn", code: "evidence-redaction-record", message: `evidence at ${at} has no readable redaction record` });
+    const lines = record?.ocr || item.ocr?.lines || [];
+    const confidence = lines.length ? lines.reduce((sum, line) => sum + (+line.confidence || 0), 0) / lines.length : 0;
+    if (!lines.length || confidence < 0.6) items.push({ level: "warn", code: "evidence-ocr", message: `evidence at ${at} has ${lines.length ? `low OCR confidence (${r3(confidence)})` : "no readable OCR text"}` });
+    if (record?.longDigitRuns && !(record.redactions || []).length) items.push({ level: "warn", code: "evidence-private-digits", message: `evidence at ${at} contains a long digit run but nothing was redacted` });
+    if (item.textPx != null && item.textPx < 32) items.push({ level: "warn", code: "evidence-legibility", message: `evidence at ${at} renders source text at ${Math.round(item.textPx)}px (minimum 32px)` });
+    const clash = (plan.graphics || []).find((card) => card.type === "message" && card.mode === "proof" && card.start < item.start + item.duration && card.start + card.duration > item.start);
+    if (clash) items.push({ level: "warn", code: "evidence-proof-overlap", message: `proof message card at ${fmt(clash.start)} overlaps real evidence at ${at}` });
+  }
+  return items;
+}
 /** Credential truth and collision checks. Every displayed fact must retain its exact input text in plan.json. */
 export function credentialChecks(plan) {
   const credits = plan?.lowerThird?.credential && Array.isArray(plan.lowerThird.items) ? plan.lowerThird.items : [];
@@ -194,6 +217,7 @@ export function majorEventStarts(plan) {
   return [
     ...(plan.graphics || []).map((g, i) => ({ t: +g.start || 0, kind: "card", label: `${g.type || "card"} ${i + 1}` })),
     ...(plan.broll || []).map((b, i) => ({ t: +b.start || 0, kind: "cutaway", label: `cutaway ${i + 1}` })),
+    ...(plan.evidence || []).map((item, i) => ({ t: +item.start || 0, kind: "evidence", label: `evidence ${i + 1}` })),
     ...(plan.coldOpen ? [{ t: 0, kind: "cutaway", label: "cold open" }] : []),
   ].sort((a, b) => a.t - b.t);
 }
@@ -343,6 +367,7 @@ export function pacingChecks(plan) {
     else { changes.add(g.start); changes.add(g.start + g.duration); }
   }
   for (const b of plan.broll || []) { changes.add(b.start); changes.add(b.start + b.duration); }
+  for (const item of plan.evidence || []) { changes.add(item.start); changes.add(item.start + item.duration); }
   if (plan.coldOpen) changes.add(plan.coldOpen.duration);
   const t = [...changes].filter((x) => x >= 0 && x <= D).map((x) => Math.round(x * 1000) / 1000).sort((a, b) => a - b);
   const shots = [];

@@ -17,6 +17,13 @@ test("watcher scripts parse under /bin/bash", () => {
   }
 });
 
+test("evidence images use the same two-pass stable-size gate before they become CLI inputs", () => {
+  assert.match(script, /wait_image\(\)/);
+  assert.match(script, /size=\$\(filesize "\$image"\).*age=/s);
+  assert.match(script, /\[ "\$good" -ge 2 \] && return 0/);
+  assert.match(script, /wait_image "\$image"/);
+});
+
 test("the drop folder keeps the learning record hidden beside each delivered reel", () => {
   assert.match(script, /analytics-features\.json" \] && cp -f "\$work\/analytics-features\.json" "\$folder\/\.reel-features\.json"/);
   assert.match(script, /\.Clip \$k\.reel-features\.json/);
@@ -69,7 +76,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, longClips = 2 } = {}) {
+function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2 } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -96,7 +103,11 @@ esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"cover\\":{\\"frameTimeMs\\":1733},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
 echo '{"performance":{}}' > "$work/analytics-features.json"`);
   const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel"), long: path.join(home, "raw-long") };
-  for (const [mode, d] of Object.entries(dirs)) { fs.mkdirSync(d); for (const c of clips[mode] || []) fs.writeFileSync(path.join(d, c), "video"); }
+  for (const [mode, d] of Object.entries(dirs)) {
+    fs.mkdirSync(d);
+    for (const c of clips[mode] || []) fs.writeFileSync(path.join(d, c), "video");
+    for (const image of evidence[mode] || []) fs.writeFileSync(path.join(d, image), "image");
+  }
   // A .zshrc like Greg's: the CTA is set to empty with a trailing comment, and one line uses a zsh-only expansion.
   fs.writeFileSync(path.join(home, ".zshrc"), 'export REEL_WATCH_CTA=""   # no CTA for now\nexport REEL_NOPE="$(zsh-only)"\nexport PRODUCER_BROWSER_GPU_MODE=hardware\n');
   const musicDir = path.join(home, "music");
@@ -110,7 +121,7 @@ echo '{"performance":{}}' > "$work/analytics-features.json"`);
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
   const list = (d) => (fs.existsSync(path.join(done, d)) ? fs.readdirSync(path.join(done, d)).filter((f) => !f.startsWith(".")).sort() : null);
   const read = (p) => fs.readFileSync(path.join(done, p), "utf8").trim();
-  return { home, day, done, list, read, top: fs.readdirSync(done).filter((f) => !f.startsWith(".")).sort(), calls: fs.readFileSync(path.join(home, "reel-calls"), "utf8"), seen: fs.readdirSync(path.join(home, "Reels", "videos", ".seen")).filter((f) => !f.startsWith(".")).sort() };
+  return { home, day, done, dirs, list, read, top: fs.readdirSync(done).filter((f) => !f.startsWith(".")).sort(), calls: fs.readFileSync(path.join(home, "reel-calls"), "utf8"), seen: fs.readdirSync(path.join(home, "Reels", "videos", ".seen")).filter((f) => !f.startsWith(".")).sort() };
 }
 
 test("each drop folder makes its own thing: reel, reel with b-roll, carousel", () => {
@@ -164,6 +175,20 @@ test("#premise enables automatic premise planning and is stripped from a written
   const r = fakeDrops({ brollShots: 0, clips: { reel: ["a__Own the outcome #premise.mov"], broll: [], carousel: [] } });
   const call = r.calls.trim().split("\n").find((line) => line.includes("a__Own the outcome #premise.mov"));
   assert.match(call, /--hook Own the outcome --premise-mode auto/);
+});
+
+test("drop-folder proof and receipt images pair to the clip, wait as inputs, move with it, and never become jobs", () => {
+  const r = fakeDrops({
+    brollShots: 0,
+    clips: { reel: ["IMG_1163.mov"], broll: [], carousel: [] },
+    evidence: { reel: ["IMG_1163 proof 1.png", "IMG_1163 receipt.jpg", "orphan proof.png"] },
+  });
+  const call = r.calls.trim().split("\n").find((line) => line.includes("IMG_1163.mov"));
+  assert.match(call, /--evidence .*IMG_1163 proof 1\.png/);
+  assert.match(call, /--evidence .*IMG_1163 receipt\.jpg/);
+  assert.deepEqual(r.list(`${r.day} Reel 1`), ["IMG_1163 proof 1.png", "IMG_1163 receipt.jpg", "Own it first.mp4"]);
+  assert.ok(fs.existsSync(path.join(r.dirs.reel, "orphan proof.png")), "an unpaired image remains an input, not a job");
+  assert.equal(r.seen.length, 1, "only the video gets a watcher marker");
 });
 
 test("an empty CTA with a trailing comment in .zshrc still means no CTA; a command substitution is skipped", () => {

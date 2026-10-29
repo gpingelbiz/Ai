@@ -8,6 +8,7 @@ import { brandQuietCSS } from "./brandlooks.mjs";
 import { tokensCSS } from "./brandtokens.mjs";
 import { signatureCSS, signatureHTML } from "./signature.mjs";
 import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
+import { evidenceCSS, evidenceHTML, EVIDENCE_JS } from "./evidence.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -93,6 +94,17 @@ export function composeProject(plan, projectDir) {
   for (const x of extraCutouts) { x.cut.src = x.src; copyOrLink(x.cut.file, path.join(projectDir, x.src)); }
   for (const b of plan.broll || []) if (b.cutout && !b.cutout.src) b.cutout = null;
   for (const sl of plan.slams || []) if (sl.popout && !sl.popout.src) sl.popout = null;
+  const evidenceItems = (plan.evidence || []).filter((item) => item.cleanedFile && fs.existsSync(item.cleanedFile));
+  if (evidenceItems.length) ensureDir(path.join(assets, "evidence"));
+  for (let i = 0; i < evidenceItems.length; i++) {
+    const item = evidenceItems[i];
+    item.src = `assets/evidence/${i + 1}.png`;
+    copyOrLink(item.cleanedFile, path.join(projectDir, item.src));
+    if (item.cutout?.file && fs.existsSync(item.cutout.file)) {
+      item.cutout.src = `assets/evidence/${i + 1}-person.webm`;
+      copyOrLink(item.cutout.file, path.join(projectDir, item.cutout.src));
+    } else if (item.cutout) item.cutout = null;
+  }
   // Text behind you: the person cutout (VP9 with alpha) for the hook window.
   if (plan.behind?.file && fs.existsSync(plan.behind.file)) {
     plan.behind.src = "assets/cutout.webm";
@@ -125,6 +137,11 @@ export function renderHTML(plan, footage) {
   const premiseTokens = premise ? structuredClone(s.brand) : null;
   if (premiseTokens?.type?.display) premiseTokens.type.display.file = "assets/fonts/Anton-Regular.ttf";
   if (premiseTokens?.type?.body) premiseTokens.type.body.file = "assets/fonts/Inter.ttf";
+  const evidenceList = (plan.evidence || []).filter((item) => item.src);
+  const evidenceTokens = evidenceList.length && s.brand ? structuredClone(s.brand) : null;
+  if (evidenceTokens?.type?.display) evidenceTokens.type.display.file = "assets/fonts/Anton-Regular.ttf";
+  if (evidenceTokens?.type?.body) evidenceTokens.type.body.file = "assets/fonts/Inter.ttf";
+  const evidenceMarkup = evidenceList.map((item, i) => evidenceHTML(item, i)).join("\n");
   const hookStyle = hk.style || "gold";
   const hookColor = hookStyle === "gold" ? c.accent : c.text;
   const headline = hookStyle === "headline";
@@ -350,7 +367,7 @@ export function renderHTML(plan, footage) {
       const layout = brollLayout(b);
       return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY, seamY: b.split.seamY ?? Math.round(H / 2) } : {}) } : {}) };
     }),
-    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}) })),
+    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: g.items.map((it) => ({ at: it.at })) } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}), ...(g.evidenceDuck?.length ? { evidenceDuck: g.evidenceDuck } : {}) })),
     graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
     graphicsSide: plan.framing?.side || "right",
@@ -402,6 +419,15 @@ export function renderHTML(plan, footage) {
   };
   if (iconList.length) runtimePlan.icons = iconList.map((icon) => ({ t: icon.t, end: icon.end }));
   if (progressList.length) runtimePlan.progress = progressList.map((g) => ({ start: g.start, duration: g.duration, hookEnd: g.hookEnd, pulses: g.pulses || [] }));
+  if (evidenceList.length) runtimePlan.evidence = evidenceList.map((item) => ({
+    start: item.start,
+    duration: item.duration,
+    layout: item.layout,
+    zoom: item.zoom || 1,
+    x: item.x || 0,
+    y: item.y || 0,
+    ...item.motion,
+  }));
   const framing = plan.framing || { scale: 1, side: "right", face: null };
   const origin = framing.scale > 1 && framing.origin ? framing.origin : s.zooms.origin || "50% 40%";
   // Cards beside the speaker: the free third, vertically on the face.
@@ -490,7 +516,7 @@ ${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-e
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
-${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}
+${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}${evidenceTokens ? evidenceCSS(evidenceTokens) : ""}
 ${premise ? `      #premise-strip {
         position: absolute; left: ${premise.box.x}px; top: ${premise.box.y}px; width: ${premise.box.w}px; height: ${premise.box.h}px;
         display: flex; flex-direction: column; justify-content: center; gap: ${premise.gap}px; box-sizing: border-box;
@@ -553,7 +579,7 @@ ${brollHTML}${signatureLayerHTML ? `
       ${signatureLayerHTML}` : ""}
 ${popoutBgHTML}
 ${lowerHTML}
-${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}
+${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}${evidenceMarkup ? `\n${evidenceMarkup}` : ""}
 ${premiseHTML}
 ${slamHTML}${iconHTML ? `\n${iconHTML}` : ""}
 ${hookHTML}
@@ -742,7 +768,11 @@ ${hasDrift ? `        const DRIFT = ".drift-inner";
           tl.to(wash, { opacity: 0, duration: 0.18, ease: "power3.out" }, d);
           tl.to(core, { opacity: 0, scale: 1.18, duration: 0.3, ease: "power2.out" }, d + 0.01);
         }
-${cardList.length ? GRAPHICS_JS : ""}${progressList.length ? PROGRESS_JS : ""}
+${cardList.length ? GRAPHICS_JS : ""}${progressList.length ? PROGRESS_JS : ""}${evidenceList.length ? `        PLAN.graphics.forEach((card, i) => (card.evidenceDuck || []).forEach((window) => {
+          tl.set("#gfx-" + i, { opacity: 0 }, window.start);
+          if (window.end < card.start + card.duration) tl.set("#gfx-" + i, { opacity: 1 }, window.end);
+        }));
+${EVIDENCE_JS}` : ""}
         // B-roll: hard cut in and out. The push (6%, ease-out, settles before the end) and the Ken Burns pans (a
         // steady drift with a little scale, no ease) run on the wrapper; the cut lands with a short focus pull.
         // A generated clip already moves, so it gets no push: "none" holds the frame.

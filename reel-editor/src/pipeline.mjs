@@ -29,6 +29,7 @@ import { makeBroll } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { planBrollLayouts } from "./layouts.mjs";
 import { makeGraphics } from "./graphics.mjs";
+import { makeEvidence } from "./evidence.mjs";
 import { planSlams } from "./slams.mjs";
 import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
 import { iconCandidates, planIcons } from "./icons.mjs";
@@ -493,16 +494,41 @@ export async function runEdit(input, opts = {}) {
   // Structure cards win their slots: a planned card within 6 s of one is dropped.
   const progressGraphics = graphics.filter((g) => g.type === "progress");
   const regularGraphics = graphics.filter((g) => g.type !== "progress");
-  const allCards = [
+  let allCards = [
     ...structureCards.map((g) => ({ ...g, version: g.version || 1 })),
     ...regularGraphics.filter((g) => !structureCards.some((s) => Math.abs(s.start - g.start) < Math.max(6, s.duration + 2))).map((g) => ({ ...g, version: g.version || sceneSchema })),
   ].sort((a, b) => a.start - b.start);
-  const progress = progressGraphics.map((g) => ({ ...g, version: g.version || sceneSchema, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || allCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) })) }));
+  const evidence = await makeEvidence({
+    specs: preset.evidence?.items || [],
+    workDir,
+    transcript: shownGroups,
+    duration,
+    video: videoSrc,
+    fps: preset.render.fps || 30,
+    settings: { ...preset.evidence, zoomScales: preset.zooms?.scales || [1] },
+    tokens: preset.brand,
+    canvas: canvas0,
+    captionTop: captionTop * canvas0.height,
+    face: face || faceBox(detection),
+    detection,
+    framing,
+  });
+  const overlapsEvidence = (item) => evidence.some((proof) => item.start < proof.start + proof.duration && item.start + item.duration > proof.start);
+  const coveredProof = allCards.filter((item) => item.type === "message" && item.mode === "proof" && overlapsEvidence(item));
+  allCards = allCards.filter((item) => !coveredProof.includes(item)).map((item) => {
+    const evidenceDuck = evidence
+      .map((proof) => ({ start: Math.max(item.start, proof.start), end: Math.min(item.start + item.duration, proof.start + proof.duration) }))
+      .filter((window) => window.end > window.start);
+    return evidenceDuck.length ? { ...item, evidenceDuck } : item;
+  });
+  const duckedCards = allCards.filter((item) => item.evidenceDuck?.length);
+  if (coveredProof.length || duckedCards.length) log(`evidence: removed ${coveredProof.length} rebuilt proof card${coveredProof.length === 1 ? "" : "s"}; ducked ${duckedCards.length} other card${duckedCards.length === 1 ? "" : "s"} during real source material`);
+  const progress = progressGraphics.map((g) => ({ ...g, version: g.version || sceneSchema, pulses: (g.pulses || []).map((p) => ({ ...p, hidden: p.hidden || allCards.some((c) => p.at < c.start + c.duration && p.at + 1.4 > c.start) || overlapsEvidence({ start: p.at, duration: 1.4 }) })) }));
   const allGraphics = [...allCards, ...progress].sort((a, b) => a.start - b.start);
   allGraphics.schema = graphicsSchema;
   // Shared-frame layouts never sit under a card. The legacy full cutaway keeps the short-reel exception unchanged.
   const sharedBrollLayout = ["window", "split", "mix"].includes(preset.broll?.layout);
-  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? allCards : [], tail };
+  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...allCards, ...evidence] : evidence, tail };
   let broll = preset.broll?.enabled && shownGroups.length
     ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
@@ -516,10 +542,10 @@ export async function runEdit(input, opts = {}) {
   }
   let speakerPlan = null;
   if (preset.zooms.enabled) {
-    zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll], hook, tight: tightFrame });
+    zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...allCards, ...broll, ...evidence], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
     if (preset.zooms.cadence?.enabled) {
-      zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: broll, hook, tight: tightFrame, tail });
+      zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: [...broll, ...evidence], hook, tight: tightFrame, tail });
       log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
     }
     if (framing.multi) {
@@ -561,7 +587,7 @@ export async function runEdit(input, opts = {}) {
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
   // The rail's visible pulses count as busy too: a slam word stamping in at the top would land on the rail.
   const railPulses = progress.flatMap((g) => (g.pulses || []).filter((p) => !p.hidden).map((p) => ({ start: p.at, duration: 1.4 })));
-  let slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...railPulses], zooms, tail, includeRank: !!preset.slams?.popout?.enabled }) : [];
+  let slams = preset.slams?.enabled && shownGroups.length ? planSlams(shownGroups, duration, { ...preset.slams, dict, hook, busy: [...allCards, ...broll, ...evidence, ...railPulses], zooms, tail, includeRank: !!preset.slams?.popout?.enabled }) : [];
   if (preset.slams?.enabled) log(`slams: ${slams.length} climax word${slams.length === 1 ? "" : "s"}${slams.length ? ": " + slams.map((sl) => `"${sl.text}" at ${sl.t}s`).join(", ") : ""}`);
   // Pop-out slams reuse the already-spaced slam plan: only its highest-ranked words pay the Vision cost.
   if (preset.slams?.popout?.enabled) {
@@ -607,7 +633,7 @@ export async function runEdit(input, opts = {}) {
       premise = null;
     } else {
       Object.assign(premise, geometry, { ...(headTop != null ? { headTop } : {}) });
-      premise.duck = premiseDuckSchedule({ box: premise.box, cards: allCards, slams, start: premise.start, end: duration, fps: preset.render.fps || 30 });
+      premise.duck = premiseDuckSchedule({ box: premise.box, cards: allCards, slams, busy: evidence, start: premise.start, end: duration, fps: preset.render.fps || 30 });
     }
   }
   // Spoken icon pops use the final zoom lane and every finished busy window, including a 0.3 s guard around slams.
@@ -622,6 +648,7 @@ export async function runEdit(input, opts = {}) {
     busy: [
       ...allCards.map((g) => ({ ...g, kind: "card" })),
       ...broll.map((b) => ({ ...b, kind: "cutaway" })),
+      ...evidence.map((item) => ({ ...item, kind: "evidence" })),
       ...railPulses.map((p) => ({ ...p, kind: "rail pulse" })),
       ...slams.map((sl) => ({ start: sl.t, duration: sl.end - sl.t, pad: 0.3, kind: "slam" })),
     ],
@@ -689,7 +716,7 @@ export async function runEdit(input, opts = {}) {
       else lowerThird = legacyLowerThird();
       // A credential placed up in the premise band would sit under the strip: the strip steps aside for it, as it
       // does for cards and slams.
-      if (premise && items.length) premise.duck = premiseDuckSchedule({ box: premise.box, cards: [...allCards, ...items.map((item) => ({ start: item.at, duration: item.duration, box: item.placement }))], slams, start: premise.start, end: duration, fps: preset.render.fps || 30 });
+      if (premise && items.length) premise.duck = premiseDuckSchedule({ box: premise.box, cards: [...allCards, ...items.map((item) => ({ start: item.at, duration: item.duration, box: item.placement }))], slams, busy: evidence, start: premise.start, end: duration, fps: preset.render.fps || 30 });
       if (scheduled.skipped.length) warn(`credential lower third: skipped ${scheduled.skipped.length} (${[...new Set(scheduled.skipped.map((x) => x.reason))].join("; ")})`);
       log(items.length ? `credential lower third: ${items.length} grounded appearance${items.length === 1 ? "" : "s"} at ${items.map((item) => `${item.at}s`).join(", ")}` : "credential lower third: no safe grounded appearance; using the old lower third");
     } catch (error) {
@@ -717,6 +744,7 @@ export async function runEdit(input, opts = {}) {
     lines: shownGroups,
     zooms,
     graphics: allGraphics,
+    evidence,
     graphicsSchema,
     scenes: { schema: sceneSchema },
     broll,

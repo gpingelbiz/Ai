@@ -51,6 +51,11 @@ Options (edit / batch)
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
   --premise "<text>"       persistent premise after the hook (truth-checked against the transcript)
                            --no-premise turns preset/automatic premise planning off; #premise enables auto in a dropped file
+  --evidence <file>[@s][|label]
+                           real supplied screenshot, DM, email or receipt; repeat for more than one
+  --evidence-layout <s>    auto (default) | card | focus | over          --no-evidence disables supplied evidence
+  --redact "word,word"    additionally cover supplied private words; repeatable
+  --no-redact              render the supplied image without automatic privacy bars (prints a warning)
   --title-style <s>        headline (brand default: words rise on a soft scrim, one gold phrase, gold rule) |
                            gold | outline (Bone text, black outline) | box (Bone on Obsidian backing)
                            Mark the gold phrase by hand with asterisks: --hook "The *10 minutes* after a bad number"
@@ -63,7 +68,7 @@ Options (edit / batch)
                            --credit-self uses the brand identity (#credit in a file name)
   --caption-position <0-1> caption height from the top; by default they sit just under the chin (0.56-0.76)
   --no-auto-keywords       gold only on dictionary terms, numbers and power words (no automatic picks)
-  --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)
+  --cta "<text>"           pop-up call to action supplied for this reel (brand accent pill at chest level)
   --cta-last <s>           show the CTA for the last N seconds (default 3)   --cta-at <s> --cta-duration <s>
   --cta-style <s>          pill (default) | box | text          --cta-position <0-1>  default 0.62
   --silence <pace>         off | slow | medium | fast | tight (preset default)
@@ -148,6 +153,11 @@ const EDIT_OPTIONS = {
   premise: { type: "string" },
   "premise-mode": { type: "string" },
   "no-premise": { type: "boolean" },
+  evidence: { type: "string", multiple: true },
+  "evidence-layout": { type: "string" },
+  "no-evidence": { type: "boolean" },
+  redact: { type: "string", multiple: true },
+  "no-redact": { type: "boolean" },
   "title-style": { type: "string" },
   "hook-position": { type: "string" },
   "hook-seconds": { type: "string" },
