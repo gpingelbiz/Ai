@@ -40,6 +40,8 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
     } else warn(`brand tokens: file not found: ${p.brandFile}; using preset colors and fonts`);
   }
   p.brand = resolveBrandTokens({ preset: p, brand });
+  // Privacy is the preset-safe default. Only the explicit CLI escape hatch may turn it off for one edit.
+  p.evidence = { ...(p.evidence || {}), redact: true };
   if (!["none", "edge-rule", "corner-mark", "title-plate"].includes(p.brand.signature?.kind)) {
     warn(`brand signature: unknown kind "${p.brand.signature.kind}"; disabled`);
     p.brand.signature = { ...p.brand.signature, kind: "none" };
@@ -82,6 +84,10 @@ export function mergeOverrides(preset, o = {}) {
   if (o.premise) p.premise = { ...(p.premise || {}), mode: "on", text: o.premise };
   if (["auto", "on", "off"].includes(o.premiseMode)) p.premise = { ...(p.premise || {}), mode: o.premiseMode };
   if (o.noPremise) p.premise = { ...(p.premise || {}), mode: "off", text: null };
+  if (o.premiseIcons) p.premise = { ...(p.premise || {}), icons: true };
+  if (o.noPremiseIcons) p.premise = { ...(p.premise || {}), icons: false };
+  if (o.timeLabels) p.timeLabels = { ...(p.timeLabels || {}), enabled: true };
+  if (o.noTimeLabels) p.timeLabels = { ...(p.timeLabels || {}), enabled: false };
   if (o.activeWord) p.captions.activeWord = true;
   if (o.titleStyle) p.hook.style = o.titleStyle;
   if (num(o.hookPosition) != null) p.hook.position = num(o.hookPosition);
@@ -116,6 +122,10 @@ export function mergeOverrides(preset, o = {}) {
   if (o.broll) p.broll.enabled = true;
   if (o.graphics) p.graphics.enabled = true;
   if (o.noGraphics) p.graphics.enabled = false;
+  if (o.persistentGraphics) { p.graphics.enabled = true; p.graphics.persistent = true; }
+  if (o.noPersistentGraphics) p.graphics.persistent = false;
+  if (o.ladder) { p.graphics.enabled = true; p.graphics.ladder = true; }
+  if (o.noLadder) p.graphics.ladder = false;
   if (o.captionStyle) p.captions.style = o.captionStyle;
   if (o.noBroll) p.broll.enabled = false;
   if (o.slams) p.slams.enabled = true;
@@ -148,8 +158,15 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noSignature) p.signature = { ...(p.signature || {}), enabled: false };
   if (o.houseLooks) p.houseLooks = { ...(p.houseLooks || {}), enabled: true };
   if (o.noHouseLooks) p.houseLooks = { ...(p.houseLooks || {}), enabled: false };
+  if (o.families) p.carousel = { ...(p.carousel || {}), families: true };
+  if (o.noFamilies) p.carousel = { ...(p.carousel || {}), families: false };
   if (o.behind) p.hook.behind = true;
   if (o.noBehind) p.hook.behind = false;
   if (["frame", "designed", "archetypes"].includes(o.coverStyle)) p.cover.style = o.coverStyle;
+  if (o.noEvidence) p.evidence.enabled = false;
+  if (Array.isArray(o.evidence) ? o.evidence.length : o.evidence) p.evidence.items = Array.isArray(o.evidence) ? o.evidence : [o.evidence];
+  if (["auto", "card", "focus", "over"].includes(o.evidenceLayout)) p.evidence.layout = o.evidenceLayout;
+  if (Array.isArray(o.redact) ? o.redact.length : o.redact) p.evidence.extraWords = Array.isArray(o.redact) ? o.redact : [o.redact];
+  if (o.noRedact) p.evidence.redact = false;
   return p;
 }

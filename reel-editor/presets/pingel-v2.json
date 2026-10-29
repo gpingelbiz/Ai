@@ -22,7 +22,15 @@
     "behind": false
   },
   "premise": {
-    "mode": "auto"
+    "mode": "auto",
+    "icons": true
+  },
+  "timeLabels": {
+    "enabled": true
+  },
+  "graphics": {
+    "persistent": true,
+    "ladder": true
   },
   "framing": {
     "enabled": true,

@@ -14,7 +14,7 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
  * phrase highlighted), headline (the key statement), steps (2-4 connected nodes: a flow or a before -> after).
  */
 
-export const TYPES = ["stat", "list", "quote", "headline", "steps", "compare", "bars", "message", "post", "chapter", "progress"];
+export const TYPES = ["stat", "list", "quote", "headline", "steps", "ladder", "compare", "bars", "message", "post", "chapter", "progress"];
 
 /**
  * graphics.json schema. 2 = the dynamic-graphics plan (cards timed to the words they show, truthful numbers).
@@ -122,6 +122,7 @@ const capWords = (s, max) => words(s).slice(0, Math.max(0, max)).join(" ");
 const compareWords = (s) => words(s.title).length + [s.a, s.b].reduce((n, x) => n + words(x?.label).length + words(x?.value).length + words(x?.note).length, 0);
 const itemLine = (line) => Number.isInteger(line) ? line : parseInt(line, 10);
 const hasTimedItems = (s) => (s.type === "list" || s.type === "steps") && s.items?.length && s.items.every((it) => Number.isFinite(it.at));
+export const isPersistentScene = (s) => s?.persistent === true && ["list", "steps", "ladder"].includes(s.type);
 
 function cardWords(s) {
   return wordCount(s.eyebrow) + wordCount(s.title) + (s.items || []).reduce((n, it) => n + wordCount(it.text) + wordCount(it.tag), 0);
@@ -175,7 +176,7 @@ const cleanWords = (s, maxWords, maxChars = 160) => {
 const proofTokens = (s) => String(s || "").toLowerCase().match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) || [];
 
 /** The first transcript line where an exact spoken phrase begins, including phrases that cross caption lines. */
-function firstExactLine(lines, phrase, from = -Infinity) {
+export function firstExactLine(lines, phrase, from = -Infinity) {
   const needle = proofTokens(phrase);
   if (!needle.length) return null;
   const words = [];
@@ -217,6 +218,62 @@ function groundProof(s, lines, candidates) {
   return grounded;
 }
 
+const indexedLines = (lines = []) => lines.map((line, i) => ({ ...line, i: Number.isInteger(line?.i) ? line.i : i }));
+const enumerationCue = (lines) => /\b(?:\d+|two|three|four|five|six|seven)\s+(?:things|ways|steps|ideas|reasons|rules|points|mistakes)\b|\bstep\s+one\b|\b(?:first|firstly)\b[\s\S]*\b(?:second|secondly|step\s+two)\b/i.test(lines.map((line) => line.text || "").join(" "));
+
+/** Ground the one allowed persistent checklist or ladder and enforce its 40% / 30-second lifetime. */
+export function resolvePersistentScenes(scenes, lines, { duration = 0, hook = null, persistent = false, ladder = false, maxFraction = 0.4, maxDuration = 30, fps = 30 } = {}) {
+  const list = indexedLines(lines);
+  const byLine = new Map(list.map((line) => [line.i, line]));
+  const hookEnd = hook ? (+hook.start || 0) + (+hook.duration || 0) : 0;
+  const frame = (seconds) => r3(Math.round(seconds * fps) / fps);
+  const out = [];
+  for (const scene of scenes.filter(isPersistentScene)) {
+    if (scene.type === "ladder" ? !ladder : !persistent || !enumerationCue(list)) continue;
+    let prior = -Infinity;
+    const field = scene.type === "ladder" ? "rungs" : "items";
+    const grounded = [];
+    for (const item of scene[field] || []) {
+      const phrase = scene.type === "ladder" ? [item.value, item.label].filter(Boolean).join(" ") : item.text;
+      const line = firstExactLine(list, phrase, prior);
+      if (line == null || !byLine.has(line)) continue;
+      prior = line;
+      grounded.push({ ...item, line });
+    }
+    const minimum = scene.type === "ladder" ? 2 : 3;
+    if (grounded.length < minimum) continue;
+    const start = frame(Number(byLine.get(grounded[0].line).start));
+    if (!(start >= hookEnd) || !(start < duration)) continue;
+    const items = grounded.map((item) => ({ ...item, at: frame(Number(byLine.get(item.line).start) - start) }));
+    if (items.some((item, i) => i && item.at <= items[i - 1].at)) continue;
+    const movedOn = byLine.get(scene.endLine)?.start;
+    const end = frame(Math.min(duration, start + maxDuration, start + duration * maxFraction, Number.isFinite(movedOn) && movedOn > start ? movedOn : Infinity));
+    if (end - start <= 0 || start + items.at(-1).at + 0.8 > end) continue;
+    out.push({ ...scene, line: grounded[0].line, [field]: items, start, duration: frame(end - start), persistent: true });
+  }
+  return out.sort((a, b) => a.start - b.start).slice(0, 1);
+}
+
+/** Six-frame fades around cutaways, cards/evidence and slams while a structural overlay remains alive. */
+export function persistentDuckSchedule({ scene, cards = [], broll = [], slams = [], fps = 30 } = {}) {
+  if (!scene) return [];
+  const start = +scene.start || 0, end = start + (+scene.duration || 0);
+  const frame = (seconds) => r3(Math.round(seconds * fps) / fps);
+  const events = [
+    ...cards.filter((card) => card !== scene && !isPersistentScene(card)).map((card) => ({ start: +card.start || 0, end: (+card.start || 0) + (+card.duration || 0) })),
+    ...broll.map((item) => ({ start: +item.start || 0, end: (+item.start || 0) + (+item.duration || 0) })),
+    ...slams.map((slam) => ({ start: +slam.t || 0, end: Number.isFinite(+slam.end) ? +slam.end : (+slam.t || 0) + (+slam.duration || 0) })),
+  ].map((event) => ({ start: frame(Math.max(start, event.start)), end: frame(Math.min(end, event.end)) })).filter((event) => event.end > event.start).sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const event of events) {
+    const prior = merged.at(-1);
+    if (prior && event.start <= prior.end) prior.end = Math.max(prior.end, event.end);
+    else merged.push({ ...event });
+  }
+  const fade = 6 / fps;
+  return merged.map((event) => ({ outAt: frame(Math.max(start, event.start - fade)), hiddenAt: event.start, inAt: event.end, shownAt: frame(Math.min(end, event.end + fade)) }));
+}
+
 /** Tidy one scene from Claude: known type, short text, the fields that type needs. Returns null if unusable. */
 export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
   if (!raw || !TYPES.includes(raw.type)) return null;
@@ -231,6 +288,11 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
   }
   const s = { type: raw.type, line: Number.isInteger(raw.line) ? raw.line : parseInt(raw.line, 10), eyebrow: clean(raw.eyebrow, 40) };
   if (!Number.isInteger(s.line)) return null;
+  if (["list", "steps", "ladder"].includes(s.type) && raw.persistent === true) {
+    s.persistent = true;
+    const endLine = Number.isInteger(raw.endLine) ? raw.endLine : parseInt(raw.endLine, 10);
+    if (Number.isInteger(endLine)) s.endLine = endLine;
+  }
   if (s.type === "stat") {
     s.value = clean(raw.value, 16);
     s.value2 = clean(raw.value2, 16);
@@ -242,13 +304,23 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
       .map((it) => (typeof it === "string" ? { text: it } : it || {}))
       .map((it) => ({ text: clean(it.text, 32), tag: clean(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain", icon: s.type === "list" ? iconFor(it.text, clean(it.icon, 12).toLowerCase()) : "", ...((it.line !== undefined && it.line !== null && it.line !== "") ? { line: itemLine(it.line) } : {}) }))
       .filter((it) => it.text)
-      .slice(0, 4);
-    if (items.length < 2) return null;
+      .slice(0, s.persistent ? 7 : 4);
+    if (items.length < (s.persistent ? 3 : 2)) return null;
     const supplied = items.filter((it) => Object.hasOwn(it, "line"));
     const lined = items.filter((it) => Number.isInteger(it.line));
     // No cue lines is the legacy card. Once one item is timed, every item must be timed in spoken order.
     if (supplied.length && (lined.length !== items.length || lined.some((it, i) => i && it.line <= lined[i - 1].line) || items.some((it) => wordCount(it.text) > 4))) return null;
     s.items = items;
+  } else if (s.type === "ladder") {
+    s.title = clean(raw.title, 48);
+    s.rungs = (Array.isArray(raw.rungs) ? raw.rungs : [])
+      .map((rung) => ({ value: clean(rung?.value, 18), label: clean(rung?.label, 30), line: Number.isInteger(rung?.line) ? rung.line : parseInt(rung?.line, 10) }))
+      .filter((rung) => rung.value && splitStat(rung.value) && Number.isInteger(rung.line))
+      .slice(0, 6);
+    if (s.rungs.length < 2 || s.rungs.some((rung, i) => i && rung.line <= s.rungs[i - 1].line)) return null;
+    s.persistent = true;
+    const endLine = Number.isInteger(raw.endLine) ? raw.endLine : parseInt(raw.endLine, 10);
+    if (Number.isInteger(endLine)) s.endLine = endLine;
   } else if (s.type === "bars") {
     s.title = clean(raw.title, 48);
     s.unit = clean(raw.unit, 8);
@@ -417,7 +489,7 @@ export function resolveProgressScenes(scenes, groups, { hook, duration, cards = 
   return [];
 }
 
-export function scenesPrompt({ candidates, anchors = candidates, transcript, hook, count, voice = "", looks = "" }) {
+export function scenesPrompt({ candidates, anchors = candidates, transcript, hook, count, voice = "", looks = "", persistent = false, ladder = false }) {
   return [
     "You are the motion designer on a talking-head Instagram reel. You pick the moments where a designed graphic card cuts in to show what the speaker is saying, and you write the words on each card. You never use tools; reply with JSON only.",
     `Pick up to ${count} moments, spread across the reel, at least 6 seconds apart. Only pick a moment when a card makes the point clearer or hit harder: the speaker says a number or amount, lists things, describes steps or a before and after, contrasts two things, quotes something, or lands the key line.`,
@@ -433,6 +505,8 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     "- message: a text exchange the speaker reads out or acts out. For reconstructed proof, use mode: \"proof\", context (2 to 4 of the speaker's exact words that introduce the message, like \"he reached back out\" or \"he sent me\"), items [{from: \"them\" | \"me\", text, line}] 1-3 bubbles, and optional outcome {line, text}. Each bubble is at most 16 words. Do not add contact in proof mode. Legacy acted-out exchanges may omit mode and use contact plus items without line.",
     "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
     "- progress: one small payoff rail, separate from the card count. title is optional and at most 3 words; style is journey or count; items are 2 to 4 ordered {line, label} milestones, with each label 1 to 3 words taken from the speaker. journey is only for real ordered beats whose final payoff is at least 8 seconds after the hook. count is only when the hook explicitly promises a number, and each item is a promised section start. Never use progress on a one-idea reel.",
+    ...(persistent ? ["- persistent list/steps: at most one per reel, only when the speaker explicitly enumerates (three things, first/second/third, step one). Set persistent:true and use 3 to 7 short items, each with the exact line where it is first said. It appears with the first item and stays as the live navigation; do not also use progress. If the speaker clearly moves to a new topic, set endLine to that first new-topic transcript line; otherwise omit it."] : []),
+    ...(ladder ? ["- ladder: only when the speaker walks through 2 to 6 amounts, counts or levels in order. Set persistent:true and rungs [{value,label,line}]. Copy every value, qualifier and label exactly; line is where that full rung phrase begins. Never add a midpoint, endpoint or unit the speaker did not say. endLine follows the persistent rule above."] : []),
     `- list items may carry icon: one of ${Object.keys(ICONS).join(", ")} (pick the one that fits the item, else leave empty).`,
     "Every card has an eyebrow: a 2-5 word label in caps over it (\"AFTER A BAD NUMBER\", \"THE STANDARD\", \"WHAT YOU OWN\").",
     "",
@@ -454,6 +528,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     "- Vary the card types; no type more than twice unless the reel is mostly a list.",
     "- Fewer cards beat more: the biggest reels in this niche are a face, one premise and captions. Reply with an empty scenes list when the reel is one opinion with no structure, an emotional or identity moment, or a skit. A personal story gets no other cards, but when the speaker quotes a real message (a DM, a text, what someone said to them) it does get the proof message card, and a real sequence of events may get a progress rail. Never pick a card that repeats the hook or the line already on screen.",
     "- Offer at most one progress scene. It does not replace or consume one of the requested cards. Its item line anchors must be strictly increasing.",
+    ...(persistent || ladder ? ["- Offer at most one persistent scene total (list, steps or ladder). A persistent scene replaces the progress rail and does not consume an ordinary card slot."] : []),
     "- No emojis, no hashtags, no calls to action.",
     voice ? `\nVoice for labels and trims:\n${voice.trim()}` : "",
     "",
@@ -469,7 +544,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     ...anchors.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
     looks ? `\n${looks}\n` : "",
-    'Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps|compare|bars|message|post|progress","eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","style":"journey|count","unit":"","emphasize":0,"contact":"","mode":"proof","context":"","outcome":{"line":0,"text":""},"pivotLine":0,"kind":"versus|before-after|roles","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}',
+    `Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps${ladder ? "|ladder" : ""}|compare|bars|message|post|progress","persistent":false,"endLine":0,"eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","style":"journey|count","unit":"","emphasize":0,"contact":"","mode":"proof","context":"","outcome":{"line":0,"text":""},"pivotLine":0,"kind":"versus|before-after|roles","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"rungs":[{"value":"","label":"","line":0}],"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}`,
   ].join("\n");
 }
 
@@ -480,19 +555,22 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
 export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false, handle = "", tail = 1.5 }) {
   const planPath = path.join(workDir, "graphics.json");
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
-  if (!max) { log("graphics: reel too short, skipped"); return []; }
+  const structural = settings.persistent === true || settings.ladder === true;
+  if (!max && !structural) { log("graphics: reel too short, skipped"); return []; }
   const candidates = sceneCandidates(groups, duration, { hook, cta, tail });
   const anchors = groups.map((g, i) => ({ i, start: g.start, text: g.text }));
   const lines = anchors;
   if (!candidates.length) { log("graphics: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
+  const features = { persistent: settings.persistent === true, ladder: settings.ladder === true };
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
     // Reuse while every card still has its line (a new hook hides different caption lines and shifts the line
     // numbers; the cards follow their line by start time instead of costing another Claude call).
     const byStart = (s) => candidates.find((c) => Math.abs(c.start - (s.start ?? -1)) < 0.05);
     const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.filter((s) => s.type !== "progress").every(byStart);
-    if ((saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
+    const sameFeatures = saved.features ? saved.features.persistent === features.persistent && saved.features.ladder === features.ladder : !features.persistent && !features.ladder;
+    if (sameFeatures && (saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
       const transcript = groups.map((g) => g.text).join(" ");
@@ -501,16 +579,17 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
       const look = settings.look && LOOKS[settings.look] ? settings.look : savedLook || "glass";
       const schema = saved.schema || 1;
       // A timed item follows its line by time too (its saved offset from the card start).
-      const relined = (s) => ({ ...s, items: s.items?.map((it) => ({ ...it, ...(Number.isInteger(it.line) && Number.isFinite(it.at) ? { line: candidates.find((c) => Math.abs(c.start - (s.start + it.at)) < 0.05)?.i ?? it.line } : {}) })) });
+      const relined = (s) => ({ ...s, items: s.items?.map((it) => ({ ...it, ...(Number.isInteger(it.line) && Number.isFinite(it.at) ? { line: candidates.find((c) => Math.abs(c.start - (s.start + it.at)) < 0.05)?.i ?? it.line } : {}) })), rungs: s.rungs?.map((it) => ({ ...it, ...(Number.isInteger(it.line) && Number.isFinite(it.at) ? { line: candidates.find((c) => Math.abs(c.start - (s.start + it.at)) < 0.05)?.i ?? it.line } : {}) })) });
       const remapProof = (s) => s.type === "message" && s.mode === "proof" ? {
         ...s,
         items: (s.items || []).map((it) => ({ ...it, line: lines.find((line) => Math.abs(line.start - (s.start + (it.at || 0))) < 0.05)?.i ?? it.line })),
         ...(s.outcome ? { outcome: { ...s.outcome, line: lines.find((line) => Math.abs(line.start - (s.start + (s.outcome.at || 0))) < 0.05)?.i ?? s.outcome.line } } : {}),
       } : s;
-      const savedCards = saved.scenes.filter((s) => s.type !== "progress").map(relined).map(remapProof).map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s).map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type, s.mode), ...(s.type === "post" ? { handle } : {}) }));
-      const cards = placeScenes(savedCards, candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
+      const savedCards = saved.scenes.filter((s) => s.type !== "progress").map(relined).map(remapProof).map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s).filter(Boolean).map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type, s.mode), ...(s.type === "post" ? { handle } : {}) }));
+      const persistentCards = resolvePersistentScenes(savedCards, lines, { duration, hook, persistent: settings.persistent === true, ladder: settings.ladder === true });
+      const cards = [...(max ? placeScenes(savedCards.filter((s) => !isPersistentScene(s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines }) : []), ...persistentCards].sort((a, b) => a.start - b.start);
       const rawProgress = saved.scenes.filter((s) => s.type === "progress").map(normalizeScene).filter(Boolean).map((s) => ({ ...s, skin: skinFor(look, s.type) }));
-      const scenes = [...cards, ...resolveProgressScenes(rawProgress, groups, { hook, duration, cards })].sort((a, b) => a.start - b.start);
+      const scenes = [...cards, ...(persistentCards.length ? [] : resolveProgressScenes(rawProgress, groups, { hook, duration, cards }))].sort((a, b) => a.start - b.start);
       const old = schema < GRAPHICS_SCHEMA ? `; card plan v${schema}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
       log(`graphics: reusing ${scenes.length} card${scenes.length === 1 ? "" : "s"} from ${planPath} (look: ${look}${old})`);
       scenes.look = look;
@@ -529,12 +608,14 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const exclude = lookExclusions(settings);
     const houseLooks = Array.isArray(settings.houseLooks) ? settings.houseLooks : [];
     if (houseLooks.length && !houseLooks.some((id) => LOOKS[id] && !exclude.includes(id))) warn("graphics: no valid house looks; using the full look catalog");
-    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude, houseLooks, modes: settings.modes }) }), { timeoutMs: 240000 }));
+    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude, houseLooks, modes: settings.modes }), persistent: settings.persistent === true, ladder: settings.ladder === true }), { timeoutMs: 240000 }));
     const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude, houseLooks, modes: settings.modes });
     lookPicked = picked;
     const raw = (reply.scenes || []).map(normalizeScene).filter(Boolean);
-    const cards = placeScenes(raw.filter((s) => s.type !== "progress").map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) })), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines });
-    const progress = resolveProgressScenes(raw.filter((s) => s.type === "progress").map((s) => ({ ...s, skin: skinFor(picked.look, s.type) })), groups, { hook, duration, cards });
+    const pickedCards = raw.filter((s) => s.type !== "progress").map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) }));
+    const persistentCards = resolvePersistentScenes(pickedCards, lines, { duration, hook, persistent: settings.persistent === true, ladder: settings.ladder === true });
+    const cards = [...(max ? placeScenes(pickedCards.filter((s) => !isPersistentScene(s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines }) : []), ...persistentCards].sort((a, b) => a.start - b.start);
+    const progress = persistentCards.length ? [] : resolveProgressScenes(raw.filter((s) => s.type === "progress").map((s) => ({ ...s, skin: skinFor(picked.look, s.type) })), groups, { hook, duration, cards });
     // A pick the timing, grounding or reading rules turn down is dropped; say so, or an empty reel looks like a choice.
     const dropped = (reply.scenes || []).length - cards.length - progress.length;
     if (process.env.REEL_DEBUG_GRAPHICS) log(`graphics: Claude's picks ${JSON.stringify(reply.scenes || [])}`);
@@ -544,7 +625,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     warn(`graphics: ${String(e.message).split("\n")[0]}; rendering without them`);
     return [];
   }
-  writeJSON(planPath, { schema: GRAPHICS_SCHEMA, key, look: lookPicked?.look || "glass", lookWhy: lookPicked?.why || "", scenes });
+  writeJSON(planPath, { schema: GRAPHICS_SCHEMA, key, features, look: lookPicked?.look || "glass", lookWhy: lookPicked?.why || "", scenes });
   scenes.schema = GRAPHICS_SCHEMA;
   if (lookPicked && !settings.look) rememberLook(lookPicked.look);
   log(`graphics: look "${LOOKS[lookPicked?.look || "glass"].label}"${lookPicked?.why ? ` (${lookPicked.why})` : ""}`);
@@ -630,6 +711,20 @@ export function sceneHTML(s, { schema = 1 } = {}) {
       })
       .join("");
     return `<div class="g-box">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-rows">${rows}</div></div>`;
+  }
+  if (s.type === "ladder") {
+    const rungs = s.rungs.map((rung, k) => {
+      const value = splitStat(rung.value);
+      const previous = k ? splitStat(s.rungs[k - 1].value) : null;
+      const sameUnit = previous && previous.prefix === value.prefix && previous.suffix === value.suffix;
+      const motion = k && sameUnit ? numberMotion({ type: "stat", value: s.rungs[k - 1].value, value2: rung.value, motion: "growth" }, { schema: GRAPHICS_SCHEMA }) : "reveal";
+      const start = previous ? (value.commas ? previous.to.toLocaleString("en-US", { minimumFractionDigits: value.dec, maximumFractionDigits: value.dec }) : previous.to.toFixed(value.dec)) : "";
+      const number = motion === "growth"
+        ? `${value.prefix ? `<span class="g-affix">${esc(value.prefix)}</span>` : ""}<span class="g-ladder-count" data-from="${previous.to}" data-to="${value.to}" data-dec="${value.dec}" data-commas="${value.commas ? 1 : 0}">${esc(start)}</span>${value.suffix ? `<span class="g-affix">${esc(value.suffix)}</span>` : ""}`
+        : esc(rung.value);
+      return `<div class="g-live-item g-ladder-rung${k === s.rungs.length - 1 ? " g-ladder-top" : ""}">${k ? '<span class="g-live-connector"></span>' : ""}<span class="g-item-dot"></span><div class="g-item-text"><span class="g-ladder-value">${number}</span>${rung.label ? `<span class="g-ladder-label">${esc(rung.label)}</span>` : ""}<span class="g-ladder-fill"></span></div></div>`;
+    }).join("");
+    return `<div class="g-box">${eyebrow}${s.title ? `<div class="g-title g-in">${marked(s.title, "g-gold")}</div>` : ""}<div class="g-ladder">${rungs}</div></div>`;
   }
   if (s.type === "quote") {
     return `<div class="g-box g-center"><div class="g-paper g-in">${s.eyebrow ? `<div class="g-paper-eyebrow">${esc(s.eyebrow)}</div>` : ""}<div class="g-quote">${/["“”]/.test(s.text) ? marked(s.text, "g-hl") : `&ldquo;${marked(s.text, "g-hl")}&rdquo;`}</div><div class="g-paper-mark"></div></div></div>`;
@@ -776,7 +871,7 @@ export const PROGRESS_JS = `
  * captions keep the bottom); "overlay" is a compact glass panel in the top third while the footage keeps playing,
  * the way explainer reels drop a payroll card or a checklist over the speaker.
  */
-export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0.68 }) {
+export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0.68, persistent = false }) {
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const u = H / 1920;
   const px = (n) => `${Math.round(n * u)}px`;
@@ -914,7 +1009,23 @@ export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0
       .gfx.gfx-timed .g-live-connector { position: absolute; left: ${px(7)}; bottom: 50%; width: ${px(3)}; height: calc(50% + ${px(20)}); background: ${c.accent}; transform: scaleY(0); transform-origin: 50% 100%; opacity: 0.75; }
       .gfx.gfx-timed .g-live-item.g-item-done .g-item-text { opacity: 0.55; color: ${c.text}; }
       .gfx.gfx-timed.gfx-steps .g-node { justify-content: flex-start; min-height: ${px(62)}; padding: ${px(16)} ${px(22)}; font-size: ${px(48)}; text-align: left; flex-direction: row; }
-      .g-compare { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: ${px(96)}; width: 100%; }
+${persistent ? `      .gfx.gfx-persistent { background: none; }
+      .gfx.gfx-persistent::after { display: none; }
+      .gfx.gfx-persistent .g-box { left: var(--structure-x); right: auto; top: var(--structure-y); bottom: auto; width: var(--structure-w); height: var(--structure-h); max-height: none; justify-content: flex-start; gap: var(--space-sm); box-sizing: border-box; padding: var(--space-md); overflow: hidden; color: var(--brand-ink); background: var(--brand-surface); border: calc(var(--space-xs) / 4) solid var(--brand-stroke); border-radius: var(--brand-radius-md); box-shadow: 0 var(--space-sm) var(--space-lg) color-mix(in srgb, var(--brand-stroke) 55%, transparent); font-family: var(--brand-body-font); }
+      .gfx.gfx-persistent .g-eyebrow { min-height: var(--structure-font); font-family: var(--brand-body-font); font-size: var(--structure-font); color: var(--brand-accent); }
+      .gfx.gfx-persistent .g-title { font-family: var(--brand-display-font); font-size: var(--type-lg); line-height: var(--brand-display-line-height); text-transform: var(--brand-display-case); }
+      .gfx.gfx-persistent .g-rows, .gfx.gfx-persistent .g-steps, .gfx.gfx-persistent .g-ladder { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: stretch; justify-content: space-evenly; gap: var(--space-xs); width: 100%; }
+      .gfx.gfx-persistent .g-live-item { flex: 1; min-height: ${px(48)}; padding-left: var(--space-md); }
+      .gfx.gfx-persistent .g-row, .gfx.gfx-persistent .g-node, .gfx.gfx-persistent .g-ladder-rung .g-item-text { min-height: ${px(48)}; box-sizing: border-box; padding: var(--space-xs) var(--space-sm); border-radius: var(--brand-radius-sm); background: var(--brand-surface2); border: calc(var(--space-xs) / 4) solid var(--brand-stroke); color: var(--brand-ink); font-family: var(--brand-body-font); font-size: var(--structure-font); font-weight: var(--brand-body-weight); line-height: var(--brand-body-line-height); text-transform: var(--brand-body-case); }
+      .gfx.gfx-persistent .g-item-dot { background: var(--brand-accent); box-shadow: none; }
+      .gfx.gfx-persistent .g-live-connector { background: var(--brand-accent); }
+      .gfx.gfx-persistent .g-mark, .gfx.gfx-persistent .g-node-num { font-size: ${px(24)}; color: var(--brand-accent); }
+      .gfx.gfx-persistent .g-ladder-rung .g-item-text { position: relative; display: flex; align-items: baseline; gap: var(--space-sm); overflow: hidden; }
+      .gfx.gfx-persistent .g-ladder-value { flex: none; font-family: var(--brand-display-font); font-size: var(--type-lg); font-weight: var(--brand-display-weight); font-variant-numeric: tabular-nums; }
+      .gfx.gfx-persistent .g-ladder-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .gfx.gfx-persistent .g-ladder-fill { position: absolute; left: 0; bottom: 0; width: 100%; height: calc(var(--space-xs) / 2); background: var(--brand-accent); transform: scaleX(0); transform-origin: 0 50%; }
+      .gfx.gfx-persistent .g-ladder-top .g-item-text { border-color: var(--brand-accent); }
+` : ""}      .g-compare { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: ${px(96)}; width: 100%; }
       .g-side { position: relative; padding: ${px(28)} ${px(26)}; border-radius: ${px(20)}; background: rgba(255,255,255,0.06); border: ${px(2)} solid rgba(255,255,255,0.12); text-align: left; min-height: ${px(150)}; }
       .g-side-b { background: linear-gradient(180deg, ${c.accent}2a, ${c.accent}14); border-color: ${c.accent}aa; clip-path: inset(0 100% 0 0); }
       .g-side-label { font-size: ${px(40)}; font-weight: 900; text-transform: uppercase; line-height: 1.05; }
@@ -992,7 +1103,7 @@ export function proofMessageCSS({ H, colors, captionTop = H * 0.72 }) {
 }
 
 /** GSAP for the cards (runs inside the composition's timeline script; expects PLAN.graphics and tl). */
-export const GRAPHICS_JS = `
+export const STRUCTURE_GRAPHICS_JS = `
         // A card never covers the head. With a head measurement (g.headTop: the highest the head gets while the card
         // is up, strongest zoom included) the footage drops just far enough that the head clears the card's real
         // bottom edge by 2% of the frame. Past a 16% drop the card shrinks from the top (to 72% at most), and a card
@@ -1044,6 +1155,15 @@ ${QUIET_JS}
               }
               tl.fromTo(text, { opacity: 0, y: 12, scale: 1.04, color: PLAN.graphicsAccent }, { opacity: 1, y: 0, scale: 1, color: PLAN.graphicsAccent, duration: 6 / fps, ease: "power3.out", immediateRender: false }, cue);
               if (connector) tl.fromTo(connector, { scaleY: 0 }, { scaleY: 1, duration: 7 / fps, ease: "power2.inOut", immediateRender: false }, cue);
+              const ladderFill = item.querySelector(".g-ladder-fill");
+              if (ladderFill) tl.fromTo(ladderFill, { scaleX: 0 }, { scaleX: 1, duration: 10 / fps, ease: "power2.inOut", immediateRender: false }, cue);
+              const ladderCount = item.querySelector(".g-ladder-count");
+              if (ladderCount) {
+                const from = parseFloat(ladderCount.dataset.from), to = parseFloat(ladderCount.dataset.to), dec = parseInt(ladderCount.dataset.dec || "0", 10), commas = ladderCount.dataset.commas === "1";
+                const fmt = (v) => commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec);
+                const ease = gsap.parseEase("power3.out"), last = 21;
+                for (let f = 0; f <= last; f++) tl.set(ladderCount, { textContent: fmt(from + (to - from) * ease(f / last)) }, cue + f / fps);
+              }
               item.querySelectorAll(".g-strike-line").forEach((s) => tl.fromTo(s, { scaleX: 0 }, { scaleX: 1, duration: 10 / fps, ease: "power2.inOut", immediateRender: false }, cue));
               item.querySelectorAll(".g-icon path").forEach((p) => {
                 const L = p.getTotalLength();
@@ -1051,7 +1171,7 @@ ${QUIET_JS}
                 tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 10 / fps, ease: "power2.inOut", immediateRender: false }, cue);
               });
             });
-            if (PLAN.graphicsMode === "overlay") {
+            if (PLAN.graphicsMode === "overlay" && !g.persistent) {
               const drop = guard.drop;
               tl.to("#video-wrap", { y: drop, duration: 8 / fps, ease: "power2.out" }, g.start);
               tl.to("#video-wrap", { y: 0, duration: 8 / fps, ease: "power2.inOut" }, g.start + g.duration - 5 / fps);
@@ -1231,9 +1351,35 @@ ${SKINS_JS}
               if (k === 0) el.querySelectorAll(".g-fill-bar").forEach((bar) => tl.fromTo(bar, { scaleX: 0 }, { scaleX: 1, duration: COUNT, ease: "sine.inOut" }, at));
             });
           }
+          if (g.persistent) (g.duck || []).forEach((d) => {
+            tl.to(el, { opacity: 0, duration: d.hiddenAt - d.outAt, ease: g.exitEase }, d.outAt);
+            tl.set(el, { opacity: 0 }, d.hiddenAt);
+            tl.to(el, { opacity: 1, duration: d.shownAt - d.inAt, ease: g.enterEase }, d.inAt);
+          });
           if (liveItems.length || (PLAN.graphicsSchema >= 2 && g.pivotAt != null) || proof) tl.to(el, { opacity: 0, duration: 5 / fps, ease: "power2.in" }, g.start + g.duration - 5 / fps);
           else {
             const out = quiet === "note" ? 0.12 : quiet === "serifonlife" ? 0.4 : quiet ? 0.28 : 0.16;
             tl.to(el, { opacity: 0, duration: out, ease: "power1.in" }, g.start + g.duration - out);
           }
         });`;
+
+// Keep the byte-for-byte legacy runtime for plans without persistent structure. Compose opts into the extended
+// lane only when one of these new cards is actually present.
+export const GRAPHICS_JS = STRUCTURE_GRAPHICS_JS
+  .replace(`              const ladderFill = item.querySelector(".g-ladder-fill");
+              if (ladderFill) tl.fromTo(ladderFill, { scaleX: 0 }, { scaleX: 1, duration: 10 / fps, ease: "power2.inOut", immediateRender: false }, cue);
+              const ladderCount = item.querySelector(".g-ladder-count");
+              if (ladderCount) {
+                const from = parseFloat(ladderCount.dataset.from), to = parseFloat(ladderCount.dataset.to), dec = parseInt(ladderCount.dataset.dec || "0", 10), commas = ladderCount.dataset.commas === "1";
+                const fmt = (v) => commas ? Number(v.toFixed(dec)).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec);
+                const ease = gsap.parseEase("power3.out"), last = 21;
+                for (let f = 0; f <= last; f++) tl.set(ladderCount, { textContent: fmt(from + (to - from) * ease(f / last)) }, cue + f / fps);
+              }
+`, "")
+  .replace(`if (PLAN.graphicsMode === "overlay" && !g.persistent)`, `if (PLAN.graphicsMode === "overlay")`)
+  .replace(`          if (g.persistent) (g.duck || []).forEach((d) => {
+            tl.to(el, { opacity: 0, duration: d.hiddenAt - d.outAt, ease: g.exitEase }, d.outAt);
+            tl.set(el, { opacity: 0 }, d.hiddenAt);
+            tl.to(el, { opacity: 1, duration: d.shownAt - d.inAt, ease: g.enterEase }, d.inAt);
+          });
+`, "");

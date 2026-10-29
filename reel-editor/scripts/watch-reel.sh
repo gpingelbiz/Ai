@@ -50,7 +50,7 @@ export PRODUCER_BROWSER_GPU_MODE="${PRODUCER_BROWSER_GPU_MODE:-hardware}"
 
 REELS="${REEL_WATCH_ROOT:-$HOME/Reels}"
 DONE="${REEL_WATCH_DONE:-$REELS/done}"
-CTA="${REEL_WATCH_CTA-Comment GHOST}"   # unset: default; set but empty: no CTA
+CTA="${REEL_WATCH_CTA-}"
 MUSIC_DIR="${REEL_WATCH_MUSIC:-$REELS/music}"
 MUSIC_VOLUME="${REEL_WATCH_MUSIC_VOLUME:-}"
 EXTRA_ARGS="${REEL_WATCH_ARGS:-}"
@@ -62,6 +62,18 @@ mkdir -p "$DONE" "$REELS/videos"
 filesize() { if stat -c %s "$1" >/dev/null 2>&1; then stat -c %s "$1"; else stat -f %z "$1"; fi; }
 filemtime() { if stat -c %Y "$1" >/dev/null 2>&1; then stat -c %Y "$1"; else stat -f %m "$1"; fi; }
 probe_ok() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" 2>/dev/null | grep -Eq '^[0-9.]+$'; }
+wait_image() {
+  [ "${REEL_WATCH_FAST:-0}" = 1 ] && return 0
+  local image="$1" last=-1 good=0 size age
+  for _ in $(seq 1 150); do
+    size=$(filesize "$image"); age=$(( $(date +%s) - $(filemtime "$image") ))
+    if [ "$size" = "$last" ] && [ "$size" -gt 0 ] && [ "$age" -ge 5 ]; then good=$((good + 1)); else good=0; fi
+    [ "$good" -ge 2 ] && return 0
+    last=$size
+    sleep 2
+  done
+  return 1
+}
 if [ "${REEL_WATCH_FAST:-0}" != 1 ]; then
   last=-1; good=0
   for _ in $(seq 1 150); do
@@ -157,6 +169,26 @@ case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; lo
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
+evidence_sources=()
+pair_key=$(printf '%s' "$stem" | sed -E 's/ *#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/^ +| +$//g')
+shopt -s nullglob nocaseglob
+for image in "$(dirname "$FILE")/$pair_key proof"*.{png,jpg,jpeg,heic} "$(dirname "$FILE")/$pair_key receipt"*.{png,jpg,jpeg,heic}; do
+  if ! wait_image "$image"; then
+    echo "$(date '+%F %T') evidence skipped $(basename "$image"): file size never became stable" >> "$log"
+    continue
+  fi
+  supplied="$image"
+  if [[ "$image" =~ \.[Hh][Ee][Ii][Cc]$ ]]; then
+    mkdir -p "$work/evidence-input"
+    supplied="$work/evidence-input/$(basename "${image%.*}").png"
+    if ! sips -s format png "$image" --out "$supplied" >/dev/null 2>&1; then
+      echo "$(date '+%F %T') evidence skipped $(basename "$image"): HEIC conversion failed" >> "$log"
+      continue
+    fi
+  fi
+  flags+=(--evidence "$supplied")
+  evidence_sources+=("$image")
+done
 # Housekeeping: keep the log under 5 MB and drop work folders (intermediates, not the delivered reels) older than
 # REEL_WATCH_PRUNE_DAYS (default 30; 0 turns it off).
 if [ -f "$log" ] && [ "$(filesize "$log")" -gt 5000000 ]; then tail -c 1000000 "$log" > "$log.tmp" && mv -f "$log.tmp" "$log"; fi
@@ -332,6 +364,10 @@ else
   echo "$(date '+%F %T') done  $dest" >> "$log"
   if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder.$pf_note"; else notify "$label ready" "$title.$pf_note"; fi
 fi
+
+for image in ${evidence_sources[@]+"${evidence_sources[@]}"}; do
+  [ -f "$image" ] && mv "$image" "$folder/$(basename "$image")"
+done
 
 # Post copy (caption, hashtags, the hook options) from Sandcastles via headless Claude. Written in the first pass
 # when the hook came from it; otherwise written now. Never holds up the delivery.
