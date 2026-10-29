@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveBrandTokens, tokensCSS, contrast } from "./brandtokens.mjs";
+import { resolveBrandTokens, tokensCSS, contrast, readableOn } from "./brandtokens.mjs";
 import { loadPreset } from "./presets.mjs";
 import { signatureHTML, signatureRulesCSS } from "./signature.mjs";
 import { esc } from "./text.mjs";
@@ -239,6 +239,9 @@ function slideRules() {
     .evidence-embed { position: absolute; inset: 0; }
     .static-light { background: var(--brand-paper); color: var(--slide-light-ink, var(--brand-surface)); }
     .static-light .slide-handle { color: var(--brand-muted); }
+    /* Paper layouts take the accent darkened just enough to read on paper (a pale peach or gold turns deep). */
+    .static-light .accent, .static-light .slide-label, .post-card .accent, .note-paper .accent { color: var(--slide-light-accent, var(--brand-accent)); }
+    .static-light .slide-label::before { background: var(--slide-light-accent, var(--brand-accent)); }
     .family-main { position: relative; z-index: 2; height: 100%; }
     .family-main h1 { font-size: var(--type-xl); }
     .check-list { list-style: none; margin: var(--space-xl) 0 0; padding: 0; display: grid; gap: var(--space-md); }
@@ -327,7 +330,8 @@ export function slideHTML(slide, tokens, options = {}) {
   const position = clean(slide.pos || (kind === "photo" ? "center top" : "center 30%"));
   const paper = t.colors?.paper || "#FFFFFF";
   const lightInk = [t.colors?.surface, t.colors?.stroke, t.colors?.ink].filter(Boolean).sort((a, b) => contrast(b, paper) - contrast(a, paper))[0];
-  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`;
+  const lightAccent = readableOn(t.colors?.accent || lightInk, paper);
+  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${SLIDE_WIDTH}, height=${height}" /><style>${tokensCSS(t)}\n${slideRules()}\n${signatureRulesCSS()}\n${options.evidenceCSS || ""}</style></head>
 <body><section class="slide ${esc(kind)}" style="${style}">${content}${signature}${commonFooter(t)}</section></body></html>`;
