@@ -11,3 +11,6 @@ Who it must stop: offer owners doing $30k-$150k a month who need sales help, clo
 - On-brand words: build, standard, reps, weight, conviction, pipeline, close, own it.
 - Never: synergy, hack, passive income, manifest, effortless, unlock, guru, 10x, grind.
 - Never use the framework name A.C.R.A. in a caption.
+- Never mention the Ghost P&L or tell people to comment GHOST (Greg 2026-10-17). Use the other frameworks.
+- Never mention his wife, by name or as "my wife" (Greg 2026-10-20). Kids, faith, work and Greg himself are fair game.
+- No dashes in the caption, no "Yo", no emoji on teaching reels.

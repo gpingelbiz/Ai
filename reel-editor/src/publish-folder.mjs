@@ -46,6 +46,18 @@ export function coverMilliseconds(meta = {}, fallback = 50) {
   return Number.isFinite(meta.coverMs) ? Math.max(0, Math.round(meta.coverMs)) : fallback;
 }
 
+/**
+ * Caption words Greg has ruled out of every post (Greg 2026-10-17 "dont talk about ghost PnL", 2026-10-20 no mention of
+ * his wife anywhere in post copy). A caption that hits one posts as a DRAFT with the reason, never straight out.
+ * Returns the first rule it breaks, or "".
+ */
+export function bannedInCaption(text) {
+  const s = String(text || "");
+  if (/\bghost\s*(p\s*(&|and|n)?\s*l|pnl|p\.l\.)/i.test(s) || /\bcomment\s+["']?ghost\b/i.test(s)) return "it mentions the Ghost P&L";
+  if (/\b(my wife|maria|my mrs|my missus)\b/i.test(s)) return "it mentions his wife";
+  return "";
+}
+
 /** One dropped item: a folder or a loose video. Returns null when it holds no usable video yet. */
 export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000, sourceRoots = SOURCE_ROOTS } = {}) {
   const full = path.join(root, entry);
@@ -99,6 +111,8 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   // reviewer flags intended effects too); they go into the receipt to look at.
   const notes = meta.obvious ? [meta.obvious] : [];
   if (!caption.caption) { draft = true; why = "there is no caption"; }
+  const banned = bannedInCaption(postText(caption));
+  if (banned && !draft) { draft = true; why = banned; }
   return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, droppedAt: Math.round(st.mtimeMs) };
 }
 
