@@ -60,6 +60,27 @@ export function placeBroll(picks, candidates, { len = 2.4, gap = 4, max = 3 } = 
   return shots.map((s, k) => ({ ...s, motion: motions[k % motions.length] }));
 }
 
+/**
+ * The "full-split" layout's longer beat: with two or more cutaways, the one with the most clear time after it is
+ * held for `hold` seconds as a split (picture on top, speaker below), the rest stay short full-screen cutaways.
+ * Clear time ends `gap` before the next cutaway, `clear` before the next card, at the CTA and `tail` before the end.
+ * The held shot keeps `baseDuration`, so a split that does not fit can go back to a normal cutaway.
+ */
+export function holdForSplit(shots = [], { duration, cta, busy = [], tail = 1, gap = 4, clear = 1.5, hold = 5, clipSeconds = 5 } = {}) {
+  if (shots.length < 2 || !(hold > 0)) return shots;
+  const until = Math.min(duration - tail, cta ? cta.start : Infinity);
+  const room = shots.map((s, k) => {
+    const next = shots[k + 1] ? shots[k + 1].start - gap : Infinity;
+    const card = Math.min(...busy.filter((b) => b.start + b.duration > s.start).map((b) => b.start - clear), Infinity);
+    return Math.min(until, next, card) - s.start;
+  });
+  // A generated clip (Runway) is only so long; a still can be held any length.
+  const want = (s) => (/\.mp4$/i.test(String(s.file || "")) ? Math.min(hold, clipSeconds) : hold);
+  const best = room.map((r, k) => ({ k, r })).filter(({ k, r }) => want(shots[k]) > shots[k].duration && r >= want(shots[k])).sort((a, b) => b.r - a.r || b.k - a.k)[0];
+  if (!best) return shots;
+  return shots.map((s, k) => (k === best.k ? { ...s, hold: true, baseDuration: s.duration, duration: r3(want(s)) } : s));
+}
+
 export const PICKS_SCHEMA = {
   type: "object",
   properties: {

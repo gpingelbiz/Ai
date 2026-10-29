@@ -176,6 +176,7 @@
     "every": 12,
     "duration": 2,
     "gap": 4,
+    "hold": 5,
     "style": "",
     "grade": {
       "preset": "muted-editorial",

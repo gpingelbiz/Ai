@@ -23,7 +23,9 @@ function load(brand, { font = true } = {}) {
 
 const GREG = {
   "captions.uppercase": true, "hook.uppercase": undefined, "hook.duration": 3, "cuts.silence": "fast",
-  "zooms.cadence.enabled": true, "zooms.minSpacing": undefined, "zooms.maxPer30": undefined, "coldOpen.enabled": true,
+  "zooms.cadence.enabled": true, "zooms.minSpacing": undefined, "zooms.maxPer30": undefined,
+  // Off since 2026-10-29: the opening still put b-roll behind Greg, which no top reel in the b-roll study did.
+  "coldOpen.enabled": false,
 };
 const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
 
@@ -74,7 +76,7 @@ test("brand.json: calm brands keep plain slams with no icons or bumps; fast bran
     assert.equal(calm.p.icons.enabled, false);
     assert.equal(calm.p.motion.impact.enabled, false);
     assert.equal(calm.p.motion.drift.enabled, true, "drift stays: it is a slow push, not a stamp");
-    assert.equal(calm.p.broll.layout, "mix", "b-roll still keeps the speaker on screen");
+    assert.equal(calm.p.broll.layout, "full-split", "b-roll goes full screen or splits, never behind the speaker");
     assert.equal(fast.p.slams.popout.enabled, true);
     assert.equal(fast.p.icons.enabled, true);
     assert.equal(fast.p.colors.accent, julee.colors.accent, "the add-ons draw in the brand's own colours");

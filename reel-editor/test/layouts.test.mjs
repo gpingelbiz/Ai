@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planBrollLayouts, planWindowLayout, planSplitLayout } from "../src/layouts.mjs";
+import { planBrollLayouts, planWindowLayout, planSplitLayout, planFullSplitLayout } from "../src/layouts.mjs";
 import { headBoxFor, zoomDuring } from "../src/placement.mjs";
 import { renderHTML } from "../src/compose.mjs";
 
@@ -103,6 +103,22 @@ test("mix rotates window, cutout, split in a fixed order, and a window that cann
   const tight = planBrollLayouts([{ start: 5, duration: 2 }], { ...contextFor(high), layout: "mix" });
   assert.equal(tight.shots[0].layout, "cutout");
   assert.match(tight.logs[0], /window skipped/);
+});
+
+test("full-split keeps every cutaway full screen except the held one, which splits or goes back to a normal cutaway", () => {
+  const face = { cx: 0.25, cy: 0.4, w: 0.16, h: 0.14 };
+  const shots = [{ start: 5, duration: 2 }, { start: 12, duration: 5, hold: true, baseDuration: 2 }, { start: 22, duration: 2 }];
+  const planned = planBrollLayouts(shots, { ...contextFor(face), layout: "full-split" });
+  assert.deepEqual(planned.shots.map((b) => b.layout || "full"), ["full", "split", "full"]);
+  assert.equal(planned.shots[1].duration, 5, "the split is held");
+  assert.ok(!planned.shots.some((b) => b.layout === "cutout" || b.layout === "window"), "never behind the speaker, never a small window");
+
+  const low = { cx: 0.25, cy: 0.78, w: 0.16, h: 0.14 };
+  const back = planFullSplitLayout({ start: 12, duration: 5, hold: true, baseDuration: 2 }, contextFor(low));
+  assert.equal(back.shot.layout, "full");
+  assert.equal(back.shot.duration, 2, "a split that cannot fit is a normal-length cutaway again");
+  assert.equal(back.shot.hold, undefined);
+  assert.match(back.skipped, /too low/);
 });
 
 const style = {

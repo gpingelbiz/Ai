@@ -73,7 +73,7 @@
   "broll": {
     "style": "",
     "world": "Greg Pingel sells and coaches sales: a sales floor with closers on the phone, call reports and numbers on a screen, a whiteboard with one number, a manager at a desk after a bad month, text threads with reps, a truck tailgate and a garage, an office with neon signs, eight years in the military, a wife and kids at home, a Bible on a passenger seat. Working-class, Texas, lived-in, no glamour.",
-    "layout": "mix"
+    "layout": "full-split"
   },
   "carousel": {
     "handle": "@officialgregpingel",
@@ -88,7 +88,7 @@
     }
   },
   "coldOpen": {
-    "enabled": true
+    "enabled": false
   },
   "icons": {
     "enabled": true

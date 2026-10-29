@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { brollCount, brollCandidates, placeBroll, picksPrompt } from "../src/broll.mjs";
+import { brollCount, brollCandidates, placeBroll, picksPrompt, holdForSplit } from "../src/broll.mjs";
 import { codexModels, isModelRefusal, imageInstructions, savedImage } from "../src/codex.mjs";
 import { renderHTML } from "../src/compose.mjs";
 
@@ -131,4 +131,19 @@ test("render: the b-roll cut is hard by default, flash adds the wash layer, blur
   assert.match(flash, /<div class="broll-flash"><div class="broll-flash-core"><\/div><\/div>/);
   assert.match(renderHTML({ ...base, style: style("blur") }, "assets/footage.mp4"), /"brollCut":"blur"/);
   assert.match(renderHTML({ ...base, style: style("nope") }, "assets/footage.mp4"), /"brollCut":"hard"/, "unknown falls back to hard");
+});
+
+test("holdForSplit holds the cutaway with the most clear time, and only when there are two or more", () => {
+  const shots = [{ start: 6, duration: 2, file: "a.png" }, { start: 14, duration: 2, file: "b.png" }, { start: 30, duration: 2, file: "c.png" }];
+  const held = holdForSplit(shots, { duration: 40, busy: [{ start: 20, duration: 3 }], tail: 1, gap: 4, hold: 5 });
+  // Room: 6 -> 10 (next at 14 minus gap 4) = 4 s; 14 -> 18.5 (card at 20 minus 1.5) = 4.5 s; 30 -> 39 = 9 s.
+  assert.deepEqual(held.map((s) => s.duration), [2, 2, 5]);
+  assert.equal(held[2].hold, true);
+  assert.equal(held[2].baseDuration, 2);
+  assert.equal(holdForSplit([shots[0]], { duration: 40 }).length, 1);
+  assert.equal(holdForSplit([shots[0]], { duration: 40 })[0].hold, undefined, "one cutaway stays a full cutaway");
+  const cramped = holdForSplit(shots, { duration: 34, cta: { start: 33 }, busy: [{ start: 9, duration: 2 }, { start: 17, duration: 2 }], gap: 4, hold: 5 });
+  assert.ok(cramped.every((s) => !s.hold), "no room anywhere leaves them all short");
+  const clip = holdForSplit([{ start: 6, duration: 4, file: "a.mp4" }, { start: 20, duration: 4, file: "b.mp4" }], { duration: 40, hold: 8, clipSeconds: 5 });
+  assert.equal(clip[1].duration, 5, "a generated clip is held no longer than it runs");
 });
