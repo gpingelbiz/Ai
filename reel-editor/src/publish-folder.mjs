@@ -55,6 +55,9 @@ export function bannedInCaption(text) {
   const s = String(text || "");
   if (/\bghost\s*(p\s*(&|and|n)?\s*l|pnl|p\.l\.)/i.test(s) || /\bcomment\s+["']?ghost\b/i.test(s)) return "it mentions the Ghost P&L";
   if (/\b(my wife|maria|my mrs|my missus)\b/i.test(s)) return "it mentions his wife";
+  // Brand Guide v10 (2026-10-29) retired the v9 framework names and keyword asks.
+  if (/\b(five rooms|wrong scoreboard|closer line|defend\s*\/\s*decide|a\.c\.r\.a\.?|six leaks)\b/i.test(s)) return "it uses a retired v9 framework name";
+  if (/\b(comment|dm|type)\s+(me\s+)?["'“]?(scale|leaks|freedom)\b/i.test(s)) return "it asks for a retired v9 keyword";
   return "";
 }
 

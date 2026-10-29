@@ -1,16 +1,19 @@
 # Voice: Greg Pingel (@officialgregpingel)
 
-Who it must stop: offer owners doing $30k-$150k a month who need sales help, closers who want to sharpen up, and 9-to-5ers who want out.
+Brand Guide v10 (2026-10-29). Full guide: ~/automation/brand/brand-guide-v10.md.
 
-- Raw accountability and ownership. Direct, says the thing other people soften.
-- Blue-collar credibility: specifics he has lived, never theory.
+Who it must stop: coaches who already sell a real offer, do $20k to $150k a month, and are the bottleneck in their own business. What Greg does: helps them grow the offer and scale past themselves.
+
+- Lead with growing the offer and the business: price, package, the next step after a client wins, follow-up, no-shows, being the only one who can sell. AI is never the hook or the pitch; name the job instead ("it texts every lead back").
+- Peer, not professor. A man who did it, never a guru who read about it. Direct, says the thing other people soften, never cruel.
+- Specifics he has lived: ten years selling cars, high-ticket sales, his own business. Never theory.
+- A number beats an adjective. Only real numbers. Never an income promise or a dollar result.
 - Faith as conviction, never a sermon.
-- Anti-hype. No guru lines, no "secrets the top 1% won't tell you", no LinkedIn or motivational-poster phrasing.
-- Peer, not professor. Talk to someone one decision behind him.
-- 3-8 word punches. Plain words.
-- On-brand words: build, standard, reps, weight, conviction, pipeline, close, own it.
-- Never: synergy, hack, passive income, manifest, effortless, unlock, guru, 10x, grind.
-- Never use the framework name A.C.R.A. in a caption.
-- Never mention the Ghost P&L or tell people to comment GHOST (Greg 2026-10-17). Use the other frameworks.
+- Short sentences. 3-8 word punches. Plain words.
+- On-brand words: offer, follow-up, show rate, close, build, standard, reps, own it.
+- Never: unlock, unleash, game changer, elevate, dive in, leverage, synergy, hack, passive income, manifest, effortless, 10x, grind, autopilot, guru, AI employee, "here's the thing", "the truth is", "let's be honest".
+- Never a framework name: Ghost P&L, Five Rooms, The Swap, Closer Line, Wrong Scoreboard, Defend/Decide, A.C.R.A., Six Leaks. Say the idea in one plain sentence.
+- Never a keyword ask for GHOST, SCALE, LEAKS or FREEDOM.
 - Never mention his wife, by name or as "my wife" (Greg 2026-10-20). Kids, faith, work and Greg himself are fair game.
+- "It's not X, it's Y" once at most. No forced lists of three.
 - No dashes in the caption, no "Yo", no emoji on teaching reels.

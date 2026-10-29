@@ -130,6 +130,11 @@ test("caption gate: Ghost P&L, the GHOST keyword and any mention of his wife hol
   assert.equal(bannedInCaption("Maria and the kids at the park."), "it mentions his wife");
   assert.equal(bannedInCaption("He said yes, then ghosted me. Your wife needs to see this."), "", "a prospect ghosting or someone else's wife is fine");
   assert.equal(bannedInCaption("Never send the PDF and hope."), "");
+  assert.equal(bannedInCaption("This is the Closer Line most owners miss."), "it uses a retired v9 framework name");
+  assert.equal(bannedInCaption("Which of the Five Rooms is on fire?"), "it uses a retired v9 framework name");
+  assert.equal(bannedInCaption("Comment FREEDOM and I'll send it."), "it asks for a retired v9 keyword");
+  assert.equal(bannedInCaption('DM me "SCALE" to start.'), "it asks for a retired v9 keyword");
+  assert.equal(bannedInCaption("Grow the offer before you scale the ads. Freedom is the point."), "", "plain scale and freedom are fine");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "reel-gate-"));
   fs.writeFileSync(path.join(root, "banned.mp4"), "x"); fs.writeFileSync(path.join(root, "banned.txt"), "Comment GHOST for the map.");
   const old = (f) => { const d = new Date(Date.now() - 600000); fs.utimesSync(f, d, d); };
