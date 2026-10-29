@@ -21,8 +21,12 @@
 # Music: the editor picks a track from REEL_WATCH_MUSIC (default ~/Reels/music; Desktop/Reels/Music is a shortcut) by
 # the mood of what is said, at REEL_WATCH_MUSIC_VOLUME (default 0.10) under the voice. "#music:calm" asks for the track
 # whose name contains "calm"; "#nomusic" skips it. Nothing happens when the folder is empty. music.txt names the track.
-# Every folder also gets caption.txt (Sandcastles-backed post copy via write-caption.mjs) when the Claude Code
-# CLI is installed; REEL_WATCH_CAPTION=0 turns that off. B-roll and carousels need the Codex CLI signed in.
+# A finished reel folder holds the reel and caption.txt only (Greg 2026-10-29: "all i want is the video and the
+# captions"): the post caption written from what the reel says, ready to paste into Instagram (write-caption.mjs,
+# needs the Claude Code CLI; REEL_WATCH_CAPTION=0 turns it off), plus the hidden .reel.json / .reel-features.json the
+# Publish folder and the analytics read. Everything else (cover, b-roll stills, music.txt, the words to check, the
+# preflight note, the hook options in "post notes.txt") stays in the work folder ~/Reels/videos/<name>.
+# B-roll and carousels need the Codex CLI signed in.
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
 set -euo pipefail
 
@@ -169,7 +173,6 @@ case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; lo
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
-evidence_sources=()
 pair_key=$(printf '%s' "$stem" | sed -E 's/ *#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/^ +| +$//g')
 shopt -s nullglob nocaseglob
 for image in "$(dirname "$FILE")/$pair_key proof"*.{png,jpg,jpeg,heic} "$(dirname "$FILE")/$pair_key receipt"*.{png,jpg,jpeg,heic}; do
@@ -187,7 +190,6 @@ for image in "$(dirname "$FILE")/$pair_key proof"*.{png,jpg,jpeg,heic} "$(dirnam
     fi
   fi
   flags+=(--evidence "$supplied")
-  evidence_sources+=("$image")
 done
 # Housekeeping: keep the log under 5 MB and drop work folders (intermediates, not the delivered reels) older than
 # REEL_WATCH_PRUNE_DAYS (default 30; 0 turns it off).
@@ -228,7 +230,8 @@ if [ "$MODE" = youtube ]; then
 fi
 
 # Long form: one recording into several reels. Claude picks the moments and writes each hook, so there is no
-# two-pass hook step; each clip lands in "<date> Clips <n>/" with its cover, caption and the words to check.
+# two-pass hook step; each clip lands in "<date> Clips <n>/" as "Clip k - <hook>.mp4" with "Clip k - caption.txt".
+# Its cover, music and words to check stay in the clip's own work folder; clips.txt (the moments) in this one.
 if [ "$MODE" = long ]; then
   # shellcheck disable=SC2086
   if ! reel clips "$FILE" --out "$work" --title "$name" --count "${REEL_WATCH_CLIPS:-5}" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
@@ -241,6 +244,7 @@ if [ "$MODE" = long ]; then
   folder="$(create_reel_folder "$DONE" "$REELS/videos" Clips)"
   label="$(basename "$folder")"
   made=0
+  : > "$work/clips.txt"
   while IFS=$'\t' read -r k out hooktxt score range why edges; do
     [ -f "$out" ] || continue
     pretty=$(printf '%s' "$hooktxt" | sed -E 's/\*//g; s/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
@@ -248,10 +252,7 @@ if [ "$MODE" = long ]; then
     reel_meta "$(dirname "$(dirname "$out")")" "$folder/.Clip $k.reel.json"
     cdir="$(dirname "$(dirname "$out")")"
     [ -s "$cdir/analytics-features.json" ] && cp -f "$cdir/analytics-features.json" "$folder/.Clip $k.reel-features.json"
-    [ -f "$cdir/covers/Cover.png" ] && cp -f "$cdir/covers/Cover.png" "$folder/Clip $k - Cover.png"
-    [ -s "$cdir/review.txt" ] && cp -f "$cdir/review.txt" "$folder/Clip $k - check these words.txt"
-    [ -s "$cdir/music.txt" ] && cp -f "$cdir/music.txt" "$folder/Clip $k - music.txt"
-    printf 'Clip %s  (%s, score %s)\n  %s\n  %s\n  %s\n\n' "$k" "$range" "$score" "$hooktxt" "$why" "${edges:-}" >> "$folder/clips.txt"
+    printf 'Clip %s  (%s, score %s)\n  %s\n  %s\n  %s\n  work folder: %s\n\n' "$k" "$range" "$score" "$hooktxt" "$why" "${edges:-}" "$cdir" >> "$work/clips.txt"
     if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
       node "$HERE/write-caption.mjs" "$cdir" "$folder/Clip $k - caption.txt" >> "$log" 2>&1 || true
     fi
@@ -268,6 +269,8 @@ fi
 # The opening words are never the hook. Carousels have no on-screen hook.
 written_hook=""
 if [ -z "$hook" ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
+  # A caption left by an earlier run of this clip must never pass for this run's.
+  rm -f "$work/caption.txt" "$work/caption.json"
   # shellcheck disable=SC2086
   if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} --no-render $EXTRA_ARGS >> "$log" 2>&1 \
      && node "$HERE/write-caption.mjs" "$work" "$work/caption.txt" >> "$log" 2>&1 && [ -s "$work/caption.txt" ]; then
@@ -321,61 +324,58 @@ else
   label="$(basename "$folder")"
   dest="$folder/$title.mp4"
   cp "$work/renders/$name.mp4" "$dest"
+  # Hidden, for the Publish folder (AI label, preflight gate, cover frame) and the analytics; Finder never shows them.
   reel_meta "$work" "$folder/.reel.json"
   [ -s "$work/analytics-features.json" ] && cp -f "$work/analytics-features.json" "$folder/.reel-features.json"
-  if [ -n "$shots" ]; then
-    i=1
-    while IFS= read -r still; do
-      [ -f "$still" ] && cp "$still" "$folder/B-roll $i.${still##*.}" && i=$((i + 1))
-    done <<< "$shots"
-    [ -s "$work/runway usage.txt" ] && cp -f "$work/runway usage.txt" "$folder/runway usage.txt"
-  elif [ "$MODE" = runway ]; then
+  # The stills, cover, music pick, words to check and preflight note all stay in the work folder ($work: broll/,
+  # covers/, music.txt, review.txt, preflight.txt). Only the reason a b-roll reel came out without b-roll is new here.
+  rm -f "$work/No b-roll this time.txt"
+  if [ -z "$shots" ] && [ "$MODE" = runway ]; then
     # Say why from the editor's own lines: a short or wordless clip never asks Runway, so it is not a balance problem.
     if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
-      printf 'No b-roll this time: the reel is under 8 seconds, too short for a Runway clip, so Runway was not asked.\n' > "$folder/No b-roll this time.txt"
+      printf 'No b-roll this time: the reel is under 8 seconds, too short for a Runway clip, so Runway was not asked.\n' > "$work/No b-roll this time.txt"
     elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "keeping every frame (no talking to cut around)"; then
-      printf 'No b-roll this time: the clip is mostly not talking, so it kept every frame; Runway b-roll goes under spoken lines.\n' > "$folder/No b-roll this time.txt"
+      printf 'No b-roll this time: the clip is mostly not talking, so it kept every frame; Runway b-roll goes under spoken lines.\n' > "$work/No b-roll this time.txt"
     else
-      printf 'No b-roll this time: Runway made nothing for this clip (balance, cap or a failed generation; see ~/Reels/watch.log and run: reel usage).\n' > "$folder/No b-roll this time.txt"
+      printf 'No b-roll this time: Runway made nothing for this clip (balance, cap or a failed generation; see ~/Reels/watch.log and run: reel usage).\n' > "$work/No b-roll this time.txt"
     fi
-  elif [ "$MODE" = broll ]; then
+  elif [ -z "$shots" ] && [ "$MODE" = broll ]; then
     # Say why, from the editor's own lines for this run, instead of guessing at Codex.
     if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
-      printf 'No b-roll this time: the clip is under 8 seconds, too short for a still.\n' > "$folder/No b-roll this time.txt"
+      printf 'No b-roll this time: the clip is under 8 seconds, too short for a still.\n' > "$work/No b-roll this time.txt"
     elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: no room after the hook"; then
-      printf 'No b-roll this time: no room for a 2-second still between the hook and the end of this clip.\n' > "$folder/No b-roll this time.txt"
+      printf 'No b-roll this time: no room for a 2-second still between the hook and the end of this clip.\n' > "$work/No b-roll this time.txt"
     elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "rate-limited"; then
-      printf 'No b-roll this time: Codex is rate-limited on the ChatGPT plan, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$folder/No b-roll this time.txt"
+      printf 'No b-roll this time: Codex is rate-limited on the ChatGPT plan, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$work/No b-roll this time.txt"
     else
-      printf 'No b-roll this time: Codex gave nothing usable for this clip (see ~/Reels/watch.log).\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again to retry.\n' > "$folder/No b-roll this time.txt"
+      printf 'No b-roll this time: Codex gave nothing usable for this clip (see ~/Reels/watch.log).\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again to retry.\n' > "$work/No b-roll this time.txt"
     fi
   fi
-  [ -s "$work/review.txt" ] && cp -f "$work/review.txt" "$folder/check these words.txt"
-  # Preflight: the editor's own checks on the finished file (sound, the open, dead air, layout). Only a report
-  # with something in it reaches the folder.
+  [ -s "$work/No b-roll this time.txt" ] && echo "$(date '+%F %T') note  $(head -1 "$work/No b-roll this time.txt")" >> "$log"
+  case "$work" in "$HOME"/*) notes="~${work#"$HOME"}";; *) notes="$work";; esac
   pf_note=""
   if [ -s "$work/preflight.txt" ] && ! head -1 "$work/preflight.txt" | grep -q "Preflight: OK"; then
-    cp -f "$work/preflight.txt" "$folder/check this reel.txt"
-    pf_note=" Preflight flagged something, see the note."
+    pf_note=" Preflight flagged something: $notes/preflight.txt"
   fi
-  # Cover: the reel's first frame (Cover.png); the designed set only when the preset asks for it.
-  for c in "$work"/covers/Cover*.png; do [ -f "$c" ] && cp -f "$c" "$folder/$(basename "$c")"; done
-  [ -s "$work/music.txt" ] && cp -f "$work/music.txt" "$folder/music.txt"
   echo "$(date '+%F %T') done  $dest" >> "$log"
-  if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. See the note in its folder.$pf_note"; else notify "$label ready" "$title.$pf_note"; fi
+  if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. Words to check: $notes/review.txt.$pf_note"; else notify "$label ready" "$title.$pf_note"; fi
 fi
 
-for image in ${evidence_sources[@]+"${evidence_sources[@]}"}; do
-  [ -f "$image" ] && mv "$image" "$folder/$(basename "$image")"
-done
+# Proof and receipt images stay in the drop folder next to their clip (the clip stays there too), so the finished
+# folder holds only the reel and its caption.
 
-# Post copy (caption, hashtags, the hook options) from Sandcastles via headless Claude. Written in the first pass
-# when the hook came from it; otherwise written now. Never holds up the delivery.
+# The post caption, written from what the reel says (write-caption.mjs; hook options and the Sandcastles notes go to
+# "$work/post notes.txt"). Written in the first pass when the hook came from it; otherwise written now. Never holds
+# up the delivery.
 if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
   if [ -n "$written_hook" ] && [ -s "$work/caption.txt" ]; then
     cp -f "$work/caption.txt" "$folder/caption.txt"
-  elif node "$HERE/write-caption.mjs" "$work" "$folder/caption.txt" >> "$log" 2>&1 && [ -s "$folder/caption.txt" ]; then
-    notify "$label caption ready" "$title"
+  else
+    rm -f "$work/caption.txt"
+    if node "$HERE/write-caption.mjs" "$work" "$work/caption.txt" >> "$log" 2>&1 && [ -s "$work/caption.txt" ]; then
+      cp -f "$work/caption.txt" "$folder/caption.txt"
+      notify "$label caption ready" "$title"
+    fi
   fi
 fi
 printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"

@@ -76,13 +76,15 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2 } = {}) {
+function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
   const stub = (name, body) => { fs.writeFileSync(path.join(bin, name), `#!/bin/bash\n${body}\n`); fs.chmodSync(path.join(bin, name), 0o755); };
   stub("osascript", "exit 0");
   stub("codex", "exit 0");
+  // A stand-in for `claude -p`: the caption writer's reply, as Claude would send it.
+  if (caption) stub("claude", `cat <<'JSON'\n${JSON.stringify(caption)}\nJSON`);
   // reel edit <file> --out <work> --title <name> ...  /  reel carousel <work> --out <folder> ...
   stub("reel", `
 echo "$*" >> "$HOME/reel-calls"
@@ -100,7 +102,7 @@ files=""
 case "$*" in *--broll*)
   i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
 esac
-echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"cover\\":{\\"frameTimeMs\\":1733},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
+echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"style\\":{\\"name\\":\\"pingel-brand\\"},\\"captions\\":[{\\"text\\":\\"Own it first. Nobody is coming.\\"}],\\"cover\\":{\\"frameTimeMs\\":1733},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
 echo '{"performance":{}}' > "$work/analytics-features.json"`);
   const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel"), long: path.join(home, "raw-long") };
   for (const [mode, d] of Object.entries(dirs)) {
@@ -115,7 +117,7 @@ echo '{"performance":{}}' > "$work/analytics-features.json"`);
   for (const m of music) fs.writeFileSync(path.join(musicDir, m), "audio");
   const done = path.join(home, "Done");
   spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], {
-    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_RAW_LONG: dirs.long, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: "0" },
+    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_RAW_LONG: dirs.long, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: caption ? "1" : "0" },
     stdio: "pipe",
   });
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
@@ -128,7 +130,9 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   const r = fakeDrops({ brollShots: 2 });
   assert.deepEqual(r.top, [`${r.day} Carousel 1`, `${r.day} Reel 1`, `${r.day} Reel 2 with B-roll`]);
   assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4"]);
-  assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["B-roll 1.png", "B-roll 2.png", "Own it first.mp4"]);
+  // A finished folder holds the reel (and caption.txt, off in these runs) only; the stills stay in the work folder.
+  assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["Own it first.mp4"]);
+  assert.ok(fs.existsSync(path.join(r.home, "Reels", "videos", "clip-broll", "broll", "broll-1.png")), "the b-roll stills stay in the work folder");
   assert.equal(fs.readFileSync(path.join(r.done, `${r.day} Reel 2 with B-roll`, "Own it first.mp4"), "utf8").trim(), "clip-broll");
   assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Slide 1.png"]);
   assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 1`, ".reel-features.json")));
@@ -144,7 +148,8 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
 
 test("no b-roll back from Codex leaves a note; a failed carousel leaves a note and is marked failed", () => {
   const r = fakeDrops({ brollShots: 0, carouselFails: true });
-  assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["No b-roll this time.txt", "Own it first.mp4"]);
+  assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["Own it first.mp4"]);
+  assert.match(fs.readFileSync(path.join(r.home, "Reels", "videos", "clip-broll", "No b-roll this time.txt"), "utf8"), /^No b-roll this time: Codex gave nothing usable/, "the reason waits in the work folder");
   assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Carousel failed.txt"]);
   assert.ok(r.seen.some((m) => /^carousel-clip\.mov@.*\.failed$/.test(m)));
 });
@@ -159,10 +164,11 @@ test("music: a random track from the folder, #music:name picks one, #nomusic ski
   assert.doesNotMatch(edit("c__Own it #nomusic.mov"), /--music/);
   assert.match(edit("d.mov"), /--music-dir /);
   assert.doesNotMatch(edit("e.mov"), /--music/);
-  const reel1 = r.list(`${r.day} Reel 1`);
-  assert.ok(reel1.includes("music.txt"));
-  assert.match(r.read(`${r.day} Reel 2/music.txt`), /^Music: Dark Drive\.wav$/);
-  assert.ok(!r.list(`${r.day} Reel 3`).includes("music.txt"));
+  // The music pick is noted in the work folder, not the finished one.
+  const work = (n) => path.join(r.home, "Reels", "videos", n, "music.txt");
+  assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4"]);
+  assert.match(fs.readFileSync(work("b"), "utf8").trim(), /^Music: Dark Drive\.wav$/);
+  assert.ok(!fs.existsSync(work("c")));
   assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 2`, "Own it.mp4")), "the slug and title drop the tag");
 });
 
@@ -177,7 +183,7 @@ test("#premise enables automatic premise planning and is stripped from a written
   assert.match(call, /--hook Own the outcome --premise-mode auto/);
 });
 
-test("drop-folder proof and receipt images pair to the clip, wait as inputs, move with it, and never become jobs", () => {
+test("drop-folder proof and receipt images pair to the clip, wait as inputs, stay beside it, and never become jobs", () => {
   const r = fakeDrops({
     brollShots: 0,
     clips: { reel: ["IMG_1163.mov"], broll: [], carousel: [] },
@@ -186,7 +192,8 @@ test("drop-folder proof and receipt images pair to the clip, wait as inputs, mov
   const call = r.calls.trim().split("\n").find((line) => line.includes("IMG_1163.mov"));
   assert.match(call, /--evidence .*IMG_1163 proof 1\.png/);
   assert.match(call, /--evidence .*IMG_1163 receipt\.jpg/);
-  assert.deepEqual(r.list(`${r.day} Reel 1`), ["IMG_1163 proof 1.png", "IMG_1163 receipt.jpg", "Own it first.mp4"]);
+  assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4"], "the finished folder holds the reel only");
+  assert.ok(fs.existsSync(path.join(r.dirs.reel, "IMG_1163 proof 1.png")) && fs.existsSync(path.join(r.dirs.reel, "IMG_1163 receipt.jpg")), "paired images stay next to their clip in the drop folder");
   assert.ok(fs.existsSync(path.join(r.dirs.reel, "orphan proof.png")), "an unpaired image remains an input, not a job");
   assert.equal(r.seen.length, 1, "only the video gets a watcher marker");
 });
@@ -199,8 +206,20 @@ test("an empty CTA with a trailing comment in .zshrc still means no CTA; a comma
 test("a long recording in Raw - Long Form becomes a Clips folder with one reel per moment", () => {
   const r = fakeDrops({ clips: { long: ["podcast.mp4"] }, longClips: 2 });
   assert.deepEqual(r.top, [`${r.day} Clips 1`]);
-  assert.deepEqual(r.list(`${r.day} Clips 1`), ["Clip 1 - Cover.png", "Clip 1 - Own it first. Clip 1.mp4", "Clip 1 - music.txt", "Clip 2 - Cover.png", "Clip 2 - Own it first. Clip 2.mp4", "Clip 2 - music.txt", "clips.txt"]);
-  assert.match(r.read(`${r.day} Clips 1/clips.txt`), /Clip 1 {2}\(1:00-1:45, score 89\)\n {2}Own it \*first\*\. Clip 1\?\n {2}a stake, a turn/);
+  assert.deepEqual(r.list(`${r.day} Clips 1`), ["Clip 1 - Own it first. Clip 1.mp4", "Clip 2 - Own it first. Clip 2.mp4"]);
+  assert.ok(fs.existsSync(path.join(r.done, `${r.day} Clips 1`, ".Clip 2.reel.json")), "each clip keeps its hidden publish metadata");
+  assert.match(fs.readFileSync(path.join(r.home, "Reels", "videos", "podcast-clips", "clips.txt"), "utf8"), /Clip 1 {2}\(1:00-1:45, score 89\)\n {2}Own it \*first\*\. Clip 1\?\n {2}a stake, a turn/);
   assert.ok(r.calls.split("\n").some((l) => /^clips .*raw-long\/podcast\.mp4 --out .*podcast-clips --title podcast-clips --count 5 .*--broll --graphics --caption-style reveal/.test(l)), r.calls);
   assert.ok(r.seen.some((s) => s.startsWith("long-podcast.mp4@") && s.endsWith(".done")));
+});
+
+test("a finished reel folder holds the reel and a paste-ready caption.txt; the hook options go to the work folder", () => {
+  const reply = { topic: "ownership", caption: "Yo, own it first \u2013 nobody is coming.\nThe Ghost P&L shows it.\nDo the reps; the rest follows.", hashtags: ["ownership", "#sales", "#closers"], hooks: [{ text: "Own it first", pattern: "the hook in the reel" }, { text: "Nobody is coming to save you", pattern: "contrarian", example: "@x, 2M views, 90x" }], trend: "Ownership lines win." };
+  const r = fakeDrops({ brollShots: 1, caption: reply, clips: { reel: ["clip.mov"], broll: ["clip.mov"], carousel: [] } });
+  assert.deepEqual(r.list(`${r.day} Reel 1`), ["Own it first.mp4", "caption.txt"]);
+  assert.deepEqual(r.list(`${r.day} Reel 2 with B-roll`), ["Own it first.mp4", "caption.txt"]);
+  assert.equal(r.read(`${r.day} Reel 1/caption.txt`), "Own it first, nobody is coming.\nDo the reps. The rest follows.\n\n#ownership #sales #closers");
+  const notes = fs.readFileSync(path.join(r.home, "Reels", "videos", "clip", "post notes.txt"), "utf8");
+  assert.match(notes, /2\. Nobody is coming to save you/, "the hook options wait in the work folder");
+  assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 1`, ".reel.json")), "the hidden publish metadata stays");
 });
