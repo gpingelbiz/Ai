@@ -57,9 +57,10 @@ Options (edit / batch)
   --hook-position <0-1>    hook height from the top (default 0.22); 0.40 clears the head on wide shots
   --hook-seconds <n|reel>  how long the hook stays up (default 3); reel = the whole reel (one-liners, podcast titles)
   --credit "Name | Credential | Organisation [| Source | verified]"
-                           credential lower third from supplied facts; repeat once per speaker, in speaker order
-  --credit-at <seconds>    fixed start for the matching --credit; repeat in the same order. Without it, the first
-                           long diarized turn is used. --credit-self uses the brand identity (#credit in a file name)
+                           credential lower third from supplied facts; repeat once per person
+  --credit-at <seconds>    when that person is on screen; repeat in the same order. Needed when two or more people
+                           are on camera (names are never guessed); a one-person clip uses their first long turn.
+                           --credit-self uses the brand identity (#credit in a file name)
   --caption-position <0-1> caption height from the top; by default they sit just under the chin (0.56-0.76)
   --no-auto-keywords       gold only on dictionary terms, numbers and power words (no automatic picks)
   --cta "<text>"           pop-up call to action, e.g. "Comment GHOST" (Signet Gold pill at chest level)

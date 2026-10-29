@@ -33,12 +33,17 @@ test("creator credit comes only from resolved brand identity", () => {
   assert.equal(brandCredit({ identity: { name: "Name", credential: "" } }), null);
 });
 
-test("placement: a speaker's first long turn wins", () => {
+test("placement: one speaker's first long turn wins; several people need --credit-at", () => {
   const turns = [{ start: 0, end: 2, person: 0 }, { start: 3, end: 7, person: 1 }, { start: 8, end: 14, person: 0 }];
   assert.deepEqual(firstLongTurn(turns, 0, { min: 3 }), turns[2]);
   const credit = parseCredit("A | Role | Org");
-  const scheduled = scheduleCredits([credit], { turns, duration: 30, hold: 4 });
-  assert.equal(scheduled.items[0].at, 8);
+  // Two people on camera: speaker numbers say when someone talks, not who they are, so no name is guessed.
+  const twoPeople = scheduleCredits([credit], { turns, duration: 30, hold: 4 });
+  assert.equal(twoPeople.items.length, 0);
+  assert.match(twoPeople.skipped[0].reason, /--credit-at/);
+  // One person: their first long turn.
+  const solo = scheduleCredits([credit], { turns: turns.filter((t) => t.person === 0).concat({ start: 15, end: 20, person: 0 }), duration: 30, hold: 4 });
+  assert.equal(solo.items[0].at, 8);
 });
 
 test("placement: credit windows never overlap the hook or a card", () => {

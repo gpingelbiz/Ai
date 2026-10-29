@@ -687,6 +687,9 @@ export async function runEdit(input, opts = {}) {
       }
       if (items.length) lowerThird = { credential: true, items };
       else lowerThird = legacyLowerThird();
+      // A credential placed up in the premise band would sit under the strip: the strip steps aside for it, as it
+      // does for cards and slams.
+      if (premise && items.length) premise.duck = premiseDuckSchedule({ box: premise.box, cards: [...allCards, ...items.map((item) => ({ start: item.at, duration: item.duration, box: item.placement }))], slams, start: premise.start, end: duration, fps: preset.render.fps || 30 });
       if (scheduled.skipped.length) warn(`credential lower third: skipped ${scheduled.skipped.length} (${[...new Set(scheduled.skipped.map((x) => x.reason))].join("; ")})`);
       log(items.length ? `credential lower third: ${items.length} grounded appearance${items.length === 1 ? "" : "s"} at ${items.map((item) => `${item.at}s`).join(", ")}` : "credential lower third: no safe grounded appearance; using the old lower third");
     } catch (error) {

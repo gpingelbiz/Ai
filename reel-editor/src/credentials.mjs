@@ -133,11 +133,17 @@ export function scheduleCredits(credits = [], {
     ...cards.map((card) => ({ start: card.start, duration: card.duration })),
   ];
 
+  // Diarization says when each person talks, not who they are: with two or more people on camera, mapping the
+  // credits' order onto speaker numbers could put one person's name under another. Those need --credit-at.
+  const people = new Set(turns.map((turn) => turn.person ?? turn.track)).size;
   credits.forEach((credit, speaker) => {
     const explicit = Number.isFinite(credit.at);
     let wanted = [];
     if (explicit) wanted = [credit.at];
-    else if (turns.length) {
+    else if (people > 1) {
+      skipped.push({ credit, reason: "several people are on camera; say when this person is on screen with --credit-at" });
+      return;
+    } else if (turns.length) {
       const enough = Math.max(minTurn, safeHold);
       if (youtube) wanted = youtubeReshowStarts(turns, chapters, { speaker, offscreen, minTurn: enough });
       else wanted = turns
