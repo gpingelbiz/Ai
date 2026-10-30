@@ -11,7 +11,7 @@ Use `reel brand <preset-or-brand.json>` to inspect the resolved object, `--css` 
 - `identity`: `name`, `handle`, `credential`, optional `logo` file, and `handlePlacement`.
 - `colors`: nine six-digit hex roles. `ink` is primary text; `accent` is emphasis; `accentInk` is text placed on the accent; `surface` and `surface2` are backgrounds/cards; `stroke` is an outline; `muted` is secondary copy; `paper` is the light-layout field; `warn` is urgency. Layout code must not infer meaning from a literal color.
 - `type`: `display`, `body`, and optional `editorial` and `mono` roles. Each role records `family`, either `file` or `googleFamily`, `weights`, `case` (`upper` or `sentence`), `tracking` in em, unitless `lineHeight`, `licence`, and `sourceUrl`.
-- `typeScale`: `xs`, `sm`, `md`, `lg`, `xl`, and `display`, in pixels for a 1080-wide canvas. Format adapters may scale these values; the authored hierarchy stays the same.
+- `typeScale`: `xs`, `sm`, `md`, `lg`, `xl`, `display`, and `slideBody`, in pixels for a 1080-wide canvas. `slideBody` defaults to 42 and controls supporting slide copy. Format adapters may scale these values; the authored hierarchy stays the same.
 - `spacing`: `xs` through `xxl`, in pixels. `radius`: `sm`, `md`, `lg`, and `pill`, in pixels.
 - `texture`: `grain` from 0 to 1 and `paper` on/off. Photo finishing maps this design amount to bounded noise with
   `min(0.03, grain × 0.275)`, so the authored `0.08` becomes `0.022` actual monochrome grain strength.

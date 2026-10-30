@@ -111,7 +111,7 @@ Licensed tracks live in `~/Reels/music` (Desktop/Reels/Music). For a chat edit p
 
 The carousel writer can use checklist, compare, postcard and documentary-story families when the transcript genuinely supplies that structure. `--no-families` keeps the established photo/text composition for a reel; `--families` turns the family choice back on. Untyped saved slides always stay on the established renderer.
 
-For scheduled carousels and statics, `reel slides <spec.json> [--brand brands/x.json] [--out <dir>]` accepts the content engine's existing `out_dir` plus `slides[]` contract and prints one PNG path per line. It supports the legacy photo, photosplit, phototop, splittop, cover, body, cta, static and static-light kinds, plus checklist, compare, postcard, notes, story and evidence. `*phrase*` uses the brand accent. `reel slides --sample --out slides-samples` renders every kind for both `brands/pingel.json` and the calm fixture; review those samples on a Mac with Chrome before changing the scheduled content engine over.
+For scheduled carousels and statics, `reel slides <spec.json> [--brand brands/x.json] [--out <dir>]` accepts the content engine's existing `out_dir` plus `slides[]` contract and prints one PNG path per line. It supports the legacy photo, photosplit, phototop, splittop, cover, body, cta, static and static-light kinds, plus checklist, compare, postcard, notes, story, evidence, stat, steps, quote, cover-top, cover-doc, cover-card, cover-compare, cover-list, verdict, note and script. `*phrase*` uses the brand accent. `reel slides --sample --out slides-samples` renders every kind for both `brands/pingel.json` and the calm fixture; review those samples on a Mac with Chrome before changing the scheduled content engine over.
 
 ## Deliver
 

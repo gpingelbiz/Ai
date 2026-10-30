@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { loadStudio, readPosts, logPost, studioLog, takeLock, parseTime, hhmm } from "./content-studio.mjs";
-import { studioMix, pickJob } from "./mix.mjs";
+import { studioMix, pickJob, pickStaticFamily } from "./mix.mjs";
 import { copyPrompt, parseCopy, neverSaid, captionText, buildSpec, photoPlan, photoPickPrompt, parsePhotoPicks, buildAltText, shortenPrompt, applyShortenedSlides } from "./studio-copy.mjs";
 import { photoPool, pickPhotos, exportPhoto, contactSheet, markUsed, skipSummary } from "./photos.mjs";
 import { finishPhotoSet, grainStrength } from "./photo-finish.mjs";
@@ -110,18 +110,20 @@ const notify = (title, msg) => { try { spawnSync("osascript", ["-e", `display no
 /** Copy for one slot, with one retry that tells Claude what was wrong. */
 export async function writeCopy(studio, slot, job, { posts, sandcastles, write = claudeCopy, evidenceFiles = proofScreenshots(studio.paths.root) } = {}) {
   const recent = posts.filter((p) => p.hook).slice(-20).map((p) => `${p.day} ${p.job}: ${p.hook}${p.angle ? ` (${p.angle})` : ""}`);
+  const staticFamily = slot.format === "static" ? pickStaticFamily(posts) : "";
   const base = copyPrompt({
     format: slot.format, job, client: studio.config.client, handle: studio.tokens.identity?.handle || "", guide: studio.guide, voice: studio.voice,
     recent, slides: studio.config.carouselSlides, cta: studio.config.cta || studio.brand.cta || "", neverSay: studio.config.neverSay, date: slot.day,
     evidenceFiles: evidenceFiles.map((file) => path.basename(file)),
+    staticFamily,
   });
   const prompt = sandcastles ? `${base}\n\nBefore writing, you may call the Sandcastles top_hooks tool with scope "all" (never "watchlist") and a query naming this post's topic, at most twice, and model the hook on a winning pattern without copying anyone's words.` : base;
   let reply = await write(prompt, { sandcastles });
   try {
-    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles, sourceText: `${studio.guide || ""}\n${studio.voice || ""}` });
+    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles, sourceText: `${studio.guide || ""}\n${studio.voice || ""}`, job, staticFamily });
   } catch (e) {
     reply = await write(`${prompt}\n\nYour last reply could not be used: ${e.message}. Reply again with JSON only.`, { sandcastles });
-    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles, sourceText: `${studio.guide || ""}\n${studio.voice || ""}` });
+    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles, sourceText: `${studio.guide || ""}\n${studio.voice || ""}`, job, staticFamily });
   }
 }
 
@@ -309,6 +311,7 @@ export async function makePost(studio, slot, { posts, connectors = {}, deps = {}
   fs.writeFileSync(path.join(made, "caption.txt"), text + "\n");
   const record = {
     id, day: slot.day, time: slot.time, format: slot.format, job: job.name, angle: copy.angle, hook: copy.hook, slides: files.length,
+    ...(slot.format === "static" ? { staticFamily: copy.slides[0]?.role || spec.slides[0]?.kind } : {}),
     photos: photos.filter((p) => p.key).map((p) => ({ key: p.key, file: p.file })), aiSlides, ai, draftWhy: gate ? `it uses "${gate}", which the client never says` : "",
     made, files, text, altText, preflight, status: "made",
   };
