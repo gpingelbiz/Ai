@@ -39,6 +39,8 @@ Usage
   reel slides <spec.json> [--brand brands/x.json] [--out <dir>]
                                     render the content-engine slide JSON; prints one PNG path per line
   reel slides --sample [--out <dir>] render every kind for Greg and the calm fixture for visual review
+  reel preflight <spec.json> [--dir <png dir>] [--brand <brand.json|preset>] [--history <file.json>] [--json]
+                                    fail-closed rendered-slide checks; exits 0 only when the verdict is schedule
   reel photos | daily | studio ...  the Content Studio (a client's folder that makes and schedules their posts):
                                     reel studio help for the commands
   reel brand [preset|brand.json] [--css] [--check]
@@ -267,6 +269,29 @@ function parse(args, options = EDIT_OPTIONS) {
   return { opts: camel(values), positionals };
 }
 
+function preflightBrand(target) {
+  if (!target) return loadPreset("pingel-brand").brand;
+  if (!fs.existsSync(target) || !target.endsWith(".json")) return loadPreset(target).brand;
+  const raw = readJSON(path.resolve(target));
+  const isBrand = raw.schemaVersion === 2 || raw.identity || raw.handle || (raw.colors?.text && raw.look);
+  if (!isBrand) return loadPreset(path.resolve(target)).brand;
+  const tokens = resolveBrandTokens({ brand: raw });
+  if (Array.isArray(raw.neverSay)) tokens.neverSay = raw.neverSay;
+  return tokens;
+}
+
+function preflightFiles(spec, dir) {
+  const root = path.resolve(dir || spec.out_dir || spec.outDir || ".");
+  const all = fs.existsSync(root)
+    ? fs.readdirSync(root).filter((name) => name.toLowerCase().endsWith(".png")).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    : [];
+  return spec.slides.map((_, index) => {
+    const names = [`${String(index + 1).padStart(2, "0")}.png`, `${index + 1}.png`];
+    const found = names.find((name) => fs.existsSync(path.join(root, name))) || all[index] || names[0];
+    return path.join(root, found);
+  });
+}
+
 export async function main(argv) {
   const [cmd, ...rest] = argv;
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return console.log(USAGE);
@@ -307,6 +332,28 @@ export async function main(argv) {
         ? await renderSlideSamples(opts.out || "slides-samples")
         : await renderSlides(readJSON(path.resolve(positionals[0])), { brand: opts.brand, outDir: opts.out });
       files.forEach((file) => console.log(file));
+      return;
+    }
+    case "preflight": {
+      const { opts, positionals } = parse(rest, { dir: { type: "string" }, brand: { type: "string" }, history: { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const specFile = path.resolve(positionals[0]);
+      const spec = readJSON(specFile);
+      const history = opts.history ? readJSON(path.resolve(opts.history)) : null;
+      const { preflightSlides } = await import("./preflight.mjs");
+      const result = await preflightSlides({
+        spec,
+        files: preflightFiles(spec, opts.dir || (!spec.out_dir && !spec.outDir ? path.dirname(specFile) : undefined)),
+        brand: preflightBrand(opts.brand),
+        history,
+        options: { specDir: path.dirname(specFile) },
+      });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        for (const slide of result.slides) for (const item of slide.problems) console.log(`slide ${slide.index}: ${item.code}: ${item.message}`);
+        console.log(`verdict: ${result.verdict}`);
+      }
+      if (result.verdict !== "schedule") process.exitCode = 1;
       return;
     }
     case "youtube": {

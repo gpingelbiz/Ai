@@ -4,10 +4,11 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { loadStudio, readPosts, logPost, studioLog, takeLock, parseTime, hhmm } from "./content-studio.mjs";
 import { studioMix, pickJob } from "./mix.mjs";
-import { copyPrompt, parseCopy, neverSaid, captionText, buildSpec, photoPlan, photoPickPrompt, parsePhotoPicks } from "./studio-copy.mjs";
+import { copyPrompt, parseCopy, neverSaid, captionText, buildSpec, photoPlan, photoPickPrompt, parsePhotoPicks, buildAltText, shortenPrompt, applyShortenedSlides } from "./studio-copy.mjs";
 import { photoPool, pickPhotos, exportPhoto, contactSheet, markUsed, skipSummary } from "./photos.mjs";
 import { scheduledPosts, postInput, createPost, detectConnectors } from "./studio-metricool.mjs";
 import { hostFiles } from "./studio-host.mjs";
+import { runStudioPreflight, preflightProblems, readPhotoHistory, appendPhotoHistory, writeHeldReport } from "./studio-preflight.mjs";
 import { codexExec, hasCodex, codexPausedUntil, imageInstructions, savedImage } from "./codex.mjs";
 import { ensureDir, writeJSON, log, warn } from "./util.mjs";
 
@@ -29,6 +30,24 @@ export function zonedNow(tz, now = new Date()) {
 }
 
 export const addDays = (day, n) => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+/** Explicit Proof/ files are user-supplied evidence. Screenshots elsewhere remain ordinary photos and are skipped. */
+export function proofScreenshots(root) {
+  const dir = path.join(root, "Proof");
+  const out = [];
+  const walk = (folder) => {
+    let entries = [];
+    try { entries = fs.readdirSync(folder, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const file = path.join(folder, entry.name);
+      if (entry.isDirectory()) walk(file);
+      else if (/\.(?:jpe?g|png|heic|heif|webp|tiff?)$/i.test(entry.name)) out.push(file);
+    }
+  };
+  walk(dir);
+  return out.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
 
 /**
  * The slots to fill: every studio.json slot from today (only when it is at least `leadMin` away) through
@@ -88,20 +107,27 @@ function runClaude(args, timeoutMs = 300000) {
 const notify = (title, msg) => { try { spawnSync("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title ${JSON.stringify(title)}`]); } catch {} };
 
 /** Copy for one slot, with one retry that tells Claude what was wrong. */
-export async function writeCopy(studio, slot, job, { posts, sandcastles, write = claudeCopy } = {}) {
+export async function writeCopy(studio, slot, job, { posts, sandcastles, write = claudeCopy, evidenceFiles = proofScreenshots(studio.paths.root) } = {}) {
   const recent = posts.filter((p) => p.hook).slice(-20).map((p) => `${p.day} ${p.job}: ${p.hook}${p.angle ? ` (${p.angle})` : ""}`);
   const base = copyPrompt({
     format: slot.format, job, client: studio.config.client, handle: studio.tokens.identity?.handle || "", guide: studio.guide, voice: studio.voice,
     recent, slides: studio.config.carouselSlides, cta: studio.config.cta || studio.brand.cta || "", neverSay: studio.config.neverSay, date: slot.day,
+    evidenceFiles: evidenceFiles.map((file) => path.basename(file)),
   });
   const prompt = sandcastles ? `${base}\n\nBefore writing, you may call the Sandcastles top_hooks tool with scope "all" (never "watchlist") and a query naming this post's topic, at most twice, and model the hook on a winning pattern without copying anyone's words.` : base;
   let reply = await write(prompt, { sandcastles });
   try {
-    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides });
+    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles, sourceText: `${studio.guide || ""}\n${studio.voice || ""}` });
   } catch (e) {
     reply = await write(`${prompt}\n\nYour last reply could not be used: ${e.message}. Reply again with JSON only.`, { sandcastles });
-    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides });
+    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles, sourceText: `${studio.guide || ""}\n${studio.voice || ""}` });
   }
+}
+
+/** One exact copy repair for slides the visual gate says need shorter text. */
+export async function repairShortCopy(studio, copy, indexes, { write = claudeCopy } = {}) {
+  const reply = await write(shortenPrompt({ copy, indexes, client: studio.config.client, guide: studio.guide, voice: studio.voice }), { sandcastles: "" });
+  return applyShortenedSlides(copy, reply, indexes);
 }
 
 /**
@@ -123,6 +149,7 @@ export async function choosePhotos(studio, copy, { workDir, pick = true, pool: g
       const reply = await runClaude(["-p", photoPickPrompt({ sheet, count: candidates.length, copy, plan, guide: studio.guide }), "--tools", "Read", "--allowedTools", "Read", "--strict-mcp-config", "--output-format", "text"], 240000);
       const r = parsePhotoPicks(reply, { plan, count: candidates.length });
       for (const [i, why] of r.never) vetoed.push({ ...candidates[i], vetoWhy: why });
+      for (const [i, description] of r.descriptions) candidates[i].visualDescription = description;
       picks = r.picks;
     } catch (e) {
       warn(`photo pick: ${e.message}; using the best photos in order`);
@@ -172,6 +199,22 @@ export function madeName(slot, hook) {
   return `${slot.day} ${slot.time.replace(":", ".")} ${slot.format === "static" ? "Static" : "Carousel"}${h ? ` - ${h}` : ""}`;
 }
 
+const photoHistoryFile = (studio) => path.join(path.dirname(studio.paths.used), "photo-history.json");
+
+function holdResult(studio, slot, id, result, hook = "") {
+  const report = writeHeldReport(studio.paths.made, slot, result);
+  const problems = preflightProblems(result);
+  const why = problems.map((problem) => problem.message).join("; ") || "the rendered slides did not pass preflight";
+  studioLog(studio.paths, `HELD ${id}: ${why}`);
+  return { id, day: slot.day, time: slot.time, format: slot.format, hook, status: "held", why, report };
+}
+
+const repairFailure = (message, files = []) => ({
+  verdict: "hold",
+  slides: [{ index: -1, file: files[0] || "", problems: [{ code: "repair-failed", message: `The one repair could not be completed: ${message}`, fix: "none" }] }],
+  photoHashes: [],
+});
+
 /** Make one post: copy, photos, render, Made/ copy, ledger and log. Returns the post record (status "made"). */
 export async function makePost(studio, slot, { posts, connectors = {}, deps = {} } = {}) {
   const { renderSlides } = await import("./slides.mjs");
@@ -180,20 +223,55 @@ export async function makePost(studio, slot, { posts, connectors = {}, deps = {}
   const mix = studioMix(studio.config, studio.guide);
   const job = pickJob(mix, posts.map((p) => ({ date: p.day, job: p.job })), { today: slot.day });
   log(`studio: ${slot.day} ${slot.time} ${slot.format}: job ${job.name}`);
-  const copy = await (deps.writeCopy || writeCopy)(studio, slot, job, { posts, sandcastles: studio.config.sandcastles ? connectors.sandcastles : "" });
+  let copy = await (deps.writeCopy || writeCopy)(studio, slot, job, { posts, sandcastles: studio.config.sandcastles ? connectors.sandcastles : "" });
   writeJSON(path.join(workDir, "copy.json"), copy);
   const { bySlide, vetoed, pool } = await (deps.choosePhotos || choosePhotos)(studio, copy, { workDir, pick: deps.pickPhotos !== false });
-  if (vetoed.length) markUsed(studio.paths.used, vetoed, { post: "never (Claude: not fit to post)", date: slot.day });
-  const aiSlides = deps.drawStills === false ? [] : await drawStills(studio, copy, bySlide, workDir);
-  const photos = [];
+  await (deps.drawStills === false ? Promise.resolve([]) : drawStills(studio, copy, bySlide, workDir));
+  let photos = [];
   for (const [i, p] of bySlide.entries()) {
     if (!p) continue;
     p.export = p.ai ? p.file : await exportPhoto(p.file, path.join(workDir, `photo-${i + 1}.jpg`));
     photos.push(p);
   }
-  const spec = buildSpec(copy, bySlide, { format: slot.format, outDir: path.join(workDir, "slides") });
+  let spec = buildSpec(copy, bySlide, { format: slot.format, outDir: path.join(workDir, "slides") });
   writeJSON(path.join(workDir, "spec.json"), spec);
-  const pngs = await (deps.renderSlides || renderSlides)(spec, { brand: studio.tokens, outDir: path.join(workDir, "slides") });
+  let pngs = await (deps.renderSlides || renderSlides)(spec, { brand: studio.tokens, outDir: path.join(workDir, "slides") });
+  const historyFile = photoHistoryFile(studio);
+  const check = (files, currentSpec) => runStudioPreflight({ spec: currentSpec, files, brand: studio.tokens, history: readPhotoHistory(historyFile), options: {} }, deps.preflightSlides);
+  let preflight = await check(pngs, spec);
+  if (preflight.verdict === "retry") {
+    const problems = preflightProblems(preflight);
+    try {
+      const shorten = [...new Set(problems.filter((problem) => problem.fix === "shorten").map((problem) => problem.index))].filter((index) => index >= 0 && index < copy.slides.length);
+      if (shorten.length) copy = await (deps.repairCopy || repairShortCopy)(studio, copy, shorten);
+      const swaps = [...new Set(problems.filter((problem) => problem.fix === "swap-photo").map((problem) => problem.index))].filter((index) => index >= 0 && index < bySlide.length);
+      for (const index of swaps) {
+        const avoid = bySlide.filter(Boolean).flatMap((photo) => [photo.key, photo.moment]).filter(Boolean);
+        const replacement = pickPhotos(pool?.usable || [], 1, { avoid })[0];
+        if (!replacement) throw new Error(`no unused replacement photo is available for slide ${index + 1}`);
+        replacement.export = await exportPhoto(replacement.file, path.join(workDir, `photo-${index + 1}-retry.jpg`));
+        bySlide[index] = replacement;
+      }
+      spec = buildSpec(copy, bySlide, { format: slot.format, outDir: path.join(workDir, "slides-retry") });
+      for (const index of problems.filter((problem) => problem.fix === "recrop").map((problem) => problem.index)) if (spec.slides[index]) spec.slides[index].pos = "auto";
+      writeJSON(path.join(workDir, "copy.json"), copy);
+      writeJSON(path.join(workDir, "spec-retry.json"), spec);
+      pngs = await (deps.renderSlides || renderSlides)(spec, { brand: studio.tokens, outDir: path.join(workDir, "slides-retry") });
+      preflight = await check(pngs, spec);
+    } catch (error) {
+      preflight = repairFailure(String(error?.message || error), pngs);
+    }
+  }
+  if (preflight.verdict !== "schedule") return holdResult(studio, slot, id, preflight, copy.hook);
+  photos = bySlide.filter(Boolean);
+  const altText = buildAltText(spec, bySlide);
+  if (altText.length !== pngs.length || altText.some((text) => !text)) return holdResult(studio, slot, id, repairFailure("one alt-text entry per rendered slide could not be built", pngs), copy.hook);
+  try {
+    appendPhotoHistory(historyFile, preflight.photoHashes, slot.day);
+  } catch (error) {
+    return holdResult(studio, slot, id, repairFailure(`photo history could not be saved: ${error.message}`, pngs), copy.hook);
+  }
+  const aiSlides = bySlide.map((photo, index) => photo?.ai ? index : null).filter((index) => index != null);
   const ai = studio.config.ai?.label === "always" || aiSlides.length > 0;
   const gate = neverSaid(copy, studio.config.neverSay);
   const made = ensureDir(uniqueDir(path.join(studio.paths.made, madeName(slot, copy.hook))));
@@ -204,9 +282,10 @@ export async function makePost(studio, slot, { posts, connectors = {}, deps = {}
   const record = {
     id, day: slot.day, time: slot.time, format: slot.format, job: job.name, angle: copy.angle, hook: copy.hook, slides: files.length,
     photos: photos.filter((p) => p.key).map((p) => ({ key: p.key, file: p.file })), aiSlides, ai, draftWhy: gate ? `it uses "${gate}", which the client never says` : "",
-    made, files, text, status: "made",
+    made, files, text, altText, preflight, status: "made",
   };
   writeJSON(path.join(made, ".post.json"), record);
+  if (vetoed.length) markUsed(studio.paths.used, vetoed, { post: "never (Claude: not fit to post)", date: slot.day });
   markUsed(studio.paths.used, photos.filter((p) => p.key), { post: id, date: slot.day });
   logPost(studio.paths, record);
   studioLog(studio.paths, `made ${id}: ${job.name}, "${copy.hook}", ${files.length} slide(s), ${photos.length} photo(s)${aiSlides.length ? `, ${aiSlides.length} AI` : ""}; photo pool ${pool?.usable?.length ?? "?"} unused${pool?.skipped?.length ? ` (${skipSummary(pool.skipped)} skipped)` : ""}`);
@@ -220,11 +299,12 @@ function uniqueDir(p) {
 
 /** Schedule a made post into the client's Metricool. Returns the updated record. */
 export async function publishPost(studio, record, { connectors = {}, deps = {} } = {}) {
+  if (record.preflight?.verdict !== "schedule") throw new Error("the slide preflight did not approve this post");
   const c = studio.config;
   const draft = c.publish.mode === "draft" || !!record.draftWhy;
   const host = await (deps.hostFiles || hostFiles)(record.files, { hosting: c.hosting, postId: record.id, connectors });
   try {
-    const input = postInput({ blogId: c.metricool.blogId, day: record.day, time: record.time, tz: c.timezone, text: record.text, media: host.urls, kind: record.format, ai: record.ai, draft, networks: c.metricool.networks, title: record.hook, coverMs: record.coverMs });
+    const input = postInput({ blogId: c.metricool.blogId, day: record.day, time: record.time, tz: c.timezone, text: record.text, media: host.urls, altText: record.altText, kind: record.format, ai: record.ai, draft, networks: c.metricool.networks, title: record.hook, coverMs: record.coverMs });
     const r = await (deps.createPost || createPost)(c.metricool.connector || connectors.metricool, input);
     const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: record.draftWhy || (draft ? "the studio is set to drafts" : "") };
     fs.writeFileSync(path.join(record.made, "Scheduled.txt"), [
@@ -279,6 +359,7 @@ export async function runDaily(dir, { dryRun = false, noPublish = false, only = 
         results.push({ ...slot, status: "failed", why: e.message });
         continue;
       }
+      if (record.status === "held") { results.push(record); continue; }
       if (!publishing) { results.push(record); continue; }
       try { results.push(await publishPost(studio, record, { connectors, deps })); }
       catch (e) { results.push(failPublish(studio, record, e)); }
@@ -306,4 +387,3 @@ export function dailySummary(result) {
   if (!result.made.length) return "every slot is filled";
   return result.made.map((r) => `${r.day} ${r.time} ${r.format}: ${r.status}${r.hook ? ` "${r.hook}"` : ""}${r.plannerUrl ? ` ${r.plannerUrl}` : ""}${r.why ? ` (${r.why})` : ""}`).join("\n");
 }
-

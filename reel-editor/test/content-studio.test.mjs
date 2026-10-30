@@ -6,10 +6,11 @@ import path from "node:path";
 import { checkStudio, withDefaults, parseTime, initStudio, loadStudio, studioPaths, readPosts, logPost, takeLock, photosDir, studioBrand } from "../src/content-studio.mjs";
 import { parseMix, studioMix, pickJob, markdownTables } from "../src/mix.mjs";
 import { badShot, photoScore, momentOf, pickPhotos, photoPool, takenMs, markUsed, PHOTO_RULES } from "../src/photos.mjs";
-import { plainText, parseCopy, neverSaid, buildSpec, photoPlan, parsePhotoPicks, copyPrompt, captionText, faceY } from "../src/studio-copy.mjs";
+import { plainText, parseCopy, neverSaid, buildSpec, photoPlan, parsePhotoPicks, copyPrompt, captionText, faceY, buildAltText, shortenPrompt, applyShortenedSlides } from "../src/studio-copy.mjs";
 import { connectorPrefix, parseConnectors, zonedISO, postInput, normalizeScheduled, toolPrompt, createdPost } from "../src/studio-metricool.mjs";
 import { driveLink, dropboxDirect, fileServer } from "../src/studio-host.mjs";
-import { openSlots, retryable, madeName, zonedNow, addDays, runDaily } from "../src/daily.mjs";
+import { openSlots, retryable, madeName, zonedNow, addDays, runDaily, proofScreenshots } from "../src/daily.mjs";
+import { runStudioPreflight, preflightProblems } from "../src/studio-preflight.mjs";
 import { waitingClips, reelSlot, normalizeBestTimes, reelEnv } from "../src/studio-reels.mjs";
 import { studioAgents } from "../src/studio-cli.mjs";
 import { personalizeStartHere, stripStudio } from "../src/brandkit.mjs";
@@ -278,9 +279,82 @@ test("copy: photos go to the cover first, then spread through the points", () =>
 });
 
 test("copy: Claude's photo picks are kept only when they are valid; vetoed photos are never used", () => {
-  const r = parsePhotoPicks('{"picks":{"1":2,"2":2,"5":9,"3":4},"never":[{"photo":4,"why":"a screenshot"}]}', { plan: [0, 1, 2], count: 5 });
+  const r = parsePhotoPicks('{"picks":{"1":2,"2":2,"5":9,"3":4},"descriptions":{"2":"A person beside a whiteboard"},"never":[{"photo":4,"why":"a screenshot"}]}', { plan: [0, 1, 2], count: 5 });
   assert.deepEqual([...r.picks], [[0, 1]]);
+  assert.equal(r.descriptions.get(1), "A person beside a whiteboard");
   assert.equal(r.never.get(3), "a screenshot");
+});
+
+test("copy: postcard, notes, story and supplied evidence validate into their built slide families", () => {
+  const proofDir = path.join(tmp(), "Proof");
+  fs.mkdirSync(proofDir);
+  const proof = path.join(proofDir, "client-result.png");
+  fs.writeFileSync(proof, "png");
+  assert.deepEqual(proofScreenshots(path.dirname(proofDir)), [proof]);
+  const parsed = parseCopy(JSON.stringify({
+    hook: "Keep the signal close",
+    slides: [
+      { role: "cover", headline: "Keep the *signal* close" },
+      { role: "postcard", postText: "A supplied thought in their voice." },
+      { role: "notes", headline: "What changed", lines: ["One clear owner.", "One same day check."] },
+      { role: "story", caption: "The coach checked the attendance list." },
+      { role: "evidence", proofFile: "client-result.png", sourceLabel: "Client supplied result" },
+      { role: "close", headline: "Make the check *small*" },
+    ],
+    caption: "Keep the signal close.", hashtags: ["#gymowner"],
+  }), { format: "carousel", slides: [5, 8], evidenceFiles: [proof] });
+  const real = { file: "/real.jpg", export: "/real-export.jpg", faces: [{ x: 0.2, y: 0.2, w: 0.3, h: 0.3 }] };
+  const spec = buildSpec(parsed, [null, null, null, real, null, null], { format: "carousel", outDir: "/out" });
+  assert.deepEqual(spec.slides.map((slide) => slide.kind), ["cover", "postcard", "notes", "story", "evidence", "cta"]);
+  assert.deepEqual(spec.slides[3].focalPoint, { x: 0.35, y: 0.35 });
+  assert.equal(spec.slides[4].image, proof);
+  assert.throws(() => buildSpec(parsed, [], { format: "carousel" }), /story slide 4 needs a real photo/);
+  assert.throws(() => parseCopy(JSON.stringify({ slides: [{ role: "cover", headline: "A" }, { role: "evidence", proofFile: "made-up.png", sourceLabel: "Proof" }, { role: "point", headline: "C" }, { role: "point", headline: "D" }, { role: "close", headline: "E" }], caption: "c" }), { format: "carousel", evidenceFiles: [] }), /does not name one supplied proof screenshot/);
+});
+
+test("alt text: gold markers are stripped, photo descriptions are never guessed, and entries cap at 300 characters", () => {
+  const spec = { slides: [
+    { kind: "photo", headline: "Keep *this* visible", sub: "Use the supplied words." },
+    { kind: "photosplit", headline: "Words *only*", sub: "No literal description was supplied." },
+    { kind: "body", headline: "Long", sub: "x".repeat(500) },
+  ] };
+  const alt = buildAltText(spec, [{ visualDescription: "A person beside a whiteboard" }, { file: "/photo-without-description.jpg" }, null]);
+  assert.equal(alt.length, spec.slides.length);
+  assert.match(alt[0], /^A person beside a whiteboard\. Text reads: Keep this visible/);
+  assert.doesNotMatch(alt.join("\n"), /\*/);
+  assert.equal(alt[1], "Words only. No literal description was supplied.");
+  assert.doesNotMatch(alt[1], /photo|image|person/i, "no scene description is invented from a file name");
+  assert.equal(alt[2].length, 300);
+});
+
+test("copy repair: only named slides can be shortened and their semantic role is fixed", () => {
+  const copy = parseCopy(carouselReply, { format: "carousel", slides: [5, 8] });
+  const prompt = shortenPrompt({ copy, indexes: [1], client: "Jordan Example", guide: "Guide", voice: "Voice" });
+  assert.match(prompt, /about one quarter/);
+  assert.match(prompt, /"index":2/);
+  assert.doesNotMatch(prompt, /"index":1/);
+  const repaired = applyShortenedSlides(copy, JSON.stringify({ slides: [{ index: 2, slide: { ...copy.slides[1], headline: "Missed class is the signal", body: "Text the same day." } }] }), [1]);
+  assert.equal(repaired.slides[1].body, "Text the same day.");
+  assert.deepEqual(repaired.slides[0], copy.slides[0]);
+  assert.deepEqual(repaired.slides[2], copy.slides[2]);
+  assert.throws(() => applyShortenedSlides(copy, JSON.stringify({ slides: [{ index: 2, slide: { role: "story", caption: "Changed" } }] }), [1]), /preserve slide 2's role/);
+});
+
+test("slide family validation names missing postcard, notes and story fields", () => {
+  const reply = (middle) => JSON.stringify({ slides: [
+    { role: "cover", headline: "A useful cover" }, middle,
+    { role: "point", headline: "Third point" }, { role: "point", headline: "Fourth point" }, { role: "close", headline: "Useful close" },
+  ], caption: "A useful cover." });
+  assert.throws(() => parseCopy(reply({ role: "postcard" }), { format: "carousel" }), /postcard needs postText/);
+  assert.throws(() => parseCopy(reply({ role: "notes", headline: "Notes", lines: ["Only one"] }), { format: "carousel" }), /notes needs at least 2 lines/);
+  assert.throws(() => parseCopy(reply({ role: "story" }), { format: "carousel" }), /story needs a caption/);
+});
+
+test("shared preflight adapter fails closed and preserves plain-English problems", async () => {
+  const result = await runStudioPreflight({ spec: { slides: [] }, files: ["/one.png"], brand: {}, history: null, options: {} }, async () => { throw new Error("Vision is unavailable"); });
+  assert.equal(result.verdict, "hold");
+  assert.deepEqual(preflightProblems(result).map((problem) => [problem.code, problem.fix]), [["preflight-unavailable", "none"]]);
+  assert.match(preflightProblems(result)[0].message, /Vision is unavailable/);
 });
 
 /* ---------- Metricool ---------- */
@@ -306,8 +380,8 @@ test("metricool: dates carry the zone's own offset, across daylight saving", () 
   assert.equal(zonedISO("2026-11-02", "18:30", "Europe/Berlin"), "2026-11-02T18:30:00+01:00");
 });
 
-test("metricool: the post input sets the draft, the AI label and each network's data", () => {
-  const a = postInput({ blogId: 7, day: "2026-12-15", time: "05:00", tz: "America/Phoenix", text: "t", media: ["u1", "u2"], kind: "carousel", ai: true, draft: true, networks: ["instagram", "linkedin"], title: "Hook" });
+test("metricool: the post input sets the draft, the AI label, alt text and each network's data", () => {
+  const a = postInput({ blogId: 7, day: "2026-12-15", time: "05:00", tz: "America/Phoenix", text: "t", media: ["u1", "u2"], altText: ["first", "second"], kind: "carousel", ai: true, draft: true, networks: ["instagram", "linkedin"], title: "Hook" });
   const info = JSON.parse(a.info);
   assert.equal(a.blogId, "7");
   assert.equal(a.date, "2026-12-15T05:00:00-07:00");
@@ -315,7 +389,8 @@ test("metricool: the post input sets the draft, the AI label and each network's 
   assert.equal(info.instagramData.isAiGenerated, true);
   assert.equal(info.instagramData.type, "POST");
   assert.equal(info.linkedinData.publishImagesAsPDF, true);
-  assert.deepEqual(info.mediaAltText, [null, null]);
+  assert.deepEqual(info.mediaAltText, ["first", "second"]);
+  assert.equal(info.mediaAltText.length, info.media.length);
   assert.deepEqual(info.publicationDate, { dateTime: "2026-12-15T05:00:00", timezone: "America/Phoenix" });
   const r = JSON.parse(postInput({ blogId: 7, day: "2026-12-15", time: "12:00", tz: "UTC", text: "t", media: ["v"], kind: "reel", coverMs: 1234.4 }).info);
   assert.equal(r.instagramData.type, "REEL");
@@ -395,6 +470,7 @@ test("daily: a whole run with stubs: Made copy, ledger, log, draft gate, AI labe
       : parseCopy(carouselReply, { format: "carousel", slides: [5, 8] })),
     pickPhotos: false,
     renderSlides: async (spec, { outDir }) => { fs.mkdirSync(outDir, { recursive: true }); return spec.slides.map((s, i) => { const f = path.join(outDir, `${i + 1}.png`); fs.writeFileSync(f, `png ${s.kind}`); return f; }); },
+    preflightSlides: async ({ files }) => ({ verdict: "schedule", slides: files.map((file, index) => ({ index, file, problems: [] })), photoHashes: [] }),
     hostFiles: async (files) => ({ urls: files.map((f, i) => `https://host/${i}`), close: async () => {} }),
     createPost: async (connector, input) => { created.push({ connector, input, info: JSON.parse(input.info) }); return { plannerUrl: `https://app.metricool.com/planner/${created.length}`, id: created.length }; },
   };
@@ -408,6 +484,8 @@ test("daily: a whole run with stubs: Made copy, ledger, log, draft gate, AI labe
   assert.match(r.made[0].why, /hustle/);
   assert.equal(created[1].info.draft, false);
   assert.equal(created[1].info.media.length, 6);
+  assert.equal(created[1].info.mediaAltText.length, created[1].info.media.length);
+  assert.ok(created[1].info.mediaAltText.every(Boolean));
   assert.equal(created[1].info.instagramData.isAiGenerated, false, "real photos only: no AI label");
   assert.match(created[1].info.text, /^HOLD TEST\n\n/);
   const made = r.made[1].made;
@@ -425,6 +503,7 @@ test("daily: a failed schedule leaves the post in Made and the next run sends it
     writeCopy: async () => parseCopy(JSON.stringify({ slides: [{ role: "static", headline: "A *b*" }], caption: "c", hashtags: [] }), { format: "static" }),
     choosePhotos: async (s, copy) => ({ bySlide: copy.slides.map(() => null), vetoed: [] }),
     renderSlides: async (spec, { outDir }) => { fs.mkdirSync(outDir, { recursive: true }); const f = path.join(outDir, "1.png"); fs.writeFileSync(f, "png"); return [f]; },
+    preflightSlides: async ({ files }) => ({ verdict: "schedule", slides: files.map((file, index) => ({ index, file, problems: [] })), photoHashes: [] }),
     hostFiles: async () => ({ urls: ["u"], close: async () => {} }),
     createPost: async () => { if (fail) throw new Error("Metricool is down"); return { plannerUrl: "p", id: 1 }; },
   };
@@ -435,6 +514,62 @@ test("daily: a failed schedule leaves the post in Made and the next run sends it
   const second = await runDaily(dir, { now: NOW, deps });
   assert.deepEqual(second.made.map((m) => m.status), ["scheduled"]);
   assert.ok(!fs.existsSync(path.join(first.made[0].made, "Not posted.txt")));
+});
+
+async function gateRun(verdicts) {
+  const dir = sampleCopy({ timezone: "America/Phoenix", slots: [{ time: "18:00", format: "static" }], daysAhead: 0, publish: { mode: "schedule" }, ai: { label: "auto", broll: false } });
+  const calls = { render: 0, preflight: 0, host: 0, schedule: 0 };
+  const deps = {
+    scheduledPosts: async () => [],
+    writeCopy: async () => parseCopy(JSON.stringify({ hook: "One useful check", slides: [{ role: "static", headline: "One *useful* check", body: "Use the words supplied." }], caption: "One useful check.", hashtags: [] }), { format: "static" }),
+    choosePhotos: async (studio, copy) => ({ bySlide: copy.slides.map(() => null), vetoed: [], pool: { usable: [], skipped: [] } }),
+    renderSlides: async (spec, { outDir }) => {
+      calls.render++;
+      fs.mkdirSync(outDir, { recursive: true });
+      const file = path.join(outDir, "1.png");
+      fs.writeFileSync(file, `png ${calls.render}`);
+      return [file];
+    },
+    preflightSlides: async ({ files }) => {
+      const verdict = verdicts[calls.preflight++] || "hold";
+      const problems = verdict === "schedule" ? [] : [{ code: "crop", message: "The words overlap the subject.", fix: verdict === "retry" ? "recrop" : "none" }];
+      return { verdict, slides: [{ index: 0, file: files[0], problems }], photoHashes: verdict === "schedule" ? [{ file: files[0], hash: `hash-${calls.preflight}` }] : [] };
+    },
+    hostFiles: async () => { calls.host++; return { urls: ["https://host/1"], close: async () => {} }; },
+    createPost: async () => { calls.schedule++; return { plannerUrl: "https://app.metricool.com/planner/1", id: 1 }; },
+  };
+  const result = await runDaily(dir, { now: NOW, deps });
+  return { dir, calls, result, record: result.made[0] };
+}
+
+test("daily gate: schedule continues to Made, hosting and Metricool, then records photo hashes", async () => {
+  const run = await gateRun(["schedule"]);
+  assert.equal(run.record.status, "scheduled");
+  assert.deepEqual(run.calls, { render: 1, preflight: 1, host: 1, schedule: 1 });
+  const history = JSON.parse(fs.readFileSync(path.join(run.dir, ".studio", "photo-history.json"), "utf8"));
+  assert.deepEqual(history.photos.map((item) => [item.hash, item.date]), [["hash-1", "2026-11-01"]]);
+});
+
+test("daily gate: retry repairs and renders once more, then schedules on a pass", async () => {
+  const run = await gateRun(["retry", "schedule"]);
+  assert.equal(run.record.status, "scheduled");
+  assert.deepEqual(run.calls, { render: 2, preflight: 2, host: 1, schedule: 1 });
+});
+
+test("daily gate: retry then hold writes only a HELD report and performs no publishing side effect", async () => {
+  const run = await gateRun(["retry", "hold"]);
+  assert.equal(run.record.status, "held");
+  assert.deepEqual(run.calls, { render: 2, preflight: 2, host: 0, schedule: 0 });
+  assert.ok(fs.existsSync(path.join(run.dir, "Made", "2026-11-01-18.00-HELD.md")));
+  assert.ok(!fs.existsSync(path.join(run.dir, ".studio", "used-photos.json")));
+});
+
+test("daily gate: an immediate hold is not repaired, copied, hosted or scheduled", async () => {
+  const run = await gateRun(["hold"]);
+  assert.equal(run.record.status, "held");
+  assert.deepEqual(run.calls, { render: 1, preflight: 1, host: 0, schedule: 0 });
+  assert.deepEqual(fs.readdirSync(path.join(run.dir, "Made")), ["2026-11-01-18.00-HELD.md"]);
+  assert.deepEqual(readPosts(studioPaths(run.dir)), [], "a held slot is not logged as filled, so the next run tries it again");
 });
 
 /* ---------- reels ---------- */

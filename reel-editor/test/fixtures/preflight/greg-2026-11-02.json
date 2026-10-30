@@ -1,0 +1,61 @@
+{
+  "out_dir": "/Users/gregpingel/automation/ig-content/queue/2026-11-02",
+  "slides": [
+    {
+      "kind": "photosplit",
+      "headline": "YOU DON'T\nHAVE A\n*CLOSER*\nPROBLEM.",
+      "sub": "You have a volume problem wearing a closer costume.",
+      "photo": "/Users/gregpingel/automation/ig-content/photos/pool/A-2025-11-24-E9E74B74.jpg",
+      "pos": "center 40%",
+      "split": 720
+    },
+    {
+      "kind": "photosplit",
+      "headline": "SIX CALLS\nA *WEEK.*",
+      "sub": "Picture a commission-only closer with six calls on his calendar. He can't feed his family on that.",
+      "photo": "/Users/gregpingel/automation/ig-content/photos/broll/c02-2.png",
+      "pos": "center center",
+      "split": 860
+    },
+    {
+      "kind": "photosplit",
+      "headline": "THE GOOD ONES\n*SAY NO.*",
+      "sub": "A closer who can sell does the math before he takes the seat. Six calls a week doesn't pay his mortgage, so he walks.",
+      "photo": "/Users/gregpingel/automation/ig-content/photos/broll/c02-3.png",
+      "pos": "center center",
+      "split": 840
+    },
+    {
+      "kind": "photosplit",
+      "headline": "SO WHO\n*SAYS YES?*",
+      "sub": "The ones nobody else would hire. You didn't hire wrong. Your volume picked him.",
+      "photo": "/Users/gregpingel/automation/ig-content/photos/broll/c02-4.png",
+      "pos": "center center",
+      "split": 880
+    },
+    {
+      "kind": "photosplit",
+      "headline": "DO THE\n*MATH* FIRST.",
+      "sub": "About 15 qualified calls a week. A 20% close rate. A $3,000 ticket. Below that, a closer makes the business worse.",
+      "photo": "/Users/gregpingel/automation/ig-content/photos/broll/c02-5.png",
+      "pos": "center center",
+      "split": 840
+    },
+    {
+      "kind": "photosplit",
+      "headline": "BELOW IT?\n*YOU* CLOSE.",
+      "sub": "Keep taking the calls yourself. Put the money into getting to fifteen a week. Hire when the math can feed a closer.",
+      "photo": "/Users/gregpingel/automation/ig-content/photos/broll/c02-6.png",
+      "pos": "center center",
+      "split": 840
+    },
+    {
+      "kind": "photosplit",
+      "headline": "VOLUME FIRST.\n*THEN* THE\nCLOSER.",
+      "sub": "Count last week's qualified calls. One word: ABOVE or BELOW?",
+      "photo": "/Users/gregpingel/automation/ig-content/photos/pool/A-2026-02-04-066D27CB.jpg",
+      "pos": "center 40%",
+      "split": 720
+    }
+  ]
+}

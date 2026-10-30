@@ -6,6 +6,23 @@ import { hookBlockHeight } from "./placement.mjs";
 import { isPersistentScene, numberMotion, sceneDuration } from "./graphics.mjs";
 import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
 
+export {
+  boxIntersection,
+  contrastFromLuminances,
+  contrastRatio,
+  differenceHash,
+  editDistance,
+  expectedSlideText,
+  faceOverlapRatio,
+  hammingDistance,
+  lintSlideCopy,
+  matchExpectedText,
+  preflightSlides,
+  relativeLuminance,
+  textTokens,
+  verdictForProblems,
+} from "./slide-preflight.mjs";
+
 /**
  * Preflight: checks on the finished file before it reaches the Desktop. Sound (integrated loudness, true peak,
  * loudness range), the open (a black or static first second, silence at the start), dead air anywhere, the render

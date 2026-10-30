@@ -23,6 +23,9 @@ const examples = {
   postcard: { name: "Supplied Name", handle: "@supplied", postText: "Supplied *post* text." },
   notes: { title: "Supplied notes", date: "Supplied date", lines: ["First line", "Second line"] },
   story: { photo: fixture, focalPoint: { x: 0.4, y: 0.3 }, chapter: "ONE", caption: "Supplied *story* caption." },
+  stat: { label: "THE NUMBER", number: "3%", headline: "Supplied *stat* meaning", sub: "Supplied line", source: "Supplied source, 2026" },
+  steps: { label: "THE STEPS", headline: "Supplied *steps*", steps: ["First step", "Second step", "Third step"] },
+  quote: { quote: "Supplied *quote* words.", by: "Supplied Name", context: "Supplied context" },
   evidence: { image: fixture, sourceLabel: "Supplied source" },
 };
 

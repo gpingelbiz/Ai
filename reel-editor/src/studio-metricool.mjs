@@ -112,7 +112,7 @@ export function normalizeScheduled(r) {
  * The createScheduledPost input for one post. `kind` = carousel | static | reel. Instagram's AI label goes on when
  * `ai` is true (a carousel carries one flag for the whole post).
  */
-export function postInput({ blogId, day, time, tz, text, media, kind, ai = false, draft = false, networks = ["instagram"], title = "", coverMs = null }) {
+export function postInput({ blogId, day, time, tz, text, media, altText = [], kind, ai = false, draft = false, networks = ["instagram"], title = "", coverMs = null }) {
   const reel = kind === "reel";
   const providers = networks.map((network) => ({ network }));
   const info = {
@@ -122,7 +122,7 @@ export function postInput({ blogId, day, time, tz, text, media, kind, ai = false
     firstCommentText: "",
     hasNotReadNotes: false,
     media,
-    mediaAltText: media.map(() => null),
+    mediaAltText: media.map((_, index) => String(altText[index] || "").trim() || null),
     providers,
     publicationDate: { dateTime: `${day}T${time}:00`, timezone: tz },
     shortener: false,
