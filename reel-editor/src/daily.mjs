@@ -117,10 +117,10 @@ export async function writeCopy(studio, slot, job, { posts, sandcastles, write =
   const prompt = sandcastles ? `${base}\n\nBefore writing, you may call the Sandcastles top_hooks tool with scope "all" (never "watchlist") and a query naming this post's topic, at most twice, and model the hook on a winning pattern without copying anyone's words.` : base;
   let reply = await write(prompt, { sandcastles });
   try {
-    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles });
+    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles, sourceText: `${studio.guide || ""}\n${studio.voice || ""}` });
   } catch (e) {
     reply = await write(`${prompt}\n\nYour last reply could not be used: ${e.message}. Reply again with JSON only.`, { sandcastles });
-    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles });
+    return parseCopy(reply, { format: slot.format, slides: studio.config.carouselSlides, evidenceFiles, sourceText: `${studio.guide || ""}\n${studio.voice || ""}` });
   }
 }
 

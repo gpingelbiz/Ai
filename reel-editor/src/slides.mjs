@@ -12,7 +12,7 @@ import { ensureDir, PKG_ROOT, run, warn } from "./util.mjs";
 export const SLIDE_WIDTH = 1080;
 export const SLIDE_HEIGHTS = new Set([1080, 1350]);
 export const LEGACY_SLIDE_KINDS = ["photo", "photosplit", "phototop", "splittop", "cover", "body", "cta", "static", "static-light"];
-export const FAMILY_SLIDE_KINDS = ["checklist", "compare", "postcard", "notes", "story", "evidence"];
+export const FAMILY_SLIDE_KINDS = ["checklist", "compare", "postcard", "notes", "story", "evidence", "stat", "steps", "quote"];
 export const SLIDE_KINDS = [...LEGACY_SLIDE_KINDS, ...FAMILY_SLIDE_KINDS];
 
 const clean = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
@@ -145,6 +145,9 @@ export function normalizeSlideSpec(spec) {
       if (slide.items.length > 8) throw new Error(`checklist slide ${index + 1} has ${slide.items.length} rows; the maximum is 8`);
       slide.items = slide.items.map(itemObject);
     }
+    if (kind === "stat" && !(clean(slide.number) && clean(slide.headline))) throw new Error(`stat slide ${index + 1} needs a number and a headline`);
+    if (kind === "steps" && !(Array.isArray(slide.steps) && slide.steps.length >= 2 && slide.steps.length <= 6)) throw new Error(`steps slide ${index + 1} needs 2 to 6 steps`);
+    if (kind === "quote" && !(clean(slide.quote) && clean(slide.by))) throw new Error(`quote slide ${index + 1} needs the quote and who said it`);
     if (kind === "story" && !clean(slide.photo || slide.image)) throw new Error(`story slide ${index + 1} needs a real photo file`);
     if (kind === "story" && !(typeof slide.focalPoint === "string" || (Number.isFinite(slide.focalPoint?.x) && Number.isFinite(slide.focalPoint?.y)))) throw new Error(`story slide ${index + 1} needs a focalPoint`);
     if (kind === "evidence" && !clean(assetValue(slide))) throw new Error(`evidence slide ${index + 1} needs an image or screenshot file`);
@@ -299,6 +302,25 @@ function notesMarkup(slide) {
   return `<main class="family-main notes-main"><article class="note-paper"><header><h1${fitAttrs("headline", title)}>${accentHTML(title)}</h1>${slide.date ? `<time>${accentHTML(slide.date)}</time>` : ""}</header><div class="note-lines">${lines.map((line) => `<p${fitAttrs("sub", line?.text || line)}>${accentHTML(line?.text || line)}</p>`).join("")}</div></article></main>`;
 }
 
+/** Big number: one real, sourced number, what it means, and the source line (2026-10-30 carousel research, lanes 2 and 5). */
+function statMarkup(slide) {
+  const sub = slide.sub ? `<div class="stat-sub"${fitAttrs("sub", slide.sub)}>${accentHTML(slide.sub)}</div>` : "";
+  const source = slide.source ? `<div class="stat-source">${esc(clean(slide.source))}</div>` : "";
+  return `${commonHeader(slide)}<main class="family-main stat-main"><div class="stat-number"${fitAttrs("headline", slide.number)}>${accentHTML(slide.number)}</div><h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1>${sub}${source}</main>`;
+}
+
+/** Steps: 3 to 5 numbered steps joined by a thin accent line. Step numbers are content, not slide counters. */
+function stepsMarkup(slide) {
+  const rows = slide.steps.map((step, index) => `<li><span class="step-n">${index + 1}</span><span class="step-t">${accentHTML(typeof step === "string" ? step : step?.text)}</span></li>`).join("");
+  return `${commonHeader(slide)}<main class="family-main steps-main"><h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1><ol class="step-list" data-fit-role="sub">${rows}</ol></main>`;
+}
+
+/** Quote: real words with who said them. Never a made-up testimonial. */
+function quoteMarkup(slide) {
+  const context = slide.context ? `<div class="quote-context">${esc(clean(slide.context))}</div>` : "";
+  return `${commonHeader(slide)}<main class="family-main quote-main"><div class="quote-mark" aria-hidden="true">&ldquo;</div><blockquote${fitAttrs("headline", slide.quote)}>${accentHTML(slide.quote)}</blockquote><div class="quote-by">${esc(clean(slide.by))}</div>${context}</main>`;
+}
+
 function storyMarkup(slide) {
   const photo = slide.photo || slide.image;
   const focal = typeof slide.focalPoint === "object" ? `${Number(slide.focalPoint.x ?? 0.5) * 100}% ${Number(slide.focalPoint.y ?? 0.5) * 100}%` : clean(slide.focalPoint || slide.pos || "center center");
@@ -354,6 +376,22 @@ function slideRules() {
     .static-light .accent, .static-light .slide-label, .post-card .accent, .note-paper .accent { color: var(--slide-light-accent, var(--brand-accent)); }
     .static-light .slide-label::before { background: var(--slide-light-accent, var(--brand-accent)); }
     .family-main { position: relative; z-index: 2; height: 100%; }
+    .stat-main, .steps-main, .quote-main { display: flex; flex-direction: column; justify-content: center; }
+    .stat-number { font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); font-size: 300px; line-height: .9; letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); color: var(--brand-accent); }
+    .stat-main h1 { font-size: 76px; margin-top: var(--space-lg); }
+    .stat-sub { margin-top: var(--space-lg); font-size: 38px; line-height: var(--brand-body-line-height); opacity: .86; }
+    .stat-source { margin-top: var(--space-lg); font-size: 26px; font-weight: 500; color: var(--brand-muted); }
+    .steps-main h1 { font-size: 88px; }
+    .step-list { list-style: none; margin: 56px 0 0; padding: 0; font-size: 38px; }
+    .step-list li { display: flex; align-items: flex-start; gap: 34px; padding-bottom: 34px; position: relative; }
+    .step-list li:last-child { padding-bottom: 0; }
+    .step-list li:not(:last-child)::after { content: ""; position: absolute; left: calc(0.935em - 1.5px); top: 1.75em; bottom: 6px; width: 3px; background: var(--brand-accent); opacity: .45; }
+    .step-n { flex: none; width: 1.1em; font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); font-size: 1.7em; line-height: .9; text-align: center; color: var(--brand-accent); }
+    .step-t { font-weight: 500; line-height: 1.3; padding-top: .12em; }
+    .quote-mark { height: 140px; font-family: var(--brand-display-font); font-size: 260px; line-height: .62; color: var(--brand-accent); }
+    .quote-main blockquote { margin: 0; font-family: var(--brand-editorial-font, var(--brand-body-font)); font-weight: 600; font-size: 60px; line-height: 1.22; }
+    .quote-by { margin-top: 48px; font-size: 30px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brand-accent); }
+    .quote-context { margin-top: 10px; font-size: 28px; color: var(--brand-muted); }
     .family-main h1 { font-size: var(--type-xl); }
     .check-list { list-style: none; margin: var(--space-xl) 0 0; padding: 0; display: grid; gap: var(--space-md); }
     .check-row { min-height: 112px; display: flex; align-items: center; gap: var(--space-md); padding: var(--space-md); border: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-stroke); border-radius: var(--brand-radius-md); background: var(--brand-surface2); }
@@ -510,6 +548,9 @@ export function slideHTML(slide, tokens, options = {}) {
   else if (kind === "postcard") content = postcardMarkup(slide, t);
   else if (kind === "notes") content = notesMarkup(slide);
   else if (kind === "story") content = storyMarkup(slide);
+  else if (kind === "stat") content = statMarkup(slide);
+  else if (kind === "steps") content = stepsMarkup(slide);
+  else if (kind === "quote") content = quoteMarkup(slide);
   else if (kind === "evidence" && options.evidenceHTML) {
     try {
       const doc = options.evidenceHTML({ ...slide, src: slide.src || slide.image || slide.file, label: slide.label || slide.sourceLabel }, t, { width: SLIDE_WIDTH, height });

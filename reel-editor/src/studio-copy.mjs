@@ -6,7 +6,7 @@ import { cleanCaption } from "../scripts/write-caption.mjs";
  * photos into a `reel slides` spec. Nobody reviews these posts, so everything that can be checked in code is.
  */
 
-export const ROLES = ["cover", "point", "list", "compare", "postcard", "notes", "story", "evidence", "close", "static"];
+export const ROLES = ["cover", "point", "list", "compare", "postcard", "notes", "story", "evidence", "stat", "steps", "quote", "close", "static"];
 const clean = (s) => String(s ?? "").replace(/\r/g, "").trim();
 const oneLine = (s) => clean(s).replace(/\s+/g, " ");
 const words = (s) => oneLine(String(s).replace(/\*/g, "")).split(" ").filter(Boolean).length;
@@ -55,7 +55,7 @@ const GUIDE_LIMIT = 40000;
 export function copyPrompt({ format, job, client, handle, guide, voice, recent = [], slides = [5, 8], cta = "", neverSay = [], date, evidenceFiles = [] }) {
   const carousel = format === "carousel";
   const shape = carousel
-    ? `{"angle":"...","hook":"...","slides":[{"role":"cover","headline":"..."},{"role":"point","headline":"...","body":"..."},{"role":"list","headline":"...","items":["...","...","..."]},{"role":"compare","headline":"...","left":{"label":"...","value":"..."},"right":{"label":"...","value":"..."}},{"role":"postcard","postText":"..."},{"role":"notes","headline":"...","lines":["...","..."]},{"role":"story","caption":"..."}${evidenceFiles.length ? ',{"role":"evidence","proofFile":"one exact supplied file token","sourceLabel":"what this supplied proof is"}' : ""},{"role":"close","headline":"...","body":"..."}],"caption":"line 1\\nline 2","hashtags":["#a","#b","#c"]}`
+    ? `{"angle":"...","hook":"...","slides":[{"role":"cover","headline":"..."},{"role":"point","headline":"...","body":"..."},{"role":"list","headline":"...","items":["...","...","..."]},{"role":"compare","headline":"...","left":{"label":"...","value":"..."},"right":{"label":"...","value":"..."}},{"role":"postcard","postText":"..."},{"role":"notes","headline":"...","lines":["...","..."]},{"role":"story","caption":"..."},{"role":"steps","headline":"...","steps":["...","...","..."]}${evidenceFiles.length ? ',{"role":"evidence","proofFile":"one exact supplied file token","sourceLabel":"what this supplied proof is"}' : ""},{"role":"close","headline":"...","body":"..."}],"caption":"line 1\\nline 2","hashtags":["#a","#b","#c"]}`
     : `{"angle":"...","hook":"...","slides":[{"role":"static","headline":"...","body":"..."}],"caption":"line 1\\nline 2","hashtags":["#a","#b","#c"]}`;
   return [
     `You write one Instagram ${carousel ? "carousel" : "single-image post (a static)"} for ${client}${handle ? ` (${handle})` : ""}. It is published automatically, with no person reviewing it, so it must be right as written.`,
@@ -66,7 +66,7 @@ export function copyPrompt({ format, job, client, handle, guide, voice, recent =
     `- Write only in ${client}'s voice and only from their brand guide and voice notes below: their buyer, their words, their beliefs, their offer. Obey every rule in the guide's never-do list, word bank, proof and compliance rules, AI policy and CTA rules.`,
     "- Never invent a number, result, client, testimonial, quote, date or story. Use a real detail from the guide or say the idea without one.",
     carousel
-      ? `- ${slides[0]} to ${slides[1]} slides. Slide 1 is the cover (role "cover"): the hook, at most 8 words, a statement that stops the scroll. Then one idea per slide. Use role "point" for a headline of at most 10 words and a body of at most 28 words, "list" for a headline and 3 to 5 short items, "compare" for a headline and two short sides, "postcard" for one supplied social-style statement in postText, "notes" for a title and 2 to 6 short lines, or "story" for one documentary caption that only makes sense over a real client photo. The last slide (role "close") lands the one useful idea the reader keeps.`
+      ? `- ${slides[0]} to ${slides[1]} slides. Slide 1 is the cover (role "cover"): the hook, at most 8 words, a statement that stops the scroll. Then one idea per slide. Use role "point" for a headline of at most 10 words and a body of at most 28 words, "list" for a headline and 3 to 5 short items, "compare" for a headline and two short sides, "postcard" for one supplied social-style statement in postText, "notes" for a title and 2 to 6 short lines, "story" for one documentary caption that only makes sense over a real client photo, "steps" for a headline and 3 to 5 short steps, "stat" for one number that appears word for word in the brand guide with its source (fields number, headline, body, source), or "quote" for words that appear word for word in the brand guide or voice notes, said by ${client} (fields quote, by, context). Slide 2 must stand on its own and pull the reader forward with a consequence, a contradiction, a proof point or the first step; never a recap of slide 1. The last slide (role "close") lands the one useful idea the reader keeps.`
       : `- One slide (role "static"): a headline of at most 10 words and an optional body of at most 24 words. It has to work alone in the feed.`,
     evidenceFiles.length
       ? `- You may use role "evidence" only for a real proof screenshot the client supplied. proofFile must be one of these exact tokens, and sourceLabel must truthfully name it: ${evidenceFiles.join(", ")}. Never reconstruct proof.`
@@ -93,7 +93,14 @@ export function copyPrompt({ format, job, client, handle, guide, voice, recent =
 }
 
 /** Claude's reply, checked and cleaned. Throws with what is wrong (the caller asks once more). */
-export function parseCopy(text, { format, slides: range = [5, 8], evidenceFiles = [] } = {}) {
+/** Words and numbers on a post must come from the client's own files: a stat or quote not found there becomes a plain point. */
+export function inSource(value, source) {
+  const norm = (x) => String(x ?? "").toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[^a-z0-9%$.,' ]+/g, " ").replace(/\s+/g, " ").trim();
+  const needle = norm(value);
+  return Boolean(needle) && norm(source).includes(needle);
+}
+
+export function parseCopy(text, { format, slides: range = [5, 8], evidenceFiles = [], sourceText = "" } = {}) {
   const s = String(text);
   const a = s.indexOf("{"), b = s.lastIndexOf("}");
   if (a < 0 || b <= a) throw new Error("no JSON in the reply");
@@ -119,6 +126,17 @@ export function parseCopy(text, { format, slides: range = [5, 8], evidenceFiles 
       if (raw?.chapter) out.chapter = plainText(raw.chapter, { accent: false });
       delete out.body;
     }
+    if (role === "steps") out.steps = (Array.isArray(raw?.steps) ? raw.steps : Array.isArray(raw?.items) ? raw.items : []).map((x) => plainText(typeof x === "string" ? x : x?.text, { accent: false })).filter(Boolean).slice(0, 5);
+    if (role === "stat") {
+      out.number = oneLine(raw?.number);
+      out.source = plainText(raw?.source, { accent: false });
+    }
+    if (role === "quote") {
+      out.quote = plainText(raw?.quote || raw?.text, { accent: false });
+      out.by = plainText(raw?.by, { accent: false });
+      if (raw?.context) out.context = plainText(raw.context, { accent: false });
+      delete out.body;
+    }
     if (role === "evidence") {
       const asked = oneLine(raw?.proofFile || raw?.file || raw?.image || raw?.screenshot);
       const matches = evidenceFiles.filter((file) => file === asked || String(file).split(/[\\/]/).at(-1) === asked);
@@ -130,13 +148,18 @@ export function parseCopy(text, { format, slides: range = [5, 8], evidenceFiles 
     return out;
   });
   for (const [i, sl] of slides.entries()) {
-    if (!["postcard", "story", "evidence"].includes(sl.role) && !sl.headline) throw new Error(`slide ${i + 1} has no headline`);
+    if (!["postcard", "story", "evidence", "quote"].includes(sl.role) && !sl.headline) throw new Error(`slide ${i + 1} has no headline`);
     if (sl.role === "compare" && !(sl.left.value && sl.right.value)) sl.role = "point";
     if (sl.role === "list" && sl.items.length < 3) { sl.body = [sl.body, ...(sl.items || [])].filter(Boolean).join(". "); sl.role = "point"; delete sl.items; }
     if (sl.role === "postcard" && !sl.postText) throw new Error(`slide ${i + 1} postcard needs postText`);
     if (sl.role === "notes" && sl.lines.length < 2) throw new Error(`slide ${i + 1} notes needs at least 2 lines`);
     if (sl.role === "story" && !sl.caption) throw new Error(`slide ${i + 1} story needs a caption`);
     if (sl.role === "evidence" && !sl.sourceLabel) throw new Error(`slide ${i + 1} evidence needs a sourceLabel`);
+    if (sl.role === "steps" && sl.steps.length < 3) { sl.body = [sl.body, ...(sl.steps || [])].filter(Boolean).join(". "); sl.role = "point"; delete sl.steps; }
+    // Nothing invented: a stat needs its number and source in the client's own guide, a quote its exact words there.
+    if (sl.role === "stat" && !(sl.number && sl.source && inSource(sl.number, sourceText) && inSource(sl.source, sourceText))) { sl.role = "point"; delete sl.number; delete sl.source; }
+    if (sl.role === "quote" && !(sl.quote && sl.by && inSource(sl.quote, sourceText))) { sl.role = "point"; sl.headline = sl.headline || sl.quote; delete sl.quote; delete sl.by; delete sl.context; }
+    if (sl.role === "point" && !sl.headline) throw new Error(`slide ${i + 1} has no headline`);
   }
   let list = slides;
   if (format === "static") list = [{ ...slides[0], role: "static" }];
@@ -203,6 +226,9 @@ export function buildSpec(copy, photos = [], { format, outDir }) {
       return { kind: "story", photo, focalPoint, caption: s.caption, ...(s.chapter ? { chapter: s.chapter } : {}) };
     }
     if (s.role === "evidence") return { kind: "evidence", image: s.evidenceFile, sourceLabel: s.sourceLabel };
+    if (s.role === "stat") return { kind: "stat", number: s.number, headline: s.headline, ...(body ? { sub: body } : {}), source: s.source };
+    if (s.role === "steps") return { kind: "steps", headline: s.headline, steps: s.steps };
+    if (s.role === "quote") return { kind: "quote", quote: s.quote, by: s.by, ...(s.context ? { context: s.context } : {}) };
     // A point or the close: under its photo when it has one, as type when not.
     if (photo) return { kind: "photosplit", headline: s.headline, ...(body ? { sub: body } : {}), photo, split: body.length > 60 ? 700 : 860, pos };
     return s.role === "close" ? { kind: "cta", headline: s.headline, ...(body ? { sub: body } : {}) } : { kind: "body", headline: s.headline, ...(body ? { sub: body } : {}) };
