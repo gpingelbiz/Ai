@@ -293,6 +293,11 @@ export async function makePost(studio, slot, { posts, connectors = {}, deps = {}
     }
   }
   if (preflight.verdict !== "schedule") return holdResult(studio, slot, id, preflight, copy.hook);
+  // Grid check (2026-10-30 looks research): the new first tile at Instagram's 3:4 profile crop against the client's
+  // last 11 posts. One repair (another layout or a recrop), then hold: a samey or cut-off grid never goes out.
+  const grid = await gridGate({ pngs, spec, posts, workDir, brand: studio.tokens, check, deps });
+  if (grid.verdict !== "schedule") return holdResult(studio, slot, id, grid.preflight || repairFailure(`grid check: ${grid.notes.join("; ")}`, grid.pngs || pngs), copy.hook);
+  if (grid.pngs) { pngs = grid.pngs; spec = grid.spec; preflight = grid.preflight; }
   photos = bySlide.filter(Boolean);
   const altText = buildAltText(spec, bySlide);
   if (altText.length !== pngs.length || altText.some((text) => !text)) return holdResult(studio, slot, id, repairFailure("one alt-text entry per rendered slide could not be built", pngs), copy.hook);
@@ -321,6 +326,51 @@ export async function makePost(studio, slot, { posts, connectors = {}, deps = {}
   logPost(studio.paths, record);
   studioLog(studio.paths, `made ${id}: ${job.name}, "${copy.hook}", ${files.length} slide(s), ${photos.length} photo(s)${aiSlides.length ? `, ${aiSlides.length} AI` : ""}; photo pool ${pool?.usable?.length ?? "?"} unused${pool?.skipped?.length ? ` (${skipSummary(pool.skipped)} skipped)` : ""}`);
   return record;
+}
+
+/** The client's last tiles, newest first: the first image of every made post that still exists on disk. */
+export function recentTiles(posts = [], limit = 11) {
+  return posts
+    .filter((post) => Array.isArray(post?.files) && post.files[0] && fs.existsSync(post.files[0]))
+    .sort((a, b) => `${b.day} ${b.time}`.localeCompare(`${a.day} ${a.time}`))
+    .slice(0, limit)
+    .map((post) => post.files[0]);
+}
+
+// A cover that repeats the last three tiles gets one other layout from the same family set (same fields).
+const GRID_RELAYOUT = { "cover-top": "cover-list", "cover-list": "cover-top", "cover-card": "cover-list" };
+
+/** One relayout or recrop of the first slide, or null when this kind has no safe alternative. */
+export function gridRepair(spec, fix) {
+  const first = spec?.slides?.[0];
+  if (!first) return null;
+  const next = { ...spec, slides: spec.slides.map((slide, index) => (index === 0 ? { ...slide } : slide)) };
+  if (fix === "recrop") { next.slides[0].pos = "auto"; return next; }
+  if (GRID_RELAYOUT[first.kind]) { next.slides[0].kind = GRID_RELAYOUT[first.kind]; return next; }
+  if (["verdict", "script"].includes(first.kind)) { next.slides[0].light = !first.light; return next; }
+  return null;
+}
+
+export async function gridGate({ pngs, spec, posts, workDir, brand, check, deps = {} }) {
+  const run = deps.gridCheck || (async (input) => (await import("./grid-check.mjs")).gridCheck(input));
+  const recentFiles = recentTiles(posts);
+  if (!recentFiles.length) return { verdict: "schedule", notes: ["no earlier posts to compare"] };
+  const first = await run({ newFile: pngs[0], recentFiles });
+  if (first.verdict === "schedule") return first;
+  const notes = (first.checks || []).filter((c) => c.verdict !== "schedule").flatMap((c) => c.notes || []);
+  if (first.verdict === "hold") return { verdict: "hold", notes };
+  const fix = (first.checks || []).find((c) => c.verdict === "retry")?.fix || "relayout";
+  const repaired = gridRepair(spec, fix);
+  if (!repaired) return { verdict: "hold", notes: [...notes, "no other layout for this kind"] };
+  repaired.outDir = path.join(workDir, "slides-grid");
+  writeJSON(path.join(workDir, "spec-grid.json"), repaired);
+  const { renderSlides } = await import("./slides.mjs");
+  const files = await (deps.renderSlides || renderSlides)(repaired, { brand, outDir: repaired.outDir });
+  const preflight = await check(files, repaired);
+  if (preflight.verdict !== "schedule") return { verdict: "hold", notes: [...notes, "the relayout did not pass the slide check"], preflight, pngs: files };
+  const second = await run({ newFile: files[0], recentFiles });
+  if (second.verdict !== "schedule") return { verdict: "hold", notes: [...notes, ...(second.checks || []).filter((c) => c.verdict !== "schedule").flatMap((c) => c.notes || [])], pngs: files };
+  return { verdict: "schedule", notes, pngs: files, spec: repaired, preflight };
 }
 
 function uniqueDir(p) {

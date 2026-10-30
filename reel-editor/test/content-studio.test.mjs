@@ -474,6 +474,7 @@ test("daily: a whole run with stubs: Made copy, ledger, log, draft gate, AI labe
     pickPhotos: false,
     renderSlides: async (spec, { outDir }) => { fs.mkdirSync(outDir, { recursive: true }); return spec.slides.map((s, i) => { const f = path.join(outDir, `${i + 1}.png`); fs.writeFileSync(f, `png ${s.kind}`); return f; }); },
     preflightSlides: async ({ files }) => ({ verdict: "schedule", slides: files.map((file, index) => ({ index, file, problems: [] })), photoHashes: [] }),
+    gridCheck: async () => ({ verdict: "schedule", checks: [] }),
     hostFiles: async (files) => ({ urls: files.map((f, i) => `https://host/${i}`), close: async () => {} }),
     createPost: async (connector, input) => { created.push({ connector, input, info: JSON.parse(input.info) }); return { plannerUrl: `https://app.metricool.com/planner/${created.length}`, id: created.length }; },
   };
@@ -507,6 +508,7 @@ test("daily: a failed schedule leaves the post in Made and the next run sends it
     choosePhotos: async (s, copy) => ({ bySlide: copy.slides.map(() => null), vetoed: [] }),
     renderSlides: async (spec, { outDir }) => { fs.mkdirSync(outDir, { recursive: true }); const f = path.join(outDir, "1.png"); fs.writeFileSync(f, "png"); return [f]; },
     preflightSlides: async ({ files }) => ({ verdict: "schedule", slides: files.map((file, index) => ({ index, file, problems: [] })), photoHashes: [] }),
+    gridCheck: async () => ({ verdict: "schedule", checks: [] }),
     hostFiles: async () => ({ urls: ["u"], close: async () => {} }),
     createPost: async () => { if (fail) throw new Error("Metricool is down"); return { plannerUrl: "p", id: 1 }; },
   };
