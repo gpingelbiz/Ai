@@ -12,11 +12,16 @@ import {
   expectedSlideText,
   faceOverlapRatio,
   hammingDistance,
+  kindOf,
   lintSlideCopy,
   matchExpectedText,
   preflightSlides,
+  slide2LayoutProblems,
+  textPositionClass,
   textTokens,
   verdictForProblems,
+  wordBudgetProblems,
+  wordCount,
 } from "../src/preflight.mjs";
 
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join("test", "fixtures", "preflight", name), "utf8"));
@@ -30,6 +35,37 @@ test("slide preflight builds only painted spec and brand text, including the foo
   const compare = expectedSlideText({ kind: "compare", title: "Choose", left: { label: "Before", value: "Six calls" }, right: { label: "After", value: "15 calls", note: "Qualified" }, decisionLine: "Do the math" }, brand);
   assert.deepEqual(compare.map((part) => part.text), ["Choose", "Before", "Six calls", "After", "15 calls", "Qualified", "Do the math", "@officialgregpingel"]);
   assert.equal(expectedSlideText({ kind: "evidence", sourceLabel: "Supplied source" }, brand).some((part) => part.role === "handle"), false);
+});
+
+test("new shared kinds expose exactly their painted copy and critical headline fields", () => {
+  const handle = { identity: { handle: "@brand" } };
+  const compare = expectedSlideText({ kind: "cover-compare", headline: "Choose", left: { label: "Old", text: "More calls" }, right: { label: "Decision", text: "Better calls" } }, handle);
+  assert.deepEqual(compare.map((part) => [part.role, part.text, part.critical]), [
+    ["headline", "Choose", true], ["compare-label", "Old", false], ["compare-value", "More calls", false],
+    ["compare-label", "Decision", false], ["compare-value", "Better calls", false], ["handle", "@brand", true],
+  ]);
+  assert.deepEqual(expectedSlideText({ kind: "cover-doc", photo: "real.png" }, handle).map((part) => part.text), ["@brand"]);
+  assert.ok(expectedSlideText({ kind: "note", label: "NOTE", text: "Keep the line simple" }, handle).find((part) => part.text === "Keep the line simple")?.critical);
+  assert.deepEqual(expectedSlideText({ kind: "script", headline: "Do not chase the answer", say: "Give me the exact next step instead" }, handle).map((part) => part.role), ["headline", "say", "handle"]);
+  assert.equal(kindOf({ kind: " Cover-Top " }), "cover-top");
+});
+
+test("word budgets name the slide and field, ignore emphasis markers, and use retry fixes", () => {
+  assert.equal(wordCount("One *gold* word"), 3);
+  assert.equal(wordBudgetProblems({ kind: "verdict", headline: "one two three four five six seven eight nine ten eleven" }, { index: 1 }).length, 0);
+  const verdict = wordBudgetProblems({ kind: "verdict", headline: "one two three four five six seven eight nine ten eleven twelve" }, { index: 1 });
+  assert.deepEqual(verdict.map((item) => [item.code, item.fix]), [["word-budget", "shorten"]]);
+  assert.match(verdict[0].message, /slide 1 total copy/);
+  const middle = wordBudgetProblems({ kind: "body", headline: "Short", sub: Array(25).fill("word").join(" ") }, { index: 2 });
+  assert.ok(middle.some((item) => item.code === "word-budget-sub" && /slide 2 sub/.test(item.message)));
+  assert.ok(wordBudgetProblems({ kind: "steps", steps: [Array(11).fill("word").join(" ")] }, { index: 2 }).some((item) => /steps\[0\]/.test(item.message)));
+  assert.ok(wordBudgetProblems({ kind: "checklist", items: Array(7).fill("item") }, { index: 2 }).some((item) => item.code === "word-budget-checklist"));
+});
+
+test("slide 2 retries only when its text-position class repeats slide 1", () => {
+  assert.equal(textPositionClass({ kind: "cover-top" }), "top");
+  assert.deepEqual(slide2LayoutProblems([{ kind: "photo" }, { kind: "photosplit" }]).map((item) => [item.fix, item.first]), [["relayout", "low"]]);
+  assert.deepEqual(slide2LayoutProblems([{ kind: "cover-top" }, { kind: "note" }]), []);
 });
 
 test("OCR matching normalizes punctuation, permits one long-word slip, but keeps numbers and handles critical", () => {
@@ -109,7 +145,8 @@ function paintContrastPng(file, lines) {
 }
 
 test("the November 2 seven-slide fixture passes, and losing slide 4's handle returns retry naming slide 4", async (t) => {
-  const spec = fixture("greg-2026-11-02.json"), ocrResults = fixture("greg-2026-11-02-ocr.json");
+  const spec = structuredClone(fixture("greg-2026-11-02.json")), ocrResults = fixture("greg-2026-11-02-ocr.json");
+  spec.slides[1].kind = "phototop";
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-slide-preflight-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const files = ocrResults.map((ocr, index) => {
@@ -121,6 +158,7 @@ test("the November 2 seven-slide fixture passes, and losing slide 4's handle ret
   const options = { ocrResults, hashPhoto: async () => (++photo).toString(16).padStart(16, "0") };
   const pass = await preflightSlides({ spec, files, brand, options });
   assert.equal(pass.verdict, "schedule", JSON.stringify(pass.slides, null, 2));
+  assert.deepEqual(pass.checks.map((check) => [check.code, check.verdict]), [["word-budget", "schedule"], ["slide-2-layout", "schedule"]]);
   assert.equal(pass.photoHashes.length, 7);
   assert.ok(pass.slides.every((slide) => slide.problems.length === 0));
 

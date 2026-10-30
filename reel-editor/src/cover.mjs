@@ -9,6 +9,7 @@ import { log, warn, run, ensureDir, readJSON, writeJSON, PKG_ROOT, fontFile } fr
 import { resolveBrandTokens, tokensCSS } from "./brandtokens.mjs";
 import { detectFaces, headBoxFor } from "./placement.mjs";
 import { signatureRulesCSS, signatureHTML } from "./signature.mjs";
+import { profileCrop } from "./profile-crop.mjs";
 
 const GREG_HANDLE = "@officialgregpingel";
 const POWER = ["broke", "kills", "costs", "cost", "quit", "lies", "lie", "wrong", "nobody", "expensive", "losing", "lose", "weak", "rich", "pay", "beg", "every", "never", "stop", "fire", "fired", "blame", "own", "truth", "late", "dead", "fail", "failed"];
@@ -338,14 +339,15 @@ function fitPhoto({ panel, focal, source = { width: 1080, height: 1920 }, contai
   return { image, faceBox: mapBox(focal), mapBox };
 }
 
-function chooseTitleBox({ W, H, faceBox, height, prefer = "bottom", wide = false, margin }) {
+function chooseTitleBox({ W, H, faceBox, height, prefer = "bottom", wide = false, margin, bounds = null }) {
   const gap = Math.max(16, margin * 0.3), fullW = W - 2 * margin;
+  const top = (bounds?.y || 0) + margin, bottom = (bounds ? bounds.y + bounds.h : H) - margin;
   const candidates = wide ? [
-    { x: margin, y: margin, w: W * 0.4 - margin * 1.5, h: H - 2 * margin },
-    { x: W * 0.6 + margin * 0.5, y: margin, w: W * 0.4 - margin * 1.5, h: H - 2 * margin },
+    { x: margin, y: top, w: W * 0.4 - margin * 1.5, h: bottom - top },
+    { x: W * 0.6 + margin * 0.5, y: top, w: W * 0.4 - margin * 1.5, h: bottom - top },
   ] : [
-    { x: margin, y: H - margin - height, w: fullW, h: height, at: "bottom" },
-    { x: margin, y: margin, w: fullW, h: height, at: "top" },
+    { x: margin, y: bottom - height, w: fullW, h: height, at: "bottom" },
+    { x: margin, y: top, w: fullW, h: height, at: "top" },
   ];
   if (prefer === "top" && !wide) candidates.reverse();
   return candidates.find((box) => !overlap(box, faceBox, gap)) || candidates[0];
@@ -357,6 +359,7 @@ export function coverLayout({ template = "native-premise", target: targetSpec = 
   const tokens = resolveBrandTokens({ brand });
   const margin = Math.max(Math.round(tokens.spacing.xl * W / 1080), Math.round(W * 0.071));
   const wide = W / H > 1.2;
+  const profileBounds = t.id === "reel" ? profileCrop(W, H) : null;
   let panel = { x: 0, y: 0, w: W, h: H };
   if (wide && template === "proof-reaction") panel = { x: Math.round(W * 0.56), y: 0, w: Math.round(W * 0.44), h: H };
   const sourceFocal = unionBox((faces || []).length > 1 && template === "interview" ? faces : [face].filter(Boolean)) || face;
@@ -367,20 +370,21 @@ export function coverLayout({ template = "native-premise", target: targetSpec = 
   const avoidBox = photo.mapBox(head) || photo.faceBox;
   const typeBase = Number(tokens.typeScale.display || 112) * (wide ? 1.15 : 1);
   const desiredH = template === "editorial" ? Math.min(H * 0.42, typeBase * 4.4) : Math.min(H * 0.34, typeBase * 3.5);
-  let titleBox = chooseTitleBox({ W, H, faceBox: avoidBox, height: desiredH, prefer: template === "editorial" ? "top" : "bottom", wide, margin });
+  let titleBox = chooseTitleBox({ W, H, faceBox: avoidBox, height: desiredH, prefer: template === "editorial" ? "top" : "bottom", wide, margin, bounds: profileBounds });
   let proofBox = null;
-  if (template === "interview") titleBox = chooseTitleBox({ W, H, faceBox: avoidBox, height: Math.min(H * 0.25, desiredH), prefer: "bottom", wide: false, margin });
+  if (template === "interview") titleBox = chooseTitleBox({ W, H, faceBox: avoidBox, height: Math.min(H * 0.25, desiredH), prefer: "bottom", wide: false, margin, bounds: profileBounds });
   if (template === "proof-reaction") {
     proofBox = wide
       ? { x: margin, y: margin, w: Math.round(W * 0.5) - margin * 1.4, h: H - 2 * margin }
-      : chooseTitleBox({ W, H, faceBox: avoidBox, height: Math.min(H * 0.48, desiredH * 1.5), prefer: "top", wide: false, margin });
+      : chooseTitleBox({ W, H, faceBox: avoidBox, height: Math.min(H * 0.48, desiredH * 1.5), prefer: "top", wide: false, margin, bounds: profileBounds });
     titleBox = { ...proofBox };
   }
   if (avoidBox && overlap(titleBox, avoidBox, Math.max(16, margin * 0.3))) {
     const gap = Math.max(16, margin * 0.3), fullW = W - 2 * margin;
+    const safeTop = (profileBounds?.y || 0) + margin, safeBottom = (profileBounds ? profileBounds.y + profileBounds.h : H) - margin;
     const clear = [
-      { x: margin, y: margin, w: fullW, h: avoidBox.y - gap - margin },
-      { x: margin, y: avoidBox.y + avoidBox.h + gap, w: fullW, h: H - margin - avoidBox.y - avoidBox.h - gap },
+      { x: margin, y: safeTop, w: fullW, h: avoidBox.y - gap - safeTop },
+      { x: margin, y: avoidBox.y + avoidBox.h + gap, w: fullW, h: safeBottom - avoidBox.y - avoidBox.h - gap },
     ].filter((box) => box.h >= Math.max(180, H * 0.18)).sort((a, b) => b.h - a.h)[0];
     if (clear) { titleBox = clear; if (template === "proof-reaction") proofBox = clear; }
   }
@@ -394,10 +398,11 @@ export function coverLayout({ template = "native-premise", target: targetSpec = 
 }
 
 /** Automated target check: title and detected face must remain wholly inside the delivered bitmap. */
-export function checkCropBounds({ target: targetSpec, titleBox, faceBox }) {
-  const t = target(targetSpec), issues = [];
-  if (!inside(titleBox, t.width, t.height)) issues.push("title outside crop");
-  if (faceBox && !inside(faceBox, t.width, t.height)) issues.push("face outside crop");
+export function checkCropBounds({ target: targetSpec, titleBox, faceBox, cropRect = null }) {
+  const t = target(targetSpec), crop = cropRect || { x: 0, y: 0, w: t.width, h: t.height }, issues = [];
+  const inCrop = (box) => !!box && box.x >= crop.x && box.y >= crop.y && box.x + box.w <= crop.x + crop.w && box.y + box.h <= crop.y + crop.h;
+  if (!inCrop(titleBox)) issues.push("title outside crop");
+  if (faceBox && !inCrop(faceBox)) issues.push("face outside crop");
   if (titleBox && faceBox && overlap(titleBox, faceBox, Math.round(t.width * 0.012))) issues.push("title overlaps face");
   return { ok: issues.length === 0, issues, target: t.id };
 }
@@ -522,9 +527,12 @@ function targetsFor(plan) {
 async function renderArchetypeTargets(dir, variant, { tokens, proof, targets = COVER_TARGETS }) {
   const outDir = ensureDir(path.join(dir, variant.variantId));
   const outputs = {};
+  const reelLayout = coverLayout({ template: variant.template, target: "reel", face: variant.face, head: variant.head, faces: variant.faces, brand: tokens, title: variant.title });
+  const profileCheck = checkCropBounds({ target: "reel", titleBox: reelLayout.titleBox, faceBox: reelLayout.faceBox, cropRect: profileCrop(1080, 1920) });
+  if (!profileCheck.ok) throw new Error(`grid-3x4 from reel: ${profileCheck.issues.join(", ")}`);
   for (const targetSpec of targets) {
     const layout = coverLayout({ template: variant.template, target: targetSpec, face: variant.face, head: variant.head, faces: variant.faces, brand: tokens, title: variant.title });
-    const check = checkCropBounds({ target: targetSpec, titleBox: layout.titleBox, faceBox: layout.faceBox });
+    const check = targetSpec.id === "grid-3x4" ? { ok: true, issues: [] } : checkCropBounds({ target: targetSpec, titleBox: layout.titleBox, faceBox: layout.faceBox });
     if (!check.ok) throw new Error(`${targetSpec.id}: ${check.issues.join(", ")}`);
     const project = ensureDir(path.join(outDir, `${targetSpec.id}-project`));
     const link = path.join(project, "assets");
@@ -548,7 +556,7 @@ async function gridPreview(workDir, current, entry, brand) {
   const file = historyPath(workDir);
   let history = [];
   try { history = readJSON(file).history || []; } catch {}
-  const prior = history.map((item) => item.grid).filter((item) => item && fs.existsSync(item)).slice(-8);
+  const prior = history.map((item) => item.source || item.grid).filter((item) => item && fs.existsSync(item)).slice(-8);
   const images = [current, ...prior.reverse()].slice(0, 9);
   const args = ["-y", "-loglevel", "error"];
   for (const image of images) args.push("-i", image);
@@ -558,7 +566,7 @@ async function gridPreview(workDir, current, entry, brand) {
   const preview = path.join(workDir, "covers", "grid-preview.png");
   args.push("-filter_complex", filters.join(";"), "-map", "[out]", "-frames:v", "1", preview);
   await run("ffmpeg", args, { quiet: true });
-  history.push({ ...entry, grid: path.resolve(current) });
+  history.push({ ...entry, source: path.resolve(current) });
   writeJSON(file, { history: history.slice(-30) });
   return preview;
 }
@@ -627,7 +635,7 @@ export async function makeCover(workDir, plan, { handle = "", variants = 3, voic
   const targetIds = coverTargets.map((item) => item.id);
   const manifest = makeCoverManifest({ ...built[0], targets: targetIds, focalBox: built[0].face, brand: tokens, variants: built.map((item) => makeCoverManifest({ ...item, targets: targetIds, focalBox: item.face, brand: tokens })) });
   writeJSON(path.join(dir, "manifest.json"), manifest);
-  try { if (plan.style?.cover?.gridPreview !== false && built[0].outputs["grid-3x4"]) await gridPreview(workDir, built[0].outputs["grid-3x4"], { variantId: built[0].variantId, template: built[0].template }, tokens); }
+  try { if (plan.style?.cover?.gridPreview !== false) await gridPreview(workDir, built[0].outputs.reel, { variantId: built[0].variantId, template: built[0].template }, tokens); }
   catch (error) { warn(`cover grid preview: ${String(error.message).split("\n")[0]}; covers are still ready`); }
   plan.cover = { style: "archetypes", frameTimeMs: built[0].frameTimeMs, scores: built[0].scores, variantId: built[0].variantId };
   writeJSON(path.join(workDir, "plan.json"), plan);
@@ -662,7 +670,7 @@ export async function makeFrameCover(workDir, output, plan, selection) {
   fs.copyFileSync(outputs.reel, path.join(workDir, "cover.png"));
   const manifest = makeCoverManifest({ variantId: "frame-v1", template: "frame", frameTimeMs: selection.frameTimeMs, title: plan.hook?.text || "", targets: coverTargets.map((item) => item.id), focalBox: selection.face, brand: plan.style.brand, scores: selection.scores });
   writeJSON(path.join(dir, "manifest.json"), manifest);
-  try { if (plan.style?.cover?.gridPreview !== false && outputs["grid-3x4"]) await gridPreview(workDir, outputs["grid-3x4"], { variantId: "frame-v1", template: "frame" }, plan.style.brand); }
+  try { if (plan.style?.cover?.gridPreview !== false) await gridPreview(workDir, outputs.reel, { variantId: "frame-v1", template: "frame" }, plan.style.brand); }
   catch (error) { warn(`cover grid preview: ${String(error.message).split("\n")[0]}; frame cover is still ready`); }
   log(`cover: scored frame ${selection.frameTimeMs}ms → ${png}`);
   return [png];

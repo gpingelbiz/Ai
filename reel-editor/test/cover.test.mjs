@@ -6,6 +6,7 @@ import {
   scoreFrameCandidates, titleFits, titlePrompt,
 } from "../src/cover.mjs";
 import { loadPreset } from "../src/presets.mjs";
+import { profileCrop } from "../src/grid-check.mjs";
 
 const GREG = loadPreset("pingel-v2").brand;
 const CALM = structuredClone(GREG);
@@ -64,8 +65,17 @@ test("all five archetypes keep title and face inside every delivered crop", () =
   for (const template of ARCHETYPES) for (const target of COVER_TARGETS) {
     const layout = coverLayout({ template, target, face, faces: [face], title: "Own the number before it owns you", brand: GREG });
     assert.deepEqual(checkCropBounds({ target, titleBox: layout.titleBox, faceBox: layout.faceBox }).issues, [], `${template}/${target.id}`);
+    if (target.id === "reel") assert.deepEqual(checkCropBounds({ target, titleBox: layout.titleBox, faceBox: layout.faceBox, cropRect: profileCrop(target.width, target.height) }).issues, [], `${template}/reel-center-crop`);
     assert.ok(layout.fontPx >= 48, `${template}/${target.id} title too small`);
   }
+});
+
+test("3:4 cover validation checks the center crop of the reel geometry", () => {
+  const crop = profileCrop(1080, 1920);
+  const safe = checkCropBounds({ target: "reel", cropRect: crop, titleBox: { x: 72, y: 300, w: 500, h: 220 }, faceBox: { x: 650, y: 600, w: 300, h: 500 } });
+  assert.equal(safe.ok, true);
+  const clipped = checkCropBounds({ target: "reel", cropRect: crop, titleBox: { x: 72, y: 100, w: 500, h: 220 }, faceBox: null });
+  assert.deepEqual(clipped.issues, ["title outside crop"]);
 });
 
 test("archetype templates use brand variables, escape copy, and carry the brand signature in its slot", () => {
