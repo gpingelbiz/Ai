@@ -445,7 +445,7 @@ function slideRules() {
     .accent { color: var(--slide-accent-text, var(--brand-accent)); }
     .slide-label { position: relative; z-index: 3; color: var(--slide-accent-small, var(--slide-accent-text, var(--brand-accent))); font-size: var(--type-sm); font-weight: 600; letter-spacing: .06em; text-transform: var(--brand-body-case); }
     .slide-label::before { content: ""; display: block; width: calc(var(--space-xl) + var(--space-xs)); height: var(--space-xs); margin-bottom: var(--space-md); background: var(--brand-accent); border-radius: var(--brand-radius-sm); }
-    .slide-handle { position: absolute; z-index: 5; left: var(--space-xxl); bottom: var(--space-xl); color: var(--brand-muted); font-size: var(--type-sm); font-weight: 600; }
+    .slide-handle { position: absolute; z-index: 5; left: var(--space-xxl); bottom: var(--space-xl); color: var(--slide-muted-small, var(--brand-muted)); font-size: var(--type-sm); font-weight: 600; }
     .legacy-main { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: center; }
     .legacy-head, .family-main h1 { margin: 0; font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); line-height: var(--brand-display-line-height); letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); }
     .type-balance .legacy-head:not([data-explicit-break="1"]), .type-balance .family-main h1:not([data-explicit-break="1"]) { text-wrap: balance; }

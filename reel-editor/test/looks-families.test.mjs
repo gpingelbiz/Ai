@@ -202,3 +202,28 @@ test("light slides set a pale accent as ink on a true-accent highlight; a dark a
   assert.doesNotMatch(slideHTML(note, dark, { fitScript: false }), /<section class="[^"]*has-chip/);
   assert.doesNotMatch(slideHTML({ kind: "verdict", headline: "Dark *verdict*" }, pale, { fitScript: false }), /<section class="[^"]*has-chip/, "dark slides keep the plain accent");
 });
+
+test("dry run 2 fixes: long high-face covers take a side card, a type-only cover before a centred slide 2 becomes a note, quotes get alt text", async () => {
+  const { buildSpec, buildAltText } = await import("../src/studio-copy.mjs");
+  const { gridRepair } = await import("../src/daily.mjs");
+  const highLeft = { export: "/tmp/a.jpg", faces: [{ x: 0.1, y: 0.2, w: 0.3, h: 0.25 }] };
+  const nine = "The one habit that keeps members renewing every single month";
+  const card = buildSpec({ slides: [{ role: "cover-top", headline: nine, sub: "Short sub" }] }, [highLeft], { format: "carousel", outDir: "/tmp/x" }).slides[0];
+  assert.equal(card.kind, "cover-card");
+  assert.equal(card.side, "right", "the card goes opposite the face");
+  assert.equal(gridRepair({ slides: [{ kind: "cover-top", headline: nine }] }, "relayout"), null, "a 9 word headline never relayouts into cover-list");
+
+  const copy = { slides: [
+    { role: "cover-top", headline: "The Sale You Lost With *One Extra Sentence*", sub: "A simple fix for women who over explain." },
+    { role: "compare", headline: "Explaining is not closing", left: { label: "Now", value: "Explain twice" }, right: { label: "Better", value: "Say it once" } },
+  ] };
+  const spec = buildSpec(copy, [null, null], { format: "carousel", outDir: "/tmp/x" });
+  assert.equal(spec.slides[0].kind, "note");
+  assert.equal(spec.slides[0].text, "The Sale You Lost With *One Extra Sentence*. A simple fix for women who over explain.");
+  const photoNext = buildSpec({ slides: [copy.slides[0], { role: "point", headline: "Say it once", body: "Then stop." }] }, [null, { export: "/tmp/b.jpg" }], { format: "carousel", outDir: "/tmp/x" });
+  assert.equal(photoNext.slides[0].kind, "cover", "a photo slide 2 already differs, so the cover stays");
+
+  const alt = buildAltText({ slides: [{ kind: "quote", quote: "What If I Did?", by: "Julee Gracey", context: "before hitting post" }, { kind: "stat", number: "72%", headline: "Renew", source: "Guide" }] });
+  assert.match(alt[0], /What If I Did\?/);
+  assert.match(alt[1], /72%/);
+});

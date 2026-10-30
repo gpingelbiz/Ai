@@ -18,7 +18,7 @@ The checklist for turning a signed client into a Content Studio that posts for t
 ## What you do
 
 1. **Write the brand guide** from the interview (pingel-hq `brand-guide-builder`), then build their kit:
-   `node scripts/brand-kit.mjs --studio <their brand-guide.md>` gives you `<Name> Content Studio Kit.zip`.
+   `node scripts/brand-kit.mjs <their brand.json> --studio <their brand-guide.md>` gives you `<Name> Content Studio Kit.zip`.
 2. **Send the zip.** The client unzips it and double-clicks `Install Content Studio.command`, with you on a call. It takes about 15 minutes. It asks for:
    - their photo folder;
    - which Metricool brand to post to;

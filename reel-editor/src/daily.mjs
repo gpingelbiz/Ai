@@ -346,7 +346,8 @@ export function gridRepair(spec, fix) {
   if (!first) return null;
   const next = { ...spec, slides: spec.slides.map((slide, index) => (index === 0 ? { ...slide } : slide)) };
   if (fix === "recrop") { next.slides[0].pos = "auto"; return next; }
-  if (GRID_RELAYOUT[first.kind]) { next.slides[0].kind = GRID_RELAYOUT[first.kind]; return next; }
+  const listFits = String(first.headline || "").replace(/\*/g, "").split(/\s+/).filter(Boolean).length <= 8;
+  if (GRID_RELAYOUT[first.kind] && (GRID_RELAYOUT[first.kind] !== "cover-list" || listFits)) { next.slides[0].kind = GRID_RELAYOUT[first.kind]; return next; }
   if (["verdict", "script"].includes(first.kind)) { next.slides[0].light = !first.light; return next; }
   return null;
 }
