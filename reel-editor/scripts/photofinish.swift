@@ -245,7 +245,12 @@ finished = addGrain(finished, strength: grain, seed: seedForFile(input))
 let after = stats(finished, faceBoxes: before.faceBoxes)
 var reasons: [String] = []
 if after.clippedFraction - before.clippedFraction > 0.005 { reasons.append("clipped pixels rose by more than 0.5%") }
-if let face = after.faceLuma, face < 0.34 || face > 0.68 { reasons.append("face luma left the safe 0.34 to 0.68 band") }
+// A face that ends outside 0.34 to 0.68 is a reject only when the finish moved it further out (or out of the band);
+// a dark face lifted part of the way toward the band is an improvement, not a failure (2026-10-30 real-photo test).
+func bandDistance(_ v: Double) -> Double { v < 0.34 ? 0.34 - v : (v > 0.68 ? v - 0.68 : 0) }
+if let face = after.faceLuma, bandDistance(face) > 0, bandDistance(face) >= bandDistance(before.faceLuma ?? face) - 0.005 {
+  reasons.append("face luma left the safe 0.34 to 0.68 band")
+}
 let rejected = !reasons.isEmpty
 writeJPEG(rejected ? source : finished, to: output)
 
