@@ -366,7 +366,7 @@ export function finishFilter(stats, options = {}) {
       const maxKelvin = clamp(Number(options.maxKelvin ?? 300), 0, 2000);
       const kelvin = clamp((delta / 0.1) * maxKelvin, -maxKelvin, maxKelvin);
       const balance = kelvin / 7500;
-      filters.push(`colorbalance=rm=${short(-balance)}:bm=${short(balance)}:pl=1`);
+      filters.push(`colorbalance=rm=${short(-balance)}:bm=${short(balance)}`); // no pl=1: preserving lightness posterised saturated neon on real footage (2026-10-30 test)
     }
   }
 

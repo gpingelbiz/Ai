@@ -36,13 +36,13 @@ test("finishFilter does not darken bright footage", () => {
 
 test("finishFilter cools warm footage and reduces excess saturation", () => {
   const chain = finishFilter({ luma: 0.388, contrast: 0.238, saturation: 0.48, warmth: 0.16, sharpness: 0.08 }, options);
-  assert.match(chain, /colorbalance=rm=-0\.04:bm=0\.04:pl=1/);
+  assert.match(chain, /colorbalance=rm=-0\.04:bm=0\.04/);
   assert.match(chain, /hue=s=0\.94/);
 });
 
 test("finishFilter warms a cool clip without boosting low saturation", () => {
   const chain = finishFilter({ luma: 0.388, contrast: 0.238, saturation: 0.25, warmth: -0.07, sharpness: 0.08 }, options);
-  assert.match(chain, /colorbalance=rm=0\.04:bm=-0\.04:pl=1/);
+  assert.match(chain, /colorbalance=rm=0\.04:bm=-0\.04/);
   assert.doesNotMatch(chain, /hue=s=/);
 });
 
@@ -53,7 +53,7 @@ test("finishFilter leaves already-good tone and colour near identity", () => {
 
 test("lane 6 Greg medians produce the bounded corrective chain", () => {
   const chain = finishFilter({ luma: 0.307, contrast: 0.179, saturation: 0.455, warmth: 0.128 }, options);
-  assert.equal(chain, "curves=all='0/0 0.18/0.1831 0.5/0.5372 0.82/0.8608 1/1',colorbalance=rm=-0.0392:bm=0.0392:pl=1,hue=s=0.94,hqdn3d=0.8:0.6:3:2.5");
+  assert.equal(chain, "curves=all='0/0 0.18/0.1831 0.5/0.5372 0.82/0.8608 1/1',colorbalance=rm=-0.0392:bm=0.0392,hue=s=0.94,hqdn3d=0.8:0.6:3:2.5");
 });
 
 test("finishFilter uses no GPL eq filter", () => {
