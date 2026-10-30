@@ -46,6 +46,8 @@ Usage
                                     Apple Vision aesthetics, utility, face count, sharpness and luma for photo picking
   reel preflight <spec.json> [--dir <png dir>] [--brand <brand.json|preset>] [--history <file.json>] [--json]
                                     fail-closed rendered-slide checks; exits 0 only when the verdict is schedule
+  reel grid-check --new <png> --recent <png>... [--json]
+                                    check the real Instagram 3:4 crop and reject a fourth near-identical grid tile
   reel photos | daily | studio ...  the Content Studio (a client's folder that makes and schedules their posts):
                                     reel studio help for the commands
   reel brand [preset|brand.json] [--css] [--check]
@@ -377,6 +379,20 @@ export async function main(argv) {
       if (opts.json) console.log(JSON.stringify(result, null, 2));
       else {
         for (const slide of result.slides) for (const item of slide.problems) console.log(`slide ${slide.index}: ${item.code}: ${item.message}`);
+        console.log(`verdict: ${result.verdict}`);
+      }
+      if (result.verdict !== "schedule") process.exitCode = 1;
+      return;
+    }
+    case "grid-check": {
+      const { opts, positionals } = parse(rest, { new: { type: "string" }, recent: { type: "string", multiple: true }, json: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !opts.new) return console.log(USAGE);
+      const { gridCheck } = await import("./grid-check.mjs");
+      const result = await gridCheck({ newFile: path.resolve(opts.new), recentFiles: [...(opts.recent || []), ...positionals].map((file) => path.resolve(file)) });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        for (const check of result.checks) for (const note of check.notes || []) console.log(`${check.code}: ${check.verdict}: ${note}`);
+        for (const note of result.notes || []) console.log(`note: ${note}`);
         console.log(`verdict: ${result.verdict}`);
       }
       if (result.verdict !== "schedule") process.exitCode = 1;
