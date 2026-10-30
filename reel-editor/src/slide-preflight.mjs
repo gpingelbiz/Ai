@@ -126,8 +126,13 @@ export function editDistance(a, b) {
   return prior[right.length];
 }
 
+// A lone capital I is one vertical stroke: Vision reads it as l or 1, drops it as "|", or glues it to the next word
+// ("I open" reads "l'open"). Those readings count, and the pronoun alone never holds a slide (2026-10-30 dry run).
+const LONE_I = ["i", "l", "1"];
+
 function tokenMatches(expected, actual) {
   if (expected === actual) return true;
+  if (expected === "i" && LONE_I.includes(actual)) return true;
   return expected.length >= 5 && /^[\p{L}]+$/u.test(expected) && /^[\p{L}]+$/u.test(actual) && editDistance(expected, actual) <= 1;
 }
 
@@ -142,8 +147,10 @@ export function matchExpectedText(parts, ocr) {
     if (found >= 0) { used.add(found); matches.push({ ...item, ...actual[found] }); continue; }
     // OCR often runs two short words together ("WHAT I" reads "WHATI"): accept this word and the next as one OCR token.
     const next = expected[i + 1];
-    const joined = next ? actual.findIndex((candidate, index) => !used.has(index) && candidate.token === item.token + next.token) : -1;
+    const heads = item.token === "i" ? LONE_I : [item.token];
+    const joined = next ? actual.findIndex((candidate, index) => !used.has(index) && heads.some((head) => candidate.token === head + next.token)) : -1;
     if (joined >= 0) { used.add(joined); matches.push({ ...item, ...actual[joined] }, { ...next, ...actual[joined] }); i++; continue; }
+    if (item.token === "i") { matches.push({ ...item, inferred: true }); continue; }
     missing.push(item);
   }
   const lineConfidence = (ocr?.lines || []).map((line) => Number(line.confidence)).filter(Number.isFinite);

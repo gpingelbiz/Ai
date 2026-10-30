@@ -164,3 +164,73 @@ test("daily statics rotate all four families and never repeat the last one", () 
   assert.equal(pickStaticFamily(history), "verdict");
   assert.equal(pickStaticFamily([{ format: "carousel", day: "2026-11-05" }]), "verdict");
 });
+
+test("a cover with no usable photo falls back to a type-only layout instead of failing the post", async () => {
+  const { buildSpec } = await import("../src/studio-copy.mjs");
+  const copy = { slides: [
+    { role: "cover-top", headline: "Stop pitching", sub: "Say the sentence." },
+    { role: "cover-compare", headline: "Two ways", left: { label: "Most", text: "Pitch" }, right: { label: "Do", text: "Ask" } },
+  ] };
+  const spec = buildSpec(copy, [null, null], { format: "carousel", outDir: "/tmp/x" });
+  assert.deepEqual(spec.slides[0], { kind: "cover", headline: "Stop pitching", sub: "Say the sentence." });
+  assert.equal(spec.slides[1].kind, "compare");
+  assert.equal(spec.slides[1].left.value, "Pitch");
+  assert.throws(() => buildSpec({ slides: [{ role: "cover-doc" }] }, [null], { format: "carousel", outDir: "/tmp/x" }), /needs a real photo/);
+});
+
+test("cover-top with a face high in the frame becomes the band-on-top cover; a photo-less story beat becomes a note", async () => {
+  const { buildSpec } = await import("../src/studio-copy.mjs");
+  const high = { export: "/tmp/a.jpg", faces: [{ x: 0.3, y: 0.2, w: 0.3, h: 0.25 }] };
+  const low = { export: "/tmp/b.jpg", faces: [{ x: 0.3, y: 0.6, w: 0.3, h: 0.2 }] };
+  const copy = { slides: [{ role: "cover-top", headline: "Real job" }] };
+  assert.equal(buildSpec(copy, [high], { format: "carousel", outDir: "/tmp/x" }).slides[0].kind, "cover-list");
+  assert.equal(buildSpec(copy, [low], { format: "carousel", outDir: "/tmp/x" }).slides[0].kind, "cover-top");
+  const story = buildSpec({ slides: [{ role: "story", caption: "Last one out tonight.", chapter: "After close" }] }, [null], { format: "carousel", outDir: "/tmp/x" });
+  assert.deepEqual(story.slides[0], { kind: "note", text: "Last one out tonight.", label: "After close" });
+});
+
+test("light slides set a pale accent as ink on a true-accent highlight; a dark accent keeps plain colored words", () => {
+  const brand = (accent) => resolveBrandTokens({ brand: upgradeBrandV1({ name: "chip", colors: { text: "#F5F1E8", accent, stroke: "#0B0B0D", bg: "#0B0B0D" } }) });
+  const pale = brand("#C8A24B");
+  const dark = brand("#1F3A5F");
+  const note = { kind: "note", text: "Nobody buys the *modules.*" };
+  const script = { kind: "script", light: true, headline: "Can we *pause*?", say: "Sure. What changed?" };
+  assert.match(slideHTML(note, pale, { fitScript: false }), /class="slide note[^"]*has-chip"/);
+  assert.match(slideHTML(note, pale, { fitScript: false }), /--slide-chip-ink:#0B0B0D/i, "the brand surface is the ink when it reads on the accent");
+  assert.match(slideHTML(script, pale, { fitScript: false }), /<section class="[^"]*has-chip/);
+  assert.match(slideHTML(note, pale, { fitScript: false }), /--slide-chip-bg:#C8A24B/i);
+  assert.doesNotMatch(slideHTML(note, dark, { fitScript: false }), /<section class="[^"]*has-chip/);
+  assert.doesNotMatch(slideHTML({ kind: "verdict", headline: "Dark *verdict*" }, pale, { fitScript: false }), /<section class="[^"]*has-chip/, "dark slides keep the plain accent");
+});
+
+test("dry run 2 fixes: long high-face covers take a side card, a type-only cover before a centred slide 2 becomes a note, quotes get alt text", async () => {
+  const { buildSpec, buildAltText } = await import("../src/studio-copy.mjs");
+  const { gridRepair } = await import("../src/daily.mjs");
+  const highLeft = { export: "/tmp/a.jpg", faces: [{ x: 0.1, y: 0.2, w: 0.3, h: 0.25 }] };
+  const nine = "The one habit that keeps members renewing every single month";
+  const card = buildSpec({ slides: [{ role: "cover-top", headline: nine, sub: "Short sub" }] }, [highLeft], { format: "carousel", outDir: "/tmp/x" }).slides[0];
+  assert.equal(card.kind, "cover-card");
+  assert.equal(card.side, "right", "the card goes opposite the face");
+  assert.equal(gridRepair({ slides: [{ kind: "cover-top", headline: nine }] }, "relayout"), null, "a 9 word headline never relayouts into cover-list");
+
+  const copy = { slides: [
+    { role: "cover-top", headline: "The Sale You Lost With *One Extra Sentence*", sub: "A simple fix for women who over explain." },
+    { role: "compare", headline: "Explaining is not closing", left: { label: "Now", value: "Explain twice" }, right: { label: "Better", value: "Say it once" } },
+  ] };
+  const spec = buildSpec(copy, [null, null], { format: "carousel", outDir: "/tmp/x" });
+  assert.equal(spec.slides[0].kind, "note");
+  assert.equal(spec.slides[0].text, "The Sale You Lost With *One Extra Sentence*. A simple fix for women who over explain.");
+  const photoNext = buildSpec({ slides: [copy.slides[0], { role: "point", headline: "Say it once", body: "Then stop." }] }, [null, { export: "/tmp/b.jpg" }], { format: "carousel", outDir: "/tmp/x" });
+  assert.equal(photoNext.slides[0].kind, "cover", "a photo slide 2 already differs, so the cover stays");
+
+  const alt = buildAltText({ slides: [{ kind: "quote", quote: "What If I Did?", by: "Julee Gracey", context: "before hitting post" }, { kind: "stat", number: "72%", headline: "Renew", source: "Guide" }] });
+  assert.match(alt[0], /What If I Did\?/);
+  assert.match(alt[1], /72%/);
+});
+
+test("dark script labels use the small-text accent; verdict headlines get a wide enough column", () => {
+  const brand = resolveBrandTokens({ brand: upgradeBrandV1({ name: "lbl", colors: { text: "#F4EFE6", accent: "#E8704A", stroke: "#14202B", bg: "#14202B" } }) });
+  const html = slideHTML({ kind: "script", headline: "The gym opens at six today", say: "By the time the first member walks in the floor is clean." , label: "Say this instead" }, brand, { fitScript: false });
+  assert.match(html, /\.slide\.script:not\(\.is-light\) \.script-label \{ color: var\(--slide-accent-small/);
+  assert.match(html, /\.verdict-main h1 \{ max-width: 82%/);
+});

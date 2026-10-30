@@ -350,6 +350,12 @@ export function faceY(photo) {
   return faces[0] ? faces[0].y + faces[0].h / 2 : null;
 }
 
+/** The main face's centre across (0 left, 1 right), or 0.5 when there is no face. */
+export function faceX(photo) {
+  const faces = [...(photo?.faces || [])].sort((a, b) => b.w * b.h - a.w * a.h);
+  return faces[0] ? faces[0].x + faces[0].w / 2 : 0.5;
+}
+
 /** Aim the crop at the face: "center 34%" (kept between 15% and 70% so the frame never jumps to an edge). */
 const aim = (photo) => { const y = faceY(photo); return y == null ? "center 35%" : `center ${Math.round(Math.min(70, Math.max(15, y * 100)))}%`; };
 
@@ -366,7 +372,18 @@ export function buildSpec(copy, photos = [], { format, outDir }) {
     const fy = faceY(p);
     const pos = aim(p);
     if (COVER_ROLES.includes(s.role)) {
-      if (!photo || p?.ai) throw new Error(`${s.role} slide ${i + 1} needs a real photo`);
+      // No usable real photo (an empty or spent photo folder): keep the words on a type-only layout instead of failing
+      // the whole post (2026-10-30: a client with an empty Photos folder lost every carousel to this).
+      if (!photo || p?.ai) {
+        if (s.role === "cover-compare") return { kind: "compare", title: s.headline || "", left: { label: s.left?.label, value: s.left?.text }, right: { label: s.right?.label, value: s.right?.text } };
+        if (!s.headline) throw new Error(`${s.role} slide ${i + 1} needs a real photo`);
+        return { kind: "cover", headline: s.headline, ...(s.sub ? { sub: s.sub } : {}) };
+      }
+      // A face in the top half sits right where cover-top's words go, and recropping can't move it far enough on a
+      // portrait selfie (2026-10-30 dry run: three held covers). The band-on-top cover keeps the same words and fields.
+      // cover-list holds 5 to 8 headline words; a longer headline goes on a side card away from the face instead.
+      if (s.role === "cover-top" && fy != null && fy < 0.55 && words(s.headline) <= 8) return { kind: "cover-list", photo, headline: s.headline, ...(s.sub ? { sub: s.sub } : {}), pos };
+      if (s.role === "cover-top" && fy != null && fy < 0.55) return { kind: "cover-card", photo, headline: s.headline, ...(s.sub ? { sub: s.sub } : {}), side: faceX(p) < 0.5 ? "right" : "left", pos };
       if (s.role === "cover-top") return { kind: s.role, photo, headline: s.headline, ...(s.sub ? { sub: s.sub } : {}), pos };
       if (s.role === "cover-doc") return { kind: s.role, photo, ...(s.headline ? { headline: s.headline } : {}), ...(s.corner ? { corner: s.corner } : {}), pos };
       if (s.role === "cover-card") return { kind: s.role, photo, headline: s.headline, ...(s.sub ? { sub: s.sub } : {}), ...(s.side ? { side: s.side } : {}), pos };
@@ -391,7 +408,8 @@ export function buildSpec(copy, photos = [], { format, outDir }) {
     if (s.role === "postcard") return { kind: "postcard", postText: s.postText, ...(s.metadata ? { metadata: s.metadata } : {}) };
     if (s.role === "notes") return { kind: "notes", title: s.headline, lines: s.lines, ...(s.date ? { date: s.date } : {}) };
     if (s.role === "story") {
-      if (!photo || p?.ai) throw new Error(`story slide ${i + 1} needs a real photo`);
+      // A story beat with no real photo left keeps its words as a note rather than failing the post.
+      if (!photo || p?.ai) return { kind: "note", text: s.caption, ...(s.chapter ? { label: s.chapter } : {}) };
       const faces = [...(p?.faces || [])].sort((a, b) => b.w * b.h - a.w * a.h);
       const focalPoint = p.focalPoint || (faces[0] ? { x: faces[0].x + faces[0].w / 2, y: faces[0].y + faces[0].h / 2 } : pos);
       return { kind: "story", photo, focalPoint, caption: s.caption, ...(s.chapter ? { chapter: s.chapter } : {}) };
@@ -404,7 +422,22 @@ export function buildSpec(copy, photos = [], { format, outDir }) {
     if (photo) return { kind: "photosplit", headline: s.headline, ...(body ? { sub: body } : {}), photo, split: body.length > 60 ? 700 : 860, pos };
     return s.role === "close" ? { kind: "cta", headline: s.headline, ...(body ? { sub: body } : {}) } : { kind: "body", headline: s.headline, ...(body ? { sub: body } : {}) };
   });
-  return { out_dir: outDir, width: 1080, height: 1350, slides };
+  return { out_dir: outDir, width: 1080, height: 1350, slides: separateSlide2(slides) };
+}
+
+const CENTER_KINDS = new Set(["body", "cover", "cta", "static", "static-light", "stat", "steps", "quote", "verdict", "script", "checklist", "compare", "postcard", "notes", "story", "evidence"]);
+
+/**
+ * A type-only cover is centred text, so a centred slide 2 (a compare, a checklist) trips the slide 2 rule and holds
+ * the post (2026-10-30 Julee dry run). Set that cover as a note card instead: same words, a different layout.
+ */
+function separateSlide2(slides) {
+  const [first, second] = slides;
+  if (first?.kind !== "cover" || !second || !CENTER_KINDS.has(second.kind)) return slides;
+  const joined = first.sub ? `${first.headline.replace(/[.!?]*$/, "")}. ${first.sub}` : first.headline;
+  const text = words(joined) <= 18 ? joined : first.headline;
+  if (words(text) < 7 || words(text) > 18) return slides;
+  return [{ kind: "note", text }, ...slides.slice(1)];
 }
 
 /**
@@ -466,7 +499,8 @@ export function parsePhotoPicks(text, { plan, count }) {
 }
 
 const visibleSlideText = (slide) => {
-  const parts = [slide.headline, slide.title, slide.sub, slide.body, slide.postText, slide.text, slide.say, slide.caption, slide.chapter, slide.metadata, slide.date,
+  const parts = [slide.number, slide.headline, slide.title, slide.sub, slide.body, slide.postText, slide.text, slide.say, slide.quote, slide.by, slide.context, slide.caption, slide.chapter, slide.metadata, slide.date,
+    ...(slide.steps || []).map((x) => typeof x === "string" ? x : x?.text || x?.value), slide.source,
     ...(slide.items || []).flatMap((x) => typeof x === "string" ? [x] : [x?.text, x?.note]),
     ...[slide.left, slide.right].flatMap((x) => typeof x === "string" ? [x] : [x?.label, x?.value, x?.text, x?.note]),
     ...(slide.lines || []).map((x) => typeof x === "string" ? x : x?.text), slide.decisionLine, slide.sourceLabel, slide.label];

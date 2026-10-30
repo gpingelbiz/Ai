@@ -309,7 +309,7 @@ test("copy: postcard, notes, story and supplied evidence validate into their bui
   assert.deepEqual(spec.slides.map((slide) => slide.kind), ["cover", "postcard", "notes", "story", "evidence", "cta"]);
   assert.deepEqual(spec.slides[3].focalPoint, { x: 0.35, y: 0.35 });
   assert.equal(spec.slides[4].image, proof);
-  assert.throws(() => buildSpec(parsed, [], { format: "carousel" }), /story slide 4 needs a real photo/);
+  assert.equal(buildSpec(parsed, [], { format: "carousel" }).slides[3].kind, "note", "a story beat with no photo keeps its words as a note (2026-10-30)");
   assert.throws(() => parseCopy(JSON.stringify({ slides: [{ role: "cover", headline: "A" }, { role: "evidence", proofFile: "made-up.png", sourceLabel: "Proof" }, { role: "point", headline: "C" }, { role: "point", headline: "D" }, { role: "close", headline: "E" }], caption: "c" }), { format: "carousel", evidenceFiles: [] }), /does not name one supplied proof screenshot/);
 });
 
@@ -474,6 +474,7 @@ test("daily: a whole run with stubs: Made copy, ledger, log, draft gate, AI labe
     pickPhotos: false,
     renderSlides: async (spec, { outDir }) => { fs.mkdirSync(outDir, { recursive: true }); return spec.slides.map((s, i) => { const f = path.join(outDir, `${i + 1}.png`); fs.writeFileSync(f, `png ${s.kind}`); return f; }); },
     preflightSlides: async ({ files }) => ({ verdict: "schedule", slides: files.map((file, index) => ({ index, file, problems: [] })), photoHashes: [] }),
+    gridCheck: async () => ({ verdict: "schedule", checks: [] }),
     hostFiles: async (files) => ({ urls: files.map((f, i) => `https://host/${i}`), close: async () => {} }),
     createPost: async (connector, input) => { created.push({ connector, input, info: JSON.parse(input.info) }); return { plannerUrl: `https://app.metricool.com/planner/${created.length}`, id: created.length }; },
   };
@@ -507,6 +508,7 @@ test("daily: a failed schedule leaves the post in Made and the next run sends it
     choosePhotos: async (s, copy) => ({ bySlide: copy.slides.map(() => null), vetoed: [] }),
     renderSlides: async (spec, { outDir }) => { fs.mkdirSync(outDir, { recursive: true }); const f = path.join(outDir, "1.png"); fs.writeFileSync(f, "png"); return [f]; },
     preflightSlides: async ({ files }) => ({ verdict: "schedule", slides: files.map((file, index) => ({ index, file, problems: [] })), photoHashes: [] }),
+    gridCheck: async () => ({ verdict: "schedule", checks: [] }),
     hostFiles: async () => ({ urls: ["u"], close: async () => {} }),
     createPost: async () => { if (fail) throw new Error("Metricool is down"); return { plannerUrl: "p", id: 1 }; },
   };
@@ -536,7 +538,7 @@ async function gateRun(verdicts) {
     preflightSlides: async ({ files }) => {
       const verdict = verdicts[calls.preflight++] || "hold";
       const problems = verdict === "schedule" ? [] : [{ code: "crop", message: "The words overlap the subject.", fix: verdict === "retry" ? "recrop" : "none" }];
-      return { verdict, slides: [{ index: 0, file: files[0], problems }], photoHashes: verdict === "schedule" ? [{ file: files[0], hash: `hash-${calls.preflight}` }] : [] };
+      return { verdict, slides: [{ index: 1, file: files[0], problems }], photoHashes: verdict === "schedule" ? [{ file: files[0], hash: `hash-${calls.preflight}` }] : [] };
     },
     hostFiles: async () => { calls.host++; return { urls: ["https://host/1"], close: async () => {} }; },
     createPost: async () => { calls.schedule++; return { plannerUrl: "https://app.metricool.com/planner/1", id: 1 }; },
@@ -735,4 +737,9 @@ test("reels: an edited reel is filed in Made and scheduled; one stranded in deli
   const next = await runReels(dir, { now: NOW, deps: { ...deps, editClip: async () => { throw new Error("no clips should be edited"); } } });
   assert.equal(next.length, 1, "the stranded reel is filed");
   assert.notEqual(next[0].day, "2026-11-01", "one reel a day");
+});
+
+test("preflightProblems turns the shared check's 1-based slide numbers into the kit's 0-based indexes", () => {
+  const result = { verdict: "retry", slides: [{ index: 1, file: "01.png", problems: [{ code: "ocr-handle", message: "handle", fix: "recrop" }] }, { index: 0, file: "", problems: [{ code: "spec-empty", message: "empty", fix: "none" }] }], photoHashes: [] };
+  assert.deepEqual(preflightProblems(result).map((problem) => problem.index), [0, -1]);
 });

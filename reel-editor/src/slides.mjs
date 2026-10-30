@@ -443,9 +443,9 @@ function slideRules() {
     .slide { position: relative; width: 1080px; height: var(--slide-height); overflow: hidden; background: var(--brand-surface); color: var(--brand-ink); padding: var(--space-xxl); }
     .signature-layer { z-index: 4; }
     .accent { color: var(--slide-accent-text, var(--brand-accent)); }
-    .slide-label { position: relative; z-index: 3; color: var(--slide-accent-text, var(--brand-accent)); font-size: var(--type-sm); font-weight: 600; letter-spacing: .06em; text-transform: var(--brand-body-case); }
+    .slide-label { position: relative; z-index: 3; color: var(--slide-accent-small, var(--slide-accent-text, var(--brand-accent))); font-size: var(--type-sm); font-weight: 600; letter-spacing: .06em; text-transform: var(--brand-body-case); }
     .slide-label::before { content: ""; display: block; width: calc(var(--space-xl) + var(--space-xs)); height: var(--space-xs); margin-bottom: var(--space-md); background: var(--brand-accent); border-radius: var(--brand-radius-sm); }
-    .slide-handle { position: absolute; z-index: 5; left: var(--space-xxl); bottom: var(--space-xl); color: var(--brand-muted); font-size: var(--type-sm); font-weight: 600; }
+    .slide-handle { position: absolute; z-index: 5; left: var(--space-xxl); bottom: var(--space-xl); color: var(--slide-muted-small, var(--brand-muted)); font-size: var(--type-sm); font-weight: 600; }
     .legacy-main { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: center; }
     .legacy-head, .family-main h1 { margin: 0; font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); line-height: var(--brand-display-line-height); letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); }
     .type-balance .legacy-head:not([data-explicit-break="1"]), .type-balance .family-main h1:not([data-explicit-break="1"]) { text-wrap: balance; }
@@ -474,6 +474,7 @@ function slideRules() {
     .evidence-embed { position: absolute; inset: 0; }
     .static-light { background: var(--brand-paper); color: var(--slide-light-ink, var(--brand-surface)); }
     .static-light .slide-handle { color: var(--brand-muted); }
+    .slide.note .slide-handle, .slide.is-light .slide-handle { color: var(--slide-muted-paper, var(--brand-muted)); }
     /* Paper layouts take the accent darkened just enough to read on paper (a pale peach or gold turns deep). */
     .static-light .accent, .static-light .slide-label, .post-card .accent, .note-paper .accent { color: var(--slide-light-accent, var(--brand-accent)); }
     .static-light .slide-label::before { background: var(--slide-light-accent, var(--brand-accent)); }
@@ -492,7 +493,7 @@ function slideRules() {
     .step-t { font-weight: 500; line-height: 1.3; padding-top: .12em; }
     .quote-mark { height: 140px; font-family: var(--brand-display-font); font-size: 260px; line-height: .62; color: var(--slide-accent-text, var(--brand-accent)); }
     .quote-main blockquote { margin: 0; font-family: var(--brand-editorial-font, var(--brand-body-font)); font-weight: 600; font-size: 60px; line-height: 1.22; }
-    .quote-by { margin-top: 48px; font-size: 30px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--slide-accent-text, var(--brand-accent)); }
+    .quote-by { margin-top: 48px; font-size: 30px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--slide-accent-small, var(--slide-accent-text, var(--brand-accent))); }
     .quote-context { margin-top: 10px; font-size: 28px; color: var(--brand-muted); }
     .family-main h1 { font-size: var(--type-xl); }
     .check-list { list-style: none; margin: var(--space-xl) 0 0; padding: 0; display: grid; gap: var(--space-md); }
@@ -508,7 +509,7 @@ function slideRules() {
     .compare-grid.stacked { grid-template-rows: 1fr 1fr; }
     .compare-side { display: flex; flex-direction: column; justify-content: center; padding: var(--space-lg); border: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-stroke); border-radius: var(--brand-radius-lg); background: var(--brand-surface2); }
     .compare-side + .compare-side { border-color: var(--brand-accent); }
-    .compare-label { color: var(--slide-accent-text, var(--brand-accent)); font-size: 34px; font-weight: 700; letter-spacing: .05em; text-transform: var(--brand-body-case); }
+    .compare-label { color: var(--slide-accent-small, var(--slide-accent-text, var(--brand-accent))); font-size: 34px; font-weight: 700; letter-spacing: .05em; text-transform: var(--brand-body-case); }
     .compare-value { margin-top: var(--space-md); font-family: var(--brand-editorial-font, var(--brand-display-font)); font-size: var(--type-lg); line-height: 1.08; }
     .compare-note { margin-top: var(--space-md); color: var(--brand-muted); font-size: var(--type-slide-body); line-height: 1.25; }
     .decision-line { padding: var(--space-md) var(--space-lg); border-radius: var(--brand-radius-md); background: var(--brand-accent); color: var(--brand-accent-ink); font-size: var(--type-md); font-weight: 700; }
@@ -532,7 +533,7 @@ function slideRules() {
     .story-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .story-scrim { position: absolute; inset: 0; background: linear-gradient(to bottom, rgb(from var(--brand-surface) r g b / 0) 42%, rgb(from var(--brand-surface) r g b / .9)); }
     .story-main { position: absolute; z-index: 2; left: var(--space-xxl); right: var(--space-xxl); bottom: calc(var(--space-xxl) + var(--space-xl)); }
-    .story-chapter { margin-bottom: var(--space-md); color: var(--slide-accent-text, var(--brand-accent)); font-size: max(34px, var(--type-sm)); font-weight: 700; }
+    .story-chapter { margin-bottom: var(--space-md); color: var(--slide-accent-small, var(--slide-accent-text, var(--brand-accent))); font-size: max(34px, var(--type-sm)); font-weight: 700; }
     .story-caption { max-width: 888px; padding: var(--space-lg); border-radius: var(--brand-radius-md); background: rgb(from var(--brand-surface) r g b / .84); color: var(--brand-ink); font-size: var(--type-lg); line-height: 1.18; }
     .evidence-main { display: grid; place-items: center; }
     .evidence-main figure { width: 888px; margin: 0; }
@@ -561,19 +562,28 @@ function slideRules() {
     .cover-compare-panels { min-height: 0; flex: 1; display: grid; grid-template-rows: 1fr 1fr; gap: var(--space-md); }
     .cover-compare-panel { display: flex; flex-direction: column; justify-content: center; padding: var(--space-md) var(--space-lg); border-top: calc(var(--space-xs) / 2) solid var(--brand-stroke); border-radius: var(--brand-radius-md); background: var(--brand-surface2); }
     .cover-compare-panel.is-decision { border-top: var(--space-xs) solid var(--brand-accent); }
-    .cover-compare-label { color: var(--brand-muted); font-size: var(--type-sm); font-weight: 700; letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); }
+    .cover-compare-label { color: var(--slide-muted-small, var(--brand-muted)); font-size: var(--type-sm); font-weight: 700; letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); }
     .cover-compare-value { margin-top: var(--space-sm); font-family: var(--brand-display-font); font-size: var(--type-lg); line-height: var(--brand-display-line-height); text-transform: var(--brand-display-case); }
     .cover-list { background-image: none; background-color: var(--brand-surface); }
     .cover-list::before { content: ""; position: absolute; inset: 40% 0 0; background-image: var(--slide-photo); background-size: cover; background-position: var(--slide-position); }
     .cover-list-main { position: absolute; z-index: 2; inset: 0 0 60%; display: flex; flex-direction: column; justify-content: center; padding: var(--space-xl) var(--space-xxl); background: var(--brand-surface); color: var(--brand-ink); border-bottom: var(--space-xs) solid var(--brand-accent); }
     .cover-list-main h1 { font-size: var(--type-display); }
+    /* The handle sits on the photo on these covers: a low shade keeps it readable over a busy floor (2026-10-30 dry run). */
+    .cover-top::after, .cover-card::after, .cover-list::after { content: ""; position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: calc(var(--space-xxl) * 3); background: linear-gradient(to bottom, rgb(from var(--brand-surface) r g b / 0), rgb(from var(--brand-surface) r g b / .85)); pointer-events: none; }
     .verdict.is-light, .note, .script.is-light { background: var(--brand-paper); color: var(--slide-light-ink, var(--brand-surface)); }
     .verdict.is-light .accent, .note .accent, .script.is-light .accent { color: var(--slide-light-accent, var(--brand-accent)); }
     .verdict-main { display: flex; align-items: center; }
-    .verdict-main h1 { max-width: 65%; font-size: calc(var(--type-display) + var(--type-md)); }
+    /* 82%, not 65%: an all-caps display face at 65% set one word per line (2026-10-30 Julee dry run). */
+    .verdict-main h1 { max-width: 82%; font-size: calc(var(--type-display) + var(--type-md)); }
     .note-main { display: flex; flex-direction: column; justify-content: center; padding-right: var(--space-xl); }
     .note-rule, .script-rule { width: calc(var(--space-xl) + var(--space-xs)); height: calc(var(--space-xs) * .75); margin-bottom: var(--space-lg); border-radius: var(--brand-radius-sm); background: var(--slide-light-accent, var(--brand-accent)); }
     .note-label, .script-label { margin-bottom: var(--space-md); color: var(--slide-light-accent, var(--brand-accent)); font-size: var(--type-sm); font-weight: 700; letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); }
+    /* has-chip: the accent word is ink on a highlight of the true accent, kept inside its own line's cap height so a
+       tight display headline never paints over the line above; rules go true accent, small labels go ink. */
+    .has-chip .accent { color: var(--slide-chip-ink); background: linear-gradient(180deg, transparent 0, transparent 14%, var(--slide-chip-bg) 14%, var(--slide-chip-bg) 97%, transparent 97%); padding: 0 .08em; margin: 0 -.02em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+    .has-chip .note-rule, .has-chip .script-rule, .has-chip.static-light .slide-label::before { background: var(--slide-chip-bg); }
+    .slide.script:not(.is-light) .script-label { color: var(--slide-accent-small, var(--brand-accent)); } /* the paper accent is too dark on the dark field */
+    .has-chip .note-label, .has-chip .script-label, .has-chip.static-light .slide-label { color: var(--slide-light-ink); }
     .note-text { font-size: calc(var(--type-lg) + var(--space-xs)); line-height: var(--brand-body-line-height); font-weight: 500; }
     .script-main { display: flex; flex-direction: column; justify-content: center; }
     .script-main h1 { max-width: 86%; font-size: var(--type-xl); }
@@ -725,13 +735,27 @@ export function slideHTML(slide, tokens, options = {}) {
   const lightAccent = readableOn(t.colors?.accent || lightInk, paper);
   // Accent words, labels and numbers are large type: on a light background a pale accent darkens to 3:1 (fills keep it).
   const accentText = readableOn(t.colors?.accent || t.colors?.ink, t.colors?.surface || "#0B0B0D", 3);
+  // Small labels (comparison sides, kickers, bylines) are body-size type: 4.5:1 against both the slide and its cards.
+  // A coral accent on a navy card read 4.08:1 and the gate held a client's carousel for it (2026-10-30 dry run).
+  const surfaceDark = t.colors?.surface || "#0B0B0D";
+  const accentSmall = readableOn(readableOn(t.colors?.accent || t.colors?.ink, t.colors?.surface2 || surfaceDark, 4.5), surfaceDark, 4.5);
+  // The handle on a paper slide (note, light verdict and script) reads 4.5:1 on paper; a client's pale muted read 2.29:1.
+  const mutedPaper = readableOn(t.colors?.muted || lightInk, paper, 4.5);
+  // Real accent on paper (Greg 2026-10-30, "Apply it"): a pale accent (Signet Gold on Bone reads ~2:1) used to be
+  // darkened to a muddy bronze. When the accent can't carry body text on paper, light slides set the accent word as
+  // readable ink on a highlight of the true accent instead (brand guides: the accent as a chip). A dark accent that
+  // already reads on paper keeps plain colored words.
+  const trueAccent = t.colors?.accent || lightInk;
+  const chipInk = [t.colors?.surface, lightInk, "#000000"].filter(Boolean).find((c) => contrast(c, trueAccent) >= 4.5) || "#000000";
+  const lightChip = contrast(trueAccent, paper) < 4.5 && contrast(chipInk, trueAccent) >= 4.5;
+  const mutedSmall = readableOn(readableOn(t.colors?.muted || t.colors?.ink, t.colors?.surface2 || surfaceDark, 4.5), surfaceDark, 4.5);
   const pingelLegacyBody = clean(t.identity?.handle).toLowerCase() === "@officialgregpingel";
   const legacySubSize = pingelLegacyBody ? (kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40) : Number(t.typeScale?.slideBody || 42);
-  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${legacySubSize}px;`
+  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-accent-small:${accentSmall};--slide-muted-small:${mutedSmall};--slide-muted-paper:${mutedPaper};--slide-chip-ink:${chipInk};--slide-chip-bg:${trueAccent};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${legacySubSize}px;`
     + (legacyHeadSize(kind, slide.headline || slide.title) ? `--legacy-head-size:${legacyHeadSize(kind, slide.headline || slide.title)}px;` : "");
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${SLIDE_WIDTH}, height=${height}" /><style>${tokensCSS(t)}\n${slideRules()}\n${signatureRulesCSS()}\n${options.evidenceCSS || ""}</style></head>
-<body><section class="slide ${esc(kind)}${balance ? " type-balance" : ""}${slide.light ? " is-light" : ""}" style="${style}">${content}${signature}${commonFooter(t)}</section>${options.fitScript === false ? "" : textFitScript()}</body></html>`;
+<body><section class="slide ${esc(kind)}${balance ? " type-balance" : ""}${slide.light ? " is-light" : ""}${lightChip && (slide.light || kind === "note" || kind === "static-light") ? " has-chip" : ""}" style="${style}">${content}${signature}${commonFooter(t)}</section>${options.fitScript === false ? "" : textFitScript()}</body></html>`;
 }
 
 function resolveFile(file, roots) {

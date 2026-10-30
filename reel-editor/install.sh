@@ -86,11 +86,22 @@ fi
 # Only install what is missing, judged by the command itself: `brew list python` misses python@3.14, and
 # installing a second Python re-points python3 for every script on the Mac. No Homebrew auto-update either.
 export HOMEBREW_NO_AUTO_UPDATE=1
-for pair in ffmpeg:ffmpeg node:node python3:python git:git; do
+for pair in ffmpeg:ffmpeg node:node git:git; do
   cmd="${pair%%:*}"; formula="${pair#*:}"
   if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd (already installed)"; else note "installing $formula…"; brew install "$formula" >/dev/null; ok "$cmd"; fi
 done
-python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || die "python3 is older than 3.10. Install a newer one (brew install python), then run this again."
+# Python is judged by its version, not its presence: every Mac with the Apple tools has /usr/bin/python3, and on
+# macOS 15 and 26 that is 3.9, too old. Then Homebrew's Python is installed and used by full path for the venv,
+# so nothing else on the Mac is re-pointed. (2026-10-30: a fresh Mac stopped here before this.)
+py_ok() { "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; }
+PY="$(command -v python3 || true)"
+if [ -n "$PY" ] && py_ok "$PY"; then ok "python3 (already installed)"
+else
+  BREW_PY="$(brew --prefix 2>/dev/null)/bin/python3"
+  if ! py_ok "$BREW_PY"; then note "installing python (this Mac's python3 is too old)…"; brew install python >/dev/null; fi
+  PY="$BREW_PY"
+  py_ok "$PY" && ok "python3 ($("$PY" -V 2>&1))" || die "No Python 3.10 or newer. Run: brew install python, then run this again."
+fi
 node_major=$(node -p 'process.versions.node.split(".")[0]')
 [ "$node_major" -ge 22 ] || die "Node $(node -v) is too old; Reel Editor needs 22 or newer. Run: brew upgrade node"
 
@@ -107,7 +118,7 @@ if [ "$LINK" = 1 ]; then ( cd "$APP" && npm link --silent >/dev/null 2>&1 ) && o
 
 # ---------------------------------------------------------------- 4. Whisper + render browser
 bold "4/7  Whisper and the render browser"
-[ -x "$VENV/bin/python" ] || python3 -m venv "$VENV"
+[ -x "$VENV/bin/python" ] || "$PY" -m venv "$VENV"
 # av<17: PyAV 19 removed an argument faster-whisper 1.2.1 passes ("unexpected keyword argument metadata_errors").
 "$VENV/bin/pip" install -q --disable-pip-version-check --upgrade faster-whisper "av<17" && ok "Whisper (faster-whisper) installed"
 ( cd "$APP" && npx --yes hyperframes browser ensure >/dev/null 2>&1 ) && ok "render browser ready"
