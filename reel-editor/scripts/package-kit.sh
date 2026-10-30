@@ -9,7 +9,9 @@ OUT="${1:-$HERE/dist}"
 STAGE="$(mktemp -d)"
 KIT="$STAGE/Reel Editor Kit"
 mkdir -p "$KIT" "$OUT"
-cp "$HERE/kit/Install Reel Editor.command" "$HERE/kit/Start Here.html" "$KIT/"
+cp "$HERE/kit/Install Reel Editor.command" "$KIT/"
+# The Content Studio section is for Content Studio kits only (scripts/brand-kit.mjs --studio).
+sed '/<!-- studio -->/,/<!-- \/studio -->/d' "$HERE/kit/Start Here.html" > "$KIT/Start Here.html"
 chmod +x "$KIT/Install Reel Editor.command"
 xattr -cr "$KIT" 2>/dev/null || true
 # ditto keeps the executable bit, so the installer still double-clicks after unzipping.

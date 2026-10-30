@@ -11,6 +11,8 @@
 #   --yes            take the defaults, ask nothing (Greg's look unless --look is given; no key; drop folder on)
 #   --look greg|clean|custom   --accent "#hex" --text "#hex" (custom colors)
 #   --brand <folder> a brand kit's Brand folder (scripts/brand-kit.mjs): their look, fonts, words, voice; no look question
+#   --studio         also set up the Content Studio (needs --brand from a Content Studio kit): photo folder, Claude sign-in,
+#                    the client's Metricool brand, how images reach Metricool, posting times, the daily job
 #   --no-watch       do not turn on the drop folder
 #   --no-link        do not link the `reel` command globally (testing)
 #   --dir <path>     where the code goes (default ~/Ai)
@@ -25,7 +27,7 @@ DIR="$HOME/Ai"
 VENV="$HOME/.reel-venv"
 CONF="$HOME/.reel"
 ZSHRC="$HOME/.zshrc"
-YES=0; LINK=1; WATCH=""; LOOK=""; ACCENT=""; TEXTC=""; BRAND=""
+YES=0; LINK=1; WATCH=""; LOOK=""; ACCENT=""; TEXTC=""; BRAND=""; STUDIO=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
     --accent) ACCENT="$2"; shift ;;
     --text) TEXTC="$2"; shift ;;
     --brand) BRAND="$2"; LOOK=brand; shift ;;
+    --studio) STUDIO=1 ;;
     --dir) DIR="$2"; shift ;;
     *) echo "unknown option: $1"; exit 2 ;;
   esac
@@ -252,6 +255,14 @@ out=$(cd "$TEST" && node "$APP/bin/reel.mjs" edit test.mov --out "$TEST/videos/t
 [ -f "$out" ] || die "The test reel did not render. Run: cd $APP && node bin/reel.mjs doctor"
 ok "test reel: $out"
 [ "$YES" = 1 ] || open "$out" 2>/dev/null || true
+
+if [ "$STUDIO" = 1 ]; then
+  # The Content Studio: the client's photo folder, Claude, Metricool and posting times (scripts/studio-setup.mjs).
+  [ -n "$BRAND" ] || die "--studio needs a Content Studio kit (its Brand folder)."
+  bold "Content Studio"
+  STUDIO_ARGS=(--brand "$BRAND"); [ "$YES" = 1 ] && STUDIO_ARGS+=(--yes)
+  node "$APP/scripts/studio-setup.mjs" "${STUDIO_ARGS[@]}" || die "The Content Studio setup stopped. Read the message above, then run the installer again."
+fi
 
 bold "Done."
 note "Open a new Terminal window, then:  reel edit my-clip.mov --hook \"Your *hook* here\""

@@ -77,6 +77,10 @@ Brand looks (`src/brandlooks.mjs`, from the women-coach reel research in Julee G
 
 `node scripts/client.mjs add their-brand.json` sets up a client edited on this Mac: drop folders in `~/Desktop/Reels/Clients/<Name>/`, finished reels there too, everything in the client's brand (`src/clients.mjs`, `client.env` per client, scanned by the same `watch-folder.sh` under one lock). The Greg card look, Greg's Sandcastles watchlist and his CTA never reach a client. `client.mjs list` shows them.
 
+## Content Studio (clients only)
+
+A client's one folder (`~/Content Studio`) that makes their statics, carousels and reels and schedules them into THEIR Metricool every day, with no review: README "Content Studio". Never for Greg: his content engine and reel folders stay as they are. Build the kit with `node scripts/brand-kit.mjs <their-brand.json> --studio <their-brand-guide.md>`; their Mac runs `Install Content Studio.command` (photo folder, their Claude login, their Metricool brand via the Metricool connector on their claude.ai, image route: temporary link, Google Drive or Dropbox, posting times, launchd jobs). Commands: `reel daily` (fill open slots: job from their guide's pillar mix, copy in their voice, unused photos, `reel slides` in their brand, Made/ copy, schedule; `--dry-run`, `--no-publish`, `--day`, `--only`), `reel photos` (pool, skips, contact sheet, ledger), `reel studio status|reels|agents|init`. The sample client is `examples/content-studio` (fictional; copy it before running). Their voice, mix and never-do rules come from their own guide in `brand/`, never from `voice/greg.md` or Greg's brand guide.
+
 ## Brand kits
 
 `node scripts/brand-kit.mjs <brand.json>` builds `dist/<Name> Reel Editor Kit.zip` with their look, fonts, words and voice built in (template `kit/brand-template.json`; fill it from their Brand & Messaging Guide). Never hand anyone a kit in Greg's look, and never edit someone else's footage in pingel-brand: client work uses the client's kit.

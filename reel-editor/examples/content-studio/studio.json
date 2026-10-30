@@ -1,0 +1,19 @@
+{
+  "_how": "The sample client's Content Studio settings (FICTIONAL client). Copy this folder before running it: reel daily --studio <copy>. Fill metricool.blogId and metricool.connector with a TEST brand; publish.mode is draft so nothing posts.",
+  "client": "Jordan Example",
+  "timezone": "America/Chicago",
+  "photos": "Photos",
+  "slots": [
+    { "time": "10:00", "format": "carousel" },
+    { "time": "18:00", "format": "static" }
+  ],
+  "daysAhead": 3,
+  "maxPerRun": 2,
+  "carouselSlides": [5, 7],
+  "metricool": { "brand": "", "blogId": "", "networks": ["instagram"], "connector": "" },
+  "publish": { "mode": "draft" },
+  "hosting": { "route": "tunnel", "folder": "" },
+  "ai": { "label": "always", "broll": false, "_label": "always: the sample photos were drawn by AI, so every post carries Instagram's AI label" },
+  "sandcastles": false,
+  "neverSay": ["hustle", "grind", "crush it", "game changer", "unlock", "level up"]
+}

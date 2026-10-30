@@ -3,6 +3,8 @@
 //   node scripts/brand-kit.mjs <their-brand.json> [--out <folder>]     (default: reel-editor/dist)
 // The zip holds the double-click installer, their Start Here page and a Brand folder (look, YouTube look, word list,
 // caption voice, fonts). No code and no keys: the installer downloads the latest Reel Editor when it runs.
+//   --studio <their brand-guide.md>   a Content Studio Kit instead: the same plus their Brand & Messaging Guide and the
+//                                     Install Content Studio installer (photo folder, Claude, Metricool, daily posts).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,8 +13,11 @@ import { checkBrand, brandPreset, youtubePreset, brandDictionary, brandVoice, fe
 import { PKG_ROOT } from "../src/util.mjs";
 
 const args = process.argv.slice(2);
-const file = args.find((a) => !a.startsWith("--"));
+const file = args.find((a, i) => !a.startsWith("--") && !["--out", "--studio"].includes(args[i - 1]));
 const outIdx = args.indexOf("--out");
+const studioIdx = args.indexOf("--studio");
+const GUIDE = studioIdx >= 0 ? args[studioIdx + 1] : "";
+if (studioIdx >= 0 && !(GUIDE && fs.existsSync(GUIDE))) { console.error("--studio needs their brand guide: --studio <brand-guide.md>"); process.exit(2); }
 const OUT = path.resolve(outIdx >= 0 ? args[outIdx + 1] : path.join(PKG_ROOT, "dist"));
 if (!file) { console.error("usage: brand-kit.mjs <their-brand.json> [--out <folder>]   (template: kit/brand-template.json)"); process.exit(2); }
 
@@ -21,7 +26,7 @@ const brand = strip(JSON.parse(fs.readFileSync(file, "utf8")));
 const problems = checkBrand(brand);
 if (problems.length) { console.error(`Fix the brand file first:\n- ${problems.join("\n- ")}`); process.exit(1); }
 
-const kitName = `${brand.name} Reel Editor Kit`;
+const kitName = `${brand.name} ${GUIDE ? "Content Studio" : "Reel Editor"} Kit`;
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), "reel-kit-"));
 const kit = path.join(stage, kitName);
 const B = path.join(kit, "Brand");
@@ -47,11 +52,13 @@ json(path.join(B, "my-youtube.json"), youtubePreset(brand, { fonts }));
 json(path.join(B, "dictionary.json"), brandDictionary(brand));
 fs.writeFileSync(path.join(B, "voice.md"), brandVoice(brand));
 json(path.join(B, "brand.json"), brand);
+if (GUIDE) fs.copyFileSync(GUIDE, path.join(B, "brand-guide.md"));
 if (credits.length) fs.writeFileSync(path.join(B, "fonts", "FONTS.txt"), credits.join("\n\n") + "\n");
 
-fs.copyFileSync(path.join(PKG_ROOT, "kit", "Install Reel Editor.command"), path.join(kit, "Install Reel Editor.command"));
-fs.chmodSync(path.join(kit, "Install Reel Editor.command"), 0o755);
-fs.writeFileSync(path.join(kit, "Start Here.html"), personalizeStartHere(fs.readFileSync(path.join(PKG_ROOT, "kit", "Start Here.html"), "utf8"), brand));
+const installer = GUIDE ? "Install Content Studio.command" : "Install Reel Editor.command";
+fs.copyFileSync(path.join(PKG_ROOT, "kit", installer), path.join(kit, installer));
+fs.chmodSync(path.join(kit, installer), 0o755);
+fs.writeFileSync(path.join(kit, "Start Here.html"), personalizeStartHere(fs.readFileSync(path.join(PKG_ROOT, "kit", "Start Here.html"), "utf8"), brand, { studio: !!GUIDE }));
 
 fs.mkdirSync(OUT, { recursive: true });
 const zip = path.join(OUT, `${kitName}.zip`);

@@ -39,6 +39,8 @@ Usage
   reel slides <spec.json> [--brand brands/x.json] [--out <dir>]
                                     render the content-engine slide JSON; prints one PNG path per line
   reel slides --sample [--out <dir>] render every kind for Greg and the calm fixture for visual review
+  reel photos | daily | studio ...  the Content Studio (a client's folder that makes and schedules their posts):
+                                    reel studio help for the commands
   reel brand [preset|brand.json] [--css] [--check]
                                     resolved brand tokens as JSON, reusable CSS, or validation problems
   reel presets                      list presets
@@ -394,6 +396,18 @@ export async function main(argv) {
       else if (opts.css) console.log(tokensCSS(tokens));
       else console.log(JSON.stringify(tokens, null, 2));
       return;
+    }
+    case "photos": {
+      const { photosCommand } = await import("./studio-cli.mjs");
+      return photosCommand(rest);
+    }
+    case "daily": {
+      const { dailyCommand } = await import("./studio-cli.mjs");
+      return dailyCommand(rest);
+    }
+    case "studio": {
+      const { studioCommand } = await import("./studio-cli.mjs");
+      return studioCommand(rest);
     }
     case "doctor":
       return doctor();

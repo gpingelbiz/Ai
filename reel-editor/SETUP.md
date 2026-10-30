@@ -111,6 +111,10 @@ The filename is the brief:
 
 `caption.txt` needs [Claude Code](https://claude.com/claude-code) (the hook ideas also use the Sandcastles connector on claude.ai); without it the folder has the reel only. B-roll and the carousel need the Codex CLI signed in with a ChatGPT plan (the installer offers it; by hand: `npm install -g @openai/codex`, then `codex login`); without it, the b-roll folder gives a plain reel and the carousel folder gives nothing. Codex has usage limits: when it hits one, Codex is skipped for 20 minutes; a b-roll reel still arrives (without b-roll; the reason is in `No b-roll this time.txt` in the work folder) and a carousel leaves a note to drop it again. A failed clip gets a notification; rename the file to try it again. To turn the folder off: `~/Ai/reel-editor/scripts/install-watcher.sh --uninstall`.
 
+## Content Studio kits
+
+A kit built with `scripts/brand-kit.mjs <brand.json> --studio <brand-guide.md>` carries **Install Content Studio.command**: the same reel editor install, then the Content Studio setup (photo folder, Claude sign-in, Metricool brand, how images reach Metricool, posting times, the daily job). Its Start Here page explains every question. The README section "Content Studio" has how it works.
+
 ## Troubleshooting
 
 Run `reel doctor` first; most problems show up there.

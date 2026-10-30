@@ -1,0 +1,36 @@
+{
+  "_source": "A FICTIONAL sample client for testing the Content Studio. Not a real person, not anyone's brand.",
+  "name": "Jordan Example",
+  "handle": "@jordanexample.coach",
+  "credential": "Gym owner coach",
+  "colors": {
+    "text": "#F4EFE6",
+    "accent": "#E8704A",
+    "stroke": "#14202B",
+    "bg": "#14202B"
+  },
+  "fonts": {
+    "display": "DM Serif Display",
+    "body": "Inter"
+  },
+  "look": {
+    "hook": "headline",
+    "captions": "reveal",
+    "hookCase": "sentence",
+    "captionCase": "sentence",
+    "pace": "calm"
+  },
+  "world": "Jordan runs a small independent strength gym in a brick building and coaches other gym owners: the gym floor at dawn, a cluttered back office, a whiteboard, kettlebells, coffee, video calls with owners.",
+  "brollStyle": "candid phone photos, morning light, rubber floors and brick, navy and warm orange",
+  "carouselStyle": "deep navy with warm cream type and one burnt orange accent, plenty of space",
+  "voice": "Jordan talks to owners of small independent gyms (one location, 80 to 300 members) who coach all day and run the business at night. Plain, warm and direct, coach to coach. Short sentences, one idea per post. Words Jordan uses: members, floor, retention, the front desk, the schedule, renewals, coaches, your gym. Never: hustle, grind, crush it, game changer, unlock, level up, boss, here is the thing, let us be honest. Never invents a number, a client, a result or a quote. No emojis on teaching posts.",
+  "terms": [
+    "Full Floor Method"
+  ],
+  "names": [
+    "Jordan Example"
+  ],
+  "phrases": [],
+  "cta": "",
+  "corrections": []
+}
