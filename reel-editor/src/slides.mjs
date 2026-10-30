@@ -719,7 +719,7 @@ export function slideHTML(slide, tokens, options = {}) {
   const split = Math.max(0, Number(slide.split || 700));
   const suppliedPosition = String(slide.pos ?? "").trim();
   const explicitPosition = suppliedPosition && suppliedPosition.toLowerCase() !== "auto";
-  const position = explicitPosition ? suppliedPosition : slide.__autoPosition || (kind === "photo" ? "center top" : PHOTO_SLIDE_KINDS.has(kind) ? "center center" : "center 30%");
+  const position = explicitPosition ? suppliedPosition : slide.__autoPosition || (kind === "photo" ? "center top" : kind.startsWith("cover-") ? "center center" : "center 30%"); // legacy kinds keep their old default crop
   const paper = t.colors?.paper || "#FFFFFF";
   const lightInk = [t.colors?.surface, t.colors?.stroke, t.colors?.ink].filter(Boolean).sort((a, b) => contrast(b, paper) - contrast(a, paper))[0];
   const lightAccent = readableOn(t.colors?.accent || lightInk, paper);

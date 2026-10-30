@@ -206,3 +206,10 @@ test("two short words OCR ran together still count as found", () => {
   assert.equal(result.missing.length, 0);
   assert.equal(result.coverage, 1);
 });
+
+test("slideCopyLines ignores a lone short word printed in the photo", async () => {
+  const { slideCopyLines } = await import("../src/slide-preflight.mjs");
+  const parts = [{ text: "Not the goal. The steps." }];
+  const lines = [{ text: "NOT -" }, { text: "Not the goal." }, { text: "STEPS" }];
+  assert.deepEqual(slideCopyLines(lines, parts).map((line) => line.text), ["Not the goal.", "STEPS"]);
+});

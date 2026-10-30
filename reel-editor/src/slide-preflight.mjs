@@ -257,6 +257,8 @@ export function slideCopyLines(lines = [], parts = []) {
   return lines.filter((line) => {
     const tokens = textTokens(line.text);
     const hits = tokens.filter((token) => expected.some((want) => tokenMatches(want, token))).length;
+    // A lone short word ("NOT" on a whiteboard, "THE" on a shirt) is too weak to call slide copy (2026-10-30 real photo).
+    if (tokens.length === 1 && tokens[0].length < 4) return false;
     return tokens.length > 0 && hits / tokens.length >= 0.5;
   });
 }
