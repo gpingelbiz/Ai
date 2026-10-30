@@ -79,7 +79,8 @@ function fontRole(spec, fallback, { caseMode, lineHeight, tracking, weights = [4
   };
 }
 
-function derivedColors(input = {}) {
+/** The full color roles from whatever a brand gives (ink or text, surface or bg, accent, stroke); the rest derived. */
+export function derivedColors(input = {}) {
   const ink = validHex(input.ink) ? input.ink : validHex(input.text) ? input.text : "#F5F1E8";
   const accent = validHex(input.accent) ? input.accent : "#C8A24B";
   const surface = validHex(input.surface) ? input.surface : validHex(input.bg) ? input.bg : "#0B0B0D";

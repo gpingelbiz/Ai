@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkStudio, withDefaults, parseTime, initStudio, loadStudio, studioPaths, readPosts, logPost, takeLock, photosDir, studioBrand } from "../src/content-studio.mjs";
+import { checkStudio, withDefaults, parseTime, initStudio, loadStudio, studioPaths, readPosts, logPost, takeLock, photosDir, studioBrand, withSlideColors } from "../src/content-studio.mjs";
 import { parseMix, studioMix, pickJob, markdownTables } from "../src/mix.mjs";
 import { badShot, photoScore, momentOf, pickPhotos, photoPool, takenMs, markUsed, PHOTO_RULES } from "../src/photos.mjs";
 import { plainText, parseCopy, neverSaid, buildSpec, photoPlan, parsePhotoPicks, copyPrompt, captionText, faceY, buildAltText, shortenPrompt, applyShortenedSlides } from "../src/studio-copy.mjs";
@@ -14,7 +14,8 @@ import { runStudioPreflight, preflightProblems } from "../src/studio-preflight.m
 import { waitingClips, reelSlot, normalizeBestTimes, reelEnv } from "../src/studio-reels.mjs";
 import { studioAgents } from "../src/studio-cli.mjs";
 import { personalizeStartHere, stripStudio } from "../src/brandkit.mjs";
-import { legacyHeadSize } from "../src/slides.mjs";
+import { legacyHeadSize, slideHTML } from "../src/slides.mjs";
+import { contrast } from "../src/brandtokens.mjs";
 import { buildPrompt } from "../scripts/write-caption.mjs";
 import { protectedFolder } from "../scripts/studio-setup.mjs";
 import { PKG_ROOT } from "../src/util.mjs";
@@ -661,6 +662,36 @@ test("studio brand: font files come from the client's own brand/fonts folder fir
   fs.mkdirSync(p.fonts, { recursive: true });
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "fonts", "Anton-Regular.ttf"), path.join(p.fonts, "Display.ttf"));
   assert.equal(studioBrand(p).tokens.type.display.file, path.join(p.fonts, "Display.ttf"));
+});
+
+test("slide colors: studio.json slideColors light the slides without touching the reel brand", () => {
+  const dir = sampleCopy({ slideColors: { bg: "#FFF3EE", text: "#111111", accent: "#FFB27D", cards: "#FFFFFF" } });
+  const s = loadStudio(dir);
+  assert.deepEqual([s.tokens.colors.surface, s.tokens.colors.ink, s.tokens.colors.accent, s.tokens.colors.surface2], ["#FFF3EE", "#111111", "#FFB27D", "#FFFFFF"]);
+  assert.equal(s.tokens.colors.paper, "#FFF3EE");
+  assert.equal(s.brand.colors.bg, JSON.parse(fs.readFileSync(s.paths.brandJson, "utf8")).colors.bg, "brand.json itself is unchanged");
+  // Lines: the brand's stroke when it shows on the new bg, else the text color.
+  const dark = { colors: { ink: "#FFFFFF", surface: "#111111", accent: "#FFB27D", stroke: "#111111" } };
+  assert.equal(withSlideColors(dark, { bg: "#FFF3EE" }).colors.stroke, "#111111");
+  assert.equal(withSlideColors({ colors: { ...dark.colors, stroke: "#FFFFFF" } }, { bg: "#FFF3EE", text: "#222222" }).colors.stroke, "#222222");
+  assert.equal(withSlideColors(dark, {}), dark, "no slideColors, the brand as it is");
+});
+
+test("slide colors: studio.json checks the keys, the hex and that the text reads", () => {
+  assert.deepEqual(checkStudio({ client: "A", slideColors: { bg: "#FFF3EE", text: "#111111" } }, { publishing: false }), []);
+  const bad = checkStudio({ client: "A", slideColors: { bg: "cream", background: "#FFFFFF" } }).join("\n");
+  assert.match(bad, /slideColors\.bg "cream" is not a six-digit color/);
+  assert.match(bad, /slideColors\.background: use bg, text, accent, lines, cards/);
+  assert.match(checkStudio({ client: "A", slideColors: { bg: "#FFF3EE", text: "#FFB27D" } }).join("\n"), /does not read/);
+  assert.match(checkStudio({ client: "A", slideColors: "cream" }).join("\n"), /slideColors is like/);
+});
+
+test("slides: a pale accent darkens to 3:1 for words on a light slide; a readable one is left alone", () => {
+  const varOf = (html) => html.match(/--slide-accent-text:(#[0-9A-Fa-f]{6})/)[1];
+  const light = varOf(slideHTML({ kind: "body", headline: "Hit *post*" }, { colors: { ink: "#111111", surface: "#FFF3EE", accent: "#FFB27D" } }, { fitScript: false, signature: false }));
+  assert.notEqual(light, "#FFB27D");
+  assert.ok(contrast(light, "#FFF3EE") >= 3 && contrast(light, "#FFF3EE") < 3.6, light);
+  assert.equal(varOf(slideHTML({ kind: "body", headline: "Hit *post*" }, { colors: { ink: "#FFFFFF", surface: "#111111", accent: "#FFB27D" } }, { fitScript: false, signature: false })), "#FFB27D");
 });
 
 test("metricool: the planner link comes from the result, never a media file's address", () => {
