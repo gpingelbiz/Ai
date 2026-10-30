@@ -41,6 +41,8 @@ Usage
   reel slides --sample [--out <dir>] render every kind for Greg and the calm fixture for visual review
   reel preflight <spec.json> [--dir <png dir>] [--brand <brand.json|preset>] [--history <file.json>] [--json]
                                     fail-closed rendered-slide checks; exits 0 only when the verdict is schedule
+  reel textcheck <workdir|render.mp4> [--json]
+                                    blocking Vision check for clipped, face-covered or flashed reel text
   reel photos | daily | studio ...  the Content Studio (a client's folder that makes and schedules their posts):
                                     reel studio help for the commands
   reel brand [preset|brand.json] [--css] [--check]
@@ -351,6 +353,19 @@ export async function main(argv) {
       if (opts.json) console.log(JSON.stringify(result, null, 2));
       else {
         for (const slide of result.slides) for (const item of slide.problems) console.log(`slide ${slide.index}: ${item.code}: ${item.message}`);
+        console.log(`verdict: ${result.verdict}`);
+      }
+      if (result.verdict !== "schedule") process.exitCode = 1;
+      return;
+    }
+    case "textcheck": {
+      const { opts, positionals } = parse(rest, { json: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const { runTextcheck } = await import("./textcheck.mjs");
+      const result = await runTextcheck(positionals[0]);
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        result.notes.forEach((note) => console.log(note));
         console.log(`verdict: ${result.verdict}`);
       }
       if (result.verdict !== "schedule") process.exitCode = 1;

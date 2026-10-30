@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { loadStudio, readPosts, logPost, studioLog, takeLock } from "./content-studio.mjs";
-import { pickSlot, parseCaption, postText, coverMilliseconds } from "./publish-folder.mjs";
+import { pickSlot, parseCaption, postText, coverMilliseconds, trialReel } from "./publish-folder.mjs";
 import { scheduledPosts, postInput, createPost, metricoolCall } from "./studio-metricool.mjs";
 import { hostFiles } from "./studio-host.mjs";
 import { hasCodex } from "./codex.mjs";
@@ -158,13 +158,17 @@ export async function scheduleReel(studio, edited, { now = new Date(), deps = {}
   // The editor names the reel after its hook.
   const hook = edited.hook || path.basename(video).replace(VIDEO, "");
   const capFile = path.join(folder, "caption.txt");
-  const caption = parseCaption(fs.existsSync(capFile) ? fs.readFileSync(capFile, "utf8") : "");
+  const captionRaw = fs.existsSync(capFile) ? fs.readFileSync(capFile, "utf8") : "";
+  const caption = parseCaption(captionRaw);
   let meta = {};
   try { meta = readJSON(path.join(folder, ".reel.json")); } catch {}
   const prefix = String(c.publish?.captionPrefix || "").trim();
   const text = [prefix, postText(caption)].filter(Boolean).join("\n\n");
-  const why = !postText(caption) ? "there is no caption" : meta.preflight === "fail" ? "its check failed" : "";
+  const textcheck = meta.textcheck;
+  const textHold = (typeof textcheck === "string" ? textcheck : textcheck?.verdict) === "hold";
+  const why = !postText(caption) ? "there is no caption" : textHold ? `its text check is on hold: ${textcheck?.notes?.[0] || "text check reported a hold"}` : meta.preflight === "fail" ? "its check failed" : "";
   const ai = c.ai?.label === "always" || !!meta.isAiGenerated;
+  const trial = trialReel({ entry: path.basename(folder), dir: folder, video, captionRaw, meta, root: path.dirname(folder) });
   const posts = readPosts(studio.paths);
   const { day: today } = zonedNow(c.timezone, now);
   let scheduled = [], best = {};
@@ -181,17 +185,17 @@ export async function scheduleReel(studio, edited, { now = new Date(), deps = {}
   fs.renameSync(folder, made);
   const madeVideo = path.join(made, path.basename(video));
   const id = `${slot.day}-${time.replace(":", "")}-reel`;
-  const record = { id, day: slot.day, time, format: "reel", hook, made, files: [madeVideo], text, ai, coverMs: coverMilliseconds(meta), draftWhy: why, status: "made" };
+  const record = { id, day: slot.day, time, format: "reel", hook, made, files: [madeVideo], text, ai, trial, coverMs: coverMilliseconds(meta), draftWhy: why, status: "made" };
   logPost(studio.paths, record);
   if (c.publish.mode === "off") return record;
   const draft = c.publish.mode === "draft" || !!why;
   let host;
   try {
     host = await (deps.hostFiles || hostFiles)([madeVideo], { hosting: c.hosting, postId: id });
-    const input = postInput({ blogId: c.metricool.blogId, day: slot.day, time, tz: c.timezone, text, media: host.urls, kind: "reel", ai, draft, networks: c.metricool.networks, coverMs: record.coverMs });
+    const input = postInput({ blogId: c.metricool.blogId, day: slot.day, time, tz: c.timezone, text, media: host.urls, kind: "reel", ai, draft, trial, networks: c.metricool.networks, coverMs: record.coverMs });
     const r = await (deps.createPost || createPost)(c.metricool.connector, input);
     const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: why || (draft ? "the studio is set to drafts" : "") };
-    fs.writeFileSync(path.join(made, "Scheduled.txt"), `${draft ? `Saved as a DRAFT in Metricool (${next.why}).` : `Scheduled to post ${slot.day} at ${time} (${c.timezone}).`}\nMetricool: ${r.plannerUrl || "(no link returned)"}\n${ai ? "Marked as made with AI (Instagram's AI label).\n" : ""}`);
+    fs.writeFileSync(path.join(made, "Scheduled.txt"), `${draft ? `Saved as a DRAFT in Metricool (${next.why}).` : `Scheduled to post ${slot.day} at ${time} (${c.timezone}).`}\n${trial ? "Trial Reel: yes, manual graduation.\n" : ""}Metricool: ${r.plannerUrl || "(no link returned)"}\n${ai ? "Marked as made with AI (Instagram's AI label).\n" : ""}`);
     logPost(studio.paths, next);
     studioLog(studio.paths, `reel ${next.status} ${id} ${r.plannerUrl || ""}`);
     notify(`${c.client}: reel ${draft ? "saved as a draft" : "scheduled"}`, `${hook}: ${slot.day} ${time}`);

@@ -87,6 +87,7 @@ export function brandPreset(b, { fonts = {} } = {}) {
     // Calm brands keep the slams plain: no pop-out (the dim, outline and word behind the head), no icon stickers
     // and no impact bumps (CALM); drift and the face-on b-roll layouts stay.
     slams: { enabled: look.slams !== false, ...(calm ? { popout: { enabled: false } } : {}) },
+    ...((legacy.looks?.lockHook != null || legacy.looks?.lockCaptions != null) ? { looks: { lockHook: legacy.looks?.lockHook === true, lockCaptions: legacy.looks?.lockCaptions === true } } : {}),
     // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
     graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : {}) },

@@ -2,6 +2,9 @@ import { r3, warn } from "./util.mjs";
 
 import { norm } from "./text.mjs";
 
+/** Accent text is the established default; a house system can keep emphasis typographic on raw footage. */
+export const keywordColorOnFootage = (settings = {}) => settings.keywordColorOnFootage !== false;
+
 /** Strip emojis and trailing commas/periods. Keeps ? and ! because they carry tone. */
 export function cleanText(t, { emojis = false } = {}) {
   let s = String(t);

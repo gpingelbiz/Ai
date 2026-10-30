@@ -122,8 +122,8 @@ export function applyTheme(style, look, { keep = {} } = {}) {
   if (!t) return style;
   const s = structuredClone(style);
   s.look = look;
-  s.hook = { ...s.hook, treat: t.hook };
-  s.captions = { ...s.captions, marker: t.marker };
+  if (s.looks?.lockHook !== true) s.hook = { ...s.hook, treat: t.hook };
+  if (s.looks?.lockCaptions !== true) s.captions = { ...s.captions, marker: t.marker };
   s.slams = { ...s.slams, style: t.slam };
   if (s.broll) {
     const base = s.broll.grade || {};
