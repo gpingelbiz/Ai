@@ -27,8 +27,9 @@ export async function runStudioPreflight(args, preflight = sharedPreflight) {
   }
 }
 
+// The shared preflight numbers slides from 1 (0 or below means no one slide); the kit's repairs index from 0.
 export const preflightProblems = (result) => (result?.slides || []).flatMap((slide) => (slide.problems || []).map((problem) => ({
-  index: Number(slide.index),
+  index: Math.max(-1, Number(slide.index) - 1),
   file: slide.file || "",
   code: problem.code || "preflight",
   message: problem.message || "The rendered slide did not pass preflight.",

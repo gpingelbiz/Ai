@@ -538,7 +538,7 @@ async function gateRun(verdicts) {
     preflightSlides: async ({ files }) => {
       const verdict = verdicts[calls.preflight++] || "hold";
       const problems = verdict === "schedule" ? [] : [{ code: "crop", message: "The words overlap the subject.", fix: verdict === "retry" ? "recrop" : "none" }];
-      return { verdict, slides: [{ index: 0, file: files[0], problems }], photoHashes: verdict === "schedule" ? [{ file: files[0], hash: `hash-${calls.preflight}` }] : [] };
+      return { verdict, slides: [{ index: 1, file: files[0], problems }], photoHashes: verdict === "schedule" ? [{ file: files[0], hash: `hash-${calls.preflight}` }] : [] };
     },
     hostFiles: async () => { calls.host++; return { urls: ["https://host/1"], close: async () => {} }; },
     createPost: async () => { calls.schedule++; return { plannerUrl: "https://app.metricool.com/planner/1", id: 1 }; },
@@ -737,4 +737,9 @@ test("reels: an edited reel is filed in Made and scheduled; one stranded in deli
   const next = await runReels(dir, { now: NOW, deps: { ...deps, editClip: async () => { throw new Error("no clips should be edited"); } } });
   assert.equal(next.length, 1, "the stranded reel is filed");
   assert.notEqual(next[0].day, "2026-11-01", "one reel a day");
+});
+
+test("preflightProblems turns the shared check's 1-based slide numbers into the kit's 0-based indexes", () => {
+  const result = { verdict: "retry", slides: [{ index: 1, file: "01.png", problems: [{ code: "ocr-handle", message: "handle", fix: "recrop" }] }, { index: 0, file: "", problems: [{ code: "spec-empty", message: "empty", fix: "none" }] }], photoHashes: [] };
+  assert.deepEqual(preflightProblems(result).map((problem) => problem.index), [0, -1]);
 });

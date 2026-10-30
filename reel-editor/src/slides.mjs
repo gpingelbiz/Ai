@@ -568,6 +568,8 @@ function slideRules() {
     .cover-list::before { content: ""; position: absolute; inset: 40% 0 0; background-image: var(--slide-photo); background-size: cover; background-position: var(--slide-position); }
     .cover-list-main { position: absolute; z-index: 2; inset: 0 0 60%; display: flex; flex-direction: column; justify-content: center; padding: var(--space-xl) var(--space-xxl); background: var(--brand-surface); color: var(--brand-ink); border-bottom: var(--space-xs) solid var(--brand-accent); }
     .cover-list-main h1 { font-size: var(--type-display); }
+    /* The handle sits on the photo on these covers: a low shade keeps it readable over a busy floor (2026-10-30 dry run). */
+    .cover-top::after, .cover-card::after, .cover-list::after { content: ""; position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: calc(var(--space-xxl) * 3); background: linear-gradient(to bottom, rgb(from var(--brand-surface) r g b / 0), rgb(from var(--brand-surface) r g b / .85)); pointer-events: none; }
     .verdict.is-light, .note, .script.is-light { background: var(--brand-paper); color: var(--slide-light-ink, var(--brand-surface)); }
     .verdict.is-light .accent, .note .accent, .script.is-light .accent { color: var(--slide-light-accent, var(--brand-accent)); }
     .verdict-main { display: flex; align-items: center; }
