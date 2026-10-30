@@ -14,12 +14,13 @@ import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
 import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
-import { pickHook, pickCta, hookSeconds } from "./hook.mjs";
+import { pickHook, pickCta, hookSeconds, plaqueLayout } from "./hook.mjs";
 import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
 import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
 import { soundCues, describeCues } from "./sounds.mjs";
+import { runTextcheck } from "./textcheck.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
@@ -349,12 +350,22 @@ export async function runEdit(input, opts = {}) {
         log(`hook placement: no face found, keeping ${Math.round(preset.hook.position * 100)}% from the top`);
       }
     }
+    if (preset.hook.plaque === true && opts.hookPosition == null && sameShape) {
+      const head = zoomedHead(detection, 1.06);
+      const before = preset.hook.fontSizeFrac;
+      const fit = plaqueLayout(hook.words || hook.text.split(/\s+/).map((text) => ({ text })), { headTop: head?.top, fontSizeFrac: before, W: canvas0.width, H: canvas0.height });
+      if (fit) {
+        preset.hook.fontSizeFrac = fit.fontSizeFrac;
+        preset.hook.position = fit.position;
+        log(`hook plaque: above the head at ${Math.round(fit.position * 100)}%${fit.fontSizeFrac < before ? `, text at ${Math.round(100 * fit.fontSizeFrac / before)}%` : ""}`);
+      }
+    }
   }
   // Text behind you: the person is cut out of the hook window and layered over the headline, so the hook is placed
   // to run behind the top of the head (its lower part hidden by the forehead) instead of clearing it.
   let behindPlan = null;
   let behindHead = null;
-  if (hook && preset.hook.behind && sameShape && opts.hookPosition == null) {
+  if (hook && preset.hook.behind && preset.hook.plaque !== true && sameShape && opts.hookPosition == null) {
     const head0 = zoomedHead(detection, 1.06);
     if (!head0) log("hook behind you: off (no face found in the hook frames)");
     else {
@@ -446,13 +457,15 @@ export async function runEdit(input, opts = {}) {
   if (look && THEMES[look]) {
     Object.assign(preset, applyTheme(preset, look, { keep: { zoomStyle: !!opts.zoomStyle, brollCut: !!opts.brollCut } }));
     const t = THEMES[look];
-    log(`look: ${look} also sets the hook (${t.hook}), the caption marker (${t.marker}), the slams (${t.slam}), the b-roll grade (${t.grade.preset}) and cut (${preset.broll.cut}), and the camera (${preset.zooms.style})`);
+    const hookLook = preset.looks?.lockHook === true ? "keeps the locked hook" : `sets the hook (${t.hook})`;
+    const captionLook = preset.looks?.lockCaptions === true ? "keeps the locked captions" : `sets the caption marker (${t.marker})`;
+    log(`look: ${look} ${hookLook}, ${captionLook}, sets the slams (${t.slam}), the b-roll grade (${t.grade.preset}) and cut (${preset.broll.cut}), and the camera (${preset.zooms.style})`);
     // A hook on a solid block is opaque: it cannot run behind the head (the cutout would hide whole words of the
     // cover, frame 0) or reach the eyes. It is measured in its own type and sits above the head, smaller if that is
     // what it takes; the cutout stays under it (over a cold-open still, the cutout keeps the person on the cover).
     const headTop = behindHead?.top ?? (hook && detection ? zoomedHead(detection, 1.06)?.top : null);
     const above = !behindHead && headTop != null && preset.hook.position <= headTop;
-    if (hook && (behindHead || above)) {
+    if (hook && preset.hook.plaque !== true && (behindHead || above)) {
       const words = hook.words || hook.text.split(/\s+/).map((x) => ({ text: x }));
       const fit = fitBlockHook(words, { treat: t.hook, headTop, fontSizeFrac: behindHead?.fontSizeFrac ?? preset.hook.fontSizeFrac, W: canvas0.width, H: canvas0.height });
       if (fit) {
@@ -985,6 +998,8 @@ export async function renderProject(workDir, opts = {}) {
   if (plan.video.hasAudio && plan.style?.render?.deliveryLoudness !== false) await normalizeDelivery(output);
   const outMeta = await probe(output);
   log(`done in ${Math.round((Date.now() - t0) / 1000)}s: ${output} (${outMeta.width}x${outMeta.height}, ${r3(outMeta.duration)}s)`);
+  const textcheck = await runTextcheck(workDir, { video: output });
+  (textcheck.verdict === "hold" ? warn : log)(`text check: ${textcheck.verdict}${textcheck.notes.length ? ` (${textcheck.notes.join("; ")})` : ""}`);
   // Preflight: sound, the open, dead air, length and layout checked on the finished file; preflight.txt sits next
   // to plan.json. With preflight.strict a failing file is kept as <name>.failed.mp4 and the run stops.
   const pf = plan.style?.preflight;

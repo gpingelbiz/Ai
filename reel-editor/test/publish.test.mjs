@@ -6,7 +6,7 @@ import path from "node:path";
 // The delivered-reels lookup must never read the real ~/Desktop/Reels (an iCloud folder can stall the whole run):
 // point it at an empty folder before the module reads REEL_WATCH_DONE.
 process.env.REEL_WATCH_DONE = fs.mkdtempSync(path.join(os.tmpdir(), "reel-desk-"));
-const { parseCaption, postText, readItem, scan, fileItem, pickSlot, coverMilliseconds, bannedInCaption } = await import("../src/publish-folder.mjs");
+const { parseCaption, postText, readItem, scan, fileItem, pickSlot, coverMilliseconds, bannedInCaption, trialReel } = await import("../src/publish-folder.mjs");
 const { buildPost } = await import("../scripts/publish.mjs");
 
 const CAPTION_TXT = `HOOK
@@ -72,6 +72,34 @@ test("items: a reel folder, a loose video with its caption, the check-note gate,
   fs.writeFileSync(path.join(root, "nocap.mp4"), "x"); old(path.join(root, "nocap.mp4"));
   assert.equal(readItem("nocap.mp4", { root }).draft, true, "no caption: a draft, never a captionless post");
   assert.ok(scan({ root }).length >= 4);
+});
+
+test("publish gate: a textcheck hold always makes the reel a draft and carries its note", () => {
+  const root = tmp(), folder = path.join(root, "Reel text hold");
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, "held.mp4"), "x"); old(path.join(folder, "held.mp4"));
+  fs.writeFileSync(path.join(folder, "caption.txt"), "A safe caption.");
+  fs.writeFileSync(path.join(folder, "textcheck.json"), JSON.stringify({ verdict: "hold", notes: ["text-face at 1.20s: hook overlaps a face"] }));
+  const item = readItem(path.basename(folder), { root });
+  assert.equal(item.draft, true);
+  assert.match(item.why, /text check is on hold.*text-face/);
+  fs.writeFileSync(path.join(folder, "textcheck.json"), "not json");
+  assert.match(readItem(path.basename(folder), { root }).why, /textcheck\.json could not be read/);
+});
+
+test("trial detection accepts caption/meta flags, #trial names and a Trial publish subfolder", () => {
+  assert.equal(trialReel({ captionRaw: "trial: true", root: "/tmp", video: "/tmp/a.mp4" }), true);
+  assert.equal(trialReel({ meta: { trial: true }, root: "/tmp", video: "/tmp/a.mp4" }), true);
+  assert.equal(trialReel({ entry: "A #trial reel", root: "/tmp", video: "/tmp/a.mp4" }), true);
+  assert.equal(trialReel({ entry: "ordinary", root: "/tmp", video: "/tmp/a.mp4" }), false);
+  const root = tmp(), folder = path.join(root, "Trial", "Reel 4");
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, "test.mp4"), "x"); old(path.join(folder, "test.mp4"));
+  fs.writeFileSync(path.join(folder, "caption.txt"), "Test this look.");
+  const item = scan({ root }).find((candidate) => candidate.video);
+  assert.equal(item.trial, true);
+  assert.equal(item.instagramType, "TRIAL_REEL");
+  assert.equal(item.entry, path.join("Trial", "Reel 4"));
 });
 
 test("filing: a reel folder moves to Scheduled with a receipt; one clip leaves a Clips folder, the rest wait", () => {

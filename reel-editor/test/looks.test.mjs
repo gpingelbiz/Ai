@@ -131,6 +131,18 @@ test("apply: a theme sets hook, marker, slams, grade, cut and camera on a copy; 
   assert.equal(applyTheme(base, "glass"), base);
 });
 
+test("text locks keep the house hook and caption marker while the rest of a rotating look still applies", () => {
+  const base = loadPreset("pingel-brand");
+  base.hook.treat = "headline";
+  base.captions.marker = "underline";
+  base.looks = { lockHook: true, lockCaptions: true };
+  const themed = applyTheme(base, "fieldnotes");
+  assert.equal(themed.hook.treat, "headline");
+  assert.equal(themed.captions.marker, "underline");
+  assert.equal(themed.slams.style, "marker");
+  assert.equal(themed.broll.grade.preset, "vintage-wash");
+});
+
 test("compose: the themed hook, slam and marker reach the page, with the typed hook's one cursor", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-theme-"));
   const video = path.join(dir, "v.mp4");

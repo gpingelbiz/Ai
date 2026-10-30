@@ -1,5 +1,16 @@
+import { fitBlockHook } from "./placement.mjs";
+
 function cleanHook(s) {
   return s.replace(/[\p{Extended_Pictographic}️]/gu, "").replace(/\s+/g, " ").replace(/[,.;:\-]+$/, "").trim();
+}
+
+/** Face-safe geometry for the solid house hook plaque. Null means there was no usable head measurement. */
+export function plaqueLayout(words, options = {}) {
+  const fit = fitBlockHook(words, { ...options, treat: "plaque" });
+  if (!fit) return null;
+  // Older block treatments express position at their text anchor. The plaque
+  // is absolutely positioned from its top edge, so expose that coordinate.
+  return { ...fit, position: fit.position - 1.2 * fit.fontSizeFrac };
 }
 
 /** How long the hook stays up: hook.duration seconds, or the whole reel for "reel" (one-line reels). */

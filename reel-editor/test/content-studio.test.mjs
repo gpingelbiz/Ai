@@ -397,6 +397,8 @@ test("metricool: the post input sets the draft, the AI label, alt text and each 
   assert.equal(r.instagramData.type, "REEL");
   assert.equal(r.instagramData.isAiGenerated, false);
   assert.equal(r.videoCoverMilliseconds, 1234);
+  const trial = JSON.parse(postInput({ blogId: 7, day: "2026-12-15", time: "12:00", tz: "UTC", text: "t", media: ["v"], kind: "reel", trial: true }).info);
+  assert.equal(trial.instagramData.type, "TRIAL_REEL");
 });
 
 test("metricool: the scheduled list and the tool prompt", () => {

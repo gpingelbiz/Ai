@@ -17,6 +17,20 @@ test("close-up selfie: the hook goes above the head", () => {
   assert.ok(p.position + hookBlockHeight(words("The 10 minutes after a bad number"), { fontPx: fontPx * p.fontScale }) <= head.top, "block ends above the head");
 });
 
+test("hook plaque layout moves up and shrinks until its solid field clears the head", async () => {
+  const { plaqueLayout } = await import("../src/hook.mjs");
+  const { BLOCK_HOOKS } = await import("../src/placement.mjs");
+  const copy = words("Your team does not remember the meeting");
+  const fit = plaqueLayout(copy, { headTop: 0.245, fontSizeFrac: 0.07, W: 1080, H: 1920 });
+  const metrics = BLOCK_HOOKS.plaque;
+  const height = hookBlockHeight(copy, { W: 1080, H: 1920, fontPx: Math.round(fit.fontSizeFrac * 1920 * metrics.em), charEm: metrics.charEm, lineHeight: metrics.lineHeight, padEm: metrics.padEm, goldScale: 1 });
+  const top = fit.position;
+  assert.ok(fit.fontSizeFrac < 0.07, "a tight top third shrinks the plaque");
+  assert.ok(top >= 0.03);
+  assert.ok(top + height <= 0.245 - 0.015 + 0.001, "the plaque ends above the expanded head gap");
+  assert.equal(plaqueLayout(copy, { headTop: null, fontSizeFrac: 0.07 }), null, "no face keeps the preset position");
+});
+
 test("wide shot: the hook goes between the chin and the captions", () => {
   const head = headExtent(wide, { zoom: 1.14 });
   const p = placeHook(head, { words: words("Running late? Stay out of the meeting"), fontPx });
