@@ -188,3 +188,17 @@ test("cover-top with a face high in the frame becomes the band-on-top cover; a p
   const story = buildSpec({ slides: [{ role: "story", caption: "Last one out tonight.", chapter: "After close" }] }, [null], { format: "carousel", outDir: "/tmp/x" });
   assert.deepEqual(story.slides[0], { kind: "note", text: "Last one out tonight.", label: "After close" });
 });
+
+test("light slides set a pale accent as ink on a true-accent highlight; a dark accent keeps plain colored words", () => {
+  const brand = (accent) => resolveBrandTokens({ brand: upgradeBrandV1({ name: "chip", colors: { text: "#F5F1E8", accent, stroke: "#0B0B0D", bg: "#0B0B0D" } }) });
+  const pale = brand("#C8A24B");
+  const dark = brand("#1F3A5F");
+  const note = { kind: "note", text: "Nobody buys the *modules.*" };
+  const script = { kind: "script", light: true, headline: "Can we *pause*?", say: "Sure. What changed?" };
+  assert.match(slideHTML(note, pale, { fitScript: false }), /class="slide note[^"]*has-chip"/);
+  assert.match(slideHTML(note, pale, { fitScript: false }), /--slide-chip-ink:#0B0B0D/i, "the brand surface is the ink when it reads on the accent");
+  assert.match(slideHTML(script, pale, { fitScript: false }), /<section class="[^"]*has-chip/);
+  assert.match(slideHTML(note, pale, { fitScript: false }), /--slide-chip-bg:#C8A24B/i);
+  assert.doesNotMatch(slideHTML(note, dark, { fitScript: false }), /<section class="[^"]*has-chip/);
+  assert.doesNotMatch(slideHTML({ kind: "verdict", headline: "Dark *verdict*" }, pale, { fitScript: false }), /<section class="[^"]*has-chip/, "dark slides keep the plain accent");
+});

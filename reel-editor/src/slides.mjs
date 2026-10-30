@@ -575,6 +575,11 @@ function slideRules() {
     .note-main { display: flex; flex-direction: column; justify-content: center; padding-right: var(--space-xl); }
     .note-rule, .script-rule { width: calc(var(--space-xl) + var(--space-xs)); height: calc(var(--space-xs) * .75); margin-bottom: var(--space-lg); border-radius: var(--brand-radius-sm); background: var(--slide-light-accent, var(--brand-accent)); }
     .note-label, .script-label { margin-bottom: var(--space-md); color: var(--slide-light-accent, var(--brand-accent)); font-size: var(--type-sm); font-weight: 700; letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); }
+    /* has-chip: the accent word is ink on a highlight of the true accent, kept inside its own line's cap height so a
+       tight display headline never paints over the line above; rules go true accent, small labels go ink. */
+    .has-chip .accent { color: var(--slide-chip-ink); background: linear-gradient(180deg, transparent 0, transparent 14%, var(--slide-chip-bg) 14%, var(--slide-chip-bg) 97%, transparent 97%); padding: 0 .08em; margin: 0 -.02em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+    .has-chip .note-rule, .has-chip .script-rule, .has-chip.static-light .slide-label::before { background: var(--slide-chip-bg); }
+    .has-chip .note-label, .has-chip .script-label, .has-chip.static-light .slide-label { color: var(--slide-light-ink); }
     .note-text { font-size: calc(var(--type-lg) + var(--space-xs)); line-height: var(--brand-body-line-height); font-weight: 500; }
     .script-main { display: flex; flex-direction: column; justify-content: center; }
     .script-main h1 { max-width: 86%; font-size: var(--type-xl); }
@@ -732,14 +737,21 @@ export function slideHTML(slide, tokens, options = {}) {
   const accentSmall = readableOn(readableOn(t.colors?.accent || t.colors?.ink, t.colors?.surface2 || surfaceDark, 4.5), surfaceDark, 4.5);
   // The handle on a paper slide (note, light verdict and script) reads 4.5:1 on paper; a client's pale muted read 2.29:1.
   const mutedPaper = readableOn(t.colors?.muted || lightInk, paper, 4.5);
+  // Real accent on paper (Greg 2026-10-30, "Apply it"): a pale accent (Signet Gold on Bone reads ~2:1) used to be
+  // darkened to a muddy bronze. When the accent can't carry body text on paper, light slides set the accent word as
+  // readable ink on a highlight of the true accent instead (brand guides: the accent as a chip). A dark accent that
+  // already reads on paper keeps plain colored words.
+  const trueAccent = t.colors?.accent || lightInk;
+  const chipInk = [t.colors?.surface, lightInk, "#000000"].filter(Boolean).find((c) => contrast(c, trueAccent) >= 4.5) || "#000000";
+  const lightChip = contrast(trueAccent, paper) < 4.5 && contrast(chipInk, trueAccent) >= 4.5;
   const mutedSmall = readableOn(readableOn(t.colors?.muted || t.colors?.ink, t.colors?.surface2 || surfaceDark, 4.5), surfaceDark, 4.5);
   const pingelLegacyBody = clean(t.identity?.handle).toLowerCase() === "@officialgregpingel";
   const legacySubSize = pingelLegacyBody ? (kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40) : Number(t.typeScale?.slideBody || 42);
-  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-accent-small:${accentSmall};--slide-muted-small:${mutedSmall};--slide-muted-paper:${mutedPaper};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${legacySubSize}px;`
+  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-accent-small:${accentSmall};--slide-muted-small:${mutedSmall};--slide-muted-paper:${mutedPaper};--slide-chip-ink:${chipInk};--slide-chip-bg:${trueAccent};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${legacySubSize}px;`
     + (legacyHeadSize(kind, slide.headline || slide.title) ? `--legacy-head-size:${legacyHeadSize(kind, slide.headline || slide.title)}px;` : "");
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${SLIDE_WIDTH}, height=${height}" /><style>${tokensCSS(t)}\n${slideRules()}\n${signatureRulesCSS()}\n${options.evidenceCSS || ""}</style></head>
-<body><section class="slide ${esc(kind)}${balance ? " type-balance" : ""}${slide.light ? " is-light" : ""}" style="${style}">${content}${signature}${commonFooter(t)}</section>${options.fitScript === false ? "" : textFitScript()}</body></html>`;
+<body><section class="slide ${esc(kind)}${balance ? " type-balance" : ""}${slide.light ? " is-light" : ""}${lightChip && (slide.light || kind === "note" || kind === "static-light") ? " has-chip" : ""}" style="${style}">${content}${signature}${commonFooter(t)}</section>${options.fitScript === false ? "" : textFitScript()}</body></html>`;
 }
 
 function resolveFile(file, roots) {
