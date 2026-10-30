@@ -29,17 +29,19 @@ function linePixels(line, width, height) {
   return { x: line.box.x * width, y: line.box.y * height, w: line.box.w * width, h: line.box.h * height };
 }
 
-/** Every OCR line must clear all four visible crop edges by the requested padding. */
+/** Every OCR line must clear the crop edges that actually cut the tile (left/right on a 4:5 post, top/bottom on a 9:16
+ *  cover) by the requested padding. An uncropped edge is the tile's own edge, so text there is not cut by the grid. */
 export function cropTextIssues(ocr, crop = profileCrop(ocr.width, ocr.height), padding = 12) {
+  const cutX = crop.x > 0 || crop.w < ocr.width, cutY = crop.y > 0 || crop.h < ocr.height;
   const issues = [];
   for (const line of ocr.lines || []) {
     const box = linePixels(line, ocr.width, ocr.height);
     const right = box.x + box.w, bottom = box.y + box.h;
     const edges = [];
-    if (box.x <= crop.x + padding) edges.push("left");
-    if (right >= crop.x + crop.w - padding) edges.push("right");
-    if (box.y <= crop.y + padding) edges.push("top");
-    if (bottom >= crop.y + crop.h - padding) edges.push("bottom");
+    if (cutX && box.x <= crop.x + padding) edges.push("left");
+    if (cutX && right >= crop.x + crop.w - padding) edges.push("right");
+    if (cutY && box.y <= crop.y + padding) edges.push("top");
+    if (cutY && bottom >= crop.y + crop.h - padding) edges.push("bottom");
     if (edges.length) issues.push({ text: line.text, edges, box });
   }
   return issues;

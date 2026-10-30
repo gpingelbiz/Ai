@@ -72,3 +72,13 @@ test("grid gate retries a fourth repeated tile and holds an unreadable image", a
   assert.equal(missing.verdict, "hold");
   assert.equal(missing.checks[0].code, "images");
 });
+
+test("cropTextIssues ignores the uncut top and bottom of a 4:5 post", async () => {
+  const { cropTextIssues } = await import("../src/grid-check.mjs");
+  const ocr = { width: 1080, height: 1350, lines: [
+    { text: "ELLIOTT ARMY", box: { x: 0.3, y: 0.0, w: 0.4, h: 0.05 } },
+    { text: "edge words", box: { x: 0.01, y: 0.5, w: 0.3, h: 0.05 } },
+  ] };
+  const issues = cropTextIssues(ocr);
+  assert.deepEqual(issues.map((item) => item.text), ["edge words"]);
+});
