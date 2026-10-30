@@ -161,6 +161,7 @@ test("the hook never covers the head: a measured head top reaches the page, the 
 });
 
 test("pingel-v2 builds on pingel-brand: same colours and b-roll world, plus the opt-in house system", async () => {
+  // Greg 2026-10-30: pingel-v2 text direction is his default
   const { loadPreset } = await import("../src/presets.mjs");
   const v2 = loadPreset("pingel-v2"), brand = loadPreset("pingel-brand");
   assert.deepEqual(v2.colors, brand.colors);
@@ -177,5 +178,12 @@ test("pingel-v2 builds on pingel-brand: same colours and b-roll world, plus the 
   assert.deepEqual(v2.brand.modes, { authority: "gregcard", editorial: "press", proof: "receipts" });
   assert.equal(brand.brand.signature.kind, "none");
   assert.deepEqual(brand.brand.houseLooks, []);
-  assert.equal(brand.captions.uppercase, true, "the default look is unchanged");
+  assert.equal(brand.captions.uppercase, false);
+  assert.equal(brand.captions.autoKeywords, false);
+  assert.equal(brand.captions.keywordColorOnFootage, false);
+  assert.equal(brand.hook.behind, false);
+  assert.equal(brand.hook.plaque, true);
+  assert.deepEqual(brand.looks, { lockHook: true, lockCaptions: true });
+  assert.equal(brand.cover.style, "archetypes");
+  assert.equal(brand.finish.enabled, true);
 });

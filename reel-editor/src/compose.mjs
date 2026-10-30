@@ -526,7 +526,7 @@ ${credentialMode ? `${tokensCSS(s.brand)}
       /* No spot kept the word readable behind the head (a cap or hair reaches higher than the face says): in front. */
       .slam-front { z-index: 2; }` : ""}
       .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
-      .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
+      .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${s.slams?.color === "ink" ? c.text : c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
 ${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-events: none; }
       .icon-disc { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; box-sizing: border-box; transform-origin: 50% 50%; will-change: transform, opacity; }
       .icon-disc svg { width: 55%; height: 55%; overflow: visible; }

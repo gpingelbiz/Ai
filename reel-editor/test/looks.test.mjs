@@ -93,6 +93,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+function legacyPingelPreset() {
+  const preset = structuredClone(loadPreset("pingel-brand"));
+  preset.captions = { ...preset.captions, uppercase: true, autoKeywords: true, keywordColorOnFootage: true };
+  preset.hook = { ...preset.hook, behind: true };
+  delete preset.hook.plaque;
+  preset.looks = { ...preset.looks };
+  delete preset.looks.lockHook;
+  delete preset.looks.lockCaptions;
+  preset.cover = { ...preset.cover, style: "frame" };
+  preset.finish = { ...preset.finish, enabled: false };
+  return preset;
+}
+
 test("themes: every look but glass has a whole theme; every marker, hook and slam it names is drawn", () => {
   const css = themeCSS({ H: 1920, colors: {}, theme: null }) + Object.values(THEMES).filter(Boolean).map((t) => themeCSS({ H: 1920, colors: {}, theme: t })).join("");
   for (const id of LOOK_IDS) {
@@ -110,7 +123,7 @@ test("themes: every look but glass has a whole theme; every marker, hook and sla
 });
 
 test("apply: a theme sets hook, marker, slams, grade, cut and camera on a copy; command-line choices win; glass changes nothing", () => {
-  const base = loadPreset("pingel-brand");
+  const base = legacyPingelPreset();
   const before = JSON.stringify(base);
   const s = applyTheme(base, "press");
   assert.equal(JSON.stringify(base), before, "the preset is not changed in place");
@@ -147,7 +160,7 @@ test("compose: the themed hook, slam and marker reach the page, with the typed h
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-theme-"));
   const video = path.join(dir, "v.mp4");
   fs.writeFileSync(video, "");
-  const style = applyTheme(loadPreset("pingel-brand"), "receipts");
+  const style = applyTheme(legacyPingelPreset(), "receipts");
   style.audio.sounds = false;
   const w = (text, start, key) => text.split(" ").map((t, i) => ({ text: t, start: start + i * 0.3, end: start + i * 0.3 + 0.25, key: t === key }));
   const words = w("they remember how you react", 2.7, "react");
