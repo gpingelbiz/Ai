@@ -434,9 +434,14 @@ function textFitScript() {
               .filter((node) => getComputedStyle(node).display !== "none")
               .map((node) => node.getBoundingClientRect());
             const footer = slide.querySelector(".slide-handle");
-            const footerTop = footer && getComputedStyle(footer).display !== "none" ? footer.getBoundingClientRect().top - 16 : slideRect.bottom;
+            // Measure the handle's painted text, not its padded box: layouts like compare put their decision bar right above it.
+            const footerText = footer ? (() => { const range = document.createRange(); range.selectNodeContents(footer); return range.getBoundingClientRect(); })() : null;
+            // Overlap means content reaching into the handle's letters (past half their height); a bar pinned just above it is fine.
+            const footerTop = footer && getComputedStyle(footer).display !== "none" && footerText && footerText.height ? footerText.top + footerText.height / 2 : slideRect.bottom;
             const contentBottom = boxes.length ? Math.max(...boxes.map((box) => box.bottom)) : rect.bottom;
-            return el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1
+            // No scrollHeight test: display faces like Anton (line-height .95) always paint past their own line box.
+            // What matters is a word wider than its box, text leaving the slide, or copy running into the handle row.
+            return el.scrollWidth <= el.clientWidth + 1
               && rect.left >= slideRect.left - 1 && rect.right <= slideRect.right + 1 && rect.top >= slideRect.top - 1
               && contentBottom <= footerTop + 1;
           };

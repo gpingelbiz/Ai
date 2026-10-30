@@ -58,6 +58,23 @@ export function expectedSlideText(slide, brand = {}) {
     parts.push(textPart("headline", slide.caption || slide.text || slide.headline, true));
   } else if (kind === "evidence") {
     parts.push(textPart("source", slide.sourceLabel || slide.label || slide.source));
+  } else if (kind === "stat") {
+    // The big number itself is skipped: OCR misreads huge display digits ("3%" reads as "30/0"), and the fit step keeps it on the slide.
+    parts.push(textPart("label", slide.label));
+    parts.push(textPart("headline", slide.headline, true));
+    parts.push(textPart("sub", slide.sub));
+    parts.push(textPart("source", slide.source));
+  } else if (kind === "steps") {
+    parts.push(textPart("label", slide.label));
+    parts.push(textPart("headline", slide.headline, true));
+    for (const step of slide.steps || []) parts.push(textPart("item", typeof step === "string" ? step : step?.text));
+    parts.push(textPart("source", slide.source));
+  } else if (kind === "quote") {
+    parts.push(textPart("label", slide.label));
+    parts.push(textPart("headline", slide.quote, true));
+    parts.push(textPart("by", slide.by));
+    parts.push(textPart("context", slide.context));
+    parts.push(textPart("source", slide.source));
   }
   // Every rendered family has commonFooter except evidence, whose frame owns the source-label band.
   if (kind !== "evidence") parts.push(textPart("handle", brand.identity?.handle, true));
@@ -91,10 +108,15 @@ export function matchExpectedText(parts, ocr) {
   const expected = parts.flatMap((part) => textTokens(part.text).map((token) => ({ token, role: part.role, critical: part.critical })));
   const actual = (ocr?.lines || []).flatMap((line, lineIndex) => textTokens(line.text).map((token) => ({ token, lineIndex, confidence: Number(line.confidence) || 0 })));
   const used = new Set(), missing = [], matches = [];
-  for (const item of expected) {
+  for (let i = 0; i < expected.length; i++) {
+    const item = expected[i];
     const found = actual.findIndex((candidate, index) => !used.has(index) && tokenMatches(item.token, candidate.token));
-    if (found < 0) missing.push(item);
-    else { used.add(found); matches.push({ ...item, ...actual[found] }); }
+    if (found >= 0) { used.add(found); matches.push({ ...item, ...actual[found] }); continue; }
+    // OCR often runs two short words together ("WHAT I" reads "WHATI"): accept this word and the next as one OCR token.
+    const next = expected[i + 1];
+    const joined = next ? actual.findIndex((candidate, index) => !used.has(index) && candidate.token === item.token + next.token) : -1;
+    if (joined >= 0) { used.add(joined); matches.push({ ...item, ...actual[joined] }, { ...next, ...actual[joined] }); i++; continue; }
+    missing.push(item);
   }
   const lineConfidence = (ocr?.lines || []).map((line) => Number(line.confidence)).filter(Number.isFinite);
   return {
@@ -152,6 +174,21 @@ export function boxIntersection(a, b) {
 export function faceOverlapRatio(textBox, faceBox) {
   const faceArea = Math.max(0, faceBox.w) * Math.max(0, faceBox.h);
   return faceArea ? boxIntersection(textBox, faceBox) / faceArea : 0;
+}
+
+/** Vision's face box pads below the chin; drop the bottom 15% so text under the jaw is not a collision. */
+export function faceCore(faceBox) {
+  return { ...faceBox, h: faceBox.h * 0.85 };
+}
+
+/** OCR lines that belong to the slide's own copy (half or more of their words are expected); text inside a photo is ignored. */
+export function slideCopyLines(lines = [], parts = []) {
+  const expected = parts.flatMap((part) => textTokens(part.text));
+  return lines.filter((line) => {
+    const tokens = textTokens(line.text);
+    const hits = tokens.filter((token) => expected.some((want) => tokenMatches(want, token))).length;
+    return tokens.length > 0 && hits / tokens.length >= 0.5;
+  });
 }
 
 export function relativeLuminance({ r, g, b }) {
@@ -315,16 +352,17 @@ export async function preflightSlides({ spec, files, brand, history = null, opti
       ocr = await analyzeOcr(file, index, options);
       if (ocr.width !== decoded.width || ocr.height !== decoded.height) throw new Error(`OCR image size is ${ocr.width}x${ocr.height}; PNG is ${decoded.width}x${decoded.height}`);
       addTextProblems(result.problems, expectedSlideText(slide, brand || {}), ocr);
+      ocr.copyLines = slideCopyLines(ocr.lines, expectedSlideText(slide, brand || {}));
     } catch (error) {
       result.problems.push(problem("ocr-unavailable", `OCR check could not run: ${error.message}`, "none"));
       continue;
     }
 
     if (PHOTO_KINDS.has(kindOf(slide))) {
-      const collision = ocr.lines.some((line) => ocr.faces.some((face) => faceOverlapRatio(line.box, face.box) > 0.02));
-      if (collision) result.problems.push(problem("face-collision", "rendered text overlaps a detected face by more than 2% of the face area", "recrop"));
+      const collision = ocr.copyLines.some((line) => ocr.faces.some((face) => faceOverlapRatio(line.box, faceCore(face.box)) > 0.05));
+      if (collision) result.problems.push(problem("face-collision", "slide text overlaps a detected face (more than 5% of the face, chin padding excluded)", "recrop"));
     }
-    for (const line of ocr.lines) {
+    for (const line of ocr.copyLines) {
       try {
         const ratio = contrastFromLuminances(boxPixels(decoded.png, line.box));
         const minimum = line.box.h * decoded.height < 40 ? 4.5 : 3;

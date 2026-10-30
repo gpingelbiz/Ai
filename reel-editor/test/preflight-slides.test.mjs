@@ -131,3 +131,40 @@ test("the November 2 seven-slide fixture passes, and losing slide 4's handle ret
   assert.equal(failed.verdict, "retry");
   assert.deepEqual(failed.slides.filter((slide) => slide.problems.some((item) => item.code === "ocr-handle")).map((slide) => slide.index), [4]);
 });
+
+import { slideCopyLines, faceCore, faceOverlapRatio as overlapRatio, expectedSlideText as expectedText } from "../src/slide-preflight.mjs";
+
+test("contrast and face checks look only at the slide's own words, never text inside the photo", () => {
+  const parts = [{ role: "headline", text: "Volume first. Then the closer.", critical: true }];
+  const lines = [{ text: "VOLUME FIRST.", box: { x: 0, y: 0, w: 1, h: 1 } }, { text: "ELLIOTT", box: { x: 0, y: 0, w: 1, h: 1 } }, { text: "MR. OLYMPIA 1976", box: { x: 0, y: 0, w: 1, h: 1 } }];
+  assert.deepEqual(slideCopyLines(lines, parts).map((line) => line.text), ["VOLUME FIRST."]);
+});
+
+test("text just under the chin is not a face collision; text across the face is", () => {
+  const face = { x: 0.27, y: 0.24, w: 0.39, h: 0.31 };
+  const underChin = { x: 0.08, y: 0.525, w: 0.37, h: 0.08 };
+  const acrossEyes = { x: 0.08, y: 0.30, w: 0.8, h: 0.08 };
+  assert.ok(overlapRatio(underChin, faceCore(face)) <= 0.05);
+  assert.ok(overlapRatio(acrossEyes, faceCore(face)) > 0.05);
+});
+
+test("stat, steps and quote slides list the text they paint, and skip the big stat number", () => {
+  const brand = { identity: { handle: "@officialgregpingel" } };
+  const stat = expectedText({ kind: "stat", label: "THE NUMBER", number: "3%", headline: "OF BUSINESSES TEXT BACK IN 5 MINUTES.", source: "NP Digital, Feb 2026" }, brand);
+  assert.ok(!stat.some((part) => part.text === "3%"));
+  assert.ok(stat.some((part) => part.role === "headline" && part.critical));
+  const steps = expectedText({ kind: "steps", headline: "WHAT HAPPENS", steps: ["Reply in 15 minutes.", "Book from real times."] }, brand);
+  assert.equal(steps.filter((part) => part.role === "item").length, 2);
+  const quote = expectedText({ kind: "quote", quote: "I'd rather lose the sale.", by: "Greg Pingel" }, brand);
+  assert.ok(quote.some((part) => part.role === "headline" && part.text === "I'd rather lose the sale."));
+  assert.ok(quote.some((part) => part.role === "handle"));
+});
+
+import { matchExpectedText as matchText } from "../src/slide-preflight.mjs";
+
+test("two short words OCR ran together still count as found", () => {
+  const result = matchText([{ role: "headline", text: "MY KIDS DON'T CARE WHAT I CLOSED TODAY.", critical: true }],
+    { lines: [{ text: "MY KIDS DON'T", confidence: 1 }, { text: "CARE WHATI", confidence: 1 }, { text: "CLOSED TODAY.", confidence: 1 }] });
+  assert.equal(result.missing.length, 0);
+  assert.equal(result.coverage, 1);
+});
