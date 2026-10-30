@@ -340,8 +340,8 @@ function slideRules() {
     body { background: var(--brand-surface); color: var(--brand-ink); font-family: var(--brand-body-font); }
     .slide { position: relative; width: 1080px; height: var(--slide-height); overflow: hidden; background: var(--brand-surface); color: var(--brand-ink); padding: var(--space-xxl); }
     .signature-layer { z-index: 4; }
-    .accent { color: var(--brand-accent); }
-    .slide-label { position: relative; z-index: 3; color: var(--brand-accent); font-size: var(--type-sm); font-weight: 600; letter-spacing: .06em; text-transform: var(--brand-body-case); }
+    .accent { color: var(--slide-accent-text, var(--brand-accent)); }
+    .slide-label { position: relative; z-index: 3; color: var(--slide-accent-text, var(--brand-accent)); font-size: var(--type-sm); font-weight: 600; letter-spacing: .06em; text-transform: var(--brand-body-case); }
     .slide-label::before { content: ""; display: block; width: calc(var(--space-xl) + var(--space-xs)); height: var(--space-xs); margin-bottom: var(--space-md); background: var(--brand-accent); border-radius: var(--brand-radius-sm); }
     .slide-handle { position: absolute; z-index: 5; left: var(--space-xxl); bottom: var(--space-xl); color: var(--brand-muted); font-size: var(--type-sm); font-weight: 600; }
     .legacy-main { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: center; }
@@ -377,7 +377,7 @@ function slideRules() {
     .static-light .slide-label::before { background: var(--slide-light-accent, var(--brand-accent)); }
     .family-main { position: relative; z-index: 2; height: 100%; }
     .stat-main, .steps-main, .quote-main { display: flex; flex-direction: column; justify-content: center; }
-    .stat-number { font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); font-size: 300px; line-height: .9; letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); color: var(--brand-accent); }
+    .stat-number { font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); font-size: 300px; line-height: .9; letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); color: var(--slide-accent-text, var(--brand-accent)); }
     .stat-main h1 { font-size: 76px; margin-top: var(--space-lg); }
     .stat-sub { margin-top: var(--space-lg); font-size: 38px; line-height: var(--brand-body-line-height); opacity: .86; }
     .stat-source { margin-top: var(--space-lg); font-size: 26px; font-weight: 500; color: var(--brand-muted); }
@@ -386,11 +386,11 @@ function slideRules() {
     .step-list li { display: flex; align-items: flex-start; gap: 34px; padding-bottom: 34px; position: relative; }
     .step-list li:last-child { padding-bottom: 0; }
     .step-list li:not(:last-child)::after { content: ""; position: absolute; left: calc(0.935em - 1.5px); top: 1.75em; bottom: 6px; width: 3px; background: var(--brand-accent); opacity: .45; }
-    .step-n { flex: none; width: 1.1em; font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); font-size: 1.7em; line-height: .9; text-align: center; color: var(--brand-accent); }
+    .step-n { flex: none; width: 1.1em; font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); font-size: 1.7em; line-height: .9; text-align: center; color: var(--slide-accent-text, var(--brand-accent)); }
     .step-t { font-weight: 500; line-height: 1.3; padding-top: .12em; }
-    .quote-mark { height: 140px; font-family: var(--brand-display-font); font-size: 260px; line-height: .62; color: var(--brand-accent); }
+    .quote-mark { height: 140px; font-family: var(--brand-display-font); font-size: 260px; line-height: .62; color: var(--slide-accent-text, var(--brand-accent)); }
     .quote-main blockquote { margin: 0; font-family: var(--brand-editorial-font, var(--brand-body-font)); font-weight: 600; font-size: 60px; line-height: 1.22; }
-    .quote-by { margin-top: 48px; font-size: 30px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brand-accent); }
+    .quote-by { margin-top: 48px; font-size: 30px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--slide-accent-text, var(--brand-accent)); }
     .quote-context { margin-top: 10px; font-size: 28px; color: var(--brand-muted); }
     .family-main h1 { font-size: var(--type-xl); }
     .check-list { list-style: none; margin: var(--space-xl) 0 0; padding: 0; display: grid; gap: var(--space-md); }
@@ -406,7 +406,7 @@ function slideRules() {
     .compare-grid.stacked { grid-template-rows: 1fr 1fr; }
     .compare-side { display: flex; flex-direction: column; justify-content: center; padding: var(--space-lg); border: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-stroke); border-radius: var(--brand-radius-lg); background: var(--brand-surface2); }
     .compare-side + .compare-side { border-color: var(--brand-accent); }
-    .compare-label { color: var(--brand-accent); font-size: 34px; font-weight: 700; letter-spacing: .05em; text-transform: var(--brand-body-case); }
+    .compare-label { color: var(--slide-accent-text, var(--brand-accent)); font-size: 34px; font-weight: 700; letter-spacing: .05em; text-transform: var(--brand-body-case); }
     .compare-value { margin-top: var(--space-md); font-family: var(--brand-editorial-font, var(--brand-display-font)); font-size: var(--type-lg); line-height: 1.08; }
     .compare-note { margin-top: var(--space-md); color: var(--brand-muted); font-size: 34px; line-height: 1.25; }
     .decision-line { padding: var(--space-md) var(--space-lg); border-radius: var(--brand-radius-md); background: var(--brand-accent); color: var(--brand-accent-ink); font-size: var(--type-md); font-weight: 700; }
@@ -430,7 +430,7 @@ function slideRules() {
     .story-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .story-scrim { position: absolute; inset: 0; background: linear-gradient(to bottom, rgb(from var(--brand-surface) r g b / 0) 42%, rgb(from var(--brand-surface) r g b / .9)); }
     .story-main { position: absolute; z-index: 2; left: var(--space-xxl); right: var(--space-xxl); bottom: calc(var(--space-xxl) + var(--space-xl)); }
-    .story-chapter { margin-bottom: var(--space-md); color: var(--brand-accent); font-size: max(34px, var(--type-sm)); font-weight: 700; }
+    .story-chapter { margin-bottom: var(--space-md); color: var(--slide-accent-text, var(--brand-accent)); font-size: max(34px, var(--type-sm)); font-weight: 700; }
     .story-caption { max-width: 888px; padding: var(--space-lg); border-radius: var(--brand-radius-md); background: rgb(from var(--brand-surface) r g b / .84); color: var(--brand-ink); font-size: var(--type-lg); line-height: 1.18; }
     .evidence-main { display: grid; place-items: center; }
     .evidence-main figure { width: 888px; margin: 0; }
@@ -571,7 +571,9 @@ export function slideHTML(slide, tokens, options = {}) {
   const paper = t.colors?.paper || "#FFFFFF";
   const lightInk = [t.colors?.surface, t.colors?.stroke, t.colors?.ink].filter(Boolean).sort((a, b) => contrast(b, paper) - contrast(a, paper))[0];
   const lightAccent = readableOn(t.colors?.accent || lightInk, paper);
-  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`
+  // Accent words, labels and numbers are large type: on a light background a pale accent darkens to 3:1 (fills keep it).
+  const accentText = readableOn(t.colors?.accent || t.colors?.ink, t.colors?.surface || "#0B0B0D", 3);
+  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`
     + (legacyHeadSize(kind, slide.headline || slide.title) ? `--legacy-head-size:${legacyHeadSize(kind, slide.headline || slide.title)}px;` : "");
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${SLIDE_WIDTH}, height=${height}" /><style>${tokensCSS(t)}\n${slideRules()}\n${signatureRulesCSS()}\n${options.evidenceCSS || ""}</style></head>

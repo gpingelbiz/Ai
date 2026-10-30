@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveBrandTokens, upgradeBrandV1 } from "./brandtokens.mjs";
+import { resolveBrandTokens, upgradeBrandV1, derivedColors, contrast } from "./brandtokens.mjs";
 import { ensureDir, readJSON, writeJSON, PKG_ROOT } from "./util.mjs";
 
 /**
@@ -73,6 +73,7 @@ export const STUDIO_DEFAULTS = {
   mix: [],
   neverSay: [],
   cta: "",
+  slideColors: {},
 };
 
 export const FORMATS = ["carousel", "static"];
@@ -132,7 +133,34 @@ export function checkStudio(config, { publishing = true } = {}) {
   if (!nets.length || nets.some((n) => !NETWORKS.includes(n))) out.push(`metricool.networks lists where posts go: ${NETWORKS.join(", ")}`);
   if (!["auto", "always"].includes(c.ai?.label)) out.push('ai.label is "auto" (labelled when a picture is AI-made) or "always"; AI pictures are always labelled');
   if (![true, false, "auto"].includes(c.ai?.broll)) out.push('ai.broll is true, false or "auto" (AI pictures only when Codex is set up)');
+  const sc = c.slideColors;
+  if (!sc || typeof sc !== "object" || Array.isArray(sc)) out.push('slideColors is like {"bg": "#FFF3EE", "text": "#111111", "accent": "#FFB27D"}');
+  else {
+    for (const [k, v] of Object.entries(sc)) {
+      if (k.startsWith("_")) continue;
+      if (!SLIDE_COLOR_KEYS.includes(k)) out.push(`slideColors.${k}: use ${SLIDE_COLOR_KEYS.join(", ")}`);
+      else if (!/^#[0-9a-fA-F]{6}$/.test(String(v))) out.push(`slideColors.${k} "${v}" is not a six-digit color like #FFF3EE`);
+    }
+    if (/^#[0-9a-fA-F]{6}$/.test(String(sc.bg)) && /^#[0-9a-fA-F]{6}$/.test(String(sc.text)) && contrast(sc.bg, sc.text) < 4.5) out.push("slideColors.text does not read on slideColors.bg (needs 4.5:1)");
+  }
   return out;
+}
+
+export const SLIDE_COLOR_KEYS = ["bg", "text", "accent", "lines", "cards"];
+
+/**
+ * studio.json slideColors over the brand's own colors, for a client whose carousels are lighter (or darker) than
+ * their reels. Unset keys keep the brand's; lines left unset keep the brand's stroke when it shows on the new bg;
+ * cards (checklist rows, compare panels) default to a shade of the bg.
+ */
+export function withSlideColors(tokens, given = {}) {
+  const pick = (k) => (/^#[0-9a-fA-F]{6}$/.test(String(given?.[k])) ? given[k] : null);
+  if (!SLIDE_COLOR_KEYS.some(pick)) return tokens;
+  const c = tokens.colors;
+  const surface = pick("bg") || c.surface;
+  const ink = pick("text") || c.ink;
+  const stroke = pick("lines") || (contrast(c.stroke, surface) >= 3 ? c.stroke : ink);
+  return { ...tokens, colors: derivedColors({ ink, surface, accent: pick("accent") || c.accent, stroke, surface2: pick("cards") || undefined }) };
 }
 
 /** The Mac's own time zone, for a studio.json that names none. */
@@ -154,9 +182,9 @@ export const BUNDLED_FONTS = Object.fromEntries([
  * The client's brand for slides: brand/brand.json (the kit template's shape or schema v2), with font files from
  * brand/fonts (Display.ttf / Body.ttf, as the brand kit fetches them) when the file names a family only.
  */
-export function studioBrand(paths) {
+export function studioBrand(paths, slideColors = {}) {
   const raw = readJSON(paths.brandJson);
-  const tokens = resolveBrandTokens({ brand: raw.schemaVersion === 2 ? raw : upgradeBrandV1(raw) });
+  const tokens = withSlideColors(resolveBrandTokens({ brand: raw.schemaVersion === 2 ? raw : upgradeBrandV1(raw) }), slideColors);
   for (const [role, file] of [["display", "Display"], ["body", "Body"]]) {
     const spec = tokens.type?.[role];
     if (!spec) continue;
@@ -182,7 +210,7 @@ export function loadStudio(dir, { publishing = true } = {}) {
   const problems = checkStudio(config, { publishing });
   if (!fs.existsSync(paths.brandJson)) problems.push(`brand/brand.json is missing in ${paths.root}`);
   if (problems.length) throw new Error(`studio.json needs fixing:\n- ${problems.join("\n- ")}`);
-  const brand = studioBrand(paths);
+  const brand = studioBrand(paths, config.slideColors);
   for (const d of [paths.state, paths.made, paths.rawReels]) ensureDir(d);
   return { paths, config, brand: brand.raw, tokens: brand.tokens, voice: readText(paths.voice), guide: readText(paths.guide), photos: photosDir(config, paths) };
 }
