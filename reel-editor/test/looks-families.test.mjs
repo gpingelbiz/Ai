@@ -227,3 +227,10 @@ test("dry run 2 fixes: long high-face covers take a side card, a type-only cover
   assert.match(alt[0], /What If I Did\?/);
   assert.match(alt[1], /72%/);
 });
+
+test("dark script labels use the small-text accent; verdict headlines get a wide enough column", () => {
+  const brand = resolveBrandTokens({ brand: upgradeBrandV1({ name: "lbl", colors: { text: "#F4EFE6", accent: "#E8704A", stroke: "#14202B", bg: "#14202B" } }) });
+  const html = slideHTML({ kind: "script", headline: "The gym opens at six today", say: "By the time the first member walks in the floor is clean." , label: "Say this instead" }, brand, { fitScript: false });
+  assert.match(html, /\.slide\.script:not\(\.is-light\) \.script-label \{ color: var\(--slide-accent-small/);
+  assert.match(html, /\.verdict-main h1 \{ max-width: 82%/);
+});

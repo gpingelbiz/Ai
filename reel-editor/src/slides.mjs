@@ -573,7 +573,8 @@ function slideRules() {
     .verdict.is-light, .note, .script.is-light { background: var(--brand-paper); color: var(--slide-light-ink, var(--brand-surface)); }
     .verdict.is-light .accent, .note .accent, .script.is-light .accent { color: var(--slide-light-accent, var(--brand-accent)); }
     .verdict-main { display: flex; align-items: center; }
-    .verdict-main h1 { max-width: 65%; font-size: calc(var(--type-display) + var(--type-md)); }
+    /* 82%, not 65%: an all-caps display face at 65% set one word per line (2026-10-30 Julee dry run). */
+    .verdict-main h1 { max-width: 82%; font-size: calc(var(--type-display) + var(--type-md)); }
     .note-main { display: flex; flex-direction: column; justify-content: center; padding-right: var(--space-xl); }
     .note-rule, .script-rule { width: calc(var(--space-xl) + var(--space-xs)); height: calc(var(--space-xs) * .75); margin-bottom: var(--space-lg); border-radius: var(--brand-radius-sm); background: var(--slide-light-accent, var(--brand-accent)); }
     .note-label, .script-label { margin-bottom: var(--space-md); color: var(--slide-light-accent, var(--brand-accent)); font-size: var(--type-sm); font-weight: 700; letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); }
@@ -581,6 +582,7 @@ function slideRules() {
        tight display headline never paints over the line above; rules go true accent, small labels go ink. */
     .has-chip .accent { color: var(--slide-chip-ink); background: linear-gradient(180deg, transparent 0, transparent 14%, var(--slide-chip-bg) 14%, var(--slide-chip-bg) 97%, transparent 97%); padding: 0 .08em; margin: 0 -.02em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
     .has-chip .note-rule, .has-chip .script-rule, .has-chip.static-light .slide-label::before { background: var(--slide-chip-bg); }
+    .slide.script:not(.is-light) .script-label { color: var(--slide-accent-small, var(--brand-accent)); } /* the paper accent is too dark on the dark field */
     .has-chip .note-label, .has-chip .script-label, .has-chip.static-light .slide-label { color: var(--slide-light-ink); }
     .note-text { font-size: calc(var(--type-lg) + var(--space-xs)); line-height: var(--brand-body-line-height); font-weight: 500; }
     .script-main { display: flex; flex-direction: column; justify-content: center; }

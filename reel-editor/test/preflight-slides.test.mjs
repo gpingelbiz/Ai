@@ -213,3 +213,14 @@ test("slideCopyLines ignores a lone short word printed in the photo", async () =
   const lines = [{ text: "NOT -" }, { text: "Not the goal." }, { text: "STEPS" }];
   assert.deepEqual(slideCopyLines(lines, parts).map((line) => line.text), ["Not the goal.", "STEPS"]);
 });
+
+test("a lone capital I read as l, 1, dropped, or glued to the next word still matches", () => {
+  const parts = [{ role: "headline", text: "I open at five", critical: true }];
+  for (const text of ["l open at five", "1 open at five", "| open at five", "l'open at five", "OPEN AT FIVE"]) {
+    const result = matchExpectedText(parts, { lines: [{ text, confidence: 0.9 }] });
+    assert.deepEqual(result.missing, [], text);
+    assert.equal(result.coverage, 1, text);
+  }
+  const clipped = matchExpectedText(parts, { lines: [{ text: "l at five", confidence: 0.9 }] });
+  assert.deepEqual(clipped.missing.map((item) => item.token), ["open"], "real missing words still count");
+});
