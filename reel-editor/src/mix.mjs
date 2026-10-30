@@ -6,6 +6,15 @@
 
 const clean = (s) => String(s ?? "").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim();
 const pct = (s) => { const m = String(s).match(/(\d{1,3}(?:\.\d+)?)\s*%/); return m ? Number(m[1]) : null; };
+export const STATIC_FAMILIES = ["verdict", "note", "cover-top", "script"];
+
+/** A fixed four-family rotation, continued from the last static recorded in the post log. */
+export function pickStaticFamily(history = []) {
+  const last = [...history].filter((post) => post?.format === "static").sort((a, b) => `${a.day || a.date || ""} ${a.time || ""}`.localeCompare(`${b.day || b.date || ""} ${b.time || ""}`)).at(-1);
+  const used = last?.staticFamily || last?.gridFamily || last?.family || "";
+  const index = STATIC_FAMILIES.indexOf(used);
+  return STATIC_FAMILIES[(index + 1 + STATIC_FAMILIES.length) % STATIC_FAMILIES.length];
+}
 
 /** Markdown tables as arrays of row cells (header first). */
 export function markdownTables(md) {

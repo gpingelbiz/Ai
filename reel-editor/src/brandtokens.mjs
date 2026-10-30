@@ -6,7 +6,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const COLOR_ROLES = ["ink", "accent", "accentInk", "surface", "surface2", "stroke", "muted", "paper", "warn"];
 const TYPE_ROLES = ["display", "body", "editorial", "mono"];
 
-const TYPE_SCALE = { xs: 24, sm: 30, md: 40, lg: 54, xl: 72, display: 112 };
+const TYPE_SCALE = { xs: 24, sm: 30, md: 40, lg: 54, xl: 72, display: 112, slideBody: 42 };
 const SPACING = { xs: 8, sm: 16, md: 24, lg: 40, xl: 64, xxl: 96 };
 const RADIUS = { sm: 8, md: 18, lg: 36, pill: 999 };
 
@@ -273,7 +273,7 @@ export function tokensCSS(tokens) {
     vars.push(`  --brand-${roleName}-tracking: ${role.tracking || 0}em;`);
     vars.push(`  --brand-${roleName}-line-height: ${role.lineHeight || 1.2};`);
   }
-  for (const [name, value] of Object.entries(t.typeScale)) vars.push(`  --type-${name}: ${value}px;`);
+  for (const [name, value] of Object.entries(t.typeScale)) vars.push(`  --type-${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}: ${value}px;`);
   for (const [name, value] of Object.entries(t.spacing)) vars.push(`  --space-${name}: ${value}px;`);
   for (const [name, value] of Object.entries(t.radius)) vars.push(`  --brand-radius-${name}: ${value}px;`);
   vars.push(`  --brand-radius: ${t.radius.md}px;`);
