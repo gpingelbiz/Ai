@@ -1,4 +1,4 @@
-import { fitBlockHook } from "./placement.mjs";
+import { fitBlockHook, hookBlockHeight, BLOCK_HOOKS } from "./placement.mjs";
 
 function cleanHook(s) {
   return s.replace(/[\p{Extended_Pictographic}️]/gu, "").replace(/\s+/g, " ").replace(/[,.;:\-]+$/, "").trim();
@@ -10,7 +10,18 @@ export function plaqueLayout(words, options = {}) {
   if (!fit) return null;
   // Older block treatments express position at their text anchor. The plaque
   // is absolutely positioned from its top edge, so expose that coordinate.
-  return { ...fit, position: fit.position - 1.2 * fit.fontSizeFrac };
+  const above = { ...fit, position: fit.position - 1.2 * fit.fontSizeFrac, zone: "above" };
+  // A head high in the frame leaves a thin band above it, and squeezing the plaque in there made a 12-word hook
+  // unreadable on a phone (2026-10-30 real re-cut). When the text would drop below 85% or still not clear the head,
+  // put the plaque at full size between the chin and the captions instead, if it fits there.
+  const { headBottom, captionTop, fontSizeFrac, W = 1080, H = 1920, gap = 0.015 } = options;
+  if (fit.fits && fit.fontSizeFrac >= fontSizeFrac * 0.85) return above;
+  if (!(headBottom > 0) || !(captionTop > 0)) return above;
+  const block = BLOCK_HOOKS.plaque;
+  const h = hookBlockHeight(words, { W, H, fontPx: Math.round(fontSizeFrac * H * block.em), charEm: block.charEm, lineHeight: block.lineHeight, padEm: block.padEm, goldScale: 1 });
+  const top = headBottom + gap;
+  if (top + h > captionTop - gap) return above;
+  return { fontSizeFrac, position: Math.round(top * 1000) / 1000, fits: true, zone: "below" };
 }
 
 /** How long the hook stays up: hook.duration seconds, or the whole reel for "reel" (one-line reels). */

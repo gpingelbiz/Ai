@@ -353,11 +353,11 @@ export async function runEdit(input, opts = {}) {
     if (preset.hook.plaque === true && opts.hookPosition == null && sameShape) {
       const head = zoomedHead(detection, 1.06);
       const before = preset.hook.fontSizeFrac;
-      const fit = plaqueLayout(hook.words || hook.text.split(/\s+/).map((text) => ({ text })), { headTop: head?.top, fontSizeFrac: before, W: canvas0.width, H: canvas0.height });
+      const fit = plaqueLayout(hook.words || hook.text.split(/\s+/).map((text) => ({ text })), { headTop: head?.top, headBottom: head?.bottom, captionTop, fontSizeFrac: before, W: canvas0.width, H: canvas0.height });
       if (fit) {
         preset.hook.fontSizeFrac = fit.fontSizeFrac;
         preset.hook.position = fit.position;
-        log(`hook plaque: above the head at ${Math.round(fit.position * 100)}%${fit.fontSizeFrac < before ? `, text at ${Math.round(100 * fit.fontSizeFrac / before)}%` : ""}`);
+        log(`hook plaque: ${fit.zone === "below" ? "between the chin and the captions" : "above the head"} at ${Math.round(fit.position * 100)}%${fit.fontSizeFrac < before ? `, text at ${Math.round(100 * fit.fontSizeFrac / before)}%` : ""}`);
       }
     }
   }

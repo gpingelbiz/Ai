@@ -56,3 +56,15 @@ test("textcheck fails closed and still writes a hold when its inputs are unavail
   assert.match(result.notes[0], /no plan\.json/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(work, "textcheck.json"), "utf8")).verdict, "hold");
 });
+
+test("a few flashing caption lines are a note, systemic flashes and a flashing hook hold", async () => {
+  const { evaluateTextSamples } = await import("../src/textcheck.mjs");
+  const ocr = JSON.stringify({ width: 1080, height: 1920, lines: [], faces: [] });
+  const caption = (i, duration) => ({ id: `c${i}`, kind: "caption", at: i, duration, text: "", ocr });
+  const fewFlashes = [...Array(30)].map((_, i) => caption(i, i < 2 ? 0.12 : 0.8));
+  assert.equal(evaluateTextSamples(fewFlashes).verdict, "schedule");
+  const manyFlashes = [...Array(30)].map((_, i) => caption(i, i < 5 ? 0.12 : 0.8));
+  assert.equal(evaluateTextSamples(manyFlashes).verdict, "hold");
+  const hookFlash = [...fewFlashes, { id: "h", kind: "hook", at: 0, duration: 0.2, text: "", ocr }];
+  assert.equal(evaluateTextSamples(hookFlash, { hookCoverage: 0 }).verdict, "hold");
+});

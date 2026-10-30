@@ -128,3 +128,14 @@ test("the progress rail goes to the top of the frame when the head fills the mid
   assert.ok(p.y + p.h < (head.cy - head.h / 2) * 1920, "and above the head");
   assert.equal(placeProgressRail({ ...args, hookTop: 0.12, hookBottom: 0.22 }).skip, true, "a hook at the top leaves no room up there either");
 });
+
+test("plaqueLayout moves a squeezed hook between the chin and the captions at full size", async () => {
+  const { plaqueLayout } = await import("../src/hook.mjs");
+  const copy = "90 % der Paare verstehen nicht dass ihre Beziehung nicht von alleine".split(" ").map((text) => ({ text }));
+  const fit = plaqueLayout(copy, { headTop: 0.12, headBottom: 0.38, captionTop: 0.6, fontSizeFrac: 0.041, W: 1080, H: 1920 });
+  assert.equal(fit.zone, "below");
+  assert.equal(fit.fontSizeFrac, 0.041);
+  assert.ok(fit.position >= 0.38 && fit.position < 0.6);
+  const roomy = plaqueLayout(copy.slice(0, 5), { headTop: 0.4, headBottom: 0.7, captionTop: 0.75, fontSizeFrac: 0.041, W: 1080, H: 1920 });
+  assert.equal(roomy.zone, "above");
+});

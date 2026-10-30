@@ -183,12 +183,12 @@ export function groupWords(words, duration, { wordsPerLine = 3, maxGap = 0.7, em
   }
   let lines = tidyLines(split, Math.max(2, wordsPerLine + 1)).map((line) => line.map(({ text, start, end }) => ({ text, start, end })));
   // minShow: a line that would be on screen for less than this joins the next one (fast talkers with short lines
-  // otherwise flash a word for a few frames); never past wordsPerLine + 2 words, never across a pause.
+  // otherwise flash a word for a few frames); never past wordsPerLine + 3 words, never across a pause.
   if (minShow > 0) {
     const merged = [];
     for (let k = 0; k < lines.length; k++) {
       const cur = lines[k], next = lines[k + 1];
-      if (next && next[0].start - cur[0].start < minShow && cur.length + next.length <= wordsPerLine + 2 && next[0].start - cur[cur.length - 1].end <= maxGap) {
+      if (next && next[0].start - cur[0].start < minShow && cur.length + next.length <= wordsPerLine + 3 && next[0].start - cur[cur.length - 1].end <= maxGap) {
         lines[k + 1] = [...cur, ...next];
         continue;
       }

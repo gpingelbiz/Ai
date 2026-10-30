@@ -27,14 +27,15 @@
     "placeMax": 0.72,
     "placeGap": 0.025,
     "dimFuture": false,
-    "keywordColorOnFootage": false
+    "keywordColorOnFootage": false,
+    "minShow": 0.35
   },
   "hook": {
     "enabled": true,
     "duration": 3,
     "position": 0.22,
     "fontSizeFrac": 0.041,
-    "maxWords": 12,
+    "maxWords": 8,
     "autoPlace": true,
     "style": "headline",
     "behind": false,

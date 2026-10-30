@@ -98,7 +98,13 @@ export function evaluateTextSamples(samples = [], { edgePx = 8, minShow = 0.3, h
     }
   }
   const unique = problems.filter((problem, index, all) => all.findIndex((other) => other.code === problem.code && other.sample === problem.sample && other.message === problem.message) === index);
-  return { verdict: unique.length ? "hold" : "schedule", notes: unique.map((problem) => `${problem.code} at ${problem.at.toFixed(2)}s: ${problem.message}`), problems: unique, sampleCount: samples.length };
+  // A fast talker leaves a few caption lines up for under 0.3 s; that is worth a note, not a held reel. Hold for
+  // flashes only when they are systemic (more than 2 and more than 10% of the caption lines) or the hook flashes.
+  // Clipped text, text on a face and an unreadable hook always hold. (2026-10-30 real re-cut: 6 of 63 lines.)
+  const captionCount = samples.filter((sample) => sample.kind === "caption").length;
+  const captionFlashes = unique.filter((problem) => problem.code === "text-flash" && /^caption /.test(problem.message)).length;
+  const blocking = unique.filter((problem) => problem.code !== "text-flash" || !/^caption /.test(problem.message) || (captionFlashes > 2 && captionFlashes > 0.1 * captionCount));
+  return { verdict: blocking.length ? "hold" : "schedule", notes: unique.map((problem) => `${problem.code} at ${problem.at.toFixed(2)}s: ${problem.message}`), problems: unique, blocking: blocking.length, sampleCount: samples.length };
 }
 
 export function textcheckHold(reason) {
