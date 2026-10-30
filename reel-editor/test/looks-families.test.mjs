@@ -164,3 +164,27 @@ test("daily statics rotate all four families and never repeat the last one", () 
   assert.equal(pickStaticFamily(history), "verdict");
   assert.equal(pickStaticFamily([{ format: "carousel", day: "2026-11-05" }]), "verdict");
 });
+
+test("a cover with no usable photo falls back to a type-only layout instead of failing the post", async () => {
+  const { buildSpec } = await import("../src/studio-copy.mjs");
+  const copy = { slides: [
+    { role: "cover-top", headline: "Stop pitching", sub: "Say the sentence." },
+    { role: "cover-compare", headline: "Two ways", left: { label: "Most", text: "Pitch" }, right: { label: "Do", text: "Ask" } },
+  ] };
+  const spec = buildSpec(copy, [null, null], { format: "carousel", outDir: "/tmp/x" });
+  assert.deepEqual(spec.slides[0], { kind: "cover", headline: "Stop pitching", sub: "Say the sentence." });
+  assert.equal(spec.slides[1].kind, "compare");
+  assert.equal(spec.slides[1].left.value, "Pitch");
+  assert.throws(() => buildSpec({ slides: [{ role: "cover-doc" }] }, [null], { format: "carousel", outDir: "/tmp/x" }), /needs a real photo/);
+});
+
+test("cover-top with a face high in the frame becomes the band-on-top cover; a photo-less story beat becomes a note", async () => {
+  const { buildSpec } = await import("../src/studio-copy.mjs");
+  const high = { export: "/tmp/a.jpg", faces: [{ x: 0.3, y: 0.2, w: 0.3, h: 0.25 }] };
+  const low = { export: "/tmp/b.jpg", faces: [{ x: 0.3, y: 0.6, w: 0.3, h: 0.2 }] };
+  const copy = { slides: [{ role: "cover-top", headline: "Real job" }] };
+  assert.equal(buildSpec(copy, [high], { format: "carousel", outDir: "/tmp/x" }).slides[0].kind, "cover-list");
+  assert.equal(buildSpec(copy, [low], { format: "carousel", outDir: "/tmp/x" }).slides[0].kind, "cover-top");
+  const story = buildSpec({ slides: [{ role: "story", caption: "Last one out tonight.", chapter: "After close" }] }, [null], { format: "carousel", outDir: "/tmp/x" });
+  assert.deepEqual(story.slides[0], { kind: "note", text: "Last one out tonight.", label: "After close" });
+});

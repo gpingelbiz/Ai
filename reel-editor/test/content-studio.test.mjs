@@ -309,7 +309,7 @@ test("copy: postcard, notes, story and supplied evidence validate into their bui
   assert.deepEqual(spec.slides.map((slide) => slide.kind), ["cover", "postcard", "notes", "story", "evidence", "cta"]);
   assert.deepEqual(spec.slides[3].focalPoint, { x: 0.35, y: 0.35 });
   assert.equal(spec.slides[4].image, proof);
-  assert.throws(() => buildSpec(parsed, [], { format: "carousel" }), /story slide 4 needs a real photo/);
+  assert.equal(buildSpec(parsed, [], { format: "carousel" }).slides[3].kind, "note", "a story beat with no photo keeps its words as a note (2026-10-30)");
   assert.throws(() => parseCopy(JSON.stringify({ slides: [{ role: "cover", headline: "A" }, { role: "evidence", proofFile: "made-up.png", sourceLabel: "Proof" }, { role: "point", headline: "C" }, { role: "point", headline: "D" }, { role: "close", headline: "E" }], caption: "c" }), { format: "carousel", evidenceFiles: [] }), /does not name one supplied proof screenshot/);
 });
 

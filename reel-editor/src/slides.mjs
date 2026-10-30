@@ -474,6 +474,7 @@ function slideRules() {
     .evidence-embed { position: absolute; inset: 0; }
     .static-light { background: var(--brand-paper); color: var(--slide-light-ink, var(--brand-surface)); }
     .static-light .slide-handle { color: var(--brand-muted); }
+    .slide.note .slide-handle, .slide.is-light .slide-handle { color: var(--slide-muted-paper, var(--brand-muted)); }
     /* Paper layouts take the accent darkened just enough to read on paper (a pale peach or gold turns deep). */
     .static-light .accent, .static-light .slide-label, .post-card .accent, .note-paper .accent { color: var(--slide-light-accent, var(--brand-accent)); }
     .static-light .slide-label::before { background: var(--slide-light-accent, var(--brand-accent)); }
@@ -729,10 +730,12 @@ export function slideHTML(slide, tokens, options = {}) {
   // A coral accent on a navy card read 4.08:1 and the gate held a client's carousel for it (2026-10-30 dry run).
   const surfaceDark = t.colors?.surface || "#0B0B0D";
   const accentSmall = readableOn(readableOn(t.colors?.accent || t.colors?.ink, t.colors?.surface2 || surfaceDark, 4.5), surfaceDark, 4.5);
+  // The handle on a paper slide (note, light verdict and script) reads 4.5:1 on paper; a client's pale muted read 2.29:1.
+  const mutedPaper = readableOn(t.colors?.muted || lightInk, paper, 4.5);
   const mutedSmall = readableOn(readableOn(t.colors?.muted || t.colors?.ink, t.colors?.surface2 || surfaceDark, 4.5), surfaceDark, 4.5);
   const pingelLegacyBody = clean(t.identity?.handle).toLowerCase() === "@officialgregpingel";
   const legacySubSize = pingelLegacyBody ? (kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40) : Number(t.typeScale?.slideBody || 42);
-  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-accent-small:${accentSmall};--slide-muted-small:${mutedSmall};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${legacySubSize}px;`
+  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-accent-small:${accentSmall};--slide-muted-small:${mutedSmall};--slide-muted-paper:${mutedPaper};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${legacySubSize}px;`
     + (legacyHeadSize(kind, slide.headline || slide.title) ? `--legacy-head-size:${legacyHeadSize(kind, slide.headline || slide.title)}px;` : "");
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${SLIDE_WIDTH}, height=${height}" /><style>${tokensCSS(t)}\n${slideRules()}\n${signatureRulesCSS()}\n${options.evidenceCSS || ""}</style></head>

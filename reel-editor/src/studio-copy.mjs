@@ -366,7 +366,16 @@ export function buildSpec(copy, photos = [], { format, outDir }) {
     const fy = faceY(p);
     const pos = aim(p);
     if (COVER_ROLES.includes(s.role)) {
-      if (!photo || p?.ai) throw new Error(`${s.role} slide ${i + 1} needs a real photo`);
+      // No usable real photo (an empty or spent photo folder): keep the words on a type-only layout instead of failing
+      // the whole post (2026-10-30: a client with an empty Photos folder lost every carousel to this).
+      if (!photo || p?.ai) {
+        if (s.role === "cover-compare") return { kind: "compare", title: s.headline || "", left: { label: s.left?.label, value: s.left?.text }, right: { label: s.right?.label, value: s.right?.text } };
+        if (!s.headline) throw new Error(`${s.role} slide ${i + 1} needs a real photo`);
+        return { kind: "cover", headline: s.headline, ...(s.sub ? { sub: s.sub } : {}) };
+      }
+      // A face in the top half sits right where cover-top's words go, and recropping can't move it far enough on a
+      // portrait selfie (2026-10-30 dry run: three held covers). The band-on-top cover keeps the same words and fields.
+      if (s.role === "cover-top" && fy != null && fy < 0.55) return { kind: "cover-list", photo, headline: s.headline, ...(s.sub ? { sub: s.sub } : {}), pos };
       if (s.role === "cover-top") return { kind: s.role, photo, headline: s.headline, ...(s.sub ? { sub: s.sub } : {}), pos };
       if (s.role === "cover-doc") return { kind: s.role, photo, ...(s.headline ? { headline: s.headline } : {}), ...(s.corner ? { corner: s.corner } : {}), pos };
       if (s.role === "cover-card") return { kind: s.role, photo, headline: s.headline, ...(s.sub ? { sub: s.sub } : {}), ...(s.side ? { side: s.side } : {}), pos };
@@ -391,7 +400,8 @@ export function buildSpec(copy, photos = [], { format, outDir }) {
     if (s.role === "postcard") return { kind: "postcard", postText: s.postText, ...(s.metadata ? { metadata: s.metadata } : {}) };
     if (s.role === "notes") return { kind: "notes", title: s.headline, lines: s.lines, ...(s.date ? { date: s.date } : {}) };
     if (s.role === "story") {
-      if (!photo || p?.ai) throw new Error(`story slide ${i + 1} needs a real photo`);
+      // A story beat with no real photo left keeps its words as a note rather than failing the post.
+      if (!photo || p?.ai) return { kind: "note", text: s.caption, ...(s.chapter ? { label: s.chapter } : {}) };
       const faces = [...(p?.faces || [])].sort((a, b) => b.w * b.h - a.w * a.h);
       const focalPoint = p.focalPoint || (faces[0] ? { x: faces[0].x + faces[0].w / 2, y: faces[0].y + faces[0].h / 2 } : pos);
       return { kind: "story", photo, focalPoint, caption: s.caption, ...(s.chapter ? { chapter: s.chapter } : {}) };
