@@ -129,7 +129,7 @@ function baseTokens({ colors = {}, display, body, identity = {}, personality = "
     texture: { grain: calm ? 0.025 : 0.08, paper: calm },
     motion: motionTokens(personality),
     signature: { kind: "none", position: "none", colorRole: "accent", thickness: 0, opacity: 0.68 },
-    imagery: { grade: "muted-editorial", intensity: calm ? 0.3 : 0.55 },
+    imagery: { finish: true, grade: "muted-editorial", intensity: calm ? 0.3 : 0.55 },
     houseLooks: [],
     modes: {},
     contentModes: {},
@@ -222,7 +222,7 @@ function tokensFromPreset(preset = {}) {
     personality: calm ? "calm" : "punchy",
   });
   const grade = preset.broll?.grade;
-  if (grade?.preset) tokens.imagery = { grade: grade.preset, intensity: Number.isFinite(grade.intensity) ? grade.intensity : 0.55 };
+  if (grade?.preset) tokens.imagery = { finish: true, grade: grade.preset, intensity: Number.isFinite(grade.intensity) ? grade.intensity : 0.55 };
   return tokens;
 }
 

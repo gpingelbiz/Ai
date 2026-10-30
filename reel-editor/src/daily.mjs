@@ -6,6 +6,7 @@ import { loadStudio, readPosts, logPost, studioLog, takeLock, parseTime, hhmm } 
 import { studioMix, pickJob } from "./mix.mjs";
 import { copyPrompt, parseCopy, neverSaid, captionText, buildSpec, photoPlan, photoPickPrompt, parsePhotoPicks, buildAltText, shortenPrompt, applyShortenedSlides } from "./studio-copy.mjs";
 import { photoPool, pickPhotos, exportPhoto, contactSheet, markUsed, skipSummary } from "./photos.mjs";
+import { finishPhotoSet, grainStrength } from "./photo-finish.mjs";
 import { scheduledPosts, postInput, createPost, detectConnectors } from "./studio-metricool.mjs";
 import { hostFiles } from "./studio-host.mjs";
 import { runStudioPreflight, preflightProblems, readPhotoHistory, appendPhotoHistory, writeHeldReport } from "./studio-preflight.mjs";
@@ -228,10 +229,26 @@ export async function makePost(studio, slot, { posts, connectors = {}, deps = {}
   const { bySlide, vetoed, pool } = await (deps.choosePhotos || choosePhotos)(studio, copy, { workDir, pick: deps.pickPhotos !== false });
   await (deps.drawStills === false ? Promise.resolve([]) : drawStills(studio, copy, bySlide, workDir));
   let photos = [];
+  const finishEnabled = studio.tokens.imagery?.finish !== false;
+  const finishEntries = [];
+  let finishTarget = null;
   for (const [i, p] of bySlide.entries()) {
     if (!p) continue;
-    p.export = p.ai ? p.file : await exportPhoto(p.file, path.join(workDir, `photo-${i + 1}.jpg`));
+    p.export = p.ai ? p.file : await exportPhoto(p.file, path.join(workDir, `photo-${i + 1}${finishEnabled ? "-source" : ""}.jpg`));
+    if (!p.ai && finishEnabled) finishEntries.push({ p, file: p.export });
     photos.push(p);
+  }
+  if (finishEntries.length) {
+    const imagery = studio.tokens.imagery || {};
+    const finished = await (deps.finishPhotos || finishPhotoSet)(finishEntries.map((entry) => entry.file), {
+      outDir: path.join(workDir, "photos-finished"),
+      grade: imagery.grade || "muted-editorial",
+      intensity: Number.isFinite(imagery.intensity) ? imagery.intensity : 0.55,
+      grain: grainStrength(studio.tokens.texture?.grain),
+    });
+    finishEntries.forEach((entry, index) => { entry.p.export = finished.outputs[index]; });
+    finishTarget = finished.targetLuma;
+    writeJSON(path.join(workDir, "photo-finish.json"), finished);
   }
   let spec = buildSpec(copy, bySlide, { format: slot.format, outDir: path.join(workDir, "slides") });
   writeJSON(path.join(workDir, "spec.json"), spec);
@@ -249,7 +266,18 @@ export async function makePost(studio, slot, { posts, connectors = {}, deps = {}
         const avoid = bySlide.filter(Boolean).flatMap((photo) => [photo.key, photo.moment]).filter(Boolean);
         const replacement = pickPhotos(pool?.usable || [], 1, { avoid })[0];
         if (!replacement) throw new Error(`no unused replacement photo is available for slide ${index + 1}`);
-        replacement.export = await exportPhoto(replacement.file, path.join(workDir, `photo-${index + 1}-retry.jpg`));
+        replacement.export = await exportPhoto(replacement.file, path.join(workDir, `photo-${index + 1}-retry${finishEnabled ? "-source" : ""}.jpg`));
+        if (finishEnabled) {
+          const imagery = studio.tokens.imagery || {};
+          const finished = await (deps.finishPhotos || finishPhotoSet)([replacement.export], {
+            outDir: path.join(workDir, "photos-finished-retry"),
+            grade: imagery.grade || "muted-editorial",
+            intensity: Number.isFinite(imagery.intensity) ? imagery.intensity : 0.55,
+            grain: grainStrength(studio.tokens.texture?.grain),
+            targetLuma: finishTarget,
+          });
+          replacement.export = finished.outputs[0];
+        }
         bySlide[index] = replacement;
       }
       spec = buildSpec(copy, bySlide, { format: slot.format, outDir: path.join(workDir, "slides-retry") });

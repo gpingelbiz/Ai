@@ -105,6 +105,7 @@
     "thickness": 0
   },
   "imagery": {
+    "finish": true,
     "grade": "muted-editorial",
     "intensity": 0.55
   },

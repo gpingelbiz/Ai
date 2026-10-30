@@ -39,6 +39,11 @@ Usage
   reel slides <spec.json> [--brand brands/x.json] [--out <dir>]
                                     render the content-engine slide JSON; prints one PNG path per line
   reel slides --sample [--out <dir>] render every kind for Greg and the calm fixture for visual review
+  reel photo-finish <files...> --out-dir <dir> [--grade none|muted-editorial|bw|warm]
+                                    [--intensity 0..1] [--grain 0..0.03] [--json]
+                                    finish one carousel with one shared target luma; unavailable Swift copies through
+  reel photo-score <files...> [--json]
+                                    Apple Vision aesthetics, utility, face count, sharpness and luma for photo picking
   reel preflight <spec.json> [--dir <png dir>] [--brand <brand.json|preset>] [--history <file.json>] [--json]
                                     fail-closed rendered-slide checks; exits 0 only when the verdict is schedule
   reel photos | daily | studio ...  the Content Studio (a client's folder that makes and schedules their posts):
@@ -332,6 +337,27 @@ export async function main(argv) {
         ? await renderSlideSamples(opts.out || "slides-samples")
         : await renderSlides(readJSON(path.resolve(positionals[0])), { brand: opts.brand, outDir: opts.out });
       files.forEach((file) => console.log(file));
+      return;
+    }
+    case "photo-finish": {
+      const { parsePhotoFinishArgs, finishPhotoSet } = await import("./photo-finish.mjs");
+      const opts = parsePhotoFinishArgs(rest);
+      if (opts.help || !opts.files.length || !opts.outDir) return console.log(USAGE);
+      const result = await finishPhotoSet(opts.files.map((file) => path.resolve(file)), {
+        outDir: path.resolve(opts.outDir), grade: opts.grade, intensity: opts.intensity, grain: opts.grain,
+      });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else result.outputs.forEach((file) => console.log(file));
+      return;
+    }
+    case "photo-score": {
+      const { parsePhotoScoreArgs, photoScoreRows } = await import("./photo-finish.mjs");
+      const { detectPhotos } = await import("./photos.mjs");
+      const opts = parsePhotoScoreArgs(rest);
+      if (opts.help || !opts.files.length) return console.log(USAGE);
+      const rows = photoScoreRows(await detectPhotos(opts.files.map((file) => path.resolve(file))));
+      if (opts.json) console.log(JSON.stringify(rows, null, 2));
+      else for (const row of rows) console.log(`${row.file}\toverall ${row.overall ?? "unavailable"}\tutility ${row.utility}\tfaces ${row.faceCount}\tsharpness ${row.sharpness ?? "unavailable"}\tluma ${row.luma ?? "unavailable"}`);
       return;
     }
     case "preflight": {
