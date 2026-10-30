@@ -226,7 +226,7 @@ export async function runEdit(input, opts = {}) {
 
   // 3. Clean footage
   const cleanPath = path.join(workDir, "clean.mp4");
-  const needsPass = (cutsOn && cuts.removed.length > 0) || (preset.audio.cleanAudio && meta.hasAudio) || meta.rotation !== 0 || meta.hdr;
+  const needsPass = (cutsOn && cuts.removed.length > 0) || (preset.audio.cleanAudio && meta.hasAudio) || meta.rotation !== 0 || meta.hdr || preset.finish?.enabled;
   let videoSrc = input;
   let cleanMeta = meta;
   let cutInput = input;
@@ -256,8 +256,8 @@ export async function runEdit(input, opts = {}) {
     (res && !res.error ? log : warn)(describeStudio(res));
   }
   if (needsPass) {
-    log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? (studio ? " + studio sound" : " + clean audio") : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + ")…");
-    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined, roomTone });
+    log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? (studio ? " + studio sound" : " + clean audio") : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + (preset.finish?.enabled ? " + finish" : "") + ")…");
+    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined, roomTone, finish: preset.finish, sourceDuration: meta.duration });
     videoSrc = cleanPath;
     cleanMeta = await probe(cleanPath);
   }
