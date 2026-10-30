@@ -15,7 +15,8 @@
  * line the Publish folder would hold back (the Ghost P&L, his wife).
  * CTA: REEL_WATCH_CTA (empty = no call to action in the caption).
  * Needs the Claude Code CLI signed in and the Sandcastles connector added on claude.ai. Exits 0 with a note when
- * either is missing, so a reel is never held up by its caption.
+ * either is missing, so a reel is never held up by its caption. REEL_CAPTION_SANDCASTLES=0 (a client without the
+ * connector, set by the Content Studio) writes the caption and hooks from the transcript alone, with no tools.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -34,7 +35,15 @@ export function voiceFile(plan, env = process.env) {
 }
 
 /** The prompt Claude gets. Pure, so it can be tested. */
-export function buildPrompt({ transcript, hook, voice, cta, auto = false, watchlist = true }) {
+export function buildPrompt({ transcript, hook, voice, cta, auto = false, watchlist = true, sandcastles = true }) {
+  if (!sandcastles) return buildPrompt({ transcript, hook, voice, cta, auto, watchlist })
+    .replace(/\n1\. Call the sandcastles[^\n]*\n2\. [^\n]*\n3\. /, "\n")
+    .replace(/, each tied to a pattern[^\n]*/g, "")
+    .replace(/ Each option models a different winning pattern; never copy another creator's wording\./, " Each option takes a different angle.")
+    .replace(/ Options 2 and 3 each model a different winning pattern; never copy another creator's wording\./, " Options 2 and 3 each take a different angle.")
+    .replace(/\n- For each hook option, name its pattern[^\n]*/, "")
+    .replace(/,"pattern":"\.\.\.","example":"@handle, 2\.4M views, 153x"/, "")
+    .replace(/,"trend":"one sentence on what is winning for this topic"/, "");
   return [
     "You write the Instagram post copy for one finished talking-head reel.",
     "",
@@ -137,9 +146,11 @@ export function formatCaptionFile(j, { title, cta, date = new Date().toISOString
   return lines.join("\n") + "\n";
 }
 
-function runClaude(prompt, { timeoutMs = 240000 } = {}) {
+function runClaude(prompt, { timeoutMs = 240000, sandcastles = true } = {}) {
   return new Promise((resolve, reject) => {
-    const args = ["-p", prompt, "--allowedTools", TOOLS.join(","), "--disallowedTools", DENY.join(","), "--output-format", "text"];
+    const args = sandcastles
+      ? ["-p", prompt, "--allowedTools", TOOLS.join(","), "--disallowedTools", DENY.join(","), "--output-format", "text"]
+      : ["-p", prompt, "--tools", "", "--strict-mcp-config", "--output-format", "text"];
     const child = spawn(process.env.REEL_CLAUDE_BIN || "claude", args, { stdio: ["ignore", "pipe", "pipe"], cwd: process.env.TMPDIR || "/tmp" });
     let out = "", err = "";
     const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error(`timed out after ${timeoutMs / 1000}s`)); }, timeoutMs);
@@ -161,10 +172,11 @@ async function main() {
   const auto = !!(hook && plan.hook?.auto);
   const out = outArg || path.join(workDir, "caption.txt");
   const voicePath = voiceFile(plan);
-  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voicePath, "utf8"), cta, auto, watchlist: process.env.REEL_CAPTION_WATCHLIST !== "0" });
+  const sandcastles = process.env.REEL_CAPTION_SANDCASTLES !== "0";
+  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voicePath, "utf8"), cta, auto, watchlist: process.env.REEL_CAPTION_WATCHLIST !== "0", sandcastles });
   let reply;
   try {
-    reply = await runClaude(prompt);
+    reply = await runClaude(prompt, { sandcastles });
   } catch (e) {
     console.log(`caption: skipped (${String(e.message).split("\n")[0]})`);
     return;

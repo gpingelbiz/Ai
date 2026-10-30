@@ -179,10 +179,20 @@ export async function fetchFont(spec, outFile, { fetchImpl = fetch, italic = fal
   throw new Error(`"${spec}" is not an open-licensed Google Fonts family; give a .ttf path instead`);
 }
 
-/** The Start Here page with their name on it and the look question gone (their look comes with the kit). */
-export function personalizeStartHere(html, b) {
-  const who = `${b.name}'s Reel Editor`;
-  return String(html)
+/** The Start Here page without its Content Studio parts (a plain reel kit, or the generic kit). */
+export const stripStudio = (html) => String(html).replace(/[ \t]*<!-- studio -->[\s\S]*?<!-- \/studio -->\n?/g, "");
+
+/**
+ * The Start Here page with their name on it and the look question gone (their look comes with the kit). A Content
+ * Studio kit (`studio: true`) keeps the Content Studio section and points at Install Content Studio.command; any
+ * other kit drops it.
+ */
+export function personalizeStartHere(html, b, { studio = false } = {}) {
+  const who = studio ? `${b.name}'s Content Studio` : `${b.name}'s Reel Editor`;
+  const page = studio
+    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/Double-click <b>Install Reel Editor\.command<\/b> in this folder/, "Double-click <b>Install Content Studio.command</b> in this folder")
+    : stripStudio(html);
+  return page
     .replace(/<title>Reel Editor: Start Here<\/title>/, `<title>${esc(who)}: Start Here</title>`)
     .replace(/<h1>Reel Editor<\/h1>/, `<h1>${esc(who)}</h1>`)
     .replace(/<tr><td>Your look<\/td><td>[\s\S]*?<\/td><\/tr>/, `<tr><td>Your look</td><td>Already set: this kit carries your colors${b.fonts?.display || b.fonts?.body ? ", fonts" : ""}, caption voice and words. The installer does not ask.</td></tr>`)

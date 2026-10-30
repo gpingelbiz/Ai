@@ -234,6 +234,7 @@ function slideRules() {
     .splittop::before { top: auto; bottom: 0; height: var(--slide-split); background: linear-gradient(to bottom, var(--brand-surface), rgb(from var(--brand-surface) r g b / .35) 25%, rgb(from var(--brand-surface) r g b / 0) 55%); }
     .cover { --legacy-head-size: 152px; } .body { --legacy-head-size: 108px; } .cta { --legacy-head-size: 120px; }
     .static, .static-light { --legacy-head-size: 116px; }
+    .photosplit { --legacy-head-size: 100px; } .phototop { --legacy-head-size: 108px; } .splittop { --legacy-head-size: 96px; }
     .slide.evidence { padding: 0; }
     .slide.evidence .slide-handle { display: none; } /* the evidence frame carries its own source label there */
     .evidence-embed { position: absolute; inset: 0; }
@@ -300,6 +301,26 @@ function slideRules() {
   `;
 }
 
+/** The CSS headline size of each legacy kind, and how many lines it may take before it is set smaller. */
+export const LEGACY_HEAD = { photo: [112, 4], photosplit: [100, 3], phototop: [108, 4], splittop: [96, 3], cover: [152, 4], body: [108, 3], cta: [120, 3], static: [116, 4], "static-light": [116, 4] };
+
+/**
+ * A legacy headline that would run past its kind's lines at the kind's size (a long sentence-case headline from a
+ * client's copy) is set smaller, never under 56 px; one that fits keeps the kind's size (null: no override).
+ * Estimate: a display glyph is about half the font size wide on the 888 px measure.
+ */
+export function legacyHeadSize(kind, headline) {
+  const spec = LEGACY_HEAD[kind];
+  const length = clean(String(headline ?? "").replace(/\*/g, "")).length;
+  if (!spec || !length) return null;
+  const [base, lines] = spec;
+  const fits = (size) => Math.ceil(length / (888 / (0.5 * size))) <= lines;
+  if (fits(base)) return null;
+  let size = base;
+  while (size > 56 && !fits(size)) size -= 4;
+  return Math.max(56, size);
+}
+
 /** One complete, deterministic HTML page for a 1080-wide slide. */
 export function slideHTML(slide, tokens, options = {}) {
   const t = resolveBrandTokens({ brand: tokens });
@@ -331,7 +352,8 @@ export function slideHTML(slide, tokens, options = {}) {
   const paper = t.colors?.paper || "#FFFFFF";
   const lightInk = [t.colors?.surface, t.colors?.stroke, t.colors?.ink].filter(Boolean).sort((a, b) => contrast(b, paper) - contrast(a, paper))[0];
   const lightAccent = readableOn(t.colors?.accent || lightInk, paper);
-  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`;
+  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`
+    + (legacyHeadSize(kind, slide.headline || slide.title) ? `--legacy-head-size:${legacyHeadSize(kind, slide.headline || slide.title)}px;` : "");
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${SLIDE_WIDTH}, height=${height}" /><style>${tokensCSS(t)}\n${slideRules()}\n${signatureRulesCSS()}\n${options.evidenceCSS || ""}</style></head>
 <body><section class="slide ${esc(kind)}" style="${style}">${content}${signature}${commonFooter(t)}</section></body></html>`;
