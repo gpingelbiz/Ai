@@ -27,6 +27,14 @@ const examples = {
   steps: { label: "THE STEPS", headline: "Supplied *steps*", steps: ["First step", "Second step", "Third step"] },
   quote: { quote: "Supplied *quote* words.", by: "Supplied Name", context: "Supplied context" },
   evidence: { image: fixture, sourceLabel: "Supplied source" },
+  "cover-top": { photo: fixture, headline: "FIVE WORDS *SIT* UP TOP", sub: "Supplied supporting copy." },
+  "cover-doc": { photo: fixture, headline: "REAL WORK SHOWN", corner: "br" },
+  "cover-card": { photo: fixture, headline: "THE *CARD* SITS BESIDE THE FACE", sub: "Supplied supporting copy stays on the card.", side: "left" },
+  "cover-compare": { photo: fixture, headline: "SUPPLIED CHOICE", left: { label: "OLD WAY", text: "Wait for later" }, right: { label: "DECISION", text: "Act while clear" }, decision: "right" },
+  "cover-list": { photo: fixture, headline: "FIVE *POINTS* WORTH KEEPING TODAY", sub: "Supplied supporting copy." },
+  verdict: { headline: "THE *CLEAR* DECISION BEATS MORE NOISE" },
+  note: { label: "KEEP THIS", text: "A short supplied note leaves the rest of the slide quiet." },
+  script: { label: "SAY THIS INSTEAD", headline: "STOP ASKING IF THEY NEED MORE TIME", say: "Ask which part of the decision still feels unclear right now." },
 };
 
 test("slide families: every old and new kind returns a complete token-driven HTML page", () => {

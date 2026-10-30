@@ -106,14 +106,22 @@ export function badShot(report, rules = PHOTO_RULES) {
   return "";
 }
 
-/** How good a photo is for a post: a clear main face counts most, then sharpness and light. */
+/** Vision's -1..1 aesthetic result as a 0..1 contribution. A missing score contributes nothing. */
+export function normalizedAesthetic(report) {
+  const raw = Number(report?.aesthetic ?? report?.overallScore);
+  return Number.isFinite(raw) ? Math.max(0, Math.min(1, (raw + 1) / 2)) : 0;
+}
+
+/** How good a photo is for a post: a clear main face still dominates aesthetics, sharpness and light. */
 export function photoScore(report) {
   const faces = [...(report.faces || [])].sort((a, b) => b.w * b.h - a.w * a.h);
   const main = faces[0];
   const face = main ? 1 + (Number.isFinite(main.quality) ? main.quality : 0.5) + Math.min(1, main.h / 0.25) : 0;
   const sharp = Math.min(1, (report.sharp || 0) / 0.01);
   const light = Math.max(0, 1 - Math.abs((report.light ?? 0.5) - 0.5) * 2);
-  return Math.round((face * 2 + sharp + light) * 1000) / 1000;
+  const aesthetic = normalizedAesthetic(report);
+  const utility = (report.utility ?? report.isUtility) ? 1 : 0;
+  return Math.round((face * 2 + sharp + light + aesthetic * 1.25 - utility * 0.75) * 1000) / 1000;
 }
 
 /** EXIF "2026:10:12 09:14:03" -> ms, or null. */

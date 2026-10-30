@@ -242,6 +242,7 @@ export function captionsRepeatingHook(groups, hook) {
 /** Hook treatments drawn on a solid block, with their type metrics (em = size against the preset hook size,
  *  charEm = average character width; Courier is monospace at 0.6em, the panel adds a lamp and a frame). */
 export const BLOCK_HOOKS = {
+  plaque: { em: 1, charEm: 0.46, lineHeight: 1.05, padEm: 0.64 },
   type: { em: 0.98, charEm: 0.6, lineHeight: 1.14, padEm: 0.5 },
   stamp: { em: 1, charEm: 0.46, lineHeight: 1.1, padEm: 0.4 },
   panel: { em: 1, charEm: 0.46, lineHeight: 1.1, padEm: 0.9 },

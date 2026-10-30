@@ -15,6 +15,19 @@ const words = SPEECH.split(" ").map((text, i) => ({ text, start: i * 0.2, end: i
 const fresh = () => groupWords(structuredClone(words), words.length * 0.2, { wordsPerLine: 3 });
 const keyed = (groups) => groups.map((g) => g.words.filter((w) => w.key).map((w) => w.text).join(" ")).filter(Boolean);
 
+function legacyPingelPreset() {
+  const preset = structuredClone(loadPreset("pingel-brand"));
+  preset.captions = { ...preset.captions, uppercase: true, autoKeywords: true, keywordColorOnFootage: true };
+  preset.hook = { ...preset.hook, behind: true };
+  delete preset.hook.plaque;
+  preset.looks = { ...preset.looks };
+  delete preset.looks.lockHook;
+  delete preset.looks.lockCaptions;
+  preset.cover = { ...preset.cover, style: "frame" };
+  preset.finish = { ...preset.finish, enabled: false };
+  return preset;
+}
+
 test("autoKeyword prefers number + unit pairs, then number words, then strong long words", () => {
   const w = (s) => s.split(" ").map((text) => ({ text }));
   assert.deepEqual(autoKeyword(w("for three minutes")), { i: 1, len: 2, score: 5 });
@@ -54,7 +67,7 @@ test("dictionary and power words still win over auto picks", () => {
 });
 
 test("--hook-position and --no-auto-keywords override the brand preset", () => {
-  const brand = loadPreset("pingel-brand");
+  const brand = legacyPingelPreset();
   assert.equal(brand.captions.autoKeywords, true);
   assert.equal(brand.hook.position, 0.22);
   const p = mergeOverrides(brand, { hookPosition: "0.4", noAutoKeywords: true });
@@ -83,10 +96,10 @@ test("hookWords picks one gold phrase, or takes it from *asterisks*", async () =
   assert.deepEqual(hand.words.filter((w) => w.key).map((w) => w.text), ["bad", "number"]);
 });
 
-test("headline hook renders words, scrim and rule, and the brand preset uses it", async () => {
+test("headline hook renders words, scrim and rule, and a legacy brand copy uses it", async () => {
   const { renderHTML } = await import("../src/compose.mjs");
   const { hookWords } = await import("../src/captions.mjs");
-  const style = loadPreset("pingel-brand");
+  const style = legacyPingelPreset();
   assert.equal(style.hook.style, "headline");
   const hook = { start: 0, duration: 3, ...hookWords("The 10 minutes after a bad number", dict) };
   const html = renderHTML({ name: "t", canvas: { width: 1080, height: 1920 }, style, video: { src: "/x.mp4", duration: 8, hasAudio: true }, captions: [], hook, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");

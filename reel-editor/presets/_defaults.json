@@ -112,6 +112,18 @@
     "fillers": true,
     "pad": 0.12
   },
+  "finish": {
+    "enabled": false,
+    "exposure": "auto",
+    "maxEv": 0.2,
+    "wb": "auto",
+    "maxKelvin": 300,
+    "contrast": 0.06,
+    "saturation": 0.94,
+    "denoise": "light",
+    "sharpen": "auto",
+    "grain": 0
+  },
   "audio": {
     "music": null,
     "musicDir": null,
@@ -231,7 +243,8 @@
       "blur": 10,
       "outline": 0.004,
       "maxCovered": 0.06
-    }
+    },
+    "color": "accent"
   },
   "icons": {
     "enabled": false,

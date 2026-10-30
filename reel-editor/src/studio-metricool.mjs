@@ -112,7 +112,7 @@ export function normalizeScheduled(r) {
  * The createScheduledPost input for one post. `kind` = carousel | static | reel. Instagram's AI label goes on when
  * `ai` is true (a carousel carries one flag for the whole post).
  */
-export function postInput({ blogId, day, time, tz, text, media, altText = [], kind, ai = false, draft = false, networks = ["instagram"], title = "", coverMs = null }) {
+export function postInput({ blogId, day, time, tz, text, media, altText = [], kind, ai = false, draft = false, trial = false, networks = ["instagram"], title = "", coverMs = null }) {
   const reel = kind === "reel";
   const providers = networks.map((network) => ({ network }));
   const info = {
@@ -130,7 +130,7 @@ export function postInput({ blogId, day, time, tz, text, media, altText = [], ki
     text,
   };
   if (reel && Number.isFinite(coverMs)) info.videoCoverMilliseconds = Math.max(0, Math.round(coverMs));
-  if (networks.includes("instagram")) info.instagramData = { autoPublish: true, type: reel ? "REEL" : "POST", showReelOnFeed: true, isAiGenerated: !!ai };
+  if (networks.includes("instagram")) info.instagramData = { autoPublish: true, type: reel ? (trial ? "TRIAL_REEL" : "REEL") : "POST", showReelOnFeed: true, isAiGenerated: !!ai };
   if (networks.includes("facebook")) info.facebookData = { type: reel ? "REEL" : "POST" };
   if (networks.includes("linkedin")) info.linkedinData = kind === "carousel" ? { documentTitle: title.slice(0, 100), publishImagesAsPDF: true, previewIncluded: true, type: "post" } : { previewIncluded: true, type: "post" };
   if (networks.includes("tiktok")) info.tiktokData = { isAigc: !!ai };

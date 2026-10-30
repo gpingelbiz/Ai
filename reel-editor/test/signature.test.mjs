@@ -93,9 +93,9 @@ test("legacy render snapshots: no signature and no house list keep every existin
   const expected = {
     clean: "6138df32bbb050886d4625ea8b055259ca2a1baa57f437214a371d8aecbcdefd",
     "pace-fast": "afcfbca8378f7e54f2e6fe41f56283cd53df97794cb2c4037c0a948d08b29f53",
-    "pingel-brand": "2be26be90f3696bef51f520b6192842aaa910975acdf7e136cf9d867ad564bbe",
-    "pingel-runway": "2be26be90f3696bef51f520b6192842aaa910975acdf7e136cf9d867ad564bbe",
-    "pingel-v2": "b73ce92d75110faa4948bf1dbf643a8424d8b3e9475af19a5cafa66441365e61",
+    "pingel-brand": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",
+    "pingel-runway": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",
+    "pingel-v2": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",
     youtube: "1e0120f8f3c4dc3eb9b118ca35c0c75fdda699f6089095cbc22e7ab8baa4278f",
   };
   for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_")).sort()) {

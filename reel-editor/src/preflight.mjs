@@ -15,12 +15,17 @@ export {
   expectedSlideText,
   faceOverlapRatio,
   hammingDistance,
+  kindOf,
   lintSlideCopy,
   matchExpectedText,
   preflightSlides,
   relativeLuminance,
+  slide2LayoutProblems,
+  textPositionClass,
   textTokens,
   verdictForProblems,
+  wordBudgetProblems,
+  wordCount,
 } from "./slide-preflight.mjs";
 
 /**

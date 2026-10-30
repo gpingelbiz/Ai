@@ -1,5 +1,8 @@
 import { SDR_FILTER, SDR_TAGS } from "./hdr.mjs";
-import { run, r3, warn } from "./util.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { run, r3, log, warn } from "./util.mjs";
 
 export const PACE = { off: Infinity, slow: 1.0, medium: 0.6, fast: 0.35, tight: 0.2 };
 const FILLERS = new Set(["um", "uh", "uhm", "umm", "uhh", "erm", "hmm", "mm", "ah", "er", "mhm"]);
@@ -319,7 +322,152 @@ export function remapEnvelope(env, segments) {
  */
 export const VOICE_CHAIN = "pan=mono|c0=0.5*c0+0.5*c1,highpass=f=80,afftdn=nr=12:nf=-45:tn=1,deesser=i=0.4:m=0.5:f=0.5,acompressor=threshold=0.09:ratio=3:attack=10:release=150:makeup=2,alimiter=limit=0.89:attack=5:release=50,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=channel_layouts=stereo";
 
-export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN, roomTone = null } = {}) {
+const FINISH_TARGETS = { luma: 0.388, contrast: 0.238, saturation: 0.339, warmth: 0.03 };
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const short = (n, places = 4) => Number(n.toFixed(places)).toString();
+const median = (xs) => {
+  const sorted = [...xs].filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return NaN;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+/**
+ * One stable finishing chain for a whole source clip. Inputs are normalized measurements (0..1, except warmth,
+ * which is signed red minus blue). The controls are ceilings: good footage keeps identity tone and colour.
+ */
+export function finishFilter(stats, options = {}) {
+  if (options.enabled === false || !stats || ![stats.luma, stats.contrast, stats.saturation, stats.warmth].every(Number.isFinite)) return "";
+  const filters = [];
+  const maxEv = clamp(Number(options.maxEv ?? 0.2) || 0, 0, 1);
+  let ev = 0;
+  if (options.exposure === "auto" || options.exposure == null) {
+    if (stats.luma < FINISH_TARGETS.luma - 0.015) ev = clamp(Math.log2(FINISH_TARGETS.luma / Math.max(0.01, stats.luma)), 0, maxEv);
+  } else if (Number.isFinite(Number(options.exposure))) {
+    ev = clamp(Number(options.exposure), -maxEv, maxEv);
+  }
+  const contrastMax = clamp(Number(options.contrast ?? 0.06) || 0, 0, 0.2);
+  const contrast = stats.contrast < FINISH_TARGETS.contrast - 0.01
+    ? Math.min(contrastMax, FINISH_TARGETS.contrast - stats.contrast)
+    : 0;
+  if (Math.abs(ev) > 0.001 || contrast > 0.001) {
+    const gain = 2 ** ev;
+    const point = (x) => {
+      const lift = (gain - 1) * x * (1 - x);
+      const shape = x < 0.5 ? -contrast * (0.5 - x) : contrast * (x - 0.5);
+      return clamp(x + lift + shape, 0, 1);
+    };
+    filters.push(`curves=all='0/0 0.18/${short(point(0.18))} 0.5/${short(point(0.5))} 0.82/${short(point(0.82))} 1/1'`);
+  }
+
+  if ((options.wb === "auto" || options.wb == null) && (Number(options.maxKelvin ?? 300) || 0) > 0) {
+    const delta = stats.warmth - FINISH_TARGETS.warmth;
+    if (Math.abs(delta) > 0.015) {
+      const maxKelvin = clamp(Number(options.maxKelvin ?? 300), 0, 2000);
+      const kelvin = clamp((delta / 0.1) * maxKelvin, -maxKelvin, maxKelvin);
+      const balance = kelvin / 7500;
+      filters.push(`colorbalance=rm=${short(-balance)}:bm=${short(balance)}`); // no pl=1: preserving lightness posterised saturated neon on real footage (2026-10-30 test)
+    }
+  }
+
+  const saturationFloor = clamp(Number(options.saturation ?? 0.94), 0.5, 1);
+  const excessSaturation = stats.saturation - FINISH_TARGETS.saturation;
+  if (excessSaturation > 0.015) {
+    const correction = clamp((excessSaturation - 0.015) / 0.065, 0, 1);
+    const saturation = 1 - (1 - saturationFloor) * correction;
+    if (saturation < 0.999) filters.push(`hue=s=${short(saturation)}`);
+  }
+
+  if (options.denoise === "light") filters.push("hqdn3d=0.8:0.6:3:2.5");
+  const sharpen = options.sharpen === "auto"
+    ? (Number.isFinite(stats.sharpness) && stats.sharpness < 0.045 ? 0.22 : 0)
+    : clamp(Number(options.sharpen) || 0, 0, 0.35);
+  if (sharpen > 0) filters.push(`unsharp=5:5:${short(sharpen)}:5:5:0`);
+  const grain = clamp(Number(options.grain) || 0, 0, 1);
+  if (grain > 0) filters.push(`noise=alls=${short(grain * 3)}:allf=t+u`);
+  return filters.join(",");
+}
+
+/** Measure twelve evenly spaced, 96px samples in one ffmpeg decode. Settings are then held for the whole clip. */
+export async function measureClip(input, { duration = null, preFilter = "" } = {}) {
+  if (!(duration > 0)) {
+    const { out } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", input], { capture: true });
+    duration = Number(out.trim());
+  }
+  if (!(duration > 0)) throw new Error("source duration is unavailable");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-finish-"));
+  const raw = path.join(dir, "sample.rgb");
+  const frameBytes = 96 * 96 * 3;
+  try {
+    const sampleRate = 12 / duration;
+    const first = duration / 24;
+    const vf = [
+      preFilter,
+      `fps=fps=${short(sampleRate, 8)}:start_time=${short(first, 8)}:round=near`,
+      "scale=96:96:flags=area",
+      "signalstats",
+      "metadata=print:file=-",
+      "format=rgb24",
+    ].filter(Boolean).join(",");
+    const result = await run("ffmpeg", ["-y", "-hide_banner", "-nostats", "-loglevel", "error", "-i", input, "-an", "-vf", vf, "-frames:v", "12", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+    const pixels = fs.readFileSync(raw);
+    const frames = Math.floor(pixels.length / frameBytes);
+    const yavg = [...`${result.out}\n${result.err}`.matchAll(/lavfi\.signalstats\.YAVG=([\d.]+)/g)].map((m) => Number(m[1]));
+    if (frames !== 12 || yavg.length < 12) throw new Error(`expected 12 samples, got ${Math.min(frames, yavg.length)}`);
+    const contrasts = [], saturations = [], warmth = [], sharpness = [];
+    for (let frame = 0; frame < 12; frame++) {
+      const base = frame * frameBytes;
+      const ys = new Float64Array(96 * 96);
+      let satSum = 0, warmSum = 0, ySum = 0;
+      for (let p = 0; p < 96 * 96; p++) {
+        const off = base + p * 3;
+        const r = pixels[off], g = pixels[off + 1], b = pixels[off + 2];
+        const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        ys[p] = y;
+        ySum += y;
+        const hi = Math.max(r, g, b), lo = Math.min(r, g, b);
+        satSum += hi ? (hi - lo) / hi : 0;
+        if (y >= 38 && y <= 230) warmSum += (r - b) / 255;
+      }
+      const yMean = ySum / ys.length;
+      let variance = 0, edges = 0, edgeCount = 0;
+      for (let y = 0; y < 96; y++) for (let x = 0; x < 96; x++) {
+        const p = y * 96 + x;
+        variance += (ys[p] - yMean) ** 2;
+        if (x) { edges += Math.abs(ys[p] - ys[p - 1]); edgeCount++; }
+        if (y) { edges += Math.abs(ys[p] - ys[p - 96]); edgeCount++; }
+      }
+      contrasts.push(Math.sqrt(variance / ys.length) / 255);
+      saturations.push(satSum / ys.length);
+      warmth.push(warmSum / ys.length);
+      sharpness.push(edges / edgeCount / 255);
+    }
+    return {
+      luma: median(yavg.slice(0, 12)) / 255,
+      contrast: median(contrasts),
+      saturation: median(saturations),
+      warmth: median(warmth),
+      sharpness: median(sharpness),
+      frames: 12,
+    };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN, roomTone = null, finish = null, sourceDuration = null, finishMeasurement = null } = {}) {
+  const baseVideoFilters = [hdr ? SDR_FILTER : null, scaleTo ? `scale=${scaleTo.width}:${scaleTo.height}:force_original_aspect_ratio=increase:force_divisible_by=2` : null].filter(Boolean);
+  let measured = finishMeasurement;
+  if (finish?.enabled && !measured) {
+    try {
+      const stats = await measureClip(input, { duration: sourceDuration, preFilter: baseVideoFilters.join(",") });
+      measured = { stats, chain: finishFilter(stats, finish) };
+      log(`finish: luma ${stats.luma.toFixed(3)}, contrast ${stats.contrast.toFixed(3)}, saturation ${stats.saturation.toFixed(3)}, warmth ${stats.warmth >= 0 ? "+" : ""}${stats.warmth.toFixed(3)}, sharpness ${stats.sharpness.toFixed(3)} → ${measured.chain || "identity"}`);
+    } catch (error) {
+      measured = { stats: null, chain: "", failed: true };
+      warn(`finish: measurement failed (${String(error.message).split("\n")[0]}); skipped`);
+    }
+  }
   const parts = [];
   const maps = [];
   // audioInput: a denoised voice WAV on the source's timeline replaces the source's own audio track.
@@ -339,7 +487,7 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
   // HDR (HLG/PQ, BT.2020) sources become tagged BT.709 SDR so the renderer composites captions normally.
   // Scale down to cover the canvas (never up): a 4K phone clip encodes and renders 4x faster at 1080p, and the
   // composer crops to the canvas anyway. A wider source keeps its full width for panning.
-  const vf = [hdr ? SDR_FILTER : null, scaleTo ? `scale=${scaleTo.width}:${scaleTo.height}:force_original_aspect_ratio=increase:force_divisible_by=2` : null].filter(Boolean).join(",");
+  const vf = [...baseVideoFilters, measured?.chain || null].filter(Boolean).join(",");
   fc += `;[vcat]${vf || "null"}[v]`;
   let audioOut = "[a]";
   if (useRoomTone) {
@@ -381,9 +529,13 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
     await run("ffmpeg", [...common, "-c:v", "libx264", "-preset", "medium", "-crf", "18", ...tail]);
     return output;
   } catch (e) {
+    if (measured?.chain) {
+      warn(`finish: filter failed (${String(e.message).split("\n")[0]}); retrying without it`);
+      return applyCuts(input, segments, output, { hasAudio, cleanAudio, fps, hdr, scaleTo, encoder, audioInput, voiceChain, roomTone, finish, sourceDuration, finishMeasurement: { ...measured, chain: "", failed: true } });
+    }
     if (!useRoomTone) throw e;
     warn("room tone: mix failed, cuts fade to silence as before");
-    return applyCuts(input, segments, output, { hasAudio, cleanAudio, fps, hdr, scaleTo, encoder, audioInput, voiceChain, roomTone: null });
+    return applyCuts(input, segments, output, { hasAudio, cleanAudio, fps, hdr, scaleTo, encoder, audioInput, voiceChain, roomTone: null, finish, sourceDuration, finishMeasurement: measured });
   }
 }
 

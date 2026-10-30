@@ -5,8 +5,9 @@
 //
 // Photos (the Content Studio photo check): faces --photo <image> [<image> ...]
 // Prints one JSON line per image: {"file","width","height","taken","screenshot","light","sharp","faces":[box + "quality"],
-// "bodies":[box]}. width/height are upright; quality is Vision's face capture quality (0-1: blur, closed eyes, angle);
-// light is the mean luminance (0-1); sharp the variance of the Laplacian on a 256 px grey copy.
+// "bodies":[box],"overallScore","isUtility"}. width/height are upright; quality is Vision's face capture quality
+// (0-1: blur, closed eyes, angle); light is the mean luminance (0-1); sharp the variance of the Laplacian on a
+// 256 px grey copy. overallScore is Vision's public -1...1 score; isUtility marks functional/document images.
 import AVFoundation
 import CoreImage
 import Foundation
@@ -127,9 +128,20 @@ func photoReport(_ file: String) -> String {
     return b
   }
   let bodies = (bodyReq.results ?? []).filter { $0.confidence > 0.3 }.map { box($0.boundingBox) }
+  var aesthetic: Any = NSNull()
+  var utility = false
+  if #available(macOS 15.0, *) {
+    let request = VNCalculateImageAestheticsScoresRequest()
+    try? handler.perform([request])
+    if let result = request.results?.first {
+      aesthetic = Double(result.overallScore)
+      utility = result.isUtility
+    }
+  }
   return json([
     "file": file, "width": pw, "height": ph, "taken": taken, "camera": camera,
     "screenshot": comment.lowercased().contains("screenshot"),
     "light": meanLight(cg), "sharp": laplacianVariance(cg), "faces": faces, "bodies": bodies,
+    "overallScore": aesthetic, "isUtility": utility,
   ])
 }

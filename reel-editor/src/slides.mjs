@@ -12,14 +12,20 @@ import { ensureDir, PKG_ROOT, run, warn } from "./util.mjs";
 export const SLIDE_WIDTH = 1080;
 export const SLIDE_HEIGHTS = new Set([1080, 1350]);
 export const LEGACY_SLIDE_KINDS = ["photo", "photosplit", "phototop", "splittop", "cover", "body", "cta", "static", "static-light"];
-export const FAMILY_SLIDE_KINDS = ["checklist", "compare", "postcard", "notes", "story", "evidence", "stat", "steps", "quote"];
+export const FAMILY_SLIDE_KINDS = ["checklist", "compare", "postcard", "notes", "story", "evidence", "stat", "steps", "quote", "cover-top", "cover-doc", "cover-card", "cover-compare", "cover-list", "verdict", "note", "script"];
 export const SLIDE_KINDS = [...LEGACY_SLIDE_KINDS, ...FAMILY_SLIDE_KINDS];
 
 const clean = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
 const words = (value) => clean(String(value ?? "").replace(/\*/g, "")).split(/\s+/).filter(Boolean);
 const kindOf = (slide) => clean(slide?.kind || "body").toLowerCase();
 const assetValue = (slide) => slide.photo || slide.image || slide.screenshot || slide.file || "";
-const PHOTO_SLIDE_KINDS = new Set(["photo", "photosplit", "phototop", "splittop"]);
+const PHOTO_SLIDE_KINDS = new Set(["photo", "photosplit", "phototop", "splittop", "cover-top", "cover-doc", "cover-card", "cover-compare", "cover-list"]);
+
+const wordCount = (value) => words(value).length;
+const needWords = (value, min, max, message) => {
+  const count = wordCount(value);
+  if (count < min || count > max) throw new Error(`${message} needs ${min} to ${max} words, got ${count}`);
+};
 
 /** Largest whole-pixel size that passes `fits`, down to 70% by default. */
 export function fitTextSize(baseSize, fits, minimum = Math.floor(Number(baseSize) * 0.7)) {
@@ -115,6 +121,24 @@ export function faceAwareObjectPosition(imageSize, faceBoxes, visibleBox, avoidA
   return `${percent(overflowX ? cropX / overflowX * 100 : 50)} ${percent(overflowY ? cropY / overflowY * 100 : 50)}`;
 }
 
+/** Put a solid card in the side or corner opposite the detected face group. */
+export function faceAwareFamilyPlacement(faceBoxes, imageSize = null) {
+  const faces = (Array.isArray(faceBoxes) ? faceBoxes : []).filter((face) => [face?.x, face?.y, face?.w, face?.h].every(Number.isFinite) && face.w > 0 && face.h > 0);
+  if (!faces.length) return null;
+  const weighted = faces.reduce((sum, face) => {
+    const normalized = Math.max(face.x, face.y, face.w, face.h) <= 1;
+    const width = normalized ? 1 : Number(imageSize?.width) || 1;
+    const height = normalized ? 1 : Number(imageSize?.height) || 1;
+    const area = face.w * face.h;
+    return { area: sum.area + area, x: sum.x + ((face.x + face.w / 2) / width) * area, y: sum.y + ((face.y + face.h / 2) / height) * area };
+  }, { area: 0, x: 0, y: 0 });
+  const x = weighted.x / weighted.area;
+  const y = weighted.y / weighted.area;
+  const side = x < 0.5 ? "right" : "left";
+  const corner = `${y < 0.5 ? "b" : "t"}${x < 0.5 ? "r" : "l"}`;
+  return { side, corner };
+}
+
 /** Escape copy and turn the content engine's *phrase* convention into the brand accent. */
 export function accentHTML(value) {
   return esc(String(value ?? ""))
@@ -158,6 +182,41 @@ export function normalizeSlideSpec(spec) {
       slide.left = typeof slide.left === "object" ? { ...slide.left } : { value: clean(slide.left) };
       slide.right = typeof slide.right === "object" ? { ...slide.right } : { value: clean(slide.right) };
     }
+    if (["cover-top", "cover-doc", "cover-card", "cover-compare", "cover-list"].includes(kind) && !clean(slide.photo || slide.image)) throw new Error(`${kind} slide ${index + 1} needs a photo`);
+    if (kind === "cover-top") {
+      needWords(slide.headline, 5, 12, `cover-top slide ${index + 1} headline`);
+      if (slide.sub) needWords(slide.sub, 1, 14, `cover-top slide ${index + 1} sub`);
+    }
+    if (kind === "cover-doc") {
+      if (slide.headline) needWords(slide.headline, 3, 6, `cover-doc slide ${index + 1} headline`);
+      if (slide.corner != null && !["tl", "tr", "bl", "br"].includes(slide.corner)) throw new Error(`cover-doc slide ${index + 1} corner must be tl, tr, bl or br`);
+    }
+    if (kind === "cover-card") {
+      needWords(slide.headline, 6, 12, `cover-card slide ${index + 1} headline`);
+      if (slide.sub) needWords(slide.sub, 1, 22, `cover-card slide ${index + 1} sub`);
+      if (slide.side != null && !["left", "right"].includes(slide.side)) throw new Error(`cover-card slide ${index + 1} side must be left or right`);
+    }
+    if (kind === "cover-compare") {
+      for (const side of ["left", "right"]) {
+        const value = slide[side];
+        if (!value || typeof value !== "object") throw new Error(`cover-compare slide ${index + 1} needs ${side} {label, text}`);
+        needWords(value.label, 1, 3, `cover-compare slide ${index + 1} ${side} label`);
+        needWords(value.text, 2, 5, `cover-compare slide ${index + 1} ${side} text`);
+        slide[side] = { ...value, label: clean(value.label), text: clean(value.text) };
+      }
+      if (slide.decision != null && !["left", "right"].includes(slide.decision)) throw new Error(`cover-compare slide ${index + 1} decision must be left or right`);
+      slide.decision = slide.decision === "left" ? "left" : "right";
+    }
+    if (kind === "cover-list") {
+      needWords(slide.headline, 5, 8, `cover-list slide ${index + 1} headline`);
+      if (slide.sub) needWords(slide.sub, 1, 14, `cover-list slide ${index + 1} sub`);
+    }
+    if (kind === "verdict") needWords(slide.headline, 5, 11, `verdict slide ${index + 1} headline`);
+    if (kind === "note") needWords(slide.text, 7, 18, `note slide ${index + 1} text`);
+    if (kind === "script") {
+      needWords(slide.headline, 6, 10, `script slide ${index + 1} headline`);
+      needWords(slide.say, 10, 18, `script slide ${index + 1} say`);
+    }
     return slide;
   });
   return { ...structuredClone(spec), width, height, slides };
@@ -180,9 +239,9 @@ function headlineOf(slide) {
 }
 
 function allText(slide) {
-  const out = [slide.headline, slide.title, slide.sub, slide.body, slide.text, slide.postText, slide.caption, slide.decisionLine, slide.label, slide.sourceLabel, slide.date];
+  const out = [slide.headline, slide.title, slide.sub, slide.body, slide.text, slide.say, slide.postText, slide.caption, slide.decisionLine, slide.label, slide.sourceLabel, slide.date];
   for (const item of slide.items || []) out.push(typeof item === "string" ? item : item?.text, item?.note);
-  for (const side of [slide.left, slide.right]) out.push(typeof side === "string" ? side : side?.label, side?.value, side?.note);
+  for (const side of [slide.left, slide.right]) out.push(typeof side === "string" ? side : side?.label, side?.value, side?.text, side?.note);
   for (const line of slide.lines || []) out.push(typeof line === "string" ? line : line?.text);
   return clean(out.filter(Boolean).join(" "));
 }
@@ -333,6 +392,49 @@ function evidenceFallbackMarkup(slide) {
   return `<main class="family-main evidence-main"><figure><div class="evidence-frame"><img src="${esc(assetValue(slide))}" alt="" /></div><figcaption${fitAttrs("sub", caption)}>${accentHTML(caption)}</figcaption></figure></main>`;
 }
 
+function coverTopMarkup(slide) {
+  const sub = slide.sub ? `<div class="cover-top-sub"${fitAttrs("sub", slide.sub)}>${accentHTML(slide.sub)}</div>` : "";
+  return `<div class="cover-top-scrim"></div><main class="cover-top-main"><h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1>${sub}</main>`;
+}
+
+function coverDocMarkup(slide) {
+  if (!slide.headline) return "";
+  const corner = slide.corner || slide.__autoCorner || "bl";
+  return `<main class="cover-doc-main corner-${esc(corner)}"><div class="cover-doc-card"><h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1></div></main>`;
+}
+
+function coverCardMarkup(slide) {
+  const side = slide.side || slide.__autoSide || "right";
+  const sub = slide.sub ? `<div class="cover-card-sub"${fitAttrs("sub", slide.sub)}>${accentHTML(slide.sub)}</div>` : "";
+  return `<main class="cover-card-main side-${esc(side)}"><article class="cover-card-panel"><h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1>${sub}</article></main>`;
+}
+
+function coverCompareMarkup(slide) {
+  const decision = slide.decision === "left" ? "left" : "right";
+  const panel = (name) => `<section class="cover-compare-panel${decision === name ? " is-decision" : ""}"><div class="cover-compare-label">${accentHTML(slide[name].label)}</div><div class="cover-compare-value"${fitAttrs("sub", slide[name].text)}>${accentHTML(slide[name].text)}</div></section>`;
+  const headline = slide.headline ? `<h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1>` : "";
+  return `<main class="cover-compare-main">${headline}<div class="cover-compare-panels">${panel("left")}${panel("right")}</div></main>`;
+}
+
+function coverListMarkup(slide) {
+  const sub = slide.sub ? `<div class="cover-list-sub"${fitAttrs("sub", slide.sub)}>${accentHTML(slide.sub)}</div>` : "";
+  return `<main class="cover-list-main"><h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1>${sub}</main>`;
+}
+
+function verdictMarkup(slide) {
+  return `<main class="family-main verdict-main"><h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1></main>`;
+}
+
+function noteMarkup(slide) {
+  const label = slide.label ? `<div class="note-label">${accentHTML(slide.label)}</div>` : "";
+  return `<main class="family-main note-main"><div class="note-rule"></div>${label}<div class="note-text"${fitAttrs("sub", slide.text)}>${accentHTML(slide.text)}</div></main>`;
+}
+
+function scriptMarkup(slide) {
+  const label = slide.label ? `<div class="script-label">${accentHTML(slide.label)}</div>` : "";
+  return `<main class="family-main script-main">${label}<h1${fitAttrs("headline", slide.headline)}>${accentHTML(slide.headline)}</h1><article class="script-card"><div class="script-rule"></div><div class="script-say"${fitAttrs("sub", slide.say)}>${accentHTML(slide.say)}</div></article></main>`;
+}
+
 function slideRules() {
   return `
     * { box-sizing: border-box; hyphens: none; }
@@ -379,10 +481,10 @@ function slideRules() {
     .stat-main, .steps-main, .quote-main { display: flex; flex-direction: column; justify-content: center; }
     .stat-number { font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); font-size: 300px; line-height: .9; letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); color: var(--slide-accent-text, var(--brand-accent)); }
     .stat-main h1 { font-size: 76px; margin-top: var(--space-lg); }
-    .stat-sub { margin-top: var(--space-lg); font-size: 38px; line-height: var(--brand-body-line-height); opacity: .86; }
+    .stat-sub { margin-top: var(--space-lg); font-size: var(--type-slide-body); line-height: var(--brand-body-line-height); opacity: .86; }
     .stat-source { margin-top: var(--space-lg); font-size: 26px; font-weight: 500; color: var(--brand-muted); }
     .steps-main h1 { font-size: 88px; }
-    .step-list { list-style: none; margin: 56px 0 0; padding: 0; font-size: 38px; }
+    .step-list { list-style: none; margin: var(--type-lg) 0 0; padding: 0; font-size: var(--type-slide-body); }
     .step-list li { display: flex; align-items: flex-start; gap: 34px; padding-bottom: 34px; position: relative; }
     .step-list li:last-child { padding-bottom: 0; }
     .step-list li:not(:last-child)::after { content: ""; position: absolute; left: calc(0.935em - 1.5px); top: 1.75em; bottom: 6px; width: 3px; background: var(--brand-accent); opacity: .45; }
@@ -408,7 +510,7 @@ function slideRules() {
     .compare-side + .compare-side { border-color: var(--brand-accent); }
     .compare-label { color: var(--slide-accent-text, var(--brand-accent)); font-size: 34px; font-weight: 700; letter-spacing: .05em; text-transform: var(--brand-body-case); }
     .compare-value { margin-top: var(--space-md); font-family: var(--brand-editorial-font, var(--brand-display-font)); font-size: var(--type-lg); line-height: 1.08; }
-    .compare-note { margin-top: var(--space-md); color: var(--brand-muted); font-size: 34px; line-height: 1.25; }
+    .compare-note { margin-top: var(--space-md); color: var(--brand-muted); font-size: var(--type-slide-body); line-height: 1.25; }
     .decision-line { padding: var(--space-md) var(--space-lg); border-radius: var(--brand-radius-md); background: var(--brand-accent); color: var(--brand-accent-ink); font-size: var(--type-md); font-weight: 700; }
     .postcard-main { display: grid; place-items: center; }
     .post-card { width: 856px; max-height: 910px; padding: var(--space-xl); border: max(1px, calc(var(--space-xs) / 4)) solid var(--brand-stroke); border-radius: var(--brand-radius-lg); background: var(--brand-paper); color: var(--brand-stroke); box-shadow: 0 var(--space-sm) var(--space-xl) rgb(from var(--brand-stroke) r g b / .24); }
@@ -425,7 +527,7 @@ function slideRules() {
     .note-paper h1 { color: var(--brand-stroke); font-family: var(--brand-editorial-font, var(--brand-display-font)); font-size: var(--type-lg); text-transform: var(--brand-editorial-case, none); }
     .note-paper time { color: var(--brand-muted); font-size: max(34px, var(--type-sm)); }
     .note-lines { margin-top: var(--space-lg); }
-    .note-lines p { margin: 0; padding: var(--space-sm) 0; border-bottom: max(1px, calc(var(--space-xs) / 8)) solid var(--brand-muted); font-size: 38px; line-height: 1.35; }
+    .note-lines p { margin: 0; padding: var(--space-sm) 0; border-bottom: max(1px, calc(var(--space-xs) / 8)) solid var(--brand-muted); font-size: var(--type-slide-body); line-height: 1.35; }
     .story { padding: 0; }
     .story-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .story-scrim { position: absolute; inset: 0; background: linear-gradient(to bottom, rgb(from var(--brand-surface) r g b / 0) 42%, rgb(from var(--brand-surface) r g b / .9)); }
@@ -437,6 +539,47 @@ function slideRules() {
     .evidence-frame { max-height: 880px; padding: var(--space-md); overflow: hidden; border: max(1px, calc(var(--space-xs) / 2)) solid var(--brand-accent); border-radius: var(--brand-radius-lg); background: var(--brand-surface2); }
     .evidence-frame img { display: block; width: 100%; max-height: 830px; object-fit: contain; border-radius: var(--brand-radius-md); }
     .evidence-main figcaption { margin-top: var(--space-md); color: var(--brand-muted); font-size: 34px; line-height: 1.2; }
+    .cover-top, .cover-doc, .cover-card, .cover-compare, .cover-list { padding: 0; background-image: var(--slide-photo); background-size: cover; background-position: var(--slide-position); }
+    .cover-top-scrim { position: absolute; z-index: 1; left: calc(var(--space-xxl) - var(--space-md)); right: calc(var(--space-xxl) - var(--space-md)); top: calc(var(--space-xl) + var(--space-md)); height: calc(var(--space-xxl) * 5 + var(--space-xl)); background: linear-gradient(to bottom, rgb(from var(--brand-surface) r g b / .72), rgb(from var(--brand-surface) r g b / .65) 72%, rgb(from var(--brand-surface) r g b / 0)); border-radius: var(--brand-radius-md) var(--brand-radius-md) 0 0; }
+    .cover-top-main { position: absolute; z-index: 2; left: calc(var(--space-xxl) - var(--space-md)); right: calc(var(--space-xxl) - var(--space-md)); top: calc(var(--space-xl) + var(--space-md)); padding: var(--space-lg); color: var(--brand-ink); }
+    .cover-top-main h1, .cover-list-main h1, .cover-card-panel h1, .cover-doc-card h1, .cover-compare-main h1, .verdict-main h1, .script-main h1 { margin: 0; font-family: var(--brand-display-font); font-weight: var(--brand-display-weight); line-height: var(--brand-display-line-height); letter-spacing: var(--brand-display-tracking); text-transform: var(--brand-display-case); }
+    .cover-top-main h1 { max-width: 100%; font-size: var(--type-display); }
+    .cover-top-sub, .cover-list-sub, .cover-card-sub { margin-top: var(--space-md); font-size: var(--type-slide-body); line-height: var(--brand-body-line-height); }
+    .cover-doc-main { position: absolute; z-index: 2; inset: var(--space-xxl); display: flex; }
+    .cover-doc-main.corner-tl { align-items: flex-start; justify-content: flex-start; } .cover-doc-main.corner-tr { align-items: flex-start; justify-content: flex-end; }
+    .cover-doc-main.corner-bl { align-items: flex-end; justify-content: flex-start; } .cover-doc-main.corner-br { align-items: flex-end; justify-content: flex-end; }
+    .cover-doc-card { max-width: calc(var(--space-xxl) * 7); padding: var(--space-lg); border-top: var(--space-xs) solid var(--brand-accent); border-radius: var(--brand-radius-md); background: var(--brand-surface); color: var(--brand-ink); }
+    .cover-doc-card h1 { font-size: var(--type-lg); }
+    .cover-card-main { position: absolute; z-index: 2; inset: 0; display: flex; align-items: center; padding: calc(var(--space-xxl) + var(--space-md)) var(--space-xl); }
+    .cover-card-main.side-left { justify-content: flex-start; } .cover-card-main.side-right { justify-content: flex-end; }
+    .cover-card-panel { width: calc(var(--space-xxl) * 4 + var(--space-md)); min-height: calc(var(--space-xxl) * 9 + var(--space-lg)); display: flex; flex-direction: column; justify-content: center; padding: var(--space-xl) var(--space-lg); border-top: var(--space-xs) solid var(--brand-accent); border-radius: var(--brand-radius-md); background: var(--brand-surface); color: var(--brand-ink); }
+    .cover-card-panel h1 { font-size: var(--type-xl); }
+    .cover-compare { background-image: none; background-color: var(--brand-surface); }
+    .cover-compare::before { content: ""; position: absolute; inset: 0 0 auto; height: calc(var(--space-xxl) * 5 + var(--space-xl) + var(--space-sm)); background-image: var(--slide-photo); background-size: cover; background-position: var(--slide-position); }
+    .cover-compare-main { position: absolute; z-index: 2; inset: calc(var(--space-xxl) * 5 + var(--space-xl) + var(--space-sm)) 0 0; display: flex; flex-direction: column; padding: var(--space-lg) var(--space-xxl) calc(var(--space-xxl) + var(--space-xl)); background: var(--brand-surface); }
+    .cover-compare-main h1 { margin-bottom: var(--space-md); font-size: var(--type-lg); }
+    .cover-compare-panels { min-height: 0; flex: 1; display: grid; grid-template-rows: 1fr 1fr; gap: var(--space-md); }
+    .cover-compare-panel { display: flex; flex-direction: column; justify-content: center; padding: var(--space-md) var(--space-lg); border-top: calc(var(--space-xs) / 2) solid var(--brand-stroke); border-radius: var(--brand-radius-md); background: var(--brand-surface2); }
+    .cover-compare-panel.is-decision { border-top: var(--space-xs) solid var(--brand-accent); }
+    .cover-compare-label { color: var(--brand-muted); font-size: var(--type-sm); font-weight: 700; letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); }
+    .cover-compare-value { margin-top: var(--space-sm); font-family: var(--brand-display-font); font-size: var(--type-lg); line-height: var(--brand-display-line-height); text-transform: var(--brand-display-case); }
+    .cover-list { background-image: none; background-color: var(--brand-surface); }
+    .cover-list::before { content: ""; position: absolute; inset: 40% 0 0; background-image: var(--slide-photo); background-size: cover; background-position: var(--slide-position); }
+    .cover-list-main { position: absolute; z-index: 2; inset: 0 0 60%; display: flex; flex-direction: column; justify-content: center; padding: var(--space-xl) var(--space-xxl); background: var(--brand-surface); color: var(--brand-ink); border-bottom: var(--space-xs) solid var(--brand-accent); }
+    .cover-list-main h1 { font-size: var(--type-display); }
+    .verdict.is-light, .note, .script.is-light { background: var(--brand-paper); color: var(--slide-light-ink, var(--brand-surface)); }
+    .verdict.is-light .accent, .note .accent, .script.is-light .accent { color: var(--slide-light-accent, var(--brand-accent)); }
+    .verdict-main { display: flex; align-items: center; }
+    .verdict-main h1 { max-width: 65%; font-size: calc(var(--type-display) + var(--type-md)); }
+    .note-main { display: flex; flex-direction: column; justify-content: center; padding-right: var(--space-xl); }
+    .note-rule, .script-rule { width: calc(var(--space-xl) + var(--space-xs)); height: calc(var(--space-xs) * .75); margin-bottom: var(--space-lg); border-radius: var(--brand-radius-sm); background: var(--slide-light-accent, var(--brand-accent)); }
+    .note-label, .script-label { margin-bottom: var(--space-md); color: var(--slide-light-accent, var(--brand-accent)); font-size: var(--type-sm); font-weight: 700; letter-spacing: var(--brand-body-tracking); text-transform: var(--brand-body-case); }
+    .note-text { font-size: calc(var(--type-lg) + var(--space-xs)); line-height: var(--brand-body-line-height); font-weight: 500; }
+    .script-main { display: flex; flex-direction: column; justify-content: center; }
+    .script-main h1 { max-width: 86%; font-size: var(--type-xl); }
+    .script-card { margin-top: var(--space-xl); padding: var(--space-lg); border-radius: var(--brand-radius-md); background: var(--brand-surface2); color: var(--brand-ink); }
+    .script.is-light .script-card { background: var(--brand-surface); color: var(--brand-ink); }
+    .script-say { font-size: calc(var(--type-slide-body) + var(--space-xs) / 2); line-height: var(--brand-body-line-height); font-weight: 500; }
     @media (max-height: 1080px) {
       .slide { padding: var(--space-xl); }
       .slide-handle { left: var(--space-xl); bottom: var(--space-lg); }
@@ -540,7 +683,8 @@ export function slideHTML(slide, tokens, options = {}) {
   const kind = kindOf(slide);
   const height = Number(slide.__height || options.height || 1350);
   const balance = typeBalanceEnabled(t, options.typeBalance);
-  const signature = options.signature === false ? "" : signatureHTML(t, { format: kind === "static" || kind === "static-light" ? "static" : "carousel", width: SLIDE_WIDTH, height });
+  const staticKinds = new Set(["static", "static-light", "verdict", "note", "script"]);
+  const signature = options.signature === false ? "" : signatureHTML(t, { format: staticKinds.has(kind) ? "static" : "carousel", width: SLIDE_WIDTH, height });
   let content;
   if (LEGACY_SLIDE_KINDS.includes(kind)) content = legacyMarkup(slide);
   else if (kind === "checklist") content = checklistMarkup(slide);
@@ -551,6 +695,14 @@ export function slideHTML(slide, tokens, options = {}) {
   else if (kind === "stat") content = statMarkup(slide);
   else if (kind === "steps") content = stepsMarkup(slide);
   else if (kind === "quote") content = quoteMarkup(slide);
+  else if (kind === "cover-top") content = coverTopMarkup(slide);
+  else if (kind === "cover-doc") content = coverDocMarkup(slide);
+  else if (kind === "cover-card") content = coverCardMarkup(slide);
+  else if (kind === "cover-compare") content = coverCompareMarkup(slide);
+  else if (kind === "cover-list") content = coverListMarkup(slide);
+  else if (kind === "verdict") content = verdictMarkup(slide);
+  else if (kind === "note") content = noteMarkup(slide);
+  else if (kind === "script") content = scriptMarkup(slide);
   else if (kind === "evidence" && options.evidenceHTML) {
     try {
       const doc = options.evidenceHTML({ ...slide, src: slide.src || slide.image || slide.file, label: slide.label || slide.sourceLabel }, t, { width: SLIDE_WIDTH, height });
@@ -567,17 +719,19 @@ export function slideHTML(slide, tokens, options = {}) {
   const split = Math.max(0, Number(slide.split || 700));
   const suppliedPosition = String(slide.pos ?? "").trim();
   const explicitPosition = suppliedPosition && suppliedPosition.toLowerCase() !== "auto";
-  const position = explicitPosition ? suppliedPosition : slide.__autoPosition || (kind === "photo" ? "center top" : "center 30%");
+  const position = explicitPosition ? suppliedPosition : slide.__autoPosition || (kind === "photo" ? "center top" : kind.startsWith("cover-") ? "center center" : "center 30%"); // legacy kinds keep their old default crop
   const paper = t.colors?.paper || "#FFFFFF";
   const lightInk = [t.colors?.surface, t.colors?.stroke, t.colors?.ink].filter(Boolean).sort((a, b) => contrast(b, paper) - contrast(a, paper))[0];
   const lightAccent = readableOn(t.colors?.accent || lightInk, paper);
   // Accent words, labels and numbers are large type: on a light background a pale accent darkens to 3:1 (fills keep it).
   const accentText = readableOn(t.colors?.accent || t.colors?.ink, t.colors?.surface || "#0B0B0D", 3);
-  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40}px;`
+  const pingelLegacyBody = clean(t.identity?.handle).toLowerCase() === "@officialgregpingel";
+  const legacySubSize = pingelLegacyBody ? (kind === "photosplit" ? 36 : kind === "splittop" ? 34 : 40) : Number(t.typeScale?.slideBody || 42);
+  const style = `--slide-height:${height}px;--slide-light-ink:${lightInk};--slide-light-accent:${lightAccent};--slide-accent-text:${accentText};--slide-photo:url(&quot;${esc(photo)}&quot;);--slide-position:${esc(position)};--slide-split:${split}px;--slide-photo-size:${esc(slide.size || "cover")};--legacy-sub-size:${legacySubSize}px;`
     + (legacyHeadSize(kind, slide.headline || slide.title) ? `--legacy-head-size:${legacyHeadSize(kind, slide.headline || slide.title)}px;` : "");
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=${SLIDE_WIDTH}, height=${height}" /><style>${tokensCSS(t)}\n${slideRules()}\n${signatureRulesCSS()}\n${options.evidenceCSS || ""}</style></head>
-<body><section class="slide ${esc(kind)}${balance ? " type-balance" : ""}" style="${style}">${content}${signature}${commonFooter(t)}</section>${options.fitScript === false ? "" : textFitScript()}</body></html>`;
+<body><section class="slide ${esc(kind)}${balance ? " type-balance" : ""}${slide.light ? " is-light" : ""}" style="${style}">${content}${signature}${commonFooter(t)}</section>${options.fitScript === false ? "" : textFitScript()}</body></html>`;
 }
 
 function resolveFile(file, roots) {
@@ -609,31 +763,46 @@ function autoCropGeometry(slide, height) {
     visible: { x: 0, y: 0, w: SLIDE_WIDTH, h: height },
     avoid: { x: 0, y: 0, w: SLIDE_WIDTH, h: height * 0.45 },
   };
+  if (slide.kind === "cover-top") return {
+    visible: { x: 0, y: 0, w: SLIDE_WIDTH, h: height },
+    avoid: { x: 72, y: 88, w: 936, h: 390 },
+  };
+  if (slide.kind === "cover-card") {
+    const side = slide.side || slide.__autoSide || "right";
+    return { visible: { x: 0, y: 0, w: SLIDE_WIDTH, h: height }, avoid: { x: side === "left" ? 40 : 632, y: 120, w: 408, h: 900 } };
+  }
+  if (slide.kind === "cover-compare") return { visible: { x: 0, y: 0, w: SLIDE_WIDTH, h: 560 }, avoid: null };
+  if (slide.kind === "cover-list") return { visible: { x: 0, y: height * 0.4, w: SLIDE_WIDTH, h: height * 0.6 }, avoid: null };
+  if (slide.kind === "cover-doc") return { visible: { x: 0, y: 0, w: SLIDE_WIDTH, h: height }, avoid: null };
   return { visible: { x: 0, y: 0, w: SLIDE_WIDTH, h: split }, avoid: null };
 }
 
 async function automaticPhotoPositions(slides, roots, height) {
   const wanted = slides.map((slide, index) => {
     const supplied = String(slide.pos ?? "").trim();
-    if (!PHOTO_SLIDE_KINDS.has(slide.kind) || (supplied && supplied.toLowerCase() !== "auto")) return null;
+    const needsCrop = !(supplied && supplied.toLowerCase() !== "auto");
+    const needsFurniture = (slide.kind === "cover-card" && !slide.side) || (slide.kind === "cover-doc" && !slide.corner);
+    if (!PHOTO_SLIDE_KINDS.has(slide.kind) || (!needsCrop && !needsFurniture)) return null;
     const file = resolveFile(slide.photo || slide.image, roots);
-    return file ? { index, file, slide } : null;
+    return file ? { index, file, slide, needsCrop, needsFurniture } : null;
   }).filter(Boolean);
   if (!wanted.length) return new Map();
   try {
     const reports = await detectPhotos([...new Set(wanted.map((item) => item.file))]);
     const byFile = new Map(reports.map((report) => [report.file, report]));
-    const positions = new Map();
+    const placements = new Map();
     let unreadable = false;
     for (const item of wanted) {
       const report = byFile.get(item.file);
       if (!report || report.error) unreadable = true;
-      const geometry = autoCropGeometry(item.slide, height);
-      const position = faceAwareObjectPosition(report, report?.faces, geometry.visible, geometry.avoid);
-      if (position) positions.set(item.index, position);
+      const furniture = item.needsFurniture ? faceAwareFamilyPlacement(report?.faces, report) : null;
+      const placedSlide = furniture ? { ...item.slide, __autoSide: furniture.side, __autoCorner: furniture.corner } : item.slide;
+      const geometry = autoCropGeometry(placedSlide, height);
+      const position = item.needsCrop ? faceAwareObjectPosition(report, report?.faces, geometry.visible, geometry.avoid) : null;
+      if (position || furniture) placements.set(item.index, { position, ...furniture });
     }
     if (unreadable) warn("slides: one or more photos could not be read for face-aware crop; using the established position for those photos");
-    return positions;
+    return placements;
   } catch (error) {
     warn(`slides: face-aware crop unavailable: ${error.message}; using the established positions`);
     return new Map();
@@ -768,7 +937,8 @@ export async function renderSlides(spec, { brand, outDir, signature = true, warn
     const tokens = projectTokens(resolved.tokens, projectDir, roots);
     const autoPositions = await automaticPhotoPositions(expanded, roots, normalized.height);
     const placed = expanded.map((source, index) => {
-      const slide = { ...source, __height: normalized.height, ...(autoPositions.has(index) ? { __autoPosition: autoPositions.get(index) } : {}) };
+      const auto = autoPositions.get(index);
+      const slide = { ...source, __height: normalized.height, ...(auto?.position ? { __autoPosition: auto.position } : {}), ...(auto?.side ? { __autoSide: auto.side } : {}), ...(auto?.corner ? { __autoCorner: auto.corner } : {}) };
       if (slide.kind === "story" && !resolveFile(slide.photo || slide.image, roots)) throw new Error(`story slide ${index + 1} photo file not found: ${slide.photo || slide.image}`);
       if (slide.kind === "evidence" && !resolveFile(assetValue(slide), roots)) throw new Error(`evidence slide ${index + 1} image file not found: ${assetValue(slide)}`);
       for (const key of ["photo", "image", "screenshot", "file", "avatar"]) if (slide[key]) slide[key] = copyAsset(slide[key], projectDir, roots, `slide-${index + 1}-${key}`, index + 1);
@@ -816,6 +986,17 @@ export function sampleSlidesSpec(photo) {
       { kind: "notes", title: "Sample notes", date: "Review copy", lines: ["One idea per line.", "The brand owns the visual language."] },
       { kind: "story", photo, focalPoint: { x: 0.5, y: 0.4 }, chapter: "SAMPLE", caption: "A documentary frame uses a file named in the spec." },
       { kind: "evidence", image: photo, sourceLabel: "Golden frame fixture" },
+      { kind: "stat", number: "3", headline: "SUPPLIED *SAMPLE* POINTS", source: "Sample fixture" },
+      { kind: "steps", headline: "THREE *SAMPLE* STEPS", steps: ["Start with the supplied fact", "Show the useful decision", "Close with one clear action"] },
+      { kind: "quote", quote: "A supplied sample quote stays attributed.", by: "Sample Coach" },
+      { kind: "cover-top", photo, headline: "A *TOP* COVER USES LOCAL CONTRAST", sub: "The photo remains visible below." },
+      { kind: "cover-doc", photo, headline: "REAL WORK SHOWN" },
+      { kind: "cover-card", photo, headline: "THE *BRIEF CARD* SITS BESIDE THE FACE", sub: "Every value comes from the resolved brand tokens." },
+      { kind: "cover-compare", photo, headline: "CHOOSE THE USEFUL PATH", left: { label: "OLD WAY", text: "Wait for later" }, right: { label: "DECISION", text: "Act while clear" }, decision: "right" },
+      { kind: "cover-list", photo, headline: "FIVE *USEFUL* POINTS TO KEEP", sub: "One promise above the real photo." },
+      { kind: "verdict", headline: "THE *CLEAR* DECISION BEATS MORE NOISE" },
+      { kind: "note", label: "KEEP THIS", text: "A short useful note leaves the rest of the slide quiet." },
+      { kind: "script", label: "SAY THIS INSTEAD", headline: "STOP ASKING IF THEY NEED MORE TIME", say: "Ask which part of the decision still feels unclear right now." },
     ],
   };
 }

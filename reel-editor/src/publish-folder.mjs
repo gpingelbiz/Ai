@@ -61,12 +61,22 @@ export function bannedInCaption(text) {
   return "";
 }
 
+/** Trial Reel markers are metadata, an explicit #trial name, or placement under Publish/Trial/. */
+export function trialReel({ entry = "", dir = null, video = "", captionRaw = "", meta = {}, root = ROOT } = {}) {
+  if (meta?.trial === true) return true;
+  if (/(?:^|[\s,{])["']?trial["']?\s*:\s*true\b/im.test(String(captionRaw || ""))) return true;
+  const names = [entry, dir && path.basename(dir), video && path.basename(video)].filter(Boolean);
+  if (names.some((name) => /#trial\b/i.test(String(name)))) return true;
+  const relative = path.relative(path.resolve(root), path.resolve(dir || video || path.join(root, entry)));
+  return relative.split(path.sep).some((part) => /^trial$/i.test(part));
+}
+
 /** One dropped item: a folder or a loose video. Returns null when it holds no usable video yet. */
 export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000, sourceRoots = SOURCE_ROOTS } = {}) {
   const full = path.join(root, entry);
   let st;
   try { st = fs.statSync(full); } catch { return null; }
-  let video = null, captionFile = null, dir = null, metaFrom = null, checkFrom = null;
+  let video = null, captionFile = null, dir = null, metaFrom = null, checkFrom = null, textcheckFrom = null;
   let metaPath = null;
   if (st.isDirectory()) {
     if (entry === SCHEDULED || entry === FAILED || entry.startsWith(".")) return null;
@@ -81,26 +91,29 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
     captionFile = cap ? path.join(full, cap) : null;
   } else if (VIDEO.test(entry)) {
     video = full;
+    const sidecarRoot = path.dirname(full);
     const stem = entry.replace(VIDEO, "");
     const clip = stem.match(/^(Clip \d+) - /)?.[1];
-    for (const c of [`${stem}.txt`, `${stem} - caption.txt`, `${stem} caption.txt`, clip ? `${clip} - caption.txt` : null].filter(Boolean)) if (!captionFile && fs.existsSync(path.join(root, c))) captionFile = path.join(root, c);
+    const localStem = path.basename(stem);
+    for (const c of [`${localStem}.txt`, `${localStem} - caption.txt`, `${localStem} caption.txt`, clip ? `${clip} - caption.txt` : null].filter(Boolean)) if (!captionFile && fs.existsSync(path.join(sidecarRoot, c))) captionFile = path.join(sidecarRoot, c);
     // A video dragged in on its own: find the delivered folder it came from (same name and size) and take that
     // folder's caption and check results, so a clip dropped without its caption file still posts with its caption.
     if (!captionFile) {
       const home = findSource(entry, st.size, { roots: sourceRoots });
-      if (home) { captionFile = home.captionFile; metaFrom = home.meta; checkFrom = home.check; }
+      if (home) { captionFile = home.captionFile; metaFrom = home.meta; checkFrom = home.check; textcheckFrom = home.textcheck; }
     }
   } else return null;
   if (!video) return { entry, dir, video: null, problem: "no video in it" };
   // Still copying in: wait until the file has not changed for a minute.
   const vst = fs.statSync(video);
   if (now - vst.mtimeMs < settle) return { entry, dir, video, waiting: true };
-  const caption = parseCaption(captionFile ? fs.readFileSync(captionFile, "utf8") : "");
+  const captionRaw = captionFile ? fs.readFileSync(captionFile, "utf8") : "";
+  const caption = parseCaption(captionRaw);
   let meta = {};
   // The watcher leaves .reel.json in a reel folder and ".Clip 2.reel.json" per clip in a Clips folder.
   const prefix = path.basename(video).split(" - ")[0];
   for (const f of [dir && /^Clip \d+$/.test(prefix) ? `.${prefix}.reel.json` : null, ".reel.json"].filter(Boolean)) {
-    try { meta = JSON.parse(fs.readFileSync(path.join(dir || root, f), "utf8")); metaPath = path.join(dir || root, f); break; } catch {}
+    try { meta = JSON.parse(fs.readFileSync(path.join(dir || path.dirname(video), f), "utf8")); metaPath = path.join(dir || path.dirname(video), f); break; } catch {}
   }
   if (metaFrom) { try { meta = JSON.parse(fs.readFileSync(metaFrom, "utf8")); metaPath = metaFrom; } catch {} }
   const files = dir ? fs.readdirSync(dir) : [];
@@ -111,13 +124,26 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   const noteFile = note ? path.join(dir, note) : checkFrom;
   if (noteFile && /^FAIL\b/m.test(fs.readFileSync(noteFile, "utf8"))) { draft = true; why = "its check note shows a failure"; }
   if (meta.preflight === "fail") { draft = true; why = "its preflight failed"; }
+  const textcheckFile = (dir && fs.existsSync(path.join(dir, "textcheck.json")) ? path.join(dir, "textcheck.json") : null) || textcheckFrom;
+  let textcheck = meta.textcheck || null;
+  if (textcheckFile) {
+    try { textcheck = JSON.parse(fs.readFileSync(textcheckFile, "utf8")); }
+    catch { textcheck = { verdict: "hold", notes: ["textcheck-unavailable: textcheck.json could not be read"] }; }
+  }
+  const textVerdict = typeof textcheck === "string" ? textcheck : textcheck?.verdict;
+  if (textVerdict === "hold") {
+    const reason = (typeof textcheck === "object" && textcheck?.notes?.[0]) || "text check reported a hold";
+    draft = true;
+    why = `its text check is on hold: ${reason}`;
+  }
   // The render reviewer's notes do not hold a reel back (Greg 2026-10-22: dropping it is the approval, and the
   // reviewer flags intended effects too); they go into the receipt to look at.
   const notes = meta.obvious ? [meta.obvious] : [];
   if (!caption.caption) { draft = true; why = "there is no caption"; }
   const banned = bannedInCaption(postText(caption));
   if (banned && !draft) { draft = true; why = banned; }
-  return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, metaFile: metaPath, checkFile: noteFile || null, droppedAt: Math.round(st.mtimeMs) };
+  const trial = trialReel({ entry, dir, video, captionRaw, meta, root });
+  return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, trial, instagramType: trial ? "TRIAL_REEL" : "REEL", metaFile: metaPath, checkFile: noteFile || null, textcheckFile: textcheckFile || null, droppedAt: Math.round(st.mtimeMs) };
 }
 
 // Where delivered reels live: the Desktop Reels folder (where the drop folders deliver).
@@ -133,7 +159,7 @@ export function findSource(name, size, { roots = SOURCE_ROOTS } = {}) {
       try { if (fs.statSync(f).size !== size) continue; } catch { continue; }
       const clip = name.match(/^(Clip \d+) - /)?.[1];
       const pick = (...c) => c.map((x) => x && path.join(d, x)).find((x) => x && fs.existsSync(x)) || null;
-      return { dir: d, captionFile: pick(clip ? `${clip} - caption.txt` : null, "caption.txt"), meta: pick(clip ? `.${clip}.reel.json` : null, ".reel.json"), check: pick(clip ? `${clip} - check this reel.txt` : null, "check this reel.txt") };
+      return { dir: d, captionFile: pick(clip ? `${clip} - caption.txt` : null, "caption.txt"), meta: pick(clip ? `.${clip}.reel.json` : null, ".reel.json"), check: pick(clip ? `${clip} - check this reel.txt` : null, "check this reel.txt"), textcheck: pick("textcheck.json") };
     }
   }
   return null;
@@ -142,7 +168,13 @@ export function findSource(name, size, { roots = SOURCE_ROOTS } = {}) {
 /** Everything waiting in the folder, oldest drop first. */
 export function scan({ root = ROOT, now = Date.now() } = {}) {
   if (!fs.existsSync(root)) return [];
-  return fs.readdirSync(root).map((e) => readItem(e, { root, now })).filter(Boolean)
+  const entries = fs.readdirSync(root).flatMap((entry) => {
+    if (!/^trial$/i.test(entry)) return [entry];
+    const folder = path.join(root, entry);
+    try { return fs.statSync(folder).isDirectory() ? fs.readdirSync(folder).map((child) => path.join(entry, child)) : [entry]; }
+    catch { return [entry]; }
+  });
+  return entries.map((e) => readItem(e, { root, now })).filter(Boolean)
     // Oldest drop first; things dropped in the same few minutes go in name order (Clip 1 before Clip 2).
     .sort((a, b) => Math.floor((a.droppedAt || 0) / 300000) - Math.floor((b.droppedAt || 0) / 300000) || a.entry.localeCompare(b.entry, undefined, { numeric: true }));
 }

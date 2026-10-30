@@ -5,13 +5,26 @@ import { PNG } from "pngjs";
 import { ocrBinary, parseOcrJSON } from "./evidence.mjs";
 import { ensureDir, PKG_ROOT, run } from "./util.mjs";
 
-const PHOTO_KINDS = new Set(["photo", "photosplit", "phototop", "splittop", "story"]);
+const PHOTO_KINDS = new Set(["photo", "photosplit", "phototop", "splittop", "story", "cover-top", "cover-doc", "cover-card", "cover-compare", "cover-list"]);
 const PHOTO_FIELDS = ["photo", "image"];
-const RETRY_FIXES = new Set(["shorten", "recrop", "swap-photo"]);
+const RETRY_FIXES = new Set(["shorten", "recrop", "relayout", "swap-photo"]);
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
+const POSITION_CLASSES = Object.freeze({
+  low: new Set(["photo", "photosplit"]),
+  top: new Set(["phototop", "splittop", "cover-top", "cover-list"]),
+  card: new Set(["cover-card", "cover-doc", "note"]),
+  split: new Set(["cover-compare"]),
+  center: new Set(["body", "cover", "cta", "static", "static-light", "stat", "steps", "quote", "verdict", "script", "checklist", "compare", "postcard", "notes", "story", "evidence"]),
+});
+
 const clean = (value) => String(value ?? "").replace(/\*/g, "").replace(/\s+/g, " ").trim();
-const kindOf = (slide) => clean(slide?.kind || "body").toLowerCase();
+export const kindOf = (slide) => clean(slide?.kind || "body").toLowerCase();
+
+export function textPositionClass(slide) {
+  const kind = kindOf(slide);
+  return Object.entries(POSITION_CLASSES).find(([, kinds]) => kinds.has(kind))?.[0] || null;
+}
 
 function textPart(role, value, critical = false) {
   const text = clean(value);
@@ -20,17 +33,32 @@ function textPart(role, value, critical = false) {
 
 function sideParts(side, fallbackLabel) {
   const value = typeof side === "object" && side != null ? side : { value: side };
-  return [textPart("compare-label", value.label || fallbackLabel), textPart("compare-value", value.value), textPart("compare-note", value.note)].filter(Boolean);
+  return [textPart("compare-label", value.label || fallbackLabel), textPart("compare-value", value.value || value.text), textPart("compare-note", value.note)].filter(Boolean);
 }
 
 /** Text the renderer is expected to paint, grouped so headline and footer rules remain explicit. */
 export function expectedSlideText(slide, brand = {}) {
   const kind = kindOf(slide);
   const parts = [];
-  if (["photo", "photosplit", "phototop", "splittop", "cover", "body", "cta", "static", "static-light"].includes(kind)) {
+  if (["photo", "photosplit", "phototop", "splittop", "cover", "body", "cta", "static", "static-light", "cover-top", "cover-card", "cover-list"].includes(kind)) {
     if (!["photo", "photosplit", "phototop", "splittop"].includes(kind)) parts.push(textPart("label", slide.label));
     parts.push(textPart("headline", slide.headline || slide.title, true));
     parts.push(textPart("sub", slide.sub || slide.body));
+  } else if (kind === "cover-doc") {
+    parts.push(textPart("headline", slide.headline || slide.title, true));
+  } else if (kind === "cover-compare") {
+    parts.push(textPart("headline", slide.headline || slide.title, true));
+    parts.push(...sideParts(slide.left, slide.leftLabel));
+    parts.push(...sideParts(slide.right, slide.rightLabel));
+  } else if (kind === "verdict") {
+    parts.push(textPart("headline", slide.headline || slide.title, true));
+  } else if (kind === "note") {
+    parts.push(textPart("label", slide.label));
+    parts.push(textPart("headline", slide.text, true));
+  } else if (kind === "script") {
+    parts.push(textPart("label", slide.label));
+    parts.push(textPart("headline", slide.headline || slide.title, true));
+    parts.push(textPart("say", slide.say));
   } else if (kind === "checklist") {
     parts.push(textPart("headline", slide.title || slide.headline, true));
     for (const item of slide.items || []) {
@@ -146,9 +174,51 @@ function phrasePattern(value) {
   return new RegExp(`(^|[^\\p{L}\\p{N}])${String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "iu");
 }
 
-/** Brand copy rules run on the supplied spec, before OCR can obscure punctuation. */
-export function lintSlideCopy(slide, neverSay = []) {
+export const wordCount = (value) => textTokens(value).length;
+
+function paintedWordCount(slide) {
+  const parts = expectedSlideText(slide, {}).filter((part) => part.role !== "handle" && part.role !== "postcard-handle");
+  const number = kindOf(slide) === "stat" ? wordCount(slide.number) : 0;
+  return parts.reduce((sum, part) => sum + wordCount(part.text), number);
+}
+
+/** Density rules use authored fields, before rendering or OCR can hide an overflow. */
+export function wordBudgetProblems(slide, { index = null } = {}) {
+  const kind = kindOf(slide), at = Number.isInteger(index) ? `slide ${index}` : "slide";
   const problems = [];
+  let limit = null;
+  if (kind === "verdict") limit = 11;
+  else if (kind === "note") limit = 18;
+  else if (kind === "script") limit = 28;
+  else if (kind === "cover" || kind.startsWith("cover-")) limit = 18;
+  else if (index === 1) limit = 18;
+  else if (Number.isInteger(index) && index > 1) limit = 32;
+  const total = paintedWordCount(slide);
+  if (limit != null && total > limit) problems.push({ code: "word-budget", message: `${at} total copy has ${total} words (maximum ${limit})`, fix: "shorten" });
+
+  if (Number.isInteger(index) && index > 1) {
+    const subField = slide.sub != null ? "sub" : slide.body != null ? "body" : null;
+    const subWords = subField ? wordCount(slide[subField]) : 0;
+    if (subWords > 24) problems.push({ code: "word-budget-sub", message: `${at} ${subField} has ${subWords} words (maximum 24)`, fix: "shorten" });
+  }
+  if (kind === "steps") for (const [itemIndex, item] of (slide.steps || []).entries()) {
+    const words = wordCount(typeof item === "string" ? item : item?.text || item?.value);
+    if (words > 10) problems.push({ code: "word-budget-step", message: `${at} steps[${itemIndex}] has ${words} words (maximum 10)`, fix: "shorten" });
+  }
+  if (kind === "checklist" && (slide.items || []).length > 6) problems.push({ code: "word-budget-checklist", message: `${at} items has ${slide.items.length} rows (maximum 6)`, fix: "shorten" });
+  return problems;
+}
+
+export function slide2LayoutProblems(slides = []) {
+  if (slides.length < 2) return [];
+  const first = textPositionClass(slides[0]), second = textPositionClass(slides[1]);
+  if (!first || first !== second) return [];
+  return [{ code: "slide-2-layout", message: `slide 2 uses the same ${second} text-position class as slide 1`, fix: "relayout", first, second }];
+}
+
+/** Brand copy rules run on the supplied spec, before OCR can obscure punctuation. */
+export function lintSlideCopy(slide, neverSay = [], context = {}) {
+  const problems = wordBudgetProblems(slide, context);
   for (const { field, text } of lintTextFields(slide)) {
     if (/[—–]/u.test(text)) problems.push({ code: "copy-dash", message: `${field} contains an em or en dash` });
     if (/\b0?\d+\s*\/\s*0?\d+\b|\bslide\s+\d+\b/i.test(text)) problems.push({ code: "copy-counter", message: `${field} contains a slide counter` });
@@ -187,6 +257,8 @@ export function slideCopyLines(lines = [], parts = []) {
   return lines.filter((line) => {
     const tokens = textTokens(line.text);
     const hits = tokens.filter((token) => expected.some((want) => tokenMatches(want, token))).length;
+    // A lone short word ("NOT" on a whiteboard, "THE" on a shirt) is too weak to call slide copy (2026-10-30 real photo).
+    if (tokens.length === 1 && tokens[0].length < 4) return false;
     return tokens.length > 0 && hits / tokens.length >= 0.5;
   });
 }
@@ -325,7 +397,9 @@ function addTextProblems(problems, parts, ocr) {
 export async function preflightSlides({ spec, files, brand, history = null, options = {} }) {
   const slides = Array.isArray(spec?.slides) ? spec.slides : [];
   const width = Number(spec?.width || 1080), height = Number(spec?.height || (spec?.square ? 1080 : 1350));
-  const results = slides.map((slide, index) => ({ index: index + 1, file: files?.[index] || "", problems: lintSlideCopy(slide, brandNeverSay(brand || {}, options)).map((item) => ({ ...item, fix: "shorten" })) }));
+  const results = slides.map((slide, index) => ({ index: index + 1, file: files?.[index] || "", problems: lintSlideCopy(slide, brandNeverSay(brand || {}, options), { index: index + 1 }).map((item) => ({ ...item, fix: item.fix || "shorten" })) }));
+  const sequenceProblems = slide2LayoutProblems(slides);
+  if (sequenceProblems.length && results[1]) results[1].problems.push(...sequenceProblems);
   if (!slides.length) results.push({ index: 0, file: "", problems: [problem("spec-empty", "slide spec has no slides", "none")] });
   if (!Array.isArray(files) || files.length !== slides.length) {
     for (const result of results) result.problems.push(problem("file-count", `expected ${slides.length} rendered PNGs, got ${files?.length || 0}`, "none"));
@@ -396,5 +470,10 @@ export async function preflightSlides({ spec, files, brand, history = null, opti
   }
 
   const allProblems = results.flatMap((slide) => slide.problems);
-  return { verdict: verdictForProblems(allProblems), slides: results, photoHashes };
+  const budgetProblems = allProblems.filter((item) => item.code.startsWith("word-budget"));
+  const checks = [
+    { code: "word-budget", verdict: verdictForProblems(budgetProblems), notes: budgetProblems.map((item) => item.message) },
+    { code: "slide-2-layout", verdict: verdictForProblems(sequenceProblems), notes: sequenceProblems.map((item) => item.message) },
+  ];
+  return { verdict: verdictForProblems(allProblems), checks, slides: results, photoHashes };
 }

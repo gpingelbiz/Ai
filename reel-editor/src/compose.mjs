@@ -10,6 +10,7 @@ import { signatureCSS, signatureHTML } from "./signature.mjs";
 import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
 import { evidenceCSS, evidenceHTML, EVIDENCE_JS } from "./evidence.mjs";
 import { timeLabelHTML, TIME_LABELS_JS } from "./time-labels.mjs";
+import { keywordColorOnFootage } from "./captions.mjs";
 
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
@@ -148,7 +149,7 @@ export function renderHTML(plan, footage) {
   if (structureTokens?.type?.body) structureTokens.type.body.file = "assets/fonts/Inter.ttf";
   const hookStyle = hk.style || "gold";
   const hookColor = hookStyle === "gold" ? c.accent : c.text;
-  const headline = hookStyle === "headline";
+  const headline = hookStyle === "headline" || hk.plaque === true;
   const hookBox = hookStyle === "box" ? `background: ${hexA(c.bg || "#0B0B0D", 0.86)}; padding: 0.18em 0.45em; border-radius: 0.14em; box-decoration-break: clone; -webkit-box-decoration-break: clone;` : "";
   const ct = s.cta || {};
   const ctaFont = Math.round((ct.fontSizeFrac || 0.036) * H);
@@ -166,9 +167,10 @@ export function renderHTML(plan, footage) {
   // dimFuture: false shows the whole phrase at full strength and swaps it hard (the niche winners' pattern); the
   // default dims the words not yet spoken.
   const dimFuture = reveal && cap.dimFuture !== false;
+  const colorKeywords = keywordColorOnFootage(cap);
   // Hand-drawn marker on the gold word: a squiggle underline, or a loose circle around a number or amount. The
   // stroke draws on as the word is spoken (stroke-dashoffset, measured at runtime).
-  const annotate = !!cap.annotate;
+  const annotate = colorKeywords && !!cap.annotate;
   const marker = (w, first) => {
     if (!annotate || !w.key || !first) return "";
     // The look's marker shape (underline, scribble, box, bracket, circle); without a look, a circle for a number and
@@ -192,7 +194,7 @@ export function renderHTML(plan, footage) {
     ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `<span class="hw${w.key ? " k" : ""}">${esc(w.text)}</span>`).join(" ")}${hk.treat === "type" ? '<span class="hook-cursor"></span>' : ""}</div><div id="hook-bar"></div></div>`
     : `<span id="hook-text">${esc(plan.hook?.text || "")}</span>`;
   const hookHTML = plan.hook
-    ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
+    ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}${hk.plaque === true ? " hook-plaque" : ""}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
     : "";
 
   const premiseSectionsHTML = premise?.sections?.length
@@ -524,7 +526,7 @@ ${credentialMode ? `${tokensCSS(s.brand)}
       /* No spot kept the word readable behind the head (a cap or hair reaches higher than the face says): in front. */
       .slam-front { z-index: 2; }` : ""}
       .slam-stage { position: absolute; left: 5%; right: 5%; top: 4%; height: 18%; display: grid; place-items: center; }
-      .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
+      .slam-word { font-family: "Anton", sans-serif; font-weight: 400; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; color: ${s.slams?.color === "ink" ? c.text : c.accent}; white-space: nowrap; text-align: center; transform-origin: 50% 50%; -webkit-text-stroke: 0.016em ${c.stroke}; paint-order: stroke fill; text-shadow: 0 0.04em 0 rgba(0,0,0,0.6), 0 0.1em 0.45em rgba(0,0,0,0.6); will-change: transform, opacity; }
 ${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-events: none; }
       .icon-disc { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; box-sizing: border-box; transform-origin: 50% 50%; will-change: transform, opacity; }
       .icon-disc svg { width: 55%; height: 55%; overflow: visible; }
@@ -564,11 +566,11 @@ ${premiseHasIcons ? `      .premise-section-icon { flex: 0 0 ${premise.sectionFo
         transform-origin: 50% 50%;
       }
       .cap .w { display: inline-block; transform-origin: 50% 50%; }
-      .cap .w.k { color: ${c.accent}; }
+      .cap .w.k { ${colorKeywords ? `color: ${c.accent};` : "color: inherit; font-weight: 950; font-size: 1.06em;"} }
 ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850; line-height: 1.04; letter-spacing: -0.01em; -webkit-text-stroke: 0; text-shadow: 0 0.04em 0.28em rgba(0,0,0,0.6), 0 0 0.8em rgba(0,0,0,0.3); gap: 0.02em 0.24em; max-width: 86%; }
 ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap-line { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2; letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: 0 0.03em 0.08em rgba(0,0,0,0.45), 0 0.04em 0.24em rgba(0,0,0,0.4); gap: 0.06em 0.26em; }
-      .cap .w.k { color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none; }` : ""}
+      .cap .w.k { ${colorKeywords ? `color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none;` : "color: inherit; background: none; padding: 0; border-radius: 0; font-weight: 950; font-size: 1.06em;"} }` : ""}
       #hook {
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
         padding: ${Math.max(0, Math.round(hk.position * H - hookFont * 1.2))}px 7% 0; box-sizing: border-box;
@@ -590,7 +592,14 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
         text-transform: ${ct.uppercase === false ? "none" : "uppercase"}; text-align: center;
       }
       #cta-text { display: inline-block; max-width: 100%; transform-origin: 50% 50%; ${ctaLook} }
-      .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}
+      .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}${hk.plaque === true ? `
+      #hook.hook-plaque #hook-block { left: 7%; right: 7%; text-align: center; }
+      #hook.hook-plaque #hook-scrim, #hook.hook-plaque #hook-bar { display: none; }
+      #hook.hook-plaque #hook-lines { display: inline-block; box-sizing: border-box; max-width: 100%; padding: 0.24em 0.38em 0.2em; color: ${c.text}; background: ${c.bg}; background-image: none; border: 0; border-left: ${Math.max(1, Math.round(6 * H / 1920))}px solid ${c.accent}; border-radius: 0.14em; box-shadow: none; transform: none; font-family: "Anton", sans-serif; font-style: normal; font-weight: 400; font-size: 1em; line-height: 1.05; letter-spacing: 0.01em; text-transform: ${hk.uppercase === false ? "none" : "uppercase"}; -webkit-text-stroke: 0; paint-order: normal; text-shadow: none; }
+      #hook.hook-plaque #hook-lines::before, #hook.hook-plaque #hook-lines::after { display: none; }
+      #hook.hook-plaque #hook-lines .hw, #hook.hook-plaque #hook-lines .hw.k { color: ${c.text}; background: none; transform: none; font-style: normal; font-size: 1em; text-decoration: none; text-shadow: none; }
+      #hook.hook-plaque #hook-lines .hw.k { color: ${c.accent}; }
+` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}
     </style>
   </head>
   <body>

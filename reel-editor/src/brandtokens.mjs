@@ -6,7 +6,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const COLOR_ROLES = ["ink", "accent", "accentInk", "surface", "surface2", "stroke", "muted", "paper", "warn"];
 const TYPE_ROLES = ["display", "body", "editorial", "mono"];
 
-const TYPE_SCALE = { xs: 24, sm: 30, md: 40, lg: 54, xl: 72, display: 112 };
+const TYPE_SCALE = { xs: 24, sm: 30, md: 40, lg: 54, xl: 72, display: 112, slideBody: 42 };
 const SPACING = { xs: 8, sm: 16, md: 24, lg: 40, xl: 64, xxl: 96 };
 const RADIUS = { sm: 8, md: 18, lg: 36, pill: 999 };
 
@@ -129,7 +129,7 @@ function baseTokens({ colors = {}, display, body, identity = {}, personality = "
     texture: { grain: calm ? 0.025 : 0.08, paper: calm },
     motion: motionTokens(personality),
     signature: { kind: "none", position: "none", colorRole: "accent", thickness: 0, opacity: 0.68 },
-    imagery: { grade: "muted-editorial", intensity: calm ? 0.3 : 0.55 },
+    imagery: { finish: true, grade: "muted-editorial", intensity: calm ? 0.3 : 0.55 },
     houseLooks: [],
     modes: {},
     contentModes: {},
@@ -222,7 +222,7 @@ function tokensFromPreset(preset = {}) {
     personality: calm ? "calm" : "punchy",
   });
   const grade = preset.broll?.grade;
-  if (grade?.preset) tokens.imagery = { grade: grade.preset, intensity: Number.isFinite(grade.intensity) ? grade.intensity : 0.55 };
+  if (grade?.preset) tokens.imagery = { finish: true, grade: grade.preset, intensity: Number.isFinite(grade.intensity) ? grade.intensity : 0.55 };
   return tokens;
 }
 
@@ -273,7 +273,7 @@ export function tokensCSS(tokens) {
     vars.push(`  --brand-${roleName}-tracking: ${role.tracking || 0}em;`);
     vars.push(`  --brand-${roleName}-line-height: ${role.lineHeight || 1.2};`);
   }
-  for (const [name, value] of Object.entries(t.typeScale)) vars.push(`  --type-${name}: ${value}px;`);
+  for (const [name, value] of Object.entries(t.typeScale)) vars.push(`  --type-${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}: ${value}px;`);
   for (const [name, value] of Object.entries(t.spacing)) vars.push(`  --space-${name}: ${value}px;`);
   for (const [name, value] of Object.entries(t.radius)) vars.push(`  --brand-radius-${name}: ${value}px;`);
   vars.push(`  --brand-radius: ${t.radius.md}px;`);

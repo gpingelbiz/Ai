@@ -22,26 +22,32 @@ function load(brand, { font = true } = {}) {
 }
 
 const GREG = {
-  "captions.uppercase": true, "hook.uppercase": undefined, "hook.duration": 3, "cuts.silence": "fast",
+  "captions.uppercase": false, "captions.fontSizeFrac": 0.0355, "captions.autoKeywords": false, "captions.keywordColorOnFootage": false,
+  "hook.uppercase": undefined, "hook.duration": 3, "hook.fontSizeFrac": 0.041, "hook.behind": false, "hook.plaque": true,
+  "cuts.silence": "fast",
   "zooms.cadence.enabled": true, "zooms.minSpacing": undefined, "zooms.maxPer30": undefined,
+  "looks.lockHook": true, "looks.lockCaptions": true, "cover.style": "archetypes", "finish.enabled": true,
   // Off since 2026-10-29: the opening still put b-roll behind Greg, which no top reel in the b-roll study did.
   "coldOpen.enabled": false,
 };
 const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
 
 test("Greg's preset keeps today's case, hook time and pacing", () => {
+  // Greg 2026-10-30: pingel-v2 text direction is his default
   const g = loadPreset("pingel-brand");
   for (const [k, v] of Object.entries(GREG)) assert.equal(at(g, k), v, k);
   assert.equal(ownDisplay(g), false, "pingel-brand has no display font: Anton and DM Serif stay");
 });
 
-test("a brand file without the new fields inherits Greg's behaviour exactly", () => {
+test("a brand file without the new fields inherits Greg's new defaults and keeps its legacy behind hook", () => {
+  // Greg 2026-10-30: pingel-v2 text direction is his default
   const { p, dir } = load(julee);
   try {
-    for (const [k, v] of Object.entries(GREG)) assert.equal(at(p, k), v, k);
+    for (const [k, v] of Object.entries({ ...GREG, "hook.behind": true })) assert.equal(at(p, k), v, k);
     const raw = brandPreset(julee);
     for (const k of ["coldOpen", "cuts", "zooms"]) assert.ok(!(k in raw), `${k} not written`);
     assert.ok(!("uppercase" in raw.captions) && !("uppercase" in raw.hook) && !("duration" in raw.hook));
+    assert.equal(raw.hook.behind, true, "generic brands still request their legacy behind hook");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { groupWords, markKeywords, cleanText } from "../src/captions.mjs";
+import { groupWords, markKeywords, cleanText, keywordColorOnFootage } from "../src/captions.mjs";
 import { applyCorrections } from "../src/transcribe.mjs";
 import { pickHook, pickCta } from "../src/hook.mjs";
 import { planZooms } from "../src/zooms.mjs";
@@ -9,6 +9,12 @@ import { renderHTML } from "../src/compose.mjs";
 
 const sample = JSON.parse(readFileSync(new URL("../examples/sample-words.json", import.meta.url))).words;
 const dict = JSON.parse(readFileSync(new URL("../dictionary.json", import.meta.url)));
+
+test("keyword color over footage keeps today's default and supports a weight-only guard", () => {
+  assert.equal(keywordColorOnFootage({}), true);
+  assert.equal(keywordColorOnFootage({ keywordColorOnFootage: true }), true);
+  assert.equal(keywordColorOnFootage({ keywordColorOnFootage: false }), false);
+});
 
 test("dictionary corrections merge split framework names and keep punctuation", () => {
   const w = applyCorrections(sample, dict.corrections);
@@ -95,6 +101,20 @@ test("renderHTML renders the CTA pill and hook styles", () => {
   assert.match(box, /background: rgba\(11, 11, 13, 0.86\)/);
 });
 
+test("the hook plaque uses brand tokens and the footage keyword guard removes colour markers", () => {
+  const style = JSON.parse(readFileSync(new URL("../presets/_defaults.json", import.meta.url)));
+  style.colors = { ...style.colors, text: "#E1E2E3", bg: "#121314", accent: "#A1B2C3" };
+  style.hook = { ...style.hook, plaque: true };
+  style.captions = { ...style.captions, quiet: true, annotate: true, keywordColorOnFootage: false };
+  const hook = { text: "Own the number", words: [{ text: "Own" }, { text: "the" }, { text: "number", key: true }], start: 0, duration: 2 };
+  const captions = [{ text: "Own the number", start: 2, end: 3, words: hook.words }];
+  const html = renderHTML({ name: "plaque", canvas: { width: 1080, height: 1920 }, style, video: { duration: 4, hasAudio: false }, hook, captions, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
+  assert.match(html, /hook-plaque/);
+  assert.match(html, /background: #121314; background-image: none; border: 0; border-left: 6px solid #A1B2C3/);
+  assert.match(html, /\.cap \.w\.k \{ color: inherit; background: none; padding: 0; border-radius: 0; font-weight: 950; font-size: 1\.06em;/);
+  assert.doesNotMatch(html, /<svg class="an /);
+});
+
 test("caption lines keep phrases whole: no line made of glue words, none ending on one", async () => {
   const { tidyLines, groupWords } = await import("../src/captions.mjs");
   const w = (s) => s.split(" ").map((t, i) => ({ text: t, start: i, end: i + 0.5 }));
@@ -141,6 +161,7 @@ test("the hook never covers the head: a measured head top reaches the page, the 
 });
 
 test("pingel-v2 builds on pingel-brand: same colours and b-roll world, plus the opt-in house system", async () => {
+  // Greg 2026-10-30: pingel-v2 text direction is his default
   const { loadPreset } = await import("../src/presets.mjs");
   const v2 = loadPreset("pingel-v2"), brand = loadPreset("pingel-brand");
   assert.deepEqual(v2.colors, brand.colors);
@@ -157,5 +178,12 @@ test("pingel-v2 builds on pingel-brand: same colours and b-roll world, plus the 
   assert.deepEqual(v2.brand.modes, { authority: "gregcard", editorial: "press", proof: "receipts" });
   assert.equal(brand.brand.signature.kind, "none");
   assert.deepEqual(brand.brand.houseLooks, []);
-  assert.equal(brand.captions.uppercase, true, "the default look is unchanged");
+  assert.equal(brand.captions.uppercase, false);
+  assert.equal(brand.captions.autoKeywords, false);
+  assert.equal(brand.captions.keywordColorOnFootage, false);
+  assert.equal(brand.hook.behind, false);
+  assert.equal(brand.hook.plaque, true);
+  assert.deepEqual(brand.looks, { lockHook: true, lockCaptions: true });
+  assert.equal(brand.cover.style, "archetypes");
+  assert.equal(brand.finish.enabled, true);
 });

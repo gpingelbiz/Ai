@@ -5,8 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { loadPreset, mergeOverrides } from "../src/presets.mjs";
 
-test("cover archetypes are opt-in for pingel-v2 and switchable per reel", () => {
-  assert.equal(loadPreset("pingel-brand").cover.style, "frame");
+test("cover archetypes are Greg's default and switchable per reel", () => {
+  // Greg 2026-10-30: pingel-v2 text direction is his default
+  assert.equal(loadPreset("pingel-brand").cover.style, "archetypes");
   assert.equal(loadPreset("pingel-v2").cover.style, "archetypes");
   assert.equal(mergeOverrides(loadPreset("clean"), { coverStyle: "archetypes" }).cover.style, "archetypes");
   assert.deepEqual(loadPreset("clean").cover.targets, ["reel", "grid-3x4", "feed-4x5", "square", "landscape"]);

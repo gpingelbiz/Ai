@@ -14,25 +14,32 @@
   "captions": {
     "enabled": true,
     "wordsPerLine": 3,
-    "position": 0.6,
-    "fontSizeFrac": 0.04,
-    "uppercase": true,
-    "animation": "pop",
+    "position": 0.65,
+    "fontSizeFrac": 0.0355,
+    "uppercase": false,
+    "animation": "cut",
     "style": "reveal",
     "activeWord": false,
     "emojis": false,
-    "autoKeywords": true,
-    "annotate": true
+    "autoKeywords": false,
+    "annotate": false,
+    "placeMin": 0.58,
+    "placeMax": 0.72,
+    "placeGap": 0.025,
+    "dimFuture": false,
+    "keywordColorOnFootage": false,
+    "minShow": 0.35
   },
   "hook": {
     "enabled": true,
     "duration": 3,
     "position": 0.22,
-    "fontSizeFrac": 0.052,
+    "fontSizeFrac": 0.041,
     "maxWords": 8,
     "autoPlace": true,
     "style": "headline",
-    "behind": true
+    "behind": false,
+    "plaque": true
   },
   "zooms": {
     "enabled": true,
@@ -85,7 +92,8 @@
       "enabled": true,
       "max": 1,
       "minRank": 0
-    }
+    },
+    "color": "ink"
   },
   "coldOpen": {
     "enabled": false
@@ -100,5 +108,15 @@
     "drift": {
       "enabled": true
     }
+  },
+  "looks": {
+    "lockHook": true,
+    "lockCaptions": true
+  },
+  "cover": {
+    "style": "archetypes"
+  },
+  "finish": {
+    "enabled": true
   }
 }
