@@ -166,6 +166,8 @@ test("real speaker compile joins landscape, a one-second card, portrait and pict
   const p = structuredClone(plan);
   p.items[0].in = 0; p.items[0].out = 1;
   p.items[2].in = 0; p.items[2].out = 1;
+  // The portrait default is now the blurred fill (speaker-look); this test checks the flat brand pad of "contain".
+  p.items[2].fit = "contain";
   p.overlays[0].offset = 0; p.overlays[0].duration = 1;
   p.cutaways[0].offset = 0.5; p.cutaways[0].in = 0; p.cutaways[0].out = 0.5;
   const messages = [];
