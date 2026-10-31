@@ -114,7 +114,9 @@ export async function runReels(dir, { now = new Date(), deps = {} } = {}) {
   try { seen = readJSON(seenFile); } catch {}
   const clips = waitingClips(studio.paths.rawReels, seen, { now: now.getTime() });
   const delivered = path.join(studio.paths.reels, "delivered");
-  const waitingReels = () => { try { return fs.readdirSync(delivered).filter((d) => !d.startsWith(".") && fs.statSync(path.join(delivered, d)).isDirectory()).map((d) => path.join(delivered, d)); } catch { return []; } };
+  // Only folders with a video are reels: the editor also keeps its cover history (covers/history.json) here.
+  const hasVideo = (d) => { try { return fs.statSync(d).isDirectory() && fs.readdirSync(d).some((f) => VIDEO.test(f)); } catch { return false; } };
+  const waitingReels = () => { try { return fs.readdirSync(delivered).filter((d) => !d.startsWith(".")).map((d) => path.join(delivered, d)).filter(hasVideo); } catch { return []; } };
   if (!clips.length && !waitingReels().length) return [];
   const release = takeLock(studio.paths, "reels");
   if (!release) { log("studio: another run is going; the reel waits for the next one"); return []; }
@@ -168,7 +170,8 @@ export async function scheduleReel(studio, edited, { now = new Date(), deps = {}
   const textHold = (typeof textcheck === "string" ? textcheck : textcheck?.verdict) === "hold";
   const why = !postText(caption) ? "there is no caption" : textHold ? `its text check is on hold: ${textcheck?.notes?.[0] || "text check reported a hold"}` : meta.preflight === "fail" ? "its check failed" : "";
   const ai = c.ai?.label === "always" || !!meta.isAiGenerated;
-  const trial = trialReel({ entry: path.basename(folder), dir: folder, video, captionRaw, meta, root: path.dirname(folder) });
+  // reels.trial: every reel goes out as a Trial Reel (a client who allows Trial Reels only); otherwise #trial or trial: true.
+  const trial = c.reels?.trial === true || trialReel({ entry: path.basename(folder), dir: folder, video, captionRaw, meta, root: path.dirname(folder) });
   const posts = readPosts(studio.paths);
   const { day: today } = zonedNow(c.timezone, now);
   let scheduled = [], best = {};

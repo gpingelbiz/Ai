@@ -80,9 +80,22 @@ export async function dailyCommand(args) {
 
 const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+const slugOf = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+/**
+ * The agents' name for a studio: its folder, or, for a folder called "Content Studio" inside a client folder (Greg's
+ * Mac, ~/Reels/clients/<client>/Content Studio), the client folder, so two clients' studios never share a label.
+ * A studio in the home folder (a client's own Mac) keeps "content-studio".
+ */
+export function agentSlug(root, home = os.homedir()) {
+  const base = slugOf(path.basename(root)) || "content-studio";
+  const parent = path.dirname(path.resolve(root));
+  return base === "content-studio" && parent !== path.resolve(home) && slugOf(path.basename(parent)) ? slugOf(path.basename(parent)) : base;
+}
+
 /** The two launchd agents: the daily run (every morning) and the Raw Reels watcher (on every drop, and hourly). */
 export function studioAgents(root, { node = process.execPath, hour = 6, minute = 7, home = os.homedir() } = {}) {
-  const slugged = path.basename(root).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "content-studio";
+  const slugged = agentSlug(root, home);
   const bin = path.join(PKG_ROOT, "bin", "reel.mjs");
   const log = path.join(root, ".studio", "launchd.log");
   // launchd starts with a bare PATH: node, claude (~/.local/bin), ffmpeg and cloudflared have to be findable.
@@ -114,6 +127,17 @@ export function installAgents(root, { uninstall = false } = {}) {
   const dir = path.join(os.homedir(), "Library", "LaunchAgents");
   const uid = process.getuid();
   const out = [];
+  // Agents installed before agentSlug under the generic "content-studio" name for THIS studio: removed, so the
+  // folder never has two watchers.
+  for (const kind of ["daily", "reels"]) {
+    const label = `com.pingel.content-studio.${kind}.content-studio`;
+    const file = path.join(dir, `${label}.plist`);
+    if (studioAgents(root)[0].label.endsWith(".content-studio") || !fs.existsSync(file)) continue;
+    if (!fs.readFileSync(file, "utf8").includes(`<string>${xml(root)}</string>`)) continue;
+    spawnSync("launchctl", ["bootout", `gui/${uid}/${label}`], { stdio: "ignore" });
+    fs.rmSync(file, { force: true });
+    out.push(`removed the old ${label}`);
+  }
   for (const a of studioAgents(root)) {
     const file = path.join(dir, `${a.label}.plist`);
     spawnSync("launchctl", ["bootout", `gui/${uid}/${a.label}`], { stdio: "ignore" });

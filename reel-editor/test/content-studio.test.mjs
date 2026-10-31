@@ -12,7 +12,7 @@ import { driveLink, dropboxDirect, fileServer } from "../src/studio-host.mjs";
 import { openSlots, retryable, madeName, zonedNow, addDays, runDaily, proofScreenshots } from "../src/daily.mjs";
 import { runStudioPreflight, preflightProblems } from "../src/studio-preflight.mjs";
 import { waitingClips, reelSlot, normalizeBestTimes, reelEnv } from "../src/studio-reels.mjs";
-import { studioAgents } from "../src/studio-cli.mjs";
+import { agentSlug, studioAgents } from "../src/studio-cli.mjs";
 import { personalizeStartHere, stripStudio } from "../src/brandkit.mjs";
 import { legacyHeadSize, slideHTML } from "../src/slides.mjs";
 import { contrast } from "../src/brandtokens.mjs";
@@ -637,6 +637,15 @@ test("agents: a daily run every morning and a Raw Reels watcher, both on this st
   assert.match(reels.plist, /<string>studio<\/string><string>reels<\/string>/);
 });
 
+test("agents: a client's studio on Greg's Mac is named after the client folder, so two studios never share a label", () => {
+  assert.equal(agentSlug("/Users/x/Content Studio", "/Users/x"), "content-studio", "a client's own Mac keeps the old name");
+  assert.equal(agentSlug("/Users/g/Reels/clients/julee-gracey/Content Studio", "/Users/g"), "julee-gracey");
+  assert.equal(agentSlug("/Users/g/Reels/clients/devo-fitness/Content Studio", "/Users/g"), "devo-fitness");
+  assert.equal(agentSlug("/Users/g/Studios/Jordan Studio", "/Users/g"), "jordan-studio", "a named folder keeps its own name");
+  const [daily, reels] = studioAgents("/Users/g/Reels/clients/julee-gracey/Content Studio", { node: "/n", home: "/Users/g" });
+  assert.deepEqual([daily.label, reels.label], ["com.pingel.content-studio.daily.julee-gracey", "com.pingel.content-studio.reels.julee-gracey"]);
+});
+
 test("kit: Start Here keeps the Content Studio section only in a Content Studio kit", () => {
   const html = fs.readFileSync(path.join(PKG_ROOT, "kit", "Start Here.html"), "utf8");
   assert.match(html, /<!-- studio -->/);
@@ -737,6 +746,33 @@ test("reels: an edited reel is filed in Made and scheduled; one stranded in deli
   const next = await runReels(dir, { now: NOW, deps: { ...deps, editClip: async () => { throw new Error("no clips should be edited"); } } });
   assert.equal(next.length, 1, "the stranded reel is filed");
   assert.notEqual(next[0].day, "2026-11-01", "one reel a day");
+});
+
+test("reels: reels.trial posts every reel as a Trial Reel; the studio checks it is true or false; covers/ is skipped", async () => {
+  const dir = sampleCopy({ timezone: "America/Phoenix", publish: { mode: "schedule" }, reels: { trial: true } });
+  const s = loadStudio(dir);
+  const folder = path.join(s.paths.reels, "delivered", "2026-11-01 Reel 1");
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, "Ask for the sale.mp4"), "mp4");
+  fs.writeFileSync(path.join(folder, "caption.txt"), "Ask for the sale.");
+  fs.writeFileSync(path.join(folder, ".reel.json"), JSON.stringify({ preflight: "pass" }));
+  const created = [];
+  const deps = {
+    scheduledPosts: async () => [],
+    bestTimes: async () => ({ data: [] }),
+    hostFiles: async (files) => ({ urls: files.map(() => "https://host/v.mp4"), close: async () => {} }),
+    createPost: async (connector, input) => { created.push(JSON.parse(input.info)); return { plannerUrl: "", id: 1 }; },
+  };
+  fs.mkdirSync(path.join(s.paths.reels, "delivered", "covers"), { recursive: true });
+  fs.writeFileSync(path.join(s.paths.reels, "delivered", "covers", "history.json"), "[]");
+  const { runReels } = await import("../src/studio-reels.mjs");
+  const r = await runReels(dir, { now: NOW, deps });
+  assert.equal(r.length, 1, "the editor's covers folder is not a reel");
+  assert.equal(r[0].trial, true);
+  assert.equal(created[0].instagramData.type, "TRIAL_REEL");
+  assert.match(fs.readFileSync(path.join(r[0].made, "Scheduled.txt"), "utf8"), /Trial Reel: yes/);
+  assert.deepEqual(checkStudio({ client: "x", reels: { trial: "yes" } }, { publishing: false }), ["reels.trial is true (every reel posts as an Instagram Trial Reel) or false"]);
+  assert.deepEqual(checkStudio({ client: "x" }, { publishing: false }), [], "off by default");
 });
 
 test("preflightProblems turns the shared check's 1-based slide numbers into the kit's 0-based indexes", () => {
