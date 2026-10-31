@@ -1,7 +1,7 @@
 import path from "node:path";
 import { claudeText, firstJSON } from "./claude.mjs";
 import { sentenceLines, lineEnergy, cutPoints, edgeProblems } from "./moments.mjs";
-import { r3, sha1, writeJSON } from "./util.mjs";
+import { r3, sha1, writeJSON, warn } from "./util.mjs";
 
 const KINDS = new Set(["story", "origin", "demonstration", "teaching", "one_liner", "audience_prompt", "audience_response", "testimonial"]);
 const NARRATIVE = new Set(["story", "origin", "demonstration", "teaching"]);
@@ -199,14 +199,23 @@ export async function findCandidates({ sources, words, lines, envelope, reaction
       const supplied = ws.filter((w) => w.start >= window.start && w.end <= window.end);
       if (!supplied.length) return;
       const allowed = new Set(supplied.map((w) => w.id));
-      const reply = firstJSON(await ask(candidatesPrompt({ source, words: supplied, brief })));
-      if (!Array.isArray(reply.candidates)) throw new Error(`source ${source.id}: reply needs candidates[]`);
+      // The talk's own sentence lines inside this window, so the window's last word is not shown as a sentence end.
+      const off = ws.indexOf(supplied[0]);
+      const windowLines = ls.filter((l) => l.i0 >= off && l.i1 < off + supplied.length).map((l) => ({ ...l, i0: l.i0 - off, i1: l.i1 - off }));
+      const at = `${source.id} ${Math.round(window.start)}-${Math.round(window.end)}s`;
+      // One failed call or one bad pick drops only itself; candidates already found in the talk are kept.
+      let reply;
+      try { reply = firstJSON(await ask(candidatesPrompt({ source, words: supplied, brief, lines: windowLines.length ? windowLines : undefined }))); }
+      catch (e) { warn(`speaker candidates ${at}: skipped this window (${String(e.message).split("\n")[0]})`); return; }
+      if (!Array.isArray(reply?.candidates)) { warn(`speaker candidates ${at}: reply had no candidates[]; skipped`); return; }
       let needsContext = false;
       for (const raw of reply.candidates) {
         if (raw.kind === "no_candidate") continue;
         if (raw.kind === "incomplete_story") { needsContext = true; continue; }
-        if (!allowed.has(raw.start_word ?? raw.startWord) || !allowed.has(raw.end_word ?? raw.endWord)) fail(source.id, "unknown word id outside the supplied window");
-        collected.push(resolveCandidate(raw, { source, words: ws, lines: ls, reactions: rs, envelope: env }));
+        try {
+          if (!allowed.has(raw.start_word ?? raw.startWord) || !allowed.has(raw.end_word ?? raw.endWord)) fail(source.id, "unknown word id outside the supplied window");
+          collected.push(resolveCandidate(raw, { source, words: ws, lines: ls, reactions: rs, envelope: env }));
+        } catch (e) { warn(`speaker candidates ${at}: dropped a ${raw.kind || "candidate"} (${e.message})`); }
       }
       if (needsContext && !expanded) {
         const start = Math.max(0, Math.min(window.start - 60, duration - 600));

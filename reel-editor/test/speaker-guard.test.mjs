@@ -68,3 +68,25 @@ test("speaker core fixes: a broken link does not stop init, and a word at a roun
   assert.equal(words.length, 1);
   assert.ok(words[0].end > words[0].start && words[0].end <= 29 / 30 + 1e-9);
 });
+
+test("speaker guard: a value that is exactly the home folder is a path", () => {
+  assert.equal(hasGregIdentity("/Users/gregpingel"), false);
+});
+
+test("speaker desktop fixes: a broken client manifest is skipped, and case-only name clashes keep both files", async () => {
+  const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const { speakerClients } = await import("../scripts/speaker-client.mjs");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-clients-"));
+  for (const [slug, text] of [["good", JSON.stringify({ identity: { name: "Good Client" } })], ["broken", "{ not json"]]) {
+    fs.mkdirSync(path.join(root, slug)); fs.writeFileSync(path.join(root, slug, "speaker-manifest.json"), text);
+  }
+  assert.deepEqual(speakerClients({ root }).map((c) => c.slug), ["good"]);
+  const zip = path.join(root, "case.zip"), client = path.join(root, "case-client");
+  execFileSync("python3", ["-c", "import zipfile,sys\nwith zipfile.ZipFile(sys.argv[1],'w') as z:\n z.writestr('Event/Talk.MOV','first version')\n z.writestr('Event/talk.mov','second version, different case')", zip]);
+  const script = new URL("../scripts/speaker-import.sh", import.meta.url).pathname;
+  for (let i = 0; i < 2; i++) assert.equal(spawnSync("/bin/bash", [script, zip, client], { encoding: "utf8", env: { ...process.env, HOME: root } }).status, 0);
+  const files = fs.readdirSync(path.join(client, "footage", "Event")).sort();
+  const contents = files.map((f) => fs.readFileSync(path.join(client, "footage", "Event", f), "utf8")).sort();
+  assert.deepEqual(contents, ["first version", "second version, different case"]);
+});

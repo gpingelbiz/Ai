@@ -50,7 +50,7 @@ try:
                 # Never resume a Dropbox folder ZIP. Every attempt truncates the partial file.
                 with partial.open('wb'):
                     pass
-                result = subprocess.run([os.environ.get('SPEAKER_CURL', 'curl'), '--location', '--fail', '--silent', '--show-error', '--output', str(partial), download])
+                result = subprocess.run([os.environ.get('SPEAKER_CURL', 'curl'), '--location', '--fail', '--silent', '--show-error', '--speed-limit', '1024', '--speed-time', '180', '--output', str(partial), download])
                 received = partial.stat().st_size
                 log('download attempt %d: %d bytes received%s' % (attempt, received, '' if result.returncode == 0 else ' (failed; restart from zero)'))
                 if result.returncode == 0 and zipfile.is_zipfile(partial):
@@ -122,9 +122,19 @@ try:
             if any(p.is_symlink() for p in [target, *target.parents] if p != client.parent):
                 raise ValueError('Refusing symlink destination: ' + str(target))
             target.resolve().relative_to(client)
-            if target in selected:
-                raise ValueError('ZIP entries collide at ' + str(target))
-            selected.add(target)
+            # macOS volumes ignore case: Talk.MOV and talk.mov would be one file. Keep both, the second renamed.
+            key = str(target).casefold()
+            if key in selected:
+                n = 2
+                while True:
+                    alt = target.with_name('%s (%d)%s' % (target.stem, n, target.suffix))
+                    # Same zip, same names on every run, so a re-import finds and skips its own earlier copy.
+                    if str(alt).casefold() not in selected:
+                        break
+                    n += 1
+                log('%s collides with another entry by case; extracting as %s' % (name, alt.name))
+                target, key = alt, str(alt).casefold()
+            selected.add(key)
             if target.exists():
                 skip('already exists (kept original)', name); continue
             entries.append((info, target, bucket))

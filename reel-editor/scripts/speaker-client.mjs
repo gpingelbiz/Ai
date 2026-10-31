@@ -43,7 +43,9 @@ export function speakerClients(config = speakerConfig(), { activeOnly = false } 
     const folder = path.join(config.root, d.name);
     if (!fs.existsSync(path.join(folder, "speaker-manifest.json"))) return [];
     if (activeOnly && fs.existsSync(path.join(folder, "work/.speaker-watch-disabled"))) return [];
-    const manifest = JSON.parse(fs.readFileSync(path.join(folder, "speaker-manifest.json"), "utf8"));
+    let manifest;
+    try { manifest = JSON.parse(fs.readFileSync(path.join(folder, "speaker-manifest.json"), "utf8")); }
+    catch (e) { console.warn(`[speaker] skipped ${d.name}: speaker-manifest.json is not valid JSON (${e.message})`); return []; }
     return [{ folder, slug: d.name, name: safeName(manifest.identity?.name || d.name), manifest }];
   });
 }

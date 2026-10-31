@@ -212,9 +212,11 @@ test("fake ask round trip reconstructs text, uses source reactions, dedupes mult
   assert.equal(both[0].alternates.length, 1);
 });
 
-test("fake ask cannot select IDs outside supplied chunk", async () => {
+test("fake ask cannot select IDs outside supplied chunk: that pick is dropped, good picks are kept", async () => {
   const words = passage();
-  await assert.rejects(findCandidates({ sources: [source], words, ask: async () => JSON.stringify({ candidates: [pick(words, "one_liner", { start_word: "invented" })] }) }), /outside the supplied/);
+  assert.deepEqual(await findCandidates({ sources: [source], words, ask: async () => JSON.stringify({ candidates: [pick(words, "one_liner", { start_word: "invented" })] }) }), []);
+  const good = await findCandidates({ sources: [source], words, ask: async () => JSON.stringify({ candidates: [pick(words, "one_liner", { start_word: "invented" }), pick(words, "one_liner")] }) });
+  assert.equal(good.length, 1);
 });
 
 test("unknown source metadata and malformed replies fail clearly", async () => {
@@ -223,7 +225,9 @@ test("unknown source metadata and malformed replies fail clearly", async () => {
   await assert.rejects(findCandidates({ sources: [source], words: words.map((w) => ({ ...w, sourceId: "unknown" })), ask }), /unknown sourceId/);
   await assert.rejects(findCandidates({ sources: [source, source], words, ask }), /duplicate sourceId/);
   await assert.rejects(findCandidates({ sources: [{ ...source, duration: 2 }], words, ask }), /invalid duration/);
-  await assert.rejects(findCandidates({ sources: [source], words, ask: async () => "{}" }), /candidates\[\]/);
+  // A malformed reply or a failed call skips that window instead of losing the talk.
+  assert.deepEqual(await findCandidates({ sources: [source], words, ask: async () => "{}" }), []);
+  assert.deepEqual(await findCandidates({ sources: [source], words, ask: async () => { throw new Error("claude timed out"); } }), []);
 });
 
 test("overlapping windows dedupe the same pick and expanded story context never exceeds ten minutes", async () => {
