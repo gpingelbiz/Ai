@@ -3,7 +3,8 @@ import path from "node:path";
 import { writeJSON, ensureDir } from "./util.mjs";
 
 export const SECTION_BUDGETS = {
-  full: { opening: 12, identity: 13, proof: 20, core: 110, room: 40, close: 9, booking: 6 },
+  // Lane 12 (Max Partain benchmark): a 2-minute core, a quick opening and identity, 6 readable booking seconds.
+  full: { opening: 10, identity: 8, proof: 20, core: 120, room: 40, close: 6, booking: 6 },
   short: { opening: 5, identity: 4, proof: 6, core: 30, room: 6, close: 3, booking: 6 },
   teaser: { opening: 3, identity: 3, proof: 4, core: 12, room: 0, close: 3, booking: 5 },
 };
@@ -23,7 +24,9 @@ export function starterPlan(manifest, candidates = [], { version = "full" } = {}
   const free = (c) => !used.some((u) => u.sourceId === c.sourceId && u.in < c.out && u.out > c.in);
   const add = (item) => { const result = { id: `i${String(plan.items.length + 1).padStart(2, "0")}`, ...item }; plan.items.push(result); return result; };
   const clip = (c, role) => { used.push(c); return add({ kind: "clip", sourceId: c.sourceId, in: c.in, out: c.out, role, fit: "contain", audio: "source", protect: ["core", "room", "testimonial"].includes(role), note: `Candidate ${c.id}; verify source context.` }); };
-  const pick = (role, kinds) => ranked.find((c) => free(c) && kinds.includes(c.kind) && c.out - c.in <= budgets[role] + 1e-6);
+  // A complete core story may run past its budget (Renée's runs 140 s); it is never cut to fit.
+  const limit = (role) => role === "core" && version === "full" ? Math.max(budgets.core, 150) : budgets[role];
+  const pick = (role, kinds) => ranked.find((c) => free(c) && kinds.includes(c.kind) && c.out - c.in <= limit(role) + 1e-6);
   // Reserve the best complete core before choosing a potentially overlapping opening.
   const core = pick("core", ["story", "origin", "teaching", "demonstration", ...(version === "full" ? [] : ["one_liner"])]);
   if (core) used.push(core);
