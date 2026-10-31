@@ -570,7 +570,9 @@ ${premiseHasIcons ? `      .premise-section-icon { flex: 0 0 ${premise.sectionFo
 ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850; line-height: 1.04; letter-spacing: -0.01em; -webkit-text-stroke: 0; text-shadow: 0 0.04em 0.28em rgba(0,0,0,0.6), 0 0 0.8em rgba(0,0,0,0.3); gap: 0.02em 0.24em; max-width: 86%; }
 ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap-line { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2; letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: 0 0.03em 0.08em rgba(0,0,0,0.45), 0 0.04em 0.24em rgba(0,0,0,0.4); gap: 0.06em 0.26em; }
-      .cap .w.k { ${colorKeywords ? `color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none;` : "color: inherit; background: none; padding: 0; border-radius: 0; font-weight: 950; font-size: 1.06em;"} }` : ""}
+      .cap .w.k { ${colorKeywords ? `color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none;` : "color: inherit; background: none; padding: 0; border-radius: 0; font-weight: 950; font-size: 1.06em;"} }${cap.serif ? `
+      .cap-line { font-family: "Look Serif", "Anton", serif; font-weight: 500; line-height: 1.14; letter-spacing: 0; }
+      .cap .w.k { font-weight: 500; }` : ""}` : ""}
       #hook {
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
         padding: ${Math.max(0, Math.round(hk.position * H - hookFont * 1.2))}px 7% 0; box-sizing: border-box;
