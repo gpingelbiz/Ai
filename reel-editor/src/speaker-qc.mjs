@@ -51,6 +51,14 @@ export function rightsChecks(plan, manifest, final = false) {
         message: `${type} ${id}: ${!asset ? "unknown ID" : `${status} rights (${asset.rights || "missing rights reference"})`}` });
     }
   }
+  // The headshot appears on the booking card and on an inserted title card: its photo needs clearing like proof.
+  const identity = manifest.identity || {};
+  const showsHeadshot = identity.headshot && [...(plan.items || []), ...(plan.overlays || [])].some((i) => i.card?.type === "booking" || (i.card?.type === "title" && i.kind === "card"));
+  if (showsHeadshot) {
+    const status = (manifest.rights || []).find((r) => r.id === identity.headshotRights)?.status || "unknown";
+    checks.push({ code: "rights", level: status === "approved" ? "pass" : final ? "fail" : "warn", assetType: "headshot", assetId: "identity.headshot", status,
+      message: `headshot ${identity.headshot}: ${status} rights (${identity.headshotRights || "missing rights reference"})` });
+  }
   if (plan.music) {
     const licensed = (manifest.music || []).some((m) => m.file === plan.music.file && String(m.license || "").trim());
     checks.push({ code: "music-license", level: licensed ? "pass" : final ? "fail" : "warn", message: licensed ? "music licence recorded" : "music licence missing; draft music skipped" });
