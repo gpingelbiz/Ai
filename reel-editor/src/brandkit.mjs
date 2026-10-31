@@ -85,9 +85,12 @@ export function brandPreset(b, { fonts = {} } = {}) {
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.displayItalic ? { displayItalic: fonts.displayItalic } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
     // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
     // serif: the same in their display serif (BossBabe's and Jasmine Star's podcast captions), a touch larger.
-    captions: { style: quietCaps ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(quietCaps ? { quiet: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
+    // Both turn the keyword colour back on: the accent box is the point, and Greg's preset has it off for his gold.
+    captions: { style: quietCaps ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(quietCaps ? { quiet: true, keywordColorOnFootage: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
     hook: {
       style: look.hook || "headline", behind: look.behind !== false,
+      // looks.lockHook false lets each reel's look draw the hook; Greg's plaque would cover every one of them.
+      ...(legacy.looks?.lockHook === false ? { plaque: false } : {}),
       ...(look.hookCase ? { uppercase: look.hookCase !== "sentence" } : {}),
       ...(look.hookSeconds != null ? { duration: look.hookSeconds === "reel" ? "reel" : Number(look.hookSeconds) } : {}),
     },

@@ -129,6 +129,12 @@ test("quiet captions, the quiet phone labels and name tag: only for a brand that
   const bs = brandPreset({ ...julee, look: { captions: "serif" } }).captions;
   assert.deepEqual([bs.style, bs.quiet, bs.serif, bs.fontSizeFrac], ["reveal", true, true, 0.033]);
   assert.equal(brandPreset({ ...julee, look: { captions: "quiet" } }).captions.serif, undefined);
+  assert.equal(brandPreset({ ...julee, look: { captions: "quiet" } }).captions.keywordColorOnFootage, true, "quiet captions show the accent box");
+  assert.equal(brandPreset({ ...julee, look: { captions: "serif" } }).captions.keywordColorOnFootage, true);
+  assert.equal(brandPreset({ ...julee, look: { captions: "reveal" } }).captions.keywordColorOnFootage, undefined, "other styles inherit");
+  const unlocked = brandPreset({ ...julee, looks: { only: ["note", "atelier"], lockHook: false } });
+  assert.deepEqual([unlocked.hook.plaque, unlocked.looks.lockHook], [false, false], "an unlocked hook drops the plaque so the look draws it");
+  assert.ok(!("plaque" in brandPreset({ ...julee, looks: { only: ["note", "atelier"] } }).hook), "no lock field: the plaque is inherited");
   assert.deepEqual(checkBrand({ ...julee, look: { captions: "serif" } }), []);
   assert.match(checkBrand({ ...julee, look: { captions: "script" } }).join(), /"reveal", "pop", "quiet" or "serif"/);
   const g = loadPreset("pingel-brand");

@@ -30,7 +30,7 @@
     "pace": "fast"
   },
   "looks": {
-    "_note": "The card looks their reels may use. Leave only empty to allow every house look (receipts, phone, fieldnotes, briefing, press, shopfloor, blueprint, casefile, redline, glass). The brand looks are opt-in and need a serif display font: atelier (cream editorial card), note (Instagram-style white line boxes), serifonlife (the serif straight on the video). Example: [\"atelier\", \"note\", \"serifonlife\", \"phone\"]. pace calm also means fewer cards (one every 14 s, at most 4).",
+    "_note": "The card looks their reels may use. Leave only empty to allow every house look (receipts, phone, fieldnotes, briefing, press, shopfloor, blueprint, casefile, redline, glass). The brand looks are opt-in and need a serif display font: atelier (cream editorial card), note (Instagram-style white line boxes), serifonlife (the serif straight on the video). Example: [\"atelier\", \"note\", \"serifonlife\", \"phone\"]. pace calm also means fewer cards (one every 14 s, at most 4). lockHook: false lets each reel's look draw the hook too (atelier a cream card, note white line boxes, serifonlife a quiet serif line) instead of the dark plaque.",
     "only": []
   },
   "world": "Who they are and where they live and work, for the b-roll: their business, their city, their setting, the things that show up in their life. One or two sentences, concrete.",
