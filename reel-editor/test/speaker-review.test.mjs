@@ -65,7 +65,7 @@ test("speaker comment parsing accepts codes, list bullets, timecodes and reports
   const { plan } = fixture(t);
   const result = parseComments("- FULL-i01: Cut the last sentence\n0:02 make this bigger\nfull-o01: exact quote\nFULL-i99: nope\n1:66 broken\n0:08 outside\nJunk\nSHORT-i01: wrong version", { resolvedPlan: plan });
   assert.equal(result.comments.length, 3); assert.equal(result.problems.length, 5);
-  assert.deepEqual(result.comments[1], { code: "FULL-i01", itemId: "i01", at: 2, text: "make this bigger" });
+  assert.deepEqual(result.comments[1], { code: "FULL-i01", itemId: "i01", at: 2, text: "make this bigger", alsoOnScreen: ["FULL-x01"] });
   assert.equal(parseComments("1:42 make the logo bigger").problems.length, 1);
   assert.deepEqual(parseComments("FULL-i07: cut the last sentence").comments[0], { code: "FULL-i07", itemId: "i07", at: null, text: "cut the last sentence" });
   const vertical = { ...plan, version: "vertical-1" };

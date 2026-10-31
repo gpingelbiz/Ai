@@ -4,6 +4,7 @@ import { probe } from "./probe.mjs";
 import { measureLoudness, silences } from "./preflight.mjs";
 import { run, writeJSON } from "./util.mjs";
 import { identityLeaks } from "./speaker-guard.mjs";
+import { resolveCard } from "./speaker-cards.mjs";
 
 /** Accept the explicit output fields, or start/end from a compiled plan. Never use source in/out as output time. */
 export function outputSpan(item) {
@@ -27,6 +28,8 @@ export function usedAssets(plan, manifest) {
     if (item.proofId) proofIds.add(item.proofId);
     if (item.card?.proofId) proofIds.add(item.card.proofId);
     for (const id of item.card?.logos || []) proofIds.add(id);
+    // A quote or name card can be written by attribution instead of proofId: count the proof it actually matches.
+    if (item.card) { const { card } = resolveCard(item.card, { manifest }); if (card.proofId) proofIds.add(card.proofId); }
   }
   // A testimonial used as footage remains proof even without a name overlay.
   for (const proof of manifest.proof || []) if (proof.sourceId && sourceIds.has(proof.sourceId)) proofIds.add(proof.id);

@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { resolveBrandTokens, tokensCSS, readableOn, contrast } from "./brandtokens.mjs";
 import { esc } from "./text.mjs";
 import { identityLeaks } from "./speaker-guard.mjs";
+import { existsSync } from "node:fs";
+import { PKG_ROOT } from "./util.mjs";
 
 const TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic"];
 const HEADINGS = { "spoke-at": "Spoke at", client: "Hired by", "featured-in": "Featured in", "available-at": "Available at" };
@@ -24,6 +26,17 @@ function rightsProblems(proof, manifest, final) {
 }
 
 /** Exact field provenance. Problems use the same level/code/message shape as the existing preflight. */
+// Contact details hide behind formatting: "(555) 123-4567" vs "5551234567", "https://www.x.com/a/" vs "x.com/a".
+const digitsOf = (s) => String(s || "").replace(/\D/g, "");
+const bareUrl = (s) => String(s || "").toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+export function leaksContact(text, identity = {}) {
+  const lower = String(text).toLowerCase(), digits = digitsOf(text), bare = bareUrl(text).replace(/https?:\/\/(www\.)?/g, "").replace(/(^|\s)www\./g, "$1");
+  const phone = digitsOf(identity.phone), email = clean(identity.email).toLowerCase(), url = bareUrl(clean(identity.bookingUrl));
+  return Boolean((phone.length >= 7 && digits.includes(phone.slice(-10)))
+    || (email && lower.includes(email))
+    || (url && bare.includes(url)));
+}
+
 export function resolveCard(input, { manifest = {}, final = false } = {}) {
   const problems = [];
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
@@ -64,11 +77,9 @@ export function resolveCard(input, { manifest = {}, final = false } = {}) {
     if (mode === "bureau") {
       field("bureauName", typeof bureau === "string" ? bureau : bureau.name);
       if (!card.bureauName) add("card-bureau-name", "manifest.identity.bureau.name is missing");
-      const contacts = [identity.email, identity.phone, identity.bookingUrl].map(clean).filter(Boolean);
-      if ([source, { name: card.name, roleLine: card.roleLine, text: card.text, bureauName: card.bureauName }].some((v) => {
-        const values = Object.values(v).filter((s) => typeof s === "string");
-        return values.some((s) => contacts.some((contact) => s.toLowerCase().includes(contact.toLowerCase())));
-      }) || ["url", "email", "phone"].some((key) => clean(source[key]))) add("card-contact-leak", "bureau ending contains direct contact details");
+      if ([source, { name: card.name, roleLine: card.roleLine, text: card.text, bureauName: card.bureauName }].some((v) =>
+        Object.values(v).some((s) => typeof s === "string" && leaksContact(s, identity)))
+        || ["url", "email", "phone"].some((key) => clean(source[key]))) add("card-contact-leak", "bureau ending contains direct contact details");
       // Strip direct fields even on invalid input, so an ignored problem can never put them on screen.
     } else {
       field("url", identity.bookingUrl);
@@ -380,7 +391,8 @@ export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas =
   const assets = fragments.flatMap((f) => f.assets);
   // Local font files travel with the fragment; named families must already be provisioned by the composition.
   for (const role of Object.values(t.type)) if (role?.file) {
-    const source = path.resolve(clientDir || ".", role.file);
+    const inClient = path.resolve(clientDir || ".", role.file);
+    const source = path.isAbsolute(role.file) || existsSync(inClient) ? inClient : path.resolve(PKG_ROOT, role.file);
     if (assets.some((asset) => asset.source === source)) continue;
     assets.push({ ref: role.file, source, font: true });
   }

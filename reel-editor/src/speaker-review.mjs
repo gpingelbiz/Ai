@@ -5,6 +5,7 @@ import { resolveBrandTokens, tokensCSS } from "./brandtokens.mjs";
 import { srtText } from "./chapters.mjs";
 import { outputSpan, planDuration, usedAssets, rightsChecks, identityProblems, speakerQC, writeQC } from "./speaker-qc.mjs";
 import { registerReview, recordRevision, reviewState } from "./speaker-deliver.mjs";
+import { resolveCard } from "./speaker-cards.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const safeVersion = (v) => { if (!/^[a-z0-9][a-z0-9_-]*$/i.test(v || "")) throw new Error(`speaker version: invalid ${v}`); return v; };
@@ -44,12 +45,15 @@ export function reviewRows(plan, manifest, words = []) {
       const proof = item.card?.proofId ? (manifest.proof || []).find((p) => p.id === item.card.proofId) : null;
       const found = words.filter((w) => w.start >= start && w.start < end && (!item.sourceId || w.sourceId === item.sourceId)).map((w) => w.text ?? w.word ?? "");
       const excerpt = found.length > 35 ? `${found.slice(0, 25).join(" ")} … ${found.slice(-10).join(" ")}` : found.join(" ");
+      // The client reviews what will be rendered: card text resolved from the manifest/proof, never raw plan text.
+      const resolved = item.card ? resolveCard(item.card, { manifest }) : null;
+      const cardProblems = (resolved?.problems || []).filter((p) => !/rights/.test(p.code)).map((p) => p.message);
       const rowRights = rightsChecks({ items: [item] }, manifest);
       const status = rowRights.some((r) => r.status === "unknown" || r.level === "fail") ? "unknown" : rowRights.some((r) => r.status !== "approved") ? "pending" : "approved";
       rows.push({ id: item.id, code: codeFor(plan.version, item.id), kind: kind === "item" ? item.kind : kind, start, end,
         role: item.role || parent?.role || kind, sourceId: item.sourceId || proof?.sourceId || null,
         source: source ? path.basename(source.path) : "", sourceIn: item.in, sourceOut: item.out,
-        text: item.card ? cardText(item.card, manifest) : "", transcript: item.kind === "clip" ? excerpt : "", rights: status });
+        text: resolved ? cardText(resolved.card, manifest) : "", problems: cardProblems, transcript: item.kind === "clip" ? excerpt : "", rights: status });
     }
   }
   if (new Set(rows.map((r) => r.code.toLowerCase())).size !== rows.length) throw new Error("speaker review: duplicate comment codes");
@@ -82,7 +86,8 @@ export function parseComments(text, { version, resolvedPlan } = {}) {
       const at = parts.reduce((sum, n) => sum * 60 + n, 0);
       const item = plan?.items.find((i) => { const span = outputSpan(i); return at >= span.start && at < span.end; });
       if (!item) { problem(plan ? "timecode outside the timeline" : "timecode requires a resolved plan"); continue; }
-      comments.push({ code: codeFor(version, item.id), itemId: item.id, at, text: timed[2].trim() });
+      const also = [...(plan.overlays || []), ...(plan.cutaways || [])].filter((o) => { const span = outputSpan(o); return at >= span.start && at < span.end; }).map((o) => codeFor(version, o.id));
+      comments.push({ code: codeFor(version, item.id), itemId: item.id, at, text: timed[2].trim(), ...(also.length ? { alsoOnScreen: also } : {}) });
     } else problem("expected VERSION-item: comment or m:ss comment");
   }
   return { comments, problems };
@@ -179,7 +184,7 @@ ${css}
 ${files.filter((f) => f.kind === "video").map((f) => `<h2>${esc(f.variant)} captions</h2><video controls playsinline preload="metadata" poster="poster.jpg"><source src="${esc(path.basename(f.path))}" type="video/mp4"><track kind="captions" src="captions.vtt" srclang="en" label="English" default></video>`).join("\n")}
 <h2>Summary</h2><p>${reviewTime(planDuration(plan))} · ${plan.items.length} items · ${used.sourceIds.length} sources · ${used.proofIds.length} proof items · ${warningsUnique.length} warnings</p><p>${esc(Object.entries(roles).map(([r, n]) => `${r}: ${n}`).join(" · "))}</p><p>Sources: ${esc(used.sourceIds.join(", ") || "none")}<br>Proof: ${esc(used.proofIds.join(", ") || "none")}</p>
 ${warningsUnique.length ? `<ul class="flag">${warningsUnique.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
-<h2>Timeline</h2>${rows.map((row) => `<article id="${esc(row.code)}"><a href="${esc(row.frame)}"><img src="${esc(row.frame)}" loading="lazy" alt="Frame at ${reviewTime((row.start + row.end) / 2)}"></a><div><code>${esc(row.code)}</code><p>${reviewTime(row.start)}–${reviewTime(row.end)} · ${esc(row.role)} · ${esc(row.kind)}</p>${row.source ? `<p class="meta">${esc(row.source)} · source ${reviewTime(row.sourceIn)}–${reviewTime(row.sourceOut)}</p>` : ""}${row.text ? `<p>${esc(row.text)}</p>` : ""}${row.transcript ? `<p>${esc(row.transcript)}</p>` : ""}<p class="${row.rights === "approved" ? "meta" : "flag"}">Rights: ${esc(row.rights)}</p></div></article>`).join("\n")}
+<h2>Timeline</h2>${rows.map((row) => `<article id="${esc(row.code)}"><a href="${esc(row.frame)}"><img src="${esc(row.frame)}" loading="lazy" alt="Frame at ${reviewTime((row.start + row.end) / 2)}"></a><div><code>${esc(row.code)}</code><p>${reviewTime(row.start)}–${reviewTime(row.end)} · ${esc(row.role)} · ${esc(row.kind)}</p>${row.source ? `<p class="meta">${esc(row.source)} · source ${reviewTime(row.sourceIn)}–${reviewTime(row.sourceOut)}</p>` : ""}${row.text ? `<p>${esc(row.text)}</p>` : ""}${(row.problems || []).map((p) => `<p class="flag">Card problem: ${esc(p)}</p>`).join("")}${row.transcript ? `<p>${esc(row.transcript)}</p>` : ""}<p class="${row.rights === "approved" ? "meta" : "flag"}">Rights: ${esc(row.rights)}</p></div></article>`).join("\n")}
 <h2>Quality checks — ${result.ok ? "passed" : "needs attention"}</h2><ul>${result.checks.map((c) => `<li class="${c.level === "fail" ? "flag" : ""}">${esc(c.level.toUpperCase())}: ${esc(c.message)}</li>`).join("")}</ul></main></body></html>`;
   const index = path.join(dir, "index.html");
   fs.writeFileSync(index, html);
