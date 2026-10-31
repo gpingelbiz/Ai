@@ -4,6 +4,7 @@ import { assetPath, assertNoGreg, LOGO_RELATIONSHIPS, headshotProblems } from ".
 import { probeSource } from "./speaker-index.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
 import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr } from "./hdr.mjs";
+import { lookOptions, activeBox, defaultFit, fitGraph, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
 import { measureLoudness } from "./preflight.mjs";
 import { groupWords } from "./captions.mjs";
 import { sliceWords } from "./clips.mjs";
@@ -45,6 +46,7 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   if (!plan || typeof plan !== "object") return [{ level: "error", id: "plan", message: "plan must be an object" }];
   if (!manifest || !index) return [{ level: "error", id: "plan", message: "manifest and source index are required" }];
   try { assertNoGreg(plan, "plan"); } catch (e) { add("plan", e.message); }
+  try { lookOptions(plan.look); } catch (e) { add("plan", e.message); }
   if (plan.schemaVersion !== 1) add("plan", "schemaVersion must be 1");
   if (plan.clientId !== manifest?.clientId) add("plan", "clientId does not match the manifest");
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(plan.version || "")) add("plan", "version must be a safe folder name");
@@ -107,11 +109,14 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   };
   const range = (i) => {
     const s = sources.get(i.sourceId), meta = sourceRow(index, i.sourceId);
+    try { if (i.look != null) lookOptions(i.look); } catch (e) { add(i.id, e.message); }
+    try { pushScale(0, 2, i.push ?? 1); } catch (e) { add(i.id, e.message); }
+    if (i.stabilize != null && typeof i.stabilize !== "boolean") add(i.id, "stabilize must be true or false");
     if (!s) { add(i.id, `unknown sourceId: ${i.sourceId}`); return; }
     if (!meta) add(i.id, `source ${i.sourceId} is not indexed`);
     if (!finite(i.in) || !finite(i.out) || i.in < 0 || i.in >= i.out) add(i.id, "source range requires 0 <= in < out");
     if (meta && s.kind !== "photo" && (!finite(meta.duration) || i.out > meta.duration + 0.000001)) add(i.id, `out ${i.out} is past source ${i.sourceId} duration ${meta.duration}`);
-    if (i.fit != null && !["contain", "cover"].includes(i.fit)) add(i.id, `invalid fit: ${i.fit}`);
+    if (i.fit != null && !["contain", "cover", "blur"].includes(i.fit)) add(i.id, `invalid fit: ${i.fit}`);
     if (i.fit === "cover" && meta && (!(meta.width > meta.height))) add(i.id, `cover requires a landscape source; ${i.sourceId} must use contain`);
   };
   for (const i of [...items, ...overlays, ...cutaways]) {
@@ -187,14 +192,14 @@ export function resolvePlan(plan, options) {
   const timing = (startFrame, frames) => ({ startFrame, endFrame: startFrame + frames, frames, start: seconds(startFrame, fps), end: seconds(startFrame + frames, fps), outputStart: seconds(startFrame, fps), outputEnd: seconds(startFrame + frames, fps) });
   const items = plan.items.map((i) => {
     const frames = Math.round((i.kind === "clip" ? i.out - i.in : i.duration) * fps);
-    const resolved = { ...i, ...timing(frame, frames), ...(i.kind === "clip" ? { fit: i.fit || "contain", audio: i.audio || "source", protect: i.protect === true } : {}) };
+    const resolved = { ...i, ...timing(frame, frames), ...(i.kind === "clip" ? { fit: i.fit || defaultFit(sourceRow(options.index, i.sourceId), plan.canvas), push: i.push ?? 1, stabilize: i.stabilize ?? (options.manifest.sources.find((s) => s.id === i.sourceId)?.handheld === true), audio: i.audio || "source", protect: i.protect === true } : {}) };
     frame += frames;
     return resolved;
   });
   const byId = new Map(items.map((i) => [i.id, i]));
   const overlays = (plan.overlays || []).map((o) => ({ ...o, ...timing(byId.get(o.at).startFrame + Math.round(o.offset * fps), Math.round(o.duration * fps)) }));
-  const cutaways = (plan.cutaways || []).map((x) => ({ ...x, fit: x.fit || "contain", ...timing(byId.get(x.over).startFrame + Math.round(x.offset * fps), Math.round((x.out - x.in) * fps)) }));
-  return { ...plan, items, overlays, cutaways, frames: frame, duration: seconds(frame, fps), problems };
+  const cutaways = (plan.cutaways || []).map((x) => ({ ...x, fit: x.fit || defaultFit(sourceRow(options.index, x.sourceId), plan.canvas), push: x.push ?? (x.out - x.in > 1.5 ? 1.06 : 1), stabilize: x.stabilize ?? (options.manifest.sources.find((s) => s.id === x.sourceId)?.handheld === true), ...timing(byId.get(x.over).startFrame + Math.round(x.offset * fps), Math.round((x.out - x.in) * fps)) }));
+  return { ...plan, look: lookOptions(plan.look), activeBox: activeBox(plan.look?.letterbox), items, overlays, cutaways, frames: frame, duration: seconds(frame, fps), problems };
 }
 
 export function timelineWords(resolved, index) {
@@ -246,19 +251,19 @@ export function captionFiles(words, duration, { maxChars = 32, cps = 17 } = {}) 
   return { cues, srt: blocks(",") + "\n", vtt: "WEBVTT\n\n" + blocks(".") + "\n" };
 }
 
-/** Limit enlargement for contain; cover is an explicit landscape-only crop and warns above the limit. */
+/** Limit enlargement for contain/blur; cover is an explicit landscape-only crop and warns above the limit. */
 export function fitGeometry(meta, fit = "contain", { width = 1920, height = 1080, maxLinearScale = 1.5 } = {}) {
   if (!(meta.width > 0 && meta.height > 0)) return { width, height, scale: 1, warning: null, filter: `scale=${width}:${height},setsar=1` };
-  if (!["contain", "cover"].includes(fit)) throw new Error(`invalid fit: ${fit}`);
+  if (!["contain", "cover", "blur"].includes(fit)) throw new Error(`invalid fit: ${fit}`);
   if (fit === "cover" && meta.width <= meta.height) throw new Error("cover requires landscape footage");
   const sar = String(meta.sampleAspectRatio || "1:1").split(":").map(Number);
   const pixelAspect = sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1;
   const sourceWidth = meta.width * (meta.rotationCw % 180 === 90 ? 1 / pixelAspect : pixelAspect);
   const desired = (fit === "cover" ? Math.max : Math.min)(width / sourceWidth, height / meta.height);
-  const scale = fit === "contain" ? Math.min(desired, maxLinearScale) : desired;
+  const scale = fit !== "cover" ? Math.min(desired, maxLinearScale) : desired;
   const even = (n) => Math.max(2, Math.round(n / 2) * 2);
   const w = even(sourceWidth * scale), h = even(meta.height * scale);
-  return { width: w, height: h, scale, warning: desired > maxLinearScale + 0.0001 ? `requested ${desired.toFixed(2)}x enlargement${fit === "contain" ? `; limited to ${maxLinearScale}x in a brand frame` : "; review the landscape crop"}` : null, filter: `scale=${w}:${h}:flags=lanczos,setsar=1` };
+  return { width: w, height: h, scale, warning: desired > maxLinearScale + 0.0001 ? `requested ${desired.toFixed(2)}x enlargement${fit !== "cover" ? `; limited to ${maxLinearScale}x in a brand frame` : "; review the landscape crop"}` : null, filter: `scale=${w}:${h}:flags=lanczos,setsar=1` };
 }
 
 /** Averaging opposite-phase microphones can erase speech. Pick the louder channel when that happens. */
@@ -335,7 +340,9 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   const dir = ensureDir(path.join(folder, "work", resolved.version));
   const scratch = ensureDir(path.join(dir, "compile"));
   const sourceById = new Map(manifest.sources.map((s) => [s.id, s]));
-  const normalized = new Map();
+  const normalized = new Map(), grades = new Map(), reviewed = new Set(), stabilized = new Map();
+  const lookDir = ensureDir(path.join(dir, "look")), lookIndex = ensureDir(path.join(folder, "work", "index", "look"));
+  if (resolved.look.letterbox) resolved.problems.push({ level: "info", id: "look", message: `Cinematic ${resolved.look.letterbox}:1 letterbox; active image ${resolved.activeBox.width}x${resolved.activeBox.height}. Check heads, hands and slides in the crop.` });
   let chosenEncoder = encoder;
   const input = async (id) => {
     if (normalized.has(id)) return normalized.get(id);
@@ -368,15 +375,33 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
         args.push("-f", "lavfi", "-i", `color=c=${bg}:s=1920x1080:r=30:d=${frames / 30}`);
         filters.push(`[${inputCount++}:v]setsar=1[${label}]`); return;
       }
+      const preFilter = [...rotateFilters(data.rotation), data.hdr ? SDR_FILTER : ["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null].filter(Boolean).join(",");
+      let grade = null;
+      if ((entry.look?.grade ?? resolved.look.grade) === "auto") {
+        if (!grades.has(entry.sourceId)) grades.set(entry.sourceId, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
+        grade = grades.get(entry.sourceId);
+      }
+      const reviewKey = `${entry.sourceId}-${grade ? "auto" : "off"}`;
+      if (!reviewed.has(reviewKey)) {
+        reviewed.add(reviewKey);
+        await lookReviewFrames(data.file, { at: data.source.kind === "photo" ? 0 : entry.in, beforeFilter: preFilter, afterFilter: grade?.filter || "", dir: lookDir, name: `${normalized.size}-${reviewKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`, print: (message) => print(`${entry.sourceId}: ${message}`) });
+      }
+      let file = data.file, seek = entry.in, normalization = preFilter;
+      if (entry.stabilize && data.source.kind !== "photo") {
+        const range = { in: entry.in, out: entry.out, duration: data.meta.duration };
+        const key = `${entry.sourceId}:${entry.in}:${entry.out}`;
+        if (!stabilized.has(key)) stabilized.set(key, await stabilizeRange(file, range, { sourceKey: data.meta.key, cacheDir: path.join(lookIndex, "stabilize"), preFilter, encodeVideo: (common, tail) => encode(common, [...SDR_TAGS, ...tail], encoder), print: (message) => { print(`${entry.id}: ${message}`); resolved.problems.push({ level: "warn", id: entry.id, message }); } }));
+        const stable = stabilized.get(key);
+        if (stable.stabilized) { file = stable.file; seek = stable.in; normalization = ""; }
+      }
       if (data.source.kind === "photo") args.push("-loop", "1", "-framerate", "30");
-      args.push("-noautorotate", "-ss", String(entry.in), "-i", data.file);
+      args.push("-noautorotate", "-ss", String(seek), "-t", String(frames / 30 + 1 / 30), "-i", file);
       const g = fitGeometry(data.meta, entry.fit);
       if (g.warning) { const message = `${entry.id}: ${g.warning}`; print(message); resolved.problems.push({ level: "warn", id: entry.id, message }); }
-      filters.push(`[${inputCount++}:v]setpts=PTS-STARTPTS,${[
-        ...rotateFilters(data.rotation), data.hdr ? SDR_FILTER : ["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null, "fps=30:start_time=0:round=near", g.filter,
-        entry.fit === "cover" ? "crop=1920:1080" : `pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=${bg}`,
-        "format=yuv420p", "setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709", "tpad=stop_mode=clone:stop_duration=1", `trim=end_frame=${frames}`, "setpts=N/(30*TB)",
-      ].filter(Boolean).join(",")}[${label}]`);
+      const raw = `${label}_raw`, fitted = `${label}_fitted`;
+      filters.push(`[${inputCount++}:v]setpts=PTS-STARTPTS,${[normalization, "fps=30:start_time=0:round=near", grade?.filter, "tpad=stop_mode=clone:stop_duration=1", `trim=end_frame=${frames}`, "setpts=N/(30*TB)"].filter(Boolean).join(",")}[${raw}]`);
+      filters.push(...fitGraph(raw, fitted, g, { fit: entry.fit, background: bg, frames, push: entry.push }));
+      filters.push(`[${fitted}]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709[${label}]`);
     };
     if (picture) await addPicture(item, item.frames, "picture0");
     else {
@@ -410,6 +435,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   const map = [...resolved.items.map((i) => ({ itemId: i.id, kind: i.kind, sourceId: i.sourceId ?? null, in: i.in ?? null, out: i.out ?? null, start: i.start, end: i.end, outputStart: i.start, outputEnd: i.end, role: i.role })),
     ...resolved.cutaways.map((x) => ({ itemId: x.over, cutawayId: x.id, kind: "cutaway", sourceId: x.sourceId, in: x.in, out: x.out, start: x.start, end: x.end, outputStart: x.start, outputEnd: x.end, role: resolved.items.find((i) => i.id === x.over).role, pictureOnly: true }))];
   const words = timelineWords(resolved, index), captions = captionFiles(words, resolved.duration);
+  writeJSON(path.join(lookDir, "look.json"), { schemaVersion: 1, look: resolved.look, activeBox: resolved.activeBox, sources: Object.fromEntries([...grades].map(([id, grade]) => [id, { key: grade.key, settings: grade.settings, fallback: grade.fallback || false }])) });
   writeJSON(path.join(dir, "map.json"), map);
   writeJSON(path.join(dir, "words.json"), words);
   writeJSON(path.join(dir, "plan.resolved.json"), resolved);

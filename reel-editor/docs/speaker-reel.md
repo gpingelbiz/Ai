@@ -275,7 +275,7 @@ Items play back to back. Overlays and cutaways add no time.
 
 - `item.kind`: clip or card.
 - `role`: opening, identity, proof, core, room, testimonial, close, booking or montage.
-- `fit`: contain by default; portrait and small sources sit in a client-brand frame, preserving aspect ratio. Cover is allowed only for landscape sources. Contain limits linear enlargement to 1.5× and warns when a source cannot fill the desired area. Cover warns above 1.5× and needs visual review.
+- `fit`: omitted values resolve to `blur` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `blur` centres the sharp picture over a heavily blurred, 35% darker and slightly desaturated copy of the same frames. `contain` keeps the client-brand frame. Both preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources, warns above 1.5× and needs visual review. Explicit saved fits always win.
 - `audio`: source or mute. A source marked none/bad must use mute when selected as a timeline clip. A cutaway always supplies picture only.
 - `protect: true`: no internal trimming, retiming, denoise or silence cuts. All items already stay at speed 1.0. Meaningful pauses and real reactions remain intact. Normalization and 10 ms edge fades do not rearrange the passage.
 - `in` and `out` are original source seconds, with `0 <= in < out`. Out cannot exceed the indexed duration. Photos can be held for the requested duration; audio-only sources use a plain brand frame.
@@ -353,3 +353,33 @@ The compiler uses hard picture cuts and a re-encoded ffmpeg concatenation. No au
 `runSpeaker()` orchestrates brand safety, indexing, validation, compilation, composition, rendering, normalization, QC and review. `composeSpeaker(workDir, resolvedPlan, { manifest, preset, tokens, captions })` writes a dedicated landscape HyperFrames project and returns its paths. It uses `speakerCardsHTML()`/`copyCardAssets()` and client tokensCSS without the general composer's stock font setup. `speakerHTML()`, `speakerMusicLane()`, `licensedMusic()`, `starterPlan()`, `writeStarterPlan()` and `parseSpeakerArgs()` are exported for offline verification. Render/normalize/QC/index/analysis dependencies can be injected; tests never call live ASR/Claude or Chrome.
 
 Run `npm test`. The focused speaker tests use only fake ASR and tiny generated ffmpeg sources. The real compiler fixture includes landscape sine audio, portrait footage, a silent one-second card and a picture-only cutaway, and verifies dimensions, frame rate, colour tags, portrait padding and A/V duration. Chrome/HyperFrames and golden renders require a separate permitted environment. Real footage still needs an operator to verify intelligibility, lip sync, reaction context, spelling, permissions and final client approval.
+
+
+## Speaker picture finishing
+
+These are plan options; no new CLI flags or preset keys are required. Defaults apply when fields are omitted, including on saved plans. Existing explicit `fit: "contain"` choices remain flat client-brand frames; change those entries to `"blur"` to adopt the new portrait treatment.
+
+```json
+{
+  "look": { "grade": "auto", "letterbox": null },
+  "items": [
+    { "id": "stage", "kind": "clip", "sourceId": "stage-camera", "in": 12, "out": 20, "role": "core", "stabilize": true, "push": 1 },
+    { "id": "phone", "kind": "clip", "sourceId": "phone-camera", "in": 5, "out": 12, "role": "room", "fit": "blur", "look": { "grade": "off" } }
+  ],
+  "cutaways": [
+    { "id": "detail", "over": "stage", "offset": 2, "sourceId": "detail-camera", "in": 0, "out": 3, "push": 1.06 }
+  ]
+}
+```
+
+Merge these fields into a complete plan with its existing schema, canvas, identity and rights records.
+
+- `look.grade`: `"auto"` (default) or `"off"`. Auto measures each used source after rotation/SDR conversion, caches its exposure and neutral-colour statistics, and holds one correction throughout that source. Exposure correction is bounded to ±0.3 EV; neutral balance offsets stop at ±0.015 per RGB channel. Saturated/strongly coloured stages skip white balance. A shared gentle luminance S-curve and slight warmth follow. A broad skin-hue region is excluded from chromatic correction; no denoising, sharpening, grain or invented detail is added. This is conservative matching, with human colour review still required.
+- Item/cutaway `look: { "grade": "off" }` bypasses both source matching and house grade, useful for original title cards. `"auto"` can also opt an entry back into a plan whose grade is off.
+- Item/cutaway `stabilize: true` enables two-pass vidstab on the selected picture range with up to one second of original handles at each end. Manifest `source.handheld: true` supplies this default for every use of that source; explicit `stabilize: false` disables it. The transform uses smoothing 15 and a 3% base zoom plus adaptive edge coverage. Cache identity includes source content, range, available duration, rotation/SDR normalization and settings. A failed pass logs one line, records a review warning, and uses the original picture. Original dialogue is always extracted separately at the original source times.
+- Item/cutaway `push`: 1 to 1.2. Items default to 1; cutaways longer than 1.5 seconds default to 1.06. Set 1 to disable. The smooth, deterministic move reaches its final scale on the last output frame and runs at 4× internal precision. For `contain`/`blur`, the foreground reserves the move's margin so it remains fully visible and never exceeds 1.5× source enlargement.
+- `look.letterbox`: `null` (default), `2.35` or `2.39`. Bars mask the composed picture, leaving 1920×818 or 1920×804 active pixels. Cards, lower thirds and burned captions stay within that area. A composition adapter reflows the existing card boxes without shrinking type; layouts that cannot fit fail with the card ID. Check heads, hands and slides before using either crop. The resolved plan carries an informational finding shown on the review page.
+
+Colour measurements and deterministic LUTs live in `work/index/look/<key>.look.json` and `<key>.cube`; stabilized picture-only ranges live in `work/index/look/stabilize/`. The original index/transcript JSON is unchanged. Review pairs for each used source/grade mode are written to `work/<version>/look/*-before.jpg` and `*-after.jpg`, sampled at the same original source time. `look/look.json` records the grade settings, cache keys and active box. These frames show colour correction before framing, motion and composited cards. Optional measurement/review-frame failures log once per source operation; failed measurement falls back to the shared gentle house grade.
+
+`plan.resolved.json` records actual fits, pushes, stabilization requests, plan look and active box. `composition.json` records letterbox/active-box metadata and adjusted card review geometry. Existing `base.mp4`, map, words and sidecar contracts retain their timing and dimensions. Final composition adds the bars; the base assembly remains full 1920×1080. All source audio and cutaway L-cuts use the existing compiler clock. Hardware encoding still uses the existing VideoToolbox helper, with its existing automatic software fallback.
