@@ -17,7 +17,9 @@ function fixture(t) {
   const fake = path.join(home, "reel");
   fs.writeFileSync(fake, `#!${process.execPath}\nimport fs from 'node:fs';\nconst a=process.argv.slice(2);\nif(a.includes('--help')) { console.log(process.env.FAKE_HELP ?? 'reel speaker init index --add-new --draft'); process.exit(process.env.FAKE_MISSING ? 1 : 0); }\nfs.appendFileSync(process.env.CALLS,JSON.stringify(a)+'\\n');\nif(process.env.FAKE_FAIL && a.includes(process.env.FAKE_FAIL)) process.exit(1);\n`);
   // Extensionless executable is ESM under Node 22's syntax detection.
-  fs.chmodSync(fake, 0o755); env.PATH = home + path.delimiter + process.env.PATH; env.SPEAKER_REEL = "reel";
+  fs.chmodSync(fake, 0o755); env.PATH = home + path.delimiter + process.env.PATH;
+  // The full path: the watcher puts /opt/homebrew/bin first, where the Mac Mini has the real reel installed.
+  env.SPEAKER_REEL = fake;
   const config = speakerConfig(env), folder = path.join(config.root, "julee-gracey");
   const brand = path.join(home, "brand.json"); fs.writeFileSync(brand, JSON.stringify({ identity: { name: "Julee Gracey" }, colors: { accent: "#123456" } }));
   const run = (name, args = [], extra = {}) => spawnSync(name.endsWith(".sh") ? "/bin/bash" : process.execPath, [script(name), ...args], { env: { ...env, ...extra }, encoding: "utf8", timeout: 20000 });
