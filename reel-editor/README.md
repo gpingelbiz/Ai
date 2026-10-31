@@ -175,11 +175,16 @@ How it runs: the scheduled task `reel-publish` (Claude desktop app, hourly at :4
 
 The gate: a reel whose preflight failed (the hidden `.reel.json`; an older folder's `check this reel.txt` with a FAIL line counts too), or that has no caption goes into Metricool as a draft instead and the notification says why. Dropping a reel is the approval, so the render reviewer's notes do not hold it back (it also flags intended effects); they are copied into `Scheduled.txt` to look at. A video dragged in on its own finds its caption in the Desktop folder it was delivered in (same name and size): `Clip 3 - caption.txt` for a clip, `caption.txt` for a reel. The drop folders leave a hidden `.reel.json` (`.Clip 2.reel.json` per clip) next to each reel with the AI flag, the preflight result and the cover frame for this, and a hidden `.reel-features.json` for the analytics; Finder does not show them, so a finished folder looks like the reel and its caption only.
 
-**Trial Reels and TikTok (Greg 2026-10-31).** Every other reel goes out as an Instagram Trial Reel, shown to non-followers first. The first reel after a public one is a trial, and with no history the first is public. `scan` decides from the newest receipt in `Scheduled/`, and drafts don't count. A reel can be marked either way and keeps its mark:
-- **Trial:** `#trial` in its name, a `Publish/Trial/` subfolder, or `trial: true`.
-- **Public:** `#public` or `#notrial` in its name, or `trial: false`.
+**Trial copies and TikTok (Greg 2026-10-31).** Every reel posts twice:
+- **The regular reel** goes to Instagram followers and to TikTok.
+- **A separate copy goes out as an Instagram Trial Reel,** shown to non-followers first. It runs on the same day at least 2 h from every other post, or the next free day.
 
-Metricool's connector has no switch for Instagram's "share automatically with everyone", so a trial that does well is shared to followers from Instagram's 72-hour results notice. Every reel also posts to TikTok (`providers` and `tiktok` in the scan output; TikTok's AI label follows the b-roll flag). `#igonly` in the name, or a caption over TikTok's 2,200 characters, keeps a reel on Instagram only, and `REEL_PUBLISH_CROSSPOST=""` turns TikTok off. The task passes `--trial` and `--networks` to `done`, so the receipt says what went out.
+`scan` marks it with `trialCopy`. The posting task reuses the regular post's static.metricool.com video for the copy, and `slot` takes `notBefore` for it. These reels get no trial copy:
+- drafts;
+- a reel already marked as a trial (`#trial` in its name, a `Publish/Trial/` subfolder, or `trial: true`);
+- `#public` or `#notrial` in its name, or `trial: false`.
+
+Only regular reels count toward one reel a day. Don't share a trial copy to followers from Instagram's 72-hour results notice: they already got the regular reel. TikTok's AI label follows the b-roll flag. `#igonly`, or a caption over TikTok's 2,200 characters, keeps a reel off TikTok, and `REEL_PUBLISH_CROSSPOST=""` turns TikTok off. The task passes `--networks`, `--trial-copy` and `--trial-planner` (or `--trial-copy-failed`) to `done`, so the receipt says what went out.
 
 By hand: `node scripts/publish-folder.mjs scan` shows what is next; `serve`, `stop`, `done`, `fail` and `slot` are the steps the task runs. `scripts/publish.mjs` (the older review hand-off) needs a public link of your own.
 
