@@ -5,7 +5,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 export SPEAKER_HOME="${SPEAKER_HOME:-$HOME}"
 ROOT="${SPEAKER_CLIENTS_ROOT:-$SPEAKER_HOME/Reels/speaker-clients}"
 REEL="${SPEAKER_REEL:-reel}"
-export PATH="$SPEAKER_HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+# ~/bin holds ffmpeg/ffprobe on Macs without Homebrew (Greg's MacBook); launchd does not add it.
+export PATH="$SPEAKER_HOME/.local/bin:$SPEAKER_HOME/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 DRY=0
 case "${1:-}" in --dry-run) DRY=1;; "") ;; *) echo 'usage: speaker-watch.sh [--dry-run]' >&2; exit 2;; esac
 LOCK="${SPEAKER_LOCK:-$ROOT/.speaker-watch.lock}"

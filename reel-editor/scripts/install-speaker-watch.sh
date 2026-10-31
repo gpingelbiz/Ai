@@ -31,5 +31,7 @@ if [ "$DRY" = 1 ]; then cat "$tmp"; echo "plist OK (dry run, nothing installed)"
 mkdir -p "$AGENTS" "$SPEAKER_CLIENTS_ROOT" "$(dirname "${SPEAKER_LAUNCH_LOG:-$SPEAKER_CLIENTS_ROOT/watch-launchd.log}")"
 cp "$tmp" "$PLIST"
 "$LAUNCHCTL" bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-"$LAUNCHCTL" bootstrap "gui/$(id -u)" "$PLIST"
+# bootout returns before a running pass has exited; bootstrap then fails with an I/O error. Wait, then retry once.
+for _ in 1 2 3 4 5 6 7 8 9 10; do "$LAUNCHCTL" print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break; sleep 1; done
+"$LAUNCHCTL" bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || { sleep 2; "$LAUNCHCTL" bootstrap "gui/$(id -u)" "$PLIST"; }
 echo "installed $LABEL (intake, indexing and drafts only)"
