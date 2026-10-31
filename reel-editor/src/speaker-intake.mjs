@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { slug, writeJSON, readJSON, VIDEO_EXTS } from "./util.mjs";
+import { slug, writeJSON, readJSON, VIDEO_EXTS, warn } from "./util.mjs";
 import { identityLeaks } from "./speaker-guard.mjs";
 
 export const SOURCE_KINDS = ["stage", "podcast", "webinar", "interview", "testimonial", "broll", "photo"];
@@ -106,7 +106,8 @@ function mediaFiles(folder) {
       const file = path.join(dir, entry.name);
       if (entry.isDirectory()) visit(file);
       else if ((entry.isFile() || entry.isSymbolicLink()) && (VIDEO_EXTS.has(path.extname(file).toLowerCase()) || AUDIO.has(path.extname(file).toLowerCase()) || IMAGES.has(path.extname(file).toLowerCase()))) {
-        assetPath(folder, path.relative(folder, file));
+        try { assetPath(folder, path.relative(folder, file)); }
+        catch (e) { warn(`speaker init: skipped ${path.relative(folder, file)} (${e.message})`); continue; }
         files.push(path.relative(folder, file));
       }
     }

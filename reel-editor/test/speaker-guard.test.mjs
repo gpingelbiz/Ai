@@ -49,3 +49,22 @@ test("speaker cards: a brand on the default font family resolves the font file f
   const out = speakerCardsHTML(plan, { manifest: { identity: { name: "Jane Doe", roleLine: "Speaker" } }, tokens, clientDir: "/tmp/no-such-client" });
   for (const asset of out.assets.filter((a) => a.font)) assert.ok(fs.existsSync(asset.source), asset.source);
 });
+
+test("speaker core fixes: a broken link does not stop init, and a word at a rounded clip edge keeps one frame", async () => {
+  const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
+  const { initManifest } = await import("../src/speaker-intake.mjs");
+  const { timelineWords } = await import("../src/speaker-compile.mjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-fix-"));
+  fs.mkdirSync(path.join(dir, "footage"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "footage", "talk.mp4"), "x");
+  fs.symlinkSync(path.join(dir, "gone.mp4"), path.join(dir, "footage", "broken-link.mp4"));
+  const result = initManifest(dir, {});
+  const manifest = result.manifest || result;
+  assert.ok(JSON.stringify(manifest).includes("footage/talk.mp4"));
+  assert.ok(!JSON.stringify(manifest).includes("broken-link"));
+  const resolved = { canvas: { fps: 30 }, items: [{ kind: "clip", id: "i01", sourceId: "s", in: 0, out: 0.98, start: 0, end: 29 / 30 }] };
+  const index = { sources: { s: { words: [{ text: "end", start: 0.97, end: 0.975 }] } } };
+  const words = timelineWords(resolved, index);
+  assert.equal(words.length, 1);
+  assert.ok(words[0].end > words[0].start && words[0].end <= 29 / 30 + 1e-9);
+});

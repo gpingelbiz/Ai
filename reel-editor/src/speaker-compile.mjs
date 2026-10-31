@@ -196,7 +196,12 @@ export function resolvePlan(plan, options) {
 
 export function timelineWords(resolved, index) {
   return resolved.items.filter((i) => i.kind === "clip" && i.audio !== "mute").flatMap((i) =>
-    sliceWords(sourceRow(index, i.sourceId)?.words || [], i.in, i.out).map((w) => ({ ...w, start: i.start + w.start, end: Math.min(i.end, i.start + w.end), sourceId: i.sourceId, itemId: i.id, itemEnd: i.end })),
+    sliceWords(sourceRow(index, i.sourceId)?.words || [], i.in, i.out).map((w) => {
+      const end = Math.min(i.end, i.start + w.end), frame = 1 / (resolved.canvas?.fps || 30);
+      // Frame rounding can shorten a clip below its source range; a word inside it keeps at least one frame.
+      const start = Math.min(i.start + w.start, Math.max(i.start, end - frame));
+      return { ...w, start, end, sourceId: i.sourceId, itemId: i.id, itemEnd: i.end };
+    }),
   ).filter((w) => w.end > w.start);
 }
 
@@ -318,11 +323,9 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   assertNoGreg(manifest, "manifest");
   if (preset) assertNoGreg(preset, "preset");
   const resolved = resolvePlan(plan, { manifest, index, draft });
-  if (!tokens) {
-    const brand = readJSON(assetPath(folder, manifest.brand.file));
-    assertNoGreg(brand, "brand");
-    tokens = resolveBrandTokens({ preset: preset || {}, brand });
-  }
+  const brand = readJSON(assetPath(folder, manifest.brand.file));
+  assertNoGreg(brand, "brand");
+  if (!tokens) tokens = resolveBrandTokens({ preset: preset || {}, brand });
   assertNoGreg(tokens, "brand tokens");
   const bg = tokens.colors?.surface;
   if (!/^#[0-9a-f]{6}$/i.test(bg || "")) throw new Error("speaker brand: surface must be a six-digit hex colour");

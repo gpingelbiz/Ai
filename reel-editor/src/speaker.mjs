@@ -51,11 +51,13 @@ export async function runSpeaker(folder, opts = {}, { index: indexImpl = indexSo
   let brand;
   try { brand = readJSON(brandFile); }
   catch (e) { throw new Error(`speaker brand ${brandFile}: ${e.message}`); }
+  assertNoGreg(brand, "brand");
+  if (opts.planOnly && opts.renderOnly) throw new Error("choose either --plan-only or --render-only");
+  // Indexing only needs the brand's names and corrections, so it runs before the brand's fonts are settled.
+  if (opts.indexOnly) return indexImpl(folder, manifest, { brand, engine: opts.engine, language: opts.language, model: opts.model, print });
   const preset = speakerPreset(brand);
   const tokens = resolveBrandTokens({ preset, brand });
   assertNoGreg(tokens, "resolved speaker brand");
-  if (opts.planOnly && opts.renderOnly) throw new Error("choose either --plan-only or --render-only");
-  if (opts.indexOnly) return indexImpl(folder, manifest, { brand, engine: opts.engine, language: opts.language, model: opts.model, print });
   const planDir = path.join(folder, "work", "plans");
   const files = opts.plan ? [path.resolve(folder, opts.plan)] : fs.existsSync(planDir)
     ? fs.readdirSync(planDir).filter((f) => f.endsWith(".json") && (!opts.version || f === `${opts.version}.json`)).sort().map((f) => path.join(planDir, f)) : [];
