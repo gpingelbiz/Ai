@@ -57,7 +57,12 @@ export function bannedInCaption(text) {
   if (/\b(my wife|maria|my mrs|my missus)\b/i.test(s)) return "it mentions his wife";
   // Brand Guide v10 (2026-10-29) retired the v9 framework names and keyword asks.
   if (/\b(five rooms|wrong scoreboard|closer line|defend\s*\/\s*decide|a\.c\.r\.a\.?|six leaks)\b/i.test(s)) return "it uses a retired v9 framework name";
-  if (/\b(comment|dm|type)\s+(me\s+)?["'“]?(scale|leaks|freedom)\b/i.test(s)) return "it asks for a retired v9 keyword";
+  if (/\b(comment|dm|type|text|send|reply)\s+(me\s+)?(with\s+)?(the\s+word\s+)?["'“]?(ghost|scale|leaks|freedom)\b/i.test(s)) return "it asks for a retired keyword (GHOST, SCALE, LEAKS or FREEDOM)";
+  // Greg's standing rules (brand guide v10, 2026-10-31 product audit): the hiring portal never appears in content,
+  // no income claims, no dashes in copy written as him.
+  if (/\bhiring\s+portal\b/i.test(s)) return "it mentions the hiring portal";
+  if (/\b(six|seven|eight|6|7|8)[\s-]figures?\b/i.test(s) || /\$\s?\d[\d,.]*\s?k?\s*(a|per|\/)\s*(month|mo|year|yr)\b/i.test(s) || /\b(made|make|making|earned|earn)\s+\$\s?\d/i.test(s)) return "it makes an income claim";
+  if (/[—–]/.test(s) || /\s-\s/.test(s)) return "it uses a dash";
   return "";
 }
 

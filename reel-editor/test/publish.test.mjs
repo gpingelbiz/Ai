@@ -160,8 +160,8 @@ test("caption gate: Ghost P&L, the GHOST keyword and any mention of his wife hol
   assert.equal(bannedInCaption("Never send the PDF and hope."), "");
   assert.equal(bannedInCaption("This is the Closer Line most owners miss."), "it uses a retired v9 framework name");
   assert.equal(bannedInCaption("Which of the Five Rooms is on fire?"), "it uses a retired v9 framework name");
-  assert.equal(bannedInCaption("Comment FREEDOM and I'll send it."), "it asks for a retired v9 keyword");
-  assert.equal(bannedInCaption('DM me "SCALE" to start.'), "it asks for a retired v9 keyword");
+  assert.equal(bannedInCaption("Comment FREEDOM and I'll send it."), "it asks for a retired keyword (GHOST, SCALE, LEAKS or FREEDOM)");
+  assert.equal(bannedInCaption('DM me "SCALE" to start.'), "it asks for a retired keyword (GHOST, SCALE, LEAKS or FREEDOM)");
   assert.equal(bannedInCaption("Grow the offer before you scale the ads. Freedom is the point."), "", "plain scale and freedom are fine");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "reel-gate-"));
   fs.writeFileSync(path.join(root, "banned.mp4"), "x"); fs.writeFileSync(path.join(root, "banned.txt"), "Comment GHOST for the map.");
@@ -206,4 +206,10 @@ test("reels also go to TikTok unless marked #igonly or the caption is too long; 
   assert.deepEqual(reelProviders({ text: "Short.", crossPost: [] }), ["instagram"]);
   assert.equal(tiktokData({ isAiGenerated: true }).isAigc, true);
   assert.equal(tiktokData({}).privacyOption, "PUBLIC_TO_EVERYONE");
+});
+
+test("caption gate: retired keywords in any ask, the hiring portal, income claims and dashes make a draft", () => {
+  const { bannedInCaption: b } = { bannedInCaption };
+  for (const t of ["DM GHOST for the breakdown", "Type GHOST below", "comment the word SCALE", "Apply through my hiring portal", "I hit seven figures in 6 months", "She made $40,000 last month", "That's $10k a month", "This is it — the close", "Sell it - then deliver"]) assert.ok(b(t), t);
+  for (const t of ["Our ticket is $3,000 a client.", "A 20% close rate and 15 calls a week.", "Follow-up wins. Ten-year-old habits die hard.", "Comment AI if you want it."]) assert.equal(b(t), "", t);
 });
