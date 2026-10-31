@@ -17,6 +17,10 @@ import { resolveBrandTokens, tokensCSS, validateBrand } from "./brandtokens.mjs"
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
 
 Usage
+  reel speaker <folder> [--version full] [--plan <file>] [--plan-only] [--render-only] [--draft]
+                                    client speaker reel from multiple recordings; never publishes
+  reel speaker init <folder> [--add-new]  discover footage/proof; append new files without changing existing entries
+  reel speaker index <folder>      probe and cache source transcripts; reel speaker --help for details
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
@@ -306,6 +310,10 @@ export async function main(argv) {
   const [cmd, ...rest] = argv;
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return console.log(USAGE);
   switch (cmd) {
+    case "speaker": {
+      const { speakerMain } = await import("./speaker.mjs");
+      return speakerMain(rest);
+    }
     case "edit": {
       const { opts, positionals } = parse(rest);
       if (opts.help || !positionals[0]) return console.log(USAGE);
