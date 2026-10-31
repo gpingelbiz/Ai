@@ -34,7 +34,7 @@ test("a brand file opts in with looks.only: the rest are off, the brand looks am
   assert.match(checkBrand({ ...julee, looks: { only: ["neon", "note"] } }).join(" "), /"neon" is not a look/);
   assert.match(checkBrand({ ...julee, looks: { only: ["gregcard", "note"] } }).join(" "), /"gregcard" is not a look they can use/);
   assert.match(checkBrand({ ...julee, looks: { only: ["note"] } }).join(" "), /at least 2 looks/);
-  assert.deepEqual(brandPreset({ ...julee, look: { pace: "calm" } }).graphics, { excludeLooks: ["gregcard"], every: 14, max: 4 }, "calm also means fewer cards");
+  assert.deepEqual(brandPreset({ ...julee, look: { pace: "calm" } }).graphics, { excludeLooks: ["gregcard"], every: 14, max: 4, clearStart: 0 }, "calm also means fewer cards");
 });
 
 test("every brand look maps all ten card types to a brand skin and has a theme", () => {

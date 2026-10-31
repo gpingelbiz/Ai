@@ -50,7 +50,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   const gap = settings.gap ?? 6;
   const max = brollCount(duration, { max: busy.length ? settings.maxWithGraphics ?? 2 : settings.max ?? 3, every: settings.every ?? 12 });
   if (!max) { log("b-roll: reel too short, skipped"); return []; }
-  const candidates = brollCandidates(groups, duration, { hook, cta, len, busy, tail });
+  const candidates = brollCandidates(groups, duration, { hook, cta, len, busy, tail, clearStart: settings.clearStart ?? 0 });
   if (!candidates.length) { log("b-roll: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.start}:${c.text}`).join("|");
   if (!force && fs.existsSync(planPath)) {

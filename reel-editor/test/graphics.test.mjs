@@ -471,3 +471,10 @@ test("progress: count needs the hook's count, a card hides a pulse, and animatio
   assert.match(PROGRESS_JS, /\[5, 8, 12, 12\]/);
   assert.doesNotMatch(PROGRESS_JS, /Math\.random|Date\.now/);
 });
+
+test("cards: clearStart keeps every card off the first seconds", () => {
+  const groups = Array.from({ length: 20 }, (_, i) => ({ start: i * 1.5, end: i * 1.5 + 1.4, text: `line ${i}`, words: [] }));
+  const c = sceneCandidates(groups, 30, { hook: { start: 0, duration: 3 }, clearStart: 5 });
+  assert.ok(c.length && c.every((x) => x.start >= 5));
+  assert.ok(sceneCandidates(groups, 30, { hook: { start: 0, duration: 3 } }).some((x) => x.start < 5), "off by default");
+});

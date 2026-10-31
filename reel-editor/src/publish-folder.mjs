@@ -61,6 +61,64 @@ export function bannedInCaption(text) {
   return "";
 }
 
+/** A reel marked to go straight to followers: `trial: false` in its metadata or caption file, or #public / #notrial in a name. */
+export function publicReel({ entry = "", dir = null, video = "", captionRaw = "", meta = {} } = {}) {
+  if (meta?.trial === false) return true;
+  if (/(?:^|[\s,{])["']?trial["']?\s*:\s*false\b/im.test(String(captionRaw || ""))) return true;
+  return [entry, dir && path.basename(dir), video && path.basename(video)].filter(Boolean).some((name) => /#(public|notrial)\b/i.test(String(name)));
+}
+
+/**
+ * Was the newest reel filed under Scheduled/ a Trial Reel? Reads the receipts `done` wrote ("Trial Reel: yes"), newest
+ * first, skipping drafts. null when nothing has been scheduled yet.
+ */
+export function lastScheduledTrial(root = ROOT) {
+  const dir = path.join(root, SCHEDULED);
+  let receipts = [];
+  try {
+    receipts = fs.readdirSync(dir).map((e) => path.join(dir, e, "Scheduled.txt")).filter((f) => fs.existsSync(f))
+      .map((f) => ({ f, t: fs.statSync(f).mtimeMs })).sort((a, b) => b.t - a.t);
+  } catch { return null; }
+  for (const { f } of receipts) {
+    const text = fs.readFileSync(f, "utf8");
+    if (/^Saved as a DRAFT/m.test(text)) continue;
+    return /^Trial Reel: yes/m.test(text);
+  }
+  return null;
+}
+
+/**
+ * Every other reel goes out as a Trial Reel (Greg 2026-10-31, "Do all 7": Instagram shows a trial to non-followers
+ * first, so half the reels test for new reach while the other half still reach his followers). A reel marked either
+ * way keeps its mark; drafts never count. The first reel after a trial is public, and with no history the first is
+ * public too. Changes the items in place.
+ */
+export function alternateTrials(items, { last = null } = {}) {
+  let prev = last ?? true;
+  for (const item of items) {
+    if (!item || item.draft) continue;
+    if (item.trialSource !== "auto") { prev = !!item.trial; continue; }
+    item.trial = !prev;
+    item.instagramType = item.trial ? "TRIAL_REEL" : "REEL";
+    prev = item.trial;
+  }
+  return items;
+}
+
+/** Networks a reel also goes to besides Instagram (Greg 2026-10-31: every reel to TikTok). REEL_PUBLISH_CROSSPOST="" turns it off. */
+export const CROSS_POST = String(process.env.REEL_PUBLISH_CROSSPOST ?? "tiktok").split(",").map((n) => n.trim().toLowerCase()).filter((n) => n === "tiktok");
+
+/** The TikTok settings for a reel: public, comments and duets on, and the AI label whenever the reel carries AI b-roll. */
+export function tiktokData(item = {}) {
+  return { privacyOption: "PUBLIC_TO_EVERYONE", disableComment: false, disableDuet: false, disableStitch: false, commercialContentThirdParty: false, commercialContentOwnBrand: false, autoAddMusic: false, isAigc: !!item.isAiGenerated };
+}
+
+/** Instagram plus the cross-post networks, unless the reel is marked #igonly or its caption is past TikTok's 2,200 characters. */
+export function reelProviders({ text = "", names = [], crossPost = CROSS_POST } = {}) {
+  if (names.filter(Boolean).some((n) => /#igonly\b/i.test(String(n)))) return ["instagram"];
+  return ["instagram", ...crossPost.filter((n) => n !== "tiktok" || String(text).length <= 2200)];
+}
+
 /** Trial Reel markers are metadata, an explicit #trial name, or placement under Publish/Trial/. */
 export function trialReel({ entry = "", dir = null, video = "", captionRaw = "", meta = {}, root = ROOT } = {}) {
   if (meta?.trial === true) return true;
@@ -142,8 +200,12 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   if (!caption.caption) { draft = true; why = "there is no caption"; }
   const banned = bannedInCaption(postText(caption));
   if (banned && !draft) { draft = true; why = banned; }
-  const trial = trialReel({ entry, dir, video, captionRaw, meta, root });
-  return { root, entry, dir, video, captionFile, caption, notes, text: postText(caption), isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, trial, instagramType: trial ? "TRIAL_REEL" : "REEL", metaFile: metaPath, checkFile: noteFile || null, textcheckFile: textcheckFile || null, droppedAt: Math.round(st.mtimeMs) };
+  const marked = trialReel({ entry, dir, video, captionRaw, meta, root });
+  const pub = !marked && publicReel({ entry, dir, video, captionRaw, meta });
+  const trial = marked;
+  const text = postText(caption);
+  const providers = reelProviders({ text, names: [entry, dir && path.basename(dir), video && path.basename(video)] });
+  return { root, entry, dir, video, captionFile, caption, notes, text, isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, trial, trialSource: marked || pub ? "marked" : "auto", instagramType: trial ? "TRIAL_REEL" : "REEL", providers, tiktok: providers.includes("tiktok") ? tiktokData({ isAiGenerated: !!ai }) : null, metaFile: metaPath, checkFile: noteFile || null, textcheckFile: textcheckFile || null, droppedAt: Math.round(st.mtimeMs) };
 }
 
 // Where delivered reels live: the Desktop Reels folder (where the drop folders deliver).
@@ -174,9 +236,11 @@ export function scan({ root = ROOT, now = Date.now() } = {}) {
     try { return fs.statSync(folder).isDirectory() ? fs.readdirSync(folder).map((child) => path.join(entry, child)) : [entry]; }
     catch { return [entry]; }
   });
-  return entries.map((e) => readItem(e, { root, now })).filter(Boolean)
+  const items = entries.map((e) => readItem(e, { root, now })).filter(Boolean)
     // Oldest drop first; things dropped in the same few minutes go in name order (Clip 1 before Clip 2).
     .sort((a, b) => Math.floor((a.droppedAt || 0) / 300000) - Math.floor((b.droppedAt || 0) / 300000) || a.entry.localeCompare(b.entry, undefined, { numeric: true }));
+  alternateTrials(items.filter((i) => i.video && !i.waiting && !i.problem), { last: lastScheduledTrial(root) });
+  return items;
 }
 
 /** File an item under Scheduled/ or Not posted/ with a receipt next to it. */

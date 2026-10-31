@@ -42,9 +42,16 @@ export const kitSlug = (b) => slug(b.name || b.identity?.name || "brand");
  * Calm pacing (look.pace "calm"): gentler silence cuts (gaps over 0.6 s instead of 0.35 s), punch-ins at most every
  * 16 s and two per 30 s with no jump-cut cadence between them, no icon pops or impact bumps, and no cold open unless
  * look.coldOpen turns it on.
- * "fast" (the default) keeps Greg's pacing from pingel-brand.
+ * "fast" (the default) is the pacing Greg's own reels used until 2026-10-31 (FAST below).
  */
 export const CALM = { cuts: { silence: "medium" }, zooms: { minSpacing: 16, maxPer30: 2, cadence: { enabled: false } }, icons: { enabled: false }, motion: { impact: { enabled: false } } };
+
+/**
+ * Fast pacing (the default for client brands): tight silence cuts, the jump-cut cadence between the punch-ins,
+ * and cards and cutaways right after the hook. Greg's own preset moved to the one-take look on
+ * 2026-10-31 (his uncut reels held viewers best), so client brands write this out instead of inheriting his.
+ */
+export const FAST = { cuts: { silence: "fast" }, zooms: { cadence: { enabled: true } } };
 
 /** The card looks a brand allows: everything but gregcard, or only `looks.only` (brand looks included). */
 export function lookChoice(b) {
@@ -82,7 +89,7 @@ export function brandPreset(b, { fonts = {} } = {}) {
       ...(look.hookCase ? { uppercase: look.hookCase !== "sentence" } : {}),
       ...(look.hookSeconds != null ? { duration: look.hookSeconds === "reel" ? "reel" : Number(look.hookSeconds) } : {}),
     },
-    ...(calm ? structuredClone(CALM) : {}),
+    ...structuredClone(calm ? CALM : FAST),
     ...(coldOpen != null ? { coldOpen: { enabled: coldOpen } } : {}),
     // Calm brands keep the slams plain: no pop-out (the dim, outline and word behind the head), no icon stickers
     // and no impact bumps (CALM); drift and the face-on b-roll layouts stay.
@@ -90,9 +97,9 @@ export function brandPreset(b, { fonts = {} } = {}) {
     ...((legacy.looks?.lockHook != null || legacy.looks?.lockCaptions != null) ? { looks: { lockHook: legacy.looks?.lockHook === true, lockCaptions: legacy.looks?.lockCaptions === true } } : {}),
     // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
-    graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : {}) },
+    graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : { every: 10, max: 6 }), clearStart: 0 },
     // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
-    broll: { world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
+    broll: { world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim(), max: 3, every: 12, clearStart: 0 },
     carousel: { handle: identity.handle || "", style: String(compat.carouselStyle ?? b.carouselStyle ?? "").trim() },
     lowerThird: { name: identity.name, handle: identity.handle || "" },
   };

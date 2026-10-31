@@ -24,18 +24,22 @@ function load(brand, { font = true } = {}) {
 const GREG = {
   "captions.uppercase": false, "captions.fontSizeFrac": 0.0355, "captions.autoKeywords": false, "captions.keywordColorOnFootage": false,
   "hook.uppercase": undefined, "hook.duration": 3, "hook.fontSizeFrac": 0.041, "hook.behind": false, "hook.plaque": true,
-  "cuts.silence": "fast",
-  "zooms.cadence.enabled": true, "zooms.minSpacing": undefined, "zooms.maxPer30": undefined,
+  "zooms.minSpacing": undefined, "zooms.maxPer30": undefined,
   "looks.lockHook": true, "looks.lockCaptions": true, "cover.style": "archetypes", "finish.enabled": true,
   // Off since 2026-10-29: the opening still put b-roll behind Greg, which no top reel in the b-roll study did.
   "coldOpen.enabled": false,
 };
 const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
 
-test("Greg's preset keeps today's case, hook time and pacing", () => {
+// Greg 2026-10-31 ("Do all 7"): his own reels went to the one-take look; client brands keep the fast pacing.
+const ONE_TAKE = { "cuts.silence": "medium", "zooms.cadence.enabled": false, "graphics.clearStart": 5, "graphics.max": 3, "broll.clearStart": 5, "broll.max": 2 };
+const CLIENT_FAST = { "cuts.silence": "fast", "zooms.cadence.enabled": true, "graphics.clearStart": 0, "graphics.max": 6, "broll.clearStart": 0, "broll.max": 3 };
+
+test("Greg's preset keeps today's case and hook time, with the one-take pacing", () => {
   // Greg 2026-10-30: pingel-v2 text direction is his default
   const g = loadPreset("pingel-brand");
-  for (const [k, v] of Object.entries(GREG)) assert.equal(at(g, k), v, k);
+  for (const [k, v] of Object.entries({ ...GREG, ...ONE_TAKE })) assert.equal(at(g, k), v, k);
+  assert.doesNotMatch(g.broll.world, /wife/i, "never his wife, not even in a b-roll brief");
   assert.equal(ownDisplay(g), false, "pingel-brand has no display font: Anton and DM Serif stay");
 });
 
@@ -43,9 +47,10 @@ test("a brand file without the new fields inherits Greg's new defaults and keeps
   // Greg 2026-10-30: pingel-v2 text direction is his default
   const { p, dir } = load(julee);
   try {
-    for (const [k, v] of Object.entries({ ...GREG, "hook.behind": true })) assert.equal(at(p, k), v, k);
+    for (const [k, v] of Object.entries({ ...GREG, ...CLIENT_FAST, "hook.behind": true })) assert.equal(at(p, k), v, k);
     const raw = brandPreset(julee);
-    for (const k of ["coldOpen", "cuts", "zooms"]) assert.ok(!(k in raw), `${k} not written`);
+    assert.ok(!("coldOpen" in raw), "coldOpen not written");
+    assert.deepEqual(raw.cuts, { silence: "fast" }, "client brands write the fast pacing instead of inheriting Greg's one-take look");
     assert.ok(!("uppercase" in raw.captions) && !("uppercase" in raw.hook) && !("duration" in raw.hook));
     assert.equal(raw.hook.behind, true, "generic brands still request their legacy behind hook");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -71,7 +76,7 @@ test("brand.json: sentence-case hook and captions, whole-reel hook, calm pace", 
     assert.equal(on.p.hook.duration, 6);
   } finally { fs.rmSync(on.dir, { recursive: true, force: true }); }
   assert.equal(brandPreset({ ...julee, look: { pace: "fast", coldOpen: false } }).coldOpen.enabled, false);
-  assert.ok(!("cuts" in brandPreset({ ...julee, look: { pace: "fast" } })), "fast writes nothing: Greg's pacing");
+  assert.deepEqual(brandPreset({ ...julee, look: { pace: "fast" } }).cuts, { silence: "fast" }, "fast writes the pacing Greg's reels had before his one-take look");
 });
 
 test("brand.json: calm brands keep plain slams with no icons or bumps; fast brands get every add-on in their colours", () => {

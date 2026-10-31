@@ -4,7 +4,7 @@
 //   node scripts/publish-folder.mjs slot '<json>'  JSON: the posting day/hour from {taken:[days], bestByDay:{day:[hours]}}
 //   node scripts/publish-folder.mjs serve <video>  opens a temporary public link to that one video, prints it
 //   node scripts/publish-folder.mjs stop           closes it
-//   node scripts/publish-folder.mjs done <entry> --planner <url> --date <iso> [--draft] [--why <text>]
+//   node scripts/publish-folder.mjs done <entry> --planner <url> --date <iso> [--trial] [--networks instagram,tiktok] [--draft] [--why <text>]
 //   node scripts/publish-folder.mjs fail <entry> --why <text>
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +39,7 @@ switch (cmd) {
     if (!item?.video) { console.error(`not found in ${ROOT}: ${a1}`); process.exit(1); }
     const date = opt("--date");
     const receipt = cmd === "done"
-      ? [args.includes("--draft") ? `Saved as a DRAFT in Metricool for you to look at (${opt("--why") || "flagged"}); it will not post until you schedule it there.` : `Scheduled to post on Instagram at ${date}.`, ...(item.trial ? ["Trial Reel: yes, manual graduation."] : []), `Metricool: ${opt("--planner") || "(no link returned)"}`, "", "Posted text:", item.text, "", ...(item.notes?.length ? ["The render reviewer noted (check it on the reel; it can be wrong):", ...item.notes.map((n) => `- ${n}`), ""] : [])].join("\n")
+      ? [args.includes("--draft") ? `Saved as a DRAFT in Metricool for you to look at (${opt("--why") || "flagged"}); it will not post until you schedule it there.` : `Scheduled to post on Instagram at ${date}.`, ...(args.includes("--trial") || item.trial ? ["Trial Reel: yes. Instagram shows it to non-followers first. After 72 hours Instagram sends the results; share it to your followers from there if it did well."] : []), ...(opt("--networks").toLowerCase().includes("tiktok") ? ["Also posted to TikTok."] : []), `Metricool: ${opt("--planner") || "(no link returned)"}`, "", "Posted text:", item.text, "", ...(item.notes?.length ? ["The render reviewer noted (check it on the reel; it can be wrong):", ...item.notes.map((n) => `- ${n}`), ""] : [])].join("\n")
       : [`Not posted: ${opt("--why") || "unknown error"}`, "Fix it and drop the folder in Publish again.", ""].join("\n");
     const where = fileItem(item, { status: cmd === "done" ? "scheduled" : "failed", receipt });
     const name = item.entry.replace(/\.(mp4|mov|m4v)$/i, "");
@@ -50,6 +50,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.error("usage: publish-folder.mjs scan | slot <json> | serve <video> | stop | done <entry> --planner <url> --date <iso> [--draft] | fail <entry> --why <text>");
+    console.error("usage: publish-folder.mjs scan | slot <json> | serve <video> | stop | done <entry> --planner <url> --date <iso> [--trial] [--networks <list>] [--draft] | fail <entry> --why <text>");
     process.exit(2);
 }

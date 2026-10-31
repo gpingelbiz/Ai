@@ -147,3 +147,10 @@ test("holdForSplit holds the cutaway with the most clear time, and only when the
   const clip = holdForSplit([{ start: 6, duration: 4, file: "a.mp4" }, { start: 20, duration: 4, file: "b.mp4" }], { duration: 40, hold: 8, clipSeconds: 5 });
   assert.equal(clip[1].duration, 5, "a generated clip is held no longer than it runs");
 });
+
+test("b-roll: clearStart keeps every cutaway off the first seconds", () => {
+  const groups = Array.from({ length: 20 }, (_, i) => ({ start: i * 1.5, end: i * 1.5 + 1.4, text: `line ${i}` }));
+  const c = brollCandidates(groups, 30, { hook: { start: 0, duration: 3 }, clearStart: 5 });
+  assert.ok(c.length && c.every((x) => x.start >= 5));
+  assert.ok(brollCandidates(groups, 30, { hook: { start: 0, duration: 3 } }).some((x) => x.start < 5), "off by default");
+});
