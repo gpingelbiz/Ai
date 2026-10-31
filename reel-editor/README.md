@@ -167,6 +167,23 @@ Five additions from the Oct 22 Codex GitHub research (eight researchers; reports
 
 **Golden frames** (`npm run test:golden`, `npm run test:golden:update`; `scripts/golden.mjs`, pixelmatch and pngjs as dev dependencies): a fixed composition (the headline hook, reveal captions with a marker, a headline card, a list card, a slam and a jump cut over a formula gradient) is snapshotted at six exact times with HyperFrames' software renderer and compared at half size with the frames in `test/golden/`. Over 0.2% of pixels changed fails, after one re-capture (a footage frame still loading is a flake; a change that repeats is real). Diffs land in `test/golden/diff/` (ignored by git). Run it after touching the composer, the fonts, GSAP or HyperFrames; update the frames only when the look change is intended. About 7 s.
 
+## The rule book (`policy/content-policy.json`)
+
+There is one file listing what may never appear in Greg's posts:
+- the Ghost P&L;
+- his wife (a prospect's spouse objection is fine);
+- retired framework names and keywords;
+- the hiring portal;
+- income claims;
+- dashes.
+
+It is read in three places:
+- **The reel caption gate** (`bannedInCaption`): a reel that breaks a rule posts as a draft, with the reason.
+- **The slide gate** (`reel preflight`, for Greg's brand only): each rule marked `slides: true` becomes a `copy-policy-<id>` problem. Client brands keep their own never-say lists.
+- **`reel policy <caption file|text>`:** prints `policy: ok` or each broken rule, and exits 1. The content engine runs it on every caption before scheduling.
+
+Change a rule in the file, not in code. `REEL_POLICY` points at another file.
+
 ## Publish folder (auto-posting to Instagram through Metricool)
 
 `Desktop/Reels/Publish` (a link to `~/Reels/publish`) posts what you drop in it. Drop a finished reel folder as a drop folder delivered it (the video plus `caption.txt`), one clip's files from a Clips folder, or a loose video with a caption file of the same name (`My reel.mp4` + `My reel.txt`). The caption that posts is `caption.txt` exactly as it is in the file (edit it before dropping); an older `caption.txt` with CAPTION and HASHTAGS sections posts those two sections. Dropping is the approval. Greg's own setup: it needs his Metricool account and the hourly task, so the installer does not create it.

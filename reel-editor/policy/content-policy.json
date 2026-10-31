@@ -1,0 +1,86 @@
+{
+  "version": "2026-10-31",
+  "owner": "Greg Pingel (@officialgregpingel)",
+  "about": "The one rule book for what may never appear in Greg's posts (Greg 2026-10-31, 'Start the Now list'). Read by the reel caption gate (src/publish-folder.mjs), the slide gate (src/slide-preflight.mjs, Greg's brand only), `reel policy` (the content engine checks every caption with it before scheduling) and anything else that writes as Greg. Client brands keep their own never-say lists in their brand files. Change a rule here, not in code.",
+  "handles": [
+    "@officialgregpingel"
+  ],
+  "rules": [
+    {
+      "id": "ghost-pl",
+      "reason": "it mentions the Ghost P&L",
+      "patterns": [
+        "\\bghost\\s*(p\\s*(&|and|n)?\\s*l|pnl|p\\.l\\.)",
+        "\\bcomment\\s+[\"'“]?ghost\\b"
+      ],
+      "slides": false,
+      "source": "Greg 2026-10-17 'dont talk about ghost PnL'; brand guide v10"
+    },
+    {
+      "id": "wife",
+      "reason": "it mentions his wife",
+      "patterns": [
+        "(?<!(talk|talking|speak|check|run it by|run this by|ask|asking|discuss it with|discuss this with) (to |with )?)\\b(my wife|my mrs|my missus)\\b(?![^\"“”]*[\"”] (he|she|they) (said|says|told))",
+        "\\bmaria\\b"
+      ],
+      "slides": true,
+      "source": "Greg 2026-10-20",
+      "note": "Greg's own wife only: a prospect's spouse objection (\"Let me talk to my wife\") is fine."
+    },
+    {
+      "id": "retired-framework",
+      "reason": "it uses a retired v9 framework name",
+      "patterns": [
+        "\\b(five rooms|wrong scoreboard|closer line|defend\\s*/\\s*decide|a\\.c\\.r\\.a\\.?|six leaks)\\b"
+      ],
+      "slides": true,
+      "source": "brand guide v10, 2026-10-29"
+    },
+    {
+      "id": "retired-keyword",
+      "reason": "it asks for a retired keyword (GHOST, SCALE, LEAKS or FREEDOM)",
+      "patterns": [
+        "\\b(comment|dm|type|text|send|reply)\\s+(me\\s+)?(with\\s+)?(the\\s+word\\s+)?[\"'“]?(ghost|scale|leaks|freedom)\\b"
+      ],
+      "slides": true,
+      "source": "brand guide v10"
+    },
+    {
+      "id": "hiring-portal",
+      "reason": "it mentions the hiring portal",
+      "patterns": [
+        "\\bhiring\\s+portal\\b"
+      ],
+      "slides": true,
+      "source": "Greg 2026-10-29: the hiring portal never appears in content"
+    },
+    {
+      "id": "income-claim",
+      "reason": "it makes an income claim",
+      "patterns": [
+        "\\b(six|seven|eight|6|7|8)[\\s-]figures?\\b",
+        "\\$\\s?\\d[\\d,.]*\\s?k?\\s*(a|per|/)\\s*(month|mo|year|yr)\\b",
+        "\\b(made|make|making|earned|earn)\\s+\\$\\s?\\d"
+      ],
+      "slides": true,
+      "source": "brand guide v10 proof rules: no income or dollar outcome claims"
+    },
+    {
+      "id": "dash",
+      "reason": "it uses a dash",
+      "patterns": [
+        "[—–]",
+        "\\s-\\s"
+      ],
+      "slides": false,
+      "source": "Greg's voice: no dashes in copy written as him (slides have their own copy-dash check)"
+    }
+  ],
+  "standing": [
+    "Real photos and footage of Greg only; AI images only as labeled B-roll, never a recognisable person or a face.",
+    "No invented numbers, quotes, testimonials or client names.",
+    "AI is never the hook, the title or the call to action.",
+    "One ask per post at most. Comment-keyword asks only once something answers those comments automatically.",
+    "Cadence, slots and caption endings: ~/automation/ig-content/RUNBOOK.md (step 3 WEEKLY PLAN, step 6)."
+  ]
+}
