@@ -30,6 +30,44 @@ export function waitingClips(dir, seen = {}, { now = Date.now(), settle = 60000 
   }).filter((c) => !seen[c.key] && now - c.mtimeMs >= settle).sort((a, b) => a.mtimeMs - b.mtimeMs);
 }
 
+/**
+ * Publish: finished reels to post as they are (Greg's own Publish folder, for a client). A reel folder (the video and
+ * its caption.txt, as the drop folders make it) or a loose video, settled for a minute, moves into the delivered
+ * folder; the run then files and schedules it like an edited Raw Reels clip. A loose video's caption is a .txt with
+ * the same name next to it; without one the reel goes in as a draft.
+ */
+export function takePublished(dir, delivered, { now = Date.now(), settle = 60000 } = {}) {
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => !n.startsWith(".")); } catch { return []; }
+  const newest = (p) => {
+    const st = fs.statSync(p);
+    if (!st.isDirectory()) return st.mtimeMs;
+    return Math.max(st.mtimeMs, ...fs.readdirSync(p).map((f) => { try { return fs.statSync(path.join(p, f)).mtimeMs; } catch { return 0; } }));
+  };
+  const moved = [];
+  for (const n of names) {
+    const from = path.join(dir, n);
+    let st;
+    try { st = fs.statSync(from); } catch { continue; }
+    const folder = st.isDirectory();
+    if (folder ? !fs.readdirSync(from).some((f) => VIDEO.test(f)) : !VIDEO.test(n)) continue;
+    if (now - newest(from) < settle) continue;
+    const name = folder ? n : n.replace(VIDEO, "");
+    let to = path.join(delivered, name);
+    for (let k = 2; fs.existsSync(to); k++) to = path.join(delivered, `${name} ${k}`);
+    ensureDir(delivered);
+    if (folder) fs.renameSync(from, to);
+    else {
+      ensureDir(to);
+      fs.renameSync(from, path.join(to, n));
+      const cap = path.join(dir, `${name}.txt`);
+      if (fs.existsSync(cap)) fs.renameSync(cap, path.join(to, "caption.txt"));
+    }
+    moved.push(to);
+  }
+  return moved;
+}
+
 /** The environment the reel job runs with: everything the client's, nothing from Greg's defaults. */
 export function reelEnv(studio, { sandcastles = false } = {}) {
   const p = studio.paths;
@@ -117,6 +155,11 @@ export async function runReels(dir, { now = new Date(), deps = {} } = {}) {
   // Only folders with a video are reels: the editor also keeps its cover history (covers/history.json) here.
   const hasVideo = (d) => { try { return fs.statSync(d).isDirectory() && fs.readdirSync(d).some((f) => VIDEO.test(f)); } catch { return false; } };
   const waitingReels = () => { try { return fs.readdirSync(delivered).filter((d) => !d.startsWith(".")).map((d) => path.join(delivered, d)).filter(hasVideo); } catch { return []; } };
+  // Finished reels dropped in Publish join the edited ones waiting to be filed and scheduled.
+  // A studio made before Publish existed gets the folder on its next run.
+  if (studio.paths.publish) ensureDir(studio.paths.publish);
+  const published = studio.paths.publish ? takePublished(studio.paths.publish, delivered, { now: now.getTime() }) : [];
+  if (published.length) studioLog(studio.paths, `publish: ${published.map((p) => path.basename(p)).join(", ")}`);
   if (!clips.length && !waitingReels().length) return [];
   const release = takeLock(studio.paths, "reels");
   if (!release) { log("studio: another run is going; the reel waits for the next one"); return []; }

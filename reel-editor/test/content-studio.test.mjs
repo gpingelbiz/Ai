@@ -11,7 +11,7 @@ import { connectorPrefix, parseConnectors, zonedISO, postInput, normalizeSchedul
 import { driveLink, dropboxDirect, fileServer } from "../src/studio-host.mjs";
 import { openSlots, retryable, madeName, zonedNow, addDays, runDaily, proofScreenshots } from "../src/daily.mjs";
 import { runStudioPreflight, preflightProblems } from "../src/studio-preflight.mjs";
-import { waitingClips, reelSlot, normalizeBestTimes, reelEnv } from "../src/studio-reels.mjs";
+import { waitingClips, reelSlot, normalizeBestTimes, reelEnv, takePublished } from "../src/studio-reels.mjs";
 import { agentSlug, studioAgents } from "../src/studio-cli.mjs";
 import { personalizeStartHere, stripStudio } from "../src/brandkit.mjs";
 import { legacyHeadSize, slideHTML } from "../src/slides.mjs";
@@ -635,6 +635,7 @@ test("agents: a daily run every morning and a Raw Reels watcher, both on this st
   assert.match(daily.plist, /\/Users\/x\/\.local\/bin/);
   assert.match(reels.plist, /<key>WatchPaths<\/key><array><string>\/Users\/x\/Content Studio\/Raw Reels<\/string>/);
   assert.match(reels.plist, /<string>studio<\/string><string>reels<\/string>/);
+  assert.match(reels.plist, /<string>\/Users\/x\/Content Studio\/Publish<\/string>/, "a drop in Publish wakes it too");
 });
 
 test("agents: a client's studio on Greg's Mac is named after the client folder, so two studios never share a label", () => {
@@ -778,4 +779,54 @@ test("reels: reels.trial posts every reel as a Trial Reel; the studio checks it 
 test("preflightProblems turns the shared check's 1-based slide numbers into the kit's 0-based indexes", () => {
   const result = { verdict: "retry", slides: [{ index: 1, file: "01.png", problems: [{ code: "ocr-handle", message: "handle", fix: "recrop" }] }, { index: 0, file: "", problems: [{ code: "spec-empty", message: "empty", fix: "none" }] }], photoHashes: [] };
   assert.deepEqual(preflightProblems(result).map((problem) => problem.index), [0, -1]);
+});
+
+test("publish: a finished reel folder or a loose video with its caption is scheduled as it is; unsettled drops wait", async () => {
+  const dir = sampleCopy({ timezone: "America/Phoenix", publish: { mode: "schedule" } });
+  const s = loadStudio(dir);
+  fs.mkdirSync(s.paths.publish, { recursive: true });
+  const old = new Date(Date.now() - 600000);
+  const reel = path.join(s.paths.publish, "2026-10-31 Reel 3");
+  fs.mkdirSync(reel);
+  fs.writeFileSync(path.join(reel, "Ask for the sale.mp4"), "mp4");
+  fs.writeFileSync(path.join(reel, "caption.txt"), "Ask for the sale.");
+  for (const f of ["Ask for the sale.mp4", "caption.txt"]) fs.utimesSync(path.join(reel, f), old, old);
+  fs.utimesSync(reel, old, old);
+  fs.writeFileSync(path.join(s.paths.publish, "loose.mov"), "mov");
+  fs.writeFileSync(path.join(s.paths.publish, "loose.txt"), "Loose caption.");
+  fs.utimesSync(path.join(s.paths.publish, "loose.mov"), old, old);
+  fs.writeFileSync(path.join(s.paths.publish, "fresh.mp4"), "still copying");
+  fs.utimesSync(path.join(s.paths.publish, "fresh.mp4"), NOW, NOW);
+  fs.writeFileSync(path.join(s.paths.publish, "notes.txt"), "not a reel");
+  const created = [];
+  const deps = {
+    scheduledPosts: async () => [],
+    bestTimes: async () => ({ data: [] }),
+    hostFiles: async (files) => ({ urls: files.map(() => "https://host/v.mp4"), close: async () => {} }),
+    createPost: async (connector, input) => { created.push(JSON.parse(input.info)); return { plannerUrl: "", id: created.length }; },
+    editClip: async () => { throw new Error("published reels are never edited again"); },
+  };
+  const { runReels } = await import("../src/studio-reels.mjs");
+  const r = await runReels(dir, { now: NOW, deps });
+  assert.deepEqual(r.map((x) => x.status).sort(), ["scheduled", "scheduled"]);
+  const older = sampleCopy({ timezone: "America/Phoenix", publish: { mode: "schedule" } });
+  await runReels(older, { now: NOW, deps });
+  assert.ok(fs.existsSync(loadStudio(older).paths.publish), "a studio made before Publish gets the folder on its next run");
+  assert.deepEqual(created.map((c) => c.text).sort(), ["Ask for the sale.", "Loose caption."]);
+  assert.deepEqual(fs.readdirSync(s.paths.publish).sort(), ["fresh.mp4", "notes.txt"], "the copy still settling and the note stay");
+  const T = fs.mkdtempSync(path.join(os.tmpdir(), "reel-publish-"));
+  fs.writeFileSync(path.join(T, "a.mp4"), "x");
+  assert.deepEqual(takePublished(T, path.join(T, "out"), { now: Date.now() }), [], "a minute to settle");
+  fs.rmSync(T, { recursive: true, force: true });
+});
+
+test("kit: a Content Studio kit names its own installer everywhere and links to the music source", () => {
+  const html = fs.readFileSync(new URL("../kit/Start Here.html", import.meta.url), "utf8");
+  const studio = personalizeStartHere(html, { name: "Jane Doe", colors: { text: "#FFFFFF", accent: "#E94B8A" } }, { studio: true });
+  assert.doesNotMatch(studio, /Install Reel Editor\.command/);
+  assert.match(studio, /href="https:\/\/www\.epidemicsound\.com\/pricing\/"/);
+  assert.match(studio, /<td>Publish<\/td>/);
+  const plain = personalizeStartHere(html, { name: "Jane Doe", colors: { text: "#FFFFFF", accent: "#E94B8A" } });
+  assert.match(plain, /Install Reel Editor\.command/);
+  assert.doesNotMatch(plain, /<td>Publish<\/td>/, "the Publish folder is a Content Studio piece");
 });

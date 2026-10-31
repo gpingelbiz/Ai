@@ -251,9 +251,10 @@ if [ "$WATCH" = y ]; then
   [ -e "$D/Raw - Full YouTube Edit" ] || ln -s "$HOME/Reels/raw-youtube" "$D/Raw - Full YouTube Edit"
   [ -e "$D/Raw - Reel with Runway B-roll" ] || ln -s "$HOME/Reels/raw-runway" "$D/Raw - Reel with Runway B-roll"
   [ -e "$D/Music" ] || ln -s "$HOME/Reels/music" "$D/Music"
-  [ -e "$HOME/Reels/music/Put music here.txt" ] || printf 'Drop licensed music files here (mp3, m4a or wav), for example Epidemic Sound downloads.\nEvery reel gets one at random, low under your voice. Name a clip "...#music:calm.mov" to use the track whose name has "calm", or "...#nomusic.mov" for none.\n' > "$HOME/Reels/music/Put music here.txt"
+  # Their music is their own: the folder gets a note and clickable links to where Greg's comes from (src/music-source.mjs).
+  node --input-type=module -e 'const [mod, dir] = process.argv.slice(1); import(mod).then((m) => m.setUpMusicFolder(dir))' "$APP/src/music-source.mjs" "$HOME/Reels/music" >/dev/null 2>&1 || true
   REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh" >/dev/null
-  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit (music from Desktop/Reels/Music)"
+  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit, Raw - Reel with Runway B-roll (music from Desktop/Reels/Music: links to Epidemic Sound inside)"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it

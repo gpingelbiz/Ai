@@ -33,6 +33,7 @@ export function studioPaths(dir) {
     config: path.join(root, "studio.json"),
     photos: path.join(root, "Photos"),
     rawReels: path.join(root, "Raw Reels"),
+    publish: path.join(root, "Publish"),
     made: path.join(root, "Made"),
     brand,
     brandJson: path.join(brand, "brand.json"),
@@ -263,7 +264,7 @@ export function takeLock(paths, name = "run") {
 /** A new studio folder: the subfolders, studio.json (kept when present) and the brand files copied from `brandFrom`. */
 export function initStudio(dir, { config = {}, brandFrom = null } = {}) {
   const paths = studioPaths(dir);
-  for (const d of [paths.root, paths.rawReels, paths.made, paths.brand, paths.state]) ensureDir(d);
+  for (const d of [paths.root, paths.rawReels, paths.publish, paths.made, paths.brand, paths.state]) ensureDir(d);
   if (brandFrom) {
     for (const f of ["brand.json", "voice.md", "brand-guide.md", "my-brand.json", "my-youtube.json", "dictionary.json"]) {
       const src = path.join(brandFrom, f);
