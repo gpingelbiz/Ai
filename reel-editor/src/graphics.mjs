@@ -384,8 +384,8 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
 }
 
 /** Caption lines a card may start on: after the hook, with room before the end and the CTA. */
-export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail = 1.5, longest = 8 } = {}) {
-  const from = hook ? hook.start + hook.duration + lead : 3;
+export function sceneCandidates(groups, duration, { hook, cta, lead = 0.5, tail = 1.5, longest = 8, clearStart = 0 } = {}) {
+  const from = Math.max(hook ? hook.start + hook.duration + lead : 3, clearStart || 0);
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   return groups.map((g, i) => ({ i, start: g.start, text: g.text, words: g.words || [] })).filter((c) => c.start >= from && c.start + 2.2 <= until && c.start + Math.min(longest, until - c.start) <= until);
 }
@@ -557,7 +557,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
   const structural = settings.persistent === true || settings.ladder === true;
   if (!max && !structural) { log("graphics: reel too short, skipped"); return []; }
-  const candidates = sceneCandidates(groups, duration, { hook, cta, tail });
+  const candidates = sceneCandidates(groups, duration, { hook, cta, tail, clearStart: settings.clearStart ?? 0 });
   const anchors = groups.map((g, i) => ({ i, start: g.start, text: g.text }));
   const lines = anchors;
   if (!candidates.length) { log("graphics: no room after the hook, skipped"); return []; }

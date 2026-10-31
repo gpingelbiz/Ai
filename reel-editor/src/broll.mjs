@@ -33,8 +33,9 @@ export function brollCount(duration, { max = 3, every = 12 } = {}) {
  * Caption lines a cutaway may start on: after the hook, with room to finish before the end and the CTA, and
  * at least `clear` seconds away from anything already cut in (`busy`: the graphic cards).
  */
-export function brollCandidates(groups, duration, { hook, cta, len = 2.4, lead = 0.5, tail = 1, busy = [], clear = 1.5 } = {}) {
-  const from = hook ? hook.start + hook.duration + lead : 2.5;
+export function brollCandidates(groups, duration, { hook, cta, len = 2.4, lead = 0.5, tail = 1, busy = [], clear = 1.5, clearStart = 0 } = {}) {
+  // clearStart: nothing cuts away from the speaker before this second (the one-take look keeps the face up front).
+  const from = Math.max(hook ? hook.start + hook.duration + lead : 2.5, clearStart || 0);
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   return groups
     .map((g, i) => ({ i, start: g.start, text: g.text }))
@@ -140,7 +141,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   // With graphic cards in the reel, photos are an accent: fewer of them, in the gaps.
   const max = brollCount(duration, { max: busy.length ? settings.maxWithGraphics ?? 2 : settings.max ?? 3, every: settings.every ?? 12 });
   if (!max) { log("b-roll: reel too short, skipped"); return []; }
-  const candidates = brollCandidates(groups, duration, { hook, cta, len, busy, tail });
+  const candidates = brollCandidates(groups, duration, { hook, cta, len, busy, tail, clearStart: settings.clearStart ?? 0 });
   if (!candidates.length) { log("b-roll: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
 
