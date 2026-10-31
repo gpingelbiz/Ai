@@ -231,7 +231,7 @@ export const stripStudio = (html) => String(html).replace(/[ \t]*<!-- studio -->
 export function personalizeStartHere(html, b, { studio = false } = {}) {
   const who = studio ? `${b.name}'s Content Studio` : `${b.name}'s Reel Editor`;
   const page = studio
-    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/Double-click <b>Install Reel Editor\.command<\/b> in this folder/, "Double-click <b>Install Content Studio.command</b> in this folder")
+    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/<b>Install Reel Editor\.command<\/b>/g, "<b>Install Content Studio.command</b>")
     : stripStudio(html);
   return page
     .replace(/<title>Reel Editor: Start Here<\/title>/, `<title>${esc(who)}: Start Here</title>`)

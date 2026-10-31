@@ -96,3 +96,52 @@ test("client b-roll comes from the client's world, with a scene history of its o
   assert.equal(recentFile({ REEL_CACHE: "/c/jane" }), "/c/jane/broll-recent.json");
   assert.match(recentFile({}), /\.cache\/reel-editor\/broll-recent\.json$/);
 });
+
+test("client add: a new client gets your folders, a Content Studio with Publish, and a music folder pointing to Epidemic Sound, never Greg's tracks", () => {
+  const T = fs.mkdtempSync(path.join(os.tmpdir(), "reel-client-add-"));
+  const env = { ...process.env, REEL_CLIENTS: path.join(T, "clients"), REEL_CLIENTS_DESKTOP: path.join(T, "Desktop") };
+  const file = path.join(T, "brand.json");
+  fs.writeFileSync(file, JSON.stringify(brand));
+  const guide = path.join(T, "guide.md");
+  fs.writeFileSync(guide, "# Jane's guide\n");
+  const add = (...extra) => spawnSync(process.execPath, [new URL("../scripts/client.mjs", import.meta.url).pathname, "add", file, "--no-agent", ...extra], { env, encoding: "utf8" });
+  const r = add("--guide", guide);
+  assert.equal(r.status, 0, r.stderr);
+  const p = clientPaths(brand, env);
+  const desk = fs.readdirSync(p.desktop).sort();
+  for (const name of ["Content Studio", "Music", "Publish", ...DROP_FOLDERS.map(([, label]) => label)]) assert.ok(desk.includes(name), `Desktop has ${name}`);
+  assert.equal(fs.realpathSync(path.join(p.desktop, "Publish")), fs.realpathSync(path.join(p.studio, "Publish")));
+  const cfg = JSON.parse(fs.readFileSync(path.join(p.studio, "studio.json"), "utf8"));
+  assert.deepEqual([cfg.client, cfg.publish.mode, cfg.slots.length, cfg.metricool.blogId], ["Jane Doe", "off", 0, ""], "posting stays off until their brand is picked");
+  assert.match(cfg._how, /Publish: drop a finished reel/);
+  assert.equal(fs.readlinkSync(path.join(p.studio, "brand", "my-brand.json")), p.preset, "the studio's look is a link to the client's preset");
+  assert.equal(fs.readFileSync(path.join(p.studio, "brand", "brand-guide.md"), "utf8"), "# Jane's guide\n");
+  const music = fs.readdirSync(p.music).sort();
+  assert.deepEqual(music, ["Epidemic Sound plans.webloc", "Get music (Epidemic Sound).webloc", "Put music here.txt"], "no tracks of Greg's, just the note and the links");
+  assert.match(fs.readFileSync(path.join(p.music, "Epidemic Sound plans.webloc"), "utf8"), /<string>https:\/\/www\.epidemicsound\.com\/pricing\/<\/string>/);
+  // A second run keeps the studio's settings and the client's own tracks.
+  fs.writeFileSync(path.join(p.studio, "studio.json"), JSON.stringify({ ...cfg, publish: { mode: "draft" } }));
+  fs.writeFileSync(path.join(p.music, "Lofi - Mine - Jane.mp3"), "x");
+  assert.equal(add().status, 0);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(p.studio, "studio.json"), "utf8")).publish.mode, "draft");
+  assert.ok(fs.existsSync(path.join(p.music, "Lofi - Mine - Jane.mp3")));
+  fs.rmSync(T, { recursive: true, force: true });
+});
+
+test("music folder: the note and links never replace a note or tracks of their own; the picker skips them", async () => {
+  const { setUpMusicFolder, musicNote, MUSIC_SOURCE } = await import("../src/music-source.mjs");
+  const { listTracks } = await import("../src/music.mjs");
+  const T = fs.mkdtempSync(path.join(os.tmpdir(), "reel-music-"));
+  assert.deepEqual(setUpMusicFolder(T), ["Put music here.txt", "Get music (Epidemic Sound).webloc", "Epidemic Sound plans.webloc"]);
+  assert.match(musicNote(), new RegExp(MUSIC_SOURCE.plans.replace(/[./]/g, "\\$&")));
+  assert.deepEqual(setUpMusicFolder(T), [], "nothing is rewritten");
+  fs.writeFileSync(path.join(T, "Put music here.txt"), "My own note");
+  setUpMusicFolder(T);
+  assert.equal(fs.readFileSync(path.join(T, "Put music here.txt"), "utf8"), "My own note");
+  fs.writeFileSync(path.join(T, "Put music here.txt"), "Drop licensed music files here (mp3, m4a or wav), for example Epidemic Sound downloads.\nold");
+  setUpMusicFolder(T);
+  assert.match(fs.readFileSync(path.join(T, "Put music here.txt"), "utf8"), /Where Greg's music comes from: Epidemic Sound/, "the installer's old note is replaced");
+  fs.writeFileSync(path.join(T, "Signature Piano - Home - Jane.mp3"), "x");
+  assert.deepEqual(listTracks(T).map((t) => t.name), ["Signature Piano - Home - Jane.mp3"]);
+  fs.rmSync(T, { recursive: true, force: true });
+});

@@ -5,7 +5,8 @@ import { kitSlug } from "./brandkit.mjs";
 /**
  * Clients on this Mac: Greg's team edits a client's footage here, in the client's brand. Each client is a Reels
  * root of its own (~/Reels/clients/<slug>) with the same six drop folders, its own work files, log, music, look
- * history and word list, and its finished reels in ~/Desktop/Reels/Clients/<Name>. Nothing of Greg's brand (his
+ * history and word list, a Content Studio whose Publish folder posts finished reels into the client's Metricool brand
+ * (posting off until Greg picks that brand), and its finished reels in ~/Desktop/Reels/Clients/<Name>. Nothing of Greg's brand (his
  * colors, @handle, voice, frameworks, Greg card look, Sandcastles watchlist, CTA) reaches a client's reel.
  */
 
@@ -38,6 +39,7 @@ export function clientPaths(brand, env = process.env) {
     brand: path.join(root, "brand.json"),
     env: path.join(root, "client.env"),
     music: path.join(root, "music"),
+    studio: path.join(root, "Content Studio"),
     cache: path.join(root, "cache"),
     fonts: path.join(root, "fonts"),
     drops: DROP_FOLDERS.map(([dir, label]) => ({ dir: path.join(root, dir), label })),

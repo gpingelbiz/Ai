@@ -223,6 +223,10 @@ async function main() {
   // The shortcut is for the standard folder only; a studio set up somewhere else (a test, a second client) gets none.
   if (root === path.join(HOME, "Content Studio") && !fs.existsSync(link)) { try { fs.symlinkSync(root, link); ok("Desktop shortcut: Content Studio"); } catch {} }
   ok(`studio.json written in ${root}`);
+  // Publish: drop a finished reel and it is scheduled as it is (Greg's Publish folder, for them), next to the Raw folders.
+  const reelsDesk = path.join(HOME, "Desktop", "Reels");
+  const pub = path.join(reelsDesk, "Publish");
+  if (root === path.join(HOME, "Content Studio") && fs.existsSync(reelsDesk)) { try { fs.lstatSync(pub); } catch { try { fs.symlinkSync(studioPaths(root).publish, pub); ok("Desktop shortcut: Reels/Publish"); } catch {} } }
   if (!flag("--no-agents")) for (const line of installAgents(root)) ok(line);
   if (!flag("--no-first-post") && publishMode !== "off" && !readPosts(paths).length) {
     const go = await ask("Make the first post now, to see it work? [Y/n]:", "y");

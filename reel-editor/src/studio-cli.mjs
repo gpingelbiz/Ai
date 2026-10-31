@@ -93,7 +93,7 @@ export function agentSlug(root, home = os.homedir()) {
   return base === "content-studio" && parent !== path.resolve(home) && slugOf(path.basename(parent)) ? slugOf(path.basename(parent)) : base;
 }
 
-/** The two launchd agents: the daily run (every morning) and the Raw Reels watcher (on every drop, and hourly). */
+/** The two launchd agents: the daily run (every morning) and the Raw Reels and Publish watcher (on every drop, and hourly). */
 export function studioAgents(root, { node = process.execPath, hour = 6, minute = 7, home = os.homedir() } = {}) {
   const slugged = agentSlug(root, home);
   const bin = path.join(PKG_ROOT, "bin", "reel.mjs");
@@ -119,7 +119,7 @@ ${extra}
 `;
   return [
     { label: `com.pingel.content-studio.daily.${slugged}`, plist: plist({ label: `com.pingel.content-studio.daily.${slugged}`, args: [node, bin, "daily", "--studio", root], extra: `  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>${hour}</integer><key>Minute</key><integer>${minute}</integer></dict>\n  <key>RunAtLoad</key><false/>` }) },
-    { label: `com.pingel.content-studio.reels.${slugged}`, plist: plist({ label: `com.pingel.content-studio.reels.${slugged}`, args: [node, bin, "studio", "reels", "--studio", root], extra: `  <key>WatchPaths</key><array><string>${xml(path.join(root, "Raw Reels"))}</string></array>\n  <key>StartInterval</key><integer>3600</integer>\n  <key>ThrottleInterval</key><integer>60</integer>\n  <key>RunAtLoad</key><false/>` }) },
+    { label: `com.pingel.content-studio.reels.${slugged}`, plist: plist({ label: `com.pingel.content-studio.reels.${slugged}`, args: [node, bin, "studio", "reels", "--studio", root], extra: `  <key>WatchPaths</key><array><string>${xml(path.join(root, "Raw Reels"))}</string><string>${xml(path.join(root, "Publish"))}</string></array>\n  <key>StartInterval</key><integer>3600</integer>\n  <key>ThrottleInterval</key><integer>60</integer>\n  <key>RunAtLoad</key><false/>` }) },
   ];
 }
 
