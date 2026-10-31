@@ -4,6 +4,9 @@ import path from "node:path";
 import { PKG_ROOT, slug } from "./util.mjs";
 import { LOOKS, LOOK_IDS } from "./looks.mjs";
 import { upgradeBrandV1 } from "./brandtokens.mjs";
+import { deepMerge, readJSON } from "./util.mjs";
+import { resolveBrandTokens } from "./brandtokens.mjs";
+import { assertNoGreg } from "./speaker-intake.mjs";
 
 /**
  * Brand kits: one brand file (kit/brand-template.json) becomes a Reel Editor Kit zip for someone else, with their
@@ -127,6 +130,31 @@ export function youtubePreset(b, { fonts = {} } = {}) {
     carousel: { handle: identity.handle || "" },
     lowerThird: { name: identity.name, handle: identity.handle || "" },
   };
+}
+
+/** A resolved speaker preset: reuse client YouTube tokens without inheriting its personal preset. */
+export function speakerPreset(b, { fonts = {} } = {}) {
+  assertNoGreg(b, "brand");
+  const name = b?.schemaVersion === 2 ? b.identity?.name : b?.name;
+  if (!String(name || "").trim()) throw new Error("speaker brand: name is missing");
+  for (const role of ["display", "body"]) {
+    const font = b.schemaVersion === 2 ? b.type?.[role] : b.fonts?.[role];
+    if (!(typeof font === "string" ? font.trim() : font && (font.family || font.file))) throw new Error(`speaker brand: ${role} font is missing`);
+  }
+  const client = youtubePreset(b, { fonts });
+  delete client.extends;
+  const neutral = readJSON(path.join(PKG_ROOT, "presets", "speaker.json"));
+  const preset = deepMerge(deepMerge(readJSON(path.join(PKG_ROOT, "presets", "_defaults.json")), client), neutral);
+  preset.name = `brand-${kitSlug(b)}-speaker`;
+  preset.brandFile = null;
+  preset.brand = resolveBrandTokens({ preset, brand: b });
+  preset.colors = client.colors;
+  preset.lowerThird = { ...preset.lowerThird, name, handle: preset.brand.identity?.handle || "" };
+  preset.fonts = fonts.display || fonts.body ? { ...fonts } : {
+    display: preset.brand.type.display.file || preset.brand.type.display.family,
+    body: preset.brand.type.body.file || preset.brand.type.body.family,
+  };
+  return assertNoGreg(preset, "speaker preset");
 }
 
 /** Their word list: their terms and names; the generic power words stay, Greg's frameworks and fixes do not. */
