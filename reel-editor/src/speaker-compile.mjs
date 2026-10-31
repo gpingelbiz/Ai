@@ -164,7 +164,7 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     }
   }
   if (plan.music) {
-    if (!(manifest.music || []).some((m) => m.file === plan.music.file && String(m.license || "").trim())) add("music", "track must be listed with a licence in manifest.music");
+    if (!(manifest.music || []).some((m) => m.file === plan.music.file && String(m.license || "").trim())) add("music", "track must be listed with a licence in manifest.music; draft music skipped", draft ? "warn" : "error");
     if (!Array.isArray(plan.music.sections)) add("music", "music.sections must be an array");
     for (const s of Array.isArray(plan.music.sections) ? plan.music.sections : []) {
       if (!s || typeof s !== "object") { add("music", "music sections must be objects"); continue; }

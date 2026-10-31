@@ -84,8 +84,8 @@ export function validateManifest(folder, manifest) {
     permission(p);
   }
   for (const [i, track] of collections.music.entries()) {
-    file(`music-${i}`, track.file);
-    if (!String(track.license || "").trim()) add(`music-${i}`, "music licence is missing");
+    try { assetPath(folder, track.file); } catch (e) { add(`music-${i}`, e.message, "warn"); }
+    if (!String(track.license || "").trim()) add(`music-${i}`, "music licence is missing; draft music will be skipped", "warn");
   }
   return problems;
 }

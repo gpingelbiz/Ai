@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { readJSON, writeJSON } from "./util.mjs";
+import { licensedMusic } from "./speaker-music.mjs";
 import { speakerQC, writeQC, planDuration, identityProblems, rightsChecks } from "./speaker-qc.mjs";
 
 function safePart(value, label) {
@@ -73,6 +74,7 @@ export function registerReview(folder, version, { planPath, revision, files }) {
     const current = snapshot(folder, next);
     if (current.planHash !== next.approval.planHash || canonical(current.hashes) !== canonical(next.approval.hashes)) invalidate(next, "Review package changed; a new approval is required");
   } else if (next.state === "revision" || next.state === "revised") next.state = "revised";
+  next.reviewInputHashes = snapshot(folder, next).hashes;
   return save(folder, store, next);
 }
 
@@ -91,6 +93,7 @@ export function recordRevision(folder, version, comments, problems = []) {
 
 async function checkFiles(folder, entry, final, qc) {
   const plan = readJSON(path.resolve(folder, entry.planPath)), manifest = readJSON(path.join(folder, "speaker-manifest.json"));
+  if (final) licensedMusic(folder, plan, manifest, { final: true });
   const videos = entry.files.filter((f) => f.kind === "video" && f.delivery);
   if (!videos.length) throw new Error(`speaker ${entry.version}: no reviewed delivery video`);
   const captions = Object.fromEntries(entry.files.filter((f) => ["srt", "vtt"].includes(f.kind)).map((f) => [f.kind, path.resolve(folder, f.path)]));
@@ -116,6 +119,7 @@ export async function approve(folder, version, { by, at, qc = speakerQC } = {}) 
   const beforeStateHash = planHash(entry);
   const before = snapshot(folder, entry);
   if (before.planHash !== entry.reviewPlanHash) throw new Error(`speaker ${version}: plan changed since review; build a new review before approval`);
+  if (entry.reviewInputHashes && canonical(before.hashes) !== canonical(entry.reviewInputHashes)) throw new Error(`speaker ${version}: inputs changed since review; build a new review before approval`);
   await checkFiles(folder, entry, false, qc);
   const after = snapshot(folder, entry);
   if (canonical(before) !== canonical(after)) throw new Error(`speaker ${version}: files changed during approval`);

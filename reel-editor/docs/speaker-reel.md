@@ -1,46 +1,130 @@
 # Client speaker reels
 
-`reel speaker` assembles a landscape speaker reel from several real recordings. Event planners and speaker bureaus watch it to assess a speaker. The usual full version is 3 to 3.5 minutes. The operator chooses the excerpts in an editable plan; the compiler never invents dialogue or automatically picks clips.
+`reel speaker` builds a landscape client speaker reel from several real recordings, with client cards, optional captions, licensed section music, QC, review and approval. The full starter targets 210 seconds; short and teaser target 60 and 30 seconds. These are budgets, not compulsory runtimes. Complete passages stay intact, and unsupported sections are omitted with a note.
 
-This is a separate path from `reel edit`, `clips`, and `youtube`. It never touches Publish, Content Studio, Metricool, or posting code. Compilation creates working material. Client approval and final delivery belong to the review/delivery integration.
+This path never touches Publish, Content Studio, Metricool or posting code. Final delivery copies the exact approved bytes.
+
+## Operator workflow: empty folder to delivery
+
+Run commands from the reel-editor repository with Node 22, ffmpeg and the existing transcription/Claude tools available. `node bin/reel.mjs` can replace `reel` in every command. The sandbox cannot run Chrome; production draft rendering needs the normal Mac/HyperFrames environment.
+
+### 1. Create the client and import originals
+
+Desktop setup creates an empty client folder, a manifest skeleton and five numbered Desktop shortcuts, and installs the separate draft watcher:
+
+```bash
+node scripts/speaker-client.mjs add "Julee Gracey" --slug julee-gracey --brand "/Users/gregpingel/Clients/Julee Gracey/brand.json"
+client="$HOME/Reels/speaker-clients/julee-gracey"
+```
+
+Drop originals into `Desktop/Reels/Speaker Reels/Julee Gracey/1 Drop footage here`; testimonials, logos, press and book covers into `2 Drop proof here`; licensed tracks into `3 Music`. For a supplied archive, import without changing originals:
+
+```bash
+bash scripts/speaker-import.sh "/path/to/client-footage.zip" "$client"
+# Or use the client's Dropbox shared folder link as the first argument.
+reel speaker init "$client" --add-new
+```
+
+`add` already created the manifest, so use `--add-new`. For a folder created by hand instead, run `mkdir -p /path/to/client/{footage,proof,music}`, copy originals there and run `reel speaker init /path/to/client` once. Repeated discovery uses `--add-new`. It appends unlisted assets, preserves existing records and never deletes originals.
+
+### 2. Complete identity, brand, proof and permissions
+
+```bash
+open -e "$client/speaker-manifest.json"
+```
+
+Fill in the real role line, booking route, buyer/audience/topics and the exact client brand path. Check source kinds, `audio` intent, event names and dates. Supply testimonial source ranges and the person's name/title/organization. Review guessed logo relationships. Record approved/pending/unknown rights plus evidence for each source and proof item. List each music file with its licence. Confirm the actual client display/body fonts are installed on the render Mac, or supply local font files in the brand's semantic `type.display.file` / `type.body.file` fields. No font download happens here.
+
+Unknown/pending footage may appear only in warned drafts. Unlicensed or missing music is skipped in drafts and refused at final. Resolve permissions **before** the approval draft: changing the manifest later invalidates approval.
+
+### 3. Index and inspect candidates
+
+```bash
+reel speaker index "$client"
+reel speaker reactions "$client"
+reel speaker candidates "$client"
+reel speaker status "$client"
+open -e "$client/work/candidates/all.json"
+```
+
+`index` caches each source transcript and probe facts. `candidates` uses Claude only to choose contiguous word ranges from that cache; code resolves timestamps. It also runs optional original-audio reaction and original-frame shot suggestions. `--source source-id` limits either analysis command. The optional detectors fail open with a log line. Shot observations live beside the index, and reaction scores remain suggestions until an operator verifies them. A reaction is never automatically moved or placed behind another line.
+
+### 4. Create and edit the plan
+
+```bash
+reel speaker plan "$client" --version full
+open -e "$client/work/plans/full.json"
+reel speaker "$client" --version full --plan-only --draft
+```
+
+The starter reserves the highest-ranked complete story/teaching passage for the core, picks a separate one-liner opening, adds manifest title/booking cards, and uses an approved named video testimonial with its name overlay when it fits. Approved attributed quote proof can fill the proof section. It leaves notes for unavailable sections. Verify every passage against the original and edit ranges, order, cards, overlays, cutaways and music by hand. It never pads the runtime or shortens a story to a budget. Full budgets are opening 12, identity 13, proof 20, core 110, room/testimonial 40, close 9 and booking 6 seconds. The name overlay begins with the opening; the final booking card holds at least five seconds.
+
+`--version short` and `--version teaser` create independent plans from original source candidates. A long story cannot be truncated into either; select a shorter complete passage manually if needed. Unfilled sections stay omitted. A plan containing only cards needs usable footage before rendering a real reel.
+
+Existing plans are never overwritten by default. `plan --replan --version full` retains the old file as `full.r<n>.json`, writes a new starter with a later revision, and excludes archives from drafting/status. Ordinary revisions should be manual edits, with `revision` incremented.
+
+### 5. Render, listen and review
+
+```bash
+reel speaker draft "$client" --version full
+open "$client/review/full-r1/index.html"
+```
+
+The printed review-page path is authoritative. Draft runs compile → compose → HyperFrames render → −14 LUFS/−1 dBTP normalization → speaker QC → review. `work/full/draft.mp4` is the finished draft; `base.mp4` is only the plain dialogue assembly. Cards are placed at the resolved absolute output times over the paused deterministic GSAP timeline. Original footage keeps its framing and real sound.
+
+Clean (no burned speech captions) is default. `--captions`, `captions:true`, or `captions:{"enabled":true}` in the plan burns verbatim captions; SRT and VTT are always exported. The review records the actual clean/open variant. Changing caption mode renders a new reviewed file requiring approval.
+
+The Desktop watcher already calls the equivalent flag form:
+
+```bash
+reel speaker "$client" --version full --draft
+```
+
+`--render-only` recompiles from the saved fresh index without ASR; it still renders cards, normalizes, checks and builds review. Without `--version` or `--plan`, the flag form processes every active plan in `work/plans/`. An explicit `--plan path/to/file.json` selects a manual plan. Without `--draft`, compilation requires approved source/proof rights; this is still not approval or delivery.
+
+Watch the complete draft and listen to every join: spelling, names, source context, lip sync, reaction authenticity, branded portrait windows, music masking, readable cards and the booking destination. QC findings and rights warnings are visible in the review; failed QC cannot pass approval. The sheet labels every item, card, overlay and cutaway with source/output times.
+
+### 6. Record one consolidated response and revise
+
+```bash
+touch "$client/review/client-comments.txt"
+open -e "$client/review/client-comments.txt"
+reel speaker comments "$client" --version full "$client/review/client-comments.txt"
+open -e "$client/work/plans/full.json"
+reel speaker draft "$client" --version full --render-only
+open "$client/review/full-r2/index.html"
+```
+
+Save comments such as `FULL-i03: keep the pause` or `0:42 check this word`. Import records the combined response in `review/review.json`; it does not rewrite editorial decisions. Edit the plan yourself, increment `revision` from 1 to 2, and rebuild. Extra comment rounds are retained and flagged as extra scope. Save/close the plan before a manual render to avoid racing the watcher; the watcher serializes its own runs only.
+
+### 7. Record the client's approval and deliver
+
+After the client explicitly approves that exact reviewed file, all rights are approved, and QC passes:
+
+```bash
+reel speaker approve "$client" --version full --by "Julee Gracey"
+reel speaker deliver "$client" --version full
+reel speaker status "$client"
+```
+
+The CLI records the approval time. It never infers client approval. Approval binds resolved plan, rendered files, sidecars, manifest, brand and editable plan. A changed input or reviewed byte requires a new approval. Delivery rechecks rights/music and QC, then copies the approved video variant, SRT, VTT and real-frame poster into `final/` with checksums and `manifest.json`; it never rerenders approved bytes. Repeat planning, drafting, review and approval for each version needed.
 
 ## Client folder
 
 ```text
 <client>/speaker-manifest.json
-<client>/footage/...      any subfolders; original files never modified
-<client>/proof/...        testimonial videos, screenshots, logos, press, book covers
-<client>/music/...        licensed tracks only
-<client>/work/            generated: index/, candidates/, plans/, <version>/
-<client>/review/          generated review pages and warnings
-<client>/final/           approved deliverables only
+<client>/footage/...      originals, any subfolders, never modified
+<client>/proof/...        real testimonials, logos, press, books
+<client>/music/...        licensed tracks
+<client>/work/index/      cached probe/transcript and optional observations
+<client>/work/candidates/ code-resolved candidate ranges
+<client>/work/plans/      editable plans and retained revisions
+<client>/work/<version>/  compilation, composition, draft and QC
+<client>/review/          review pages, warnings and approval state
+<client>/final/           exact approved deliverables
 ```
 
-Paths in JSON are relative to the client folder unless absolute. Relative paths and symlinks must stay inside that folder. Absolute paths explicitly permit external source files. The command never searches for another client's brand or silently picks a backup.
-
-## Commands
-
-```bash
-reel speaker init /path/to/client
-reel speaker init /path/to/client --add-new
-reel speaker index /path/to/client
-reel speaker /path/to/client --plan-only --draft
-reel speaker /path/to/client --version full --draft
-reel speaker /path/to/client --plan work/plans/full.json --draft
-reel speaker /path/to/client --render-only --version full --draft
-```
-
-`init` recursively lists video, audio and image files under footage/ and proof/. It guesses kinds from file and folder names and creates unknown rights records. Images under proof/ become logo, press or book records; testimonial videos also get a source record. Review every guess, then fill in identity, brand, attribution, ranges and permissions. Initialization refuses to overwrite an existing manifest.
-
-`init --add-new` appends only unlisted files, with `new: true` and unknown rights. It prints the number of files added, preserves existing entries exactly, and never removes an entry when a file disappears. `addNewFiles(folder, manifest)` is the watcher's non-writing hook; it returns `{ manifest, added }` without changing its input.
-
-`index` probes every source. Sources with audio `ok` are transcribed once. Optional `--engine`, `--model` and `--language` select the existing transcription engine; defaults are auto, large-v3-turbo and en. No new service or package is installed. Audio marked `none` or `bad` is never transcribed.
-
-Without `--version` or `--plan`, the main command compiles all JSON plans in `work/plans/`, sorted by name. `--version full` selects `work/plans/full.json`. `--plan` names an explicit plan, relative to the client folder or absolute. Manual plans are never overwritten. Missing plans produce an error explaining where to put them.
-
-`--plan-only` probes and validates, then prints item count, roles, runtime, used sources/proof and rights warnings. It makes no transcription or render calls. `--render-only` requires a saved source index, checks source fingerprints and recompiles without transcription. It refuses stale or missing indexes.
-
-`--draft` permits pending and unknown permissions, retaining warnings in the resolved plan and `review/<version>.warnings.json` and `.txt`. Without `--draft`, every used source and proof item must have approved rights. Neither mode is client approval or final delivery.
+Paths in JSON are relative to the client folder unless absolute. Relative paths and symlinks must stay inside that folder. Absolute paths explicitly permit external source files. No fallback client brand is selected.
 
 ## Manifest contract
 
@@ -125,7 +209,7 @@ The client brand file must exist and supply a name, display font and body font. 
 
 `speakerPreset(brand)` reuses the client settings from `youtubePreset(brand)` without inheriting the stock YouTube preset. The neutral `presets/speaker.json` contains no identity or brand-file reference. It sets 1920×1080, 30 fps, speed 1.0, contain framing, and a 1.5× enlargement limit. Cold opens, slams, zoom cadence, random looks, generated B-roll, hooks/re-hooks, end-screen reservation, sign-off trimming, silence cutting, filler removal and bad-take removal are off. Captions are available to later composition but off by default. There are no generated sound effects, stylistic grain or automatic stage white balance.
 
-The safety guard rejects any string value containing “Greg Pingel”, “officialgregpingel” or “pingel”, case-insensitively, in the manifest, plan, brand, resolved tokens or preset. This literal guard also rejects filesystem paths containing those strings: the example's absolute brand path must be replaced with a safe relative path such as `brand.json`, pointing to the client's own brand, before running. No path exception is silently made.
+The shared safety guard rejects “Greg Pingel”, “officialgregpingel” or “pingel” in editorial strings in the manifest, plan, brand, tokens or preset. It masks only the home-directory username in a standalone absolute filesystem path, so `/Users/gregpingel/Clients/Julee Gracey/brand.json` works. Identity in copy or a filename such as `presets/pingel-brand.json` still fails.
 
 Never generate or fake a crowd, applause, face, voice, testimonial, logo, number or quote. Every word on screen must come from the manifest, proof or the speaker's transcript. A real reaction must stay linked to its actual talk and moment. A cutaway never imports its own sound or relocates audience applause. Podcast and webinar footage must retain their honest context.
 
@@ -216,7 +300,7 @@ work/<version>/captions.vtt
 work/<version>/compile/                 normalized temporary clips and dialogue stems
 ```
 
-The command also saves `preset.resolved.json`, `brand.resolved.json`, `brand.css` and `loudness.json`. Generated files stay inside work/ and review/; originals are read-only inputs.
+The command also saves `preset.resolved.json`, `brand.resolved.json`, `brand.css`, base `loudness.json`, the input snapshot `speaker-plan.json`, `composition.json`, `project/index.html` with copied assets, `draft.mp4`, and `qc.json`/`qc.txt`. Generated files stay inside work/ and review/; originals are read-only inputs.
 
 `base.mp4` is 1920×1080, 30 fps CFR, square pixels, yuv420p BT.709 SDR, AAC 48 kHz stereo. Card inserts are plain brand-background frames with silence; actual card graphics are composited later. Each source is rotated, converted from HDR using the existing handling, scaled once and framed separately. PQ uses the existing macOS tone-map pass when available; a fallback emits a review warning. Source excerpts are normalized toward −16 LUFS using measured fixed gain constrained by true peak, without speech denoising. If stereo channels cancel when averaged, the louder channel is selected. Every sound join gets 10 ms fades. PCM intermediates avoid accumulated AAC priming delay. Audio is padded/trimmed to exactly 1600 samples per video frame before concatenation; stream durations are checked per item and at the end.
 
@@ -224,12 +308,12 @@ The command also saves `preset.resolved.json`, `brand.resolved.json`, `brand.css
 
 `plan.resolved.json` preserves source in/out and adds each item's, overlay's and cutaway's startFrame/endFrame, frames, start/end and outputStart/outputEnd in seconds, plus total frames/duration and warnings. SRT and VTT preserve transcript text with two lines of about 32 characters and a 17-character/second reading target. Fast speech is retained verbatim and warned on; captions are never fabricated to satisfy a reading rate.
 
-The compiler uses hard picture cuts and a re-encoded ffmpeg concatenation. No automatic silence cutting, speed ramping, reaction movement or content generation runs. Music sections must reference a licensed manifest track; they are preserved for composition. `base.mp4` contains dialogue only.
+The compiler uses hard picture cuts and a re-encoded ffmpeg concatenation. No automatic silence cutting, speed ramping, reaction movement or content generation runs. `base.mp4` contains dialogue only. Composition prepares the listed licensed music at −16 LUFS, then applies each section's `gainDb` as linear gain with `duckingLane()` over output words. Section endpoints name inclusive items. No sections means a −20 dB default bed on unprotected, non-core items only. Nonempty sections mean silence everywhere outside them. Explicit sections may include protected/core items; those and room/testimonial passages never swell. Other long pauses may rise after a conservative release, with frame-aligned automation and section edge fades. Overlapping music sections fail clearly. Unlicensed/missing draft tracks remain silent with a review warning; final delivery refuses them.
 
 ## Integration boundary and verification
 
 `compileVersion(folder, plan, { manifest, index, preset, tokens, draft, encoder })` returns `{ base, workDir, map, words, resolvedPlan, plan, captions }`. `validatePlan()`, `resolvePlan()`, `planUsage()`, `timelineWords()`, `captionFiles()`, `fitGeometry()` and `safeMonoFilter()` are exported for integration and tests.
 
-`runSpeaker()` orchestrates intake, brand safety, indexing, validation and compilation. Its injected `compose` hook receives `(workDir, resolvedPlan, { preset, tokens })`. The exported `composeSpeaker()` currently returns `{ base }`; the integrator supplies actual card HTML, music, caption burning, HyperFrames rendering, review and final QC. Raw base files are never presented as approved deliverables. No browser rendering is needed for the compiler tests.
+`runSpeaker()` orchestrates brand safety, indexing, validation, compilation, composition, rendering, normalization, QC and review. `composeSpeaker(workDir, resolvedPlan, { manifest, preset, tokens, captions })` writes a dedicated landscape HyperFrames project and returns its paths. It uses `speakerCardsHTML()`/`copyCardAssets()` and client tokensCSS without the general composer's stock font setup. `speakerHTML()`, `speakerMusicLane()`, `licensedMusic()`, `starterPlan()`, `writeStarterPlan()` and `parseSpeakerArgs()` are exported for offline verification. Render/normalize/QC/index/analysis dependencies can be injected; tests never call live ASR/Claude or Chrome.
 
 Run `npm test`. The focused speaker tests use only fake ASR and tiny generated ffmpeg sources. The real compiler fixture includes landscape sine audio, portrait footage, a silent one-second card and a picture-only cutaway, and verifies dimensions, frame rate, colour tags, portrait padding and A/V duration. Chrome/HyperFrames and golden renders require a separate permitted environment. Real footage still needs an operator to verify intelligibility, lip sync, reaction context, spelling, permissions and final client approval.

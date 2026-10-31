@@ -51,6 +51,10 @@ export function rightsChecks(plan, manifest, final = false) {
         message: `${type} ${id}: ${!asset ? "unknown ID" : `${status} rights (${asset.rights || "missing rights reference"})`}` });
     }
   }
+  if (plan.music) {
+    const licensed = (manifest.music || []).some((m) => m.file === plan.music.file && String(m.license || "").trim());
+    checks.push({ code: "music-license", level: licensed ? "pass" : final ? "fail" : "warn", message: licensed ? "music licence recorded" : "music licence missing; draft music skipped" });
+  }
   return checks;
 }
 
@@ -118,6 +122,7 @@ export async function speakerQC(video, { resolvedPlan, manifest, final = false, 
     }
   } catch (error) { add("media", false, `cannot check ${video}: ${error.message}`); }
   checks.push(...rightsChecks(plan, manifest, final));
+  for (const p of plan.composition?.cardProblems || []) checks.push({ code: p.code, level: p.level === "error" ? "fail" : "warn", message: p.message });
   const identity = [...identityProblems(plan, "plan"), ...identityProblems(manifest, "manifest")];
   add("identity", !identity.length, identity.length ? `forbidden Greg identity at ${identity.join(", ")}` : "client identity only");
   const last = [...plan.items].sort((a, b) => outputSpan(a).start - outputSpan(b).start).at(-1);

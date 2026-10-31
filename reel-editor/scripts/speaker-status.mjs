@@ -35,12 +35,19 @@ export function speakerStatus(folder) {
   const sources = manifest.sources || [], proof = manifest.proof || [];
   const index = new Map();
   for (const file of files(path.join(folder, "work/index"))) {
-    for (const row of contractRows(read(file), ["sources", "entries", "index"])) {
+    const value = read(file);
+    if (value?.sources && !Array.isArray(value.sources)) {
+      for (const [id, row] of Object.entries(value.sources)) index.set(id, { ...index.get(id), ...row, id });
+      continue;
+    }
+    for (const row of contractRows(value, ["sources", "entries", "index"])) {
       const id = row.sourceId || row.id || path.basename(file, ".json");
       index.set(id, { ...index.get(id), ...row });
     }
   }
-  const rows = [...index.values()].filter((r) => r.sourceId || r.id || r.duration != null || r.probe);
+  const canonicalSources = read(path.join(folder, "work/index/sources.json"))?.sources;
+  const indexedRows = canonicalSources && !Array.isArray(canonicalSources) ? Object.values(canonicalSources) : [...index.values()];
+  const rows = indexedRows.filter((r) => r.sourceId || r.id || r.duration != null || r.probe);
   const duration = rows.reduce((n, r) => n + (Number(r.duration ?? r.durationSeconds ?? r.probe?.duration ?? r.media?.duration) || 0), 0);
   const transcribed = rows.filter((r) => Array.isArray(r.words) || Array.isArray(r.transcript?.words) || Array.isArray(r.transcription?.words) || r.transcribed === true || ["done", "complete", "completed", "cached"].includes(r.transcription?.status) || r.transcriptFile || r.wordsFile).length;
   const rights = new Map((manifest.rights || []).map((r) => [r.id, r]));
@@ -50,12 +57,14 @@ export function speakerStatus(folder) {
   for (const r of rights.values()) if (r.status !== "approved" && ![...sources, ...proof].some((s) => s.rights === r.id)) waiting.push(`${r.id} (${r.status || "unknown"})`);
   const candidates = contractRows(read(path.join(folder, "work/candidates/all.json")), ["candidates", "items"]).length;
   const review = read(path.join(folder, "review/review.json")), delivered = read(path.join(folder, "final/manifest.json"));
-  const plans = files(path.join(folder, "work/plans")).map((file) => {
+  const plans = files(path.join(folder, "work/plans")).filter((file) => !/\.r\d+\.json$/.test(file)).map((file) => {
     const plan = read(file), version = plan.version || path.basename(file, ".json");
     if (!/^[a-zA-Z0-9_-]+$/.test(version)) throw new Error(`Invalid version in ${file}`);
     const resolvedFile = path.join(folder, "work", version, "plan.resolved.json");
     const resolved = read(resolvedFile);
-    let state = planState(plan, resolved, versionRecord(review, version), versionRecord(delivered, version));
+    const finalFiles = delivered?.files?.filter((f) => f.version === version);
+    const finalVersion = finalFiles?.length ? { version, revision: finalFiles.at(-1).revision, files: finalFiles } : versionRecord(delivered, version);
+    let state = planState(plan, resolved, versionRecord(review, version), finalVersion);
     if (resolved && fs.statSync(file).mtimeMs > fs.statSync(resolvedFile).mtimeMs) state = "plan changed; awaiting draft";
     return { version, state };
   });

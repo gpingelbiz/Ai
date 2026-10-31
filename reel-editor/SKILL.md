@@ -119,3 +119,9 @@ Put each finished reel in its own folder under `~/Desktop/Reels`: `<YYYY-MM-DD> 
 
 
 Give Greg the render path, the before/after duration, and anything that looked off (a mis-heard word, a caption on the face, a weak auto hook). Offer thumbnail-agent as the optional next step.
+
+## Speaker reels
+
+For client speaker reels use only `reel speaker`, the client's manifest and brand, and the [speaker operator workflow](docs/speaker-reel.md). Run init/index, candidates, plan, then hand-review complete source ranges before `draft <client> --version full`. The Desktop `--version full --draft` form runs the same render/review pipeline. Clean is default; `--captions` opts into burned speech captions. Core stories and real reactions remain intact; music needs a manifest licence. Never apply the daily-reel hook, generated B-roll, Greg preset or Publish instructions to this path.
+
+Use `comments` to record consolidated client notes, edit/increment the plan and rebuild. Only after explicit client approval of that exact reviewed file, `approve <client> --version full --by "Client name"` records it. `deliver <client> --version full` requires cleared permissions and QC, and copies approved bytes to final/. Nothing posts automatically.

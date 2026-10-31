@@ -174,7 +174,7 @@ export async function buildReview(folder, { version, video, resolvedPlan, manife
   writeQC(dir, result);
   const used = usedAssets(plan, manifest), roles = {};
   for (const item of plan.items) roles[item.role] = (roles[item.role] || 0) + 1;
-  const warnings = [...result.checks.filter((c) => c.level !== "pass"), ...rightsChecks(plan, manifest).filter((c) => c.level !== "pass")];
+  const warnings = [...(plan.problems || []).map((p) => ({ ...p, message: `${p.id}: ${p.message}` })), ...result.checks.filter((c) => c.level !== "pass"), ...rightsChecks(plan, manifest).filter((c) => c.level !== "pass")];
   const warningsUnique = [...new Set(warnings.map((c) => c.message))];
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(manifest.identity.name)} — ${esc(version)} review</title><style>
 ${css}

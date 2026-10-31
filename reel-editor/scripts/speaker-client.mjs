@@ -156,7 +156,7 @@ export async function speakerClientMain(args = process.argv.slice(2), config = s
   const { writeSpeakerStatus } = await import("./speaker-status.mjs");
   writeSpeakerStatus(folder, { config });
   if (/\binit\b/.test(speakerHelp(config))) {
-    const r = spawnSync(config.reel, ["speaker", "init", folder], { stdio: "inherit" });
+    const r = spawnSync(config.reel, ["speaker", "init", folder, "--add-new"], { stdio: "inherit" });
     if (r.status !== 0) throw new Error(`Speaker init failed for ${name}; intake was kept at ${folder}.`);
   } else console.log("speaker init not available yet; wrote the manifest skeleton.");
   writeSpeakerStatus(folder, { config });
