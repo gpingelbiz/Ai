@@ -114,13 +114,14 @@ export async function runSpeaker(folder, opts = {}, { index: indexImpl = indexSo
     print(`${resolved.version}: base ${compiled.base}; ${compiled.resolvedPlan.duration.toFixed(2)}s; ${loudness.i ?? "unmeasurable"} LUFS, ${loudness.tp ?? "unmeasurable"} dBTP`);
     writeJSON(path.join(workDir, "loudness.json"), loudness);
     const reviewDir = ensureDir(path.join(folder, "review"));
-    const warnings = compiled.resolvedPlan.problems.filter((p) => p.level === "warn");
-    writeJSON(path.join(reviewDir, `${resolved.version}.warnings.json`), { version: resolved.version, draft: opts.draft === true, warnings });
-    fs.writeFileSync(path.join(reviewDir, `${resolved.version}.warnings.txt`), warnings.length ? "DRAFT — NOT CLEARED FOR DELIVERY\n" + warnings.map((p) => `WARNING ${p.id}: ${p.message}`).join("\n") + "\n" : "No rights or compilation warnings. Client approval and final QC are still required.\n");
     // Guard the editable input as well as the resolved plan when approval is recorded.
     fs.copyFileSync(files[n], path.join(workDir, "speaker-plan.json"));
     const composition = await composeImpl(workDir, compiled.resolvedPlan, { manifest, preset, tokens, captions: opts.captions, print });
     for (const warning of composition.warnings || []) compiled.resolvedPlan.problems.push(warning);
+    // Written after composition so music, licence, beat and booking-hold warnings reach the review file too.
+    const warnings = compiled.resolvedPlan.problems.filter((p) => p.level === "warn");
+    writeJSON(path.join(reviewDir, `${resolved.version}.warnings.json`), { version: resolved.version, draft: opts.draft === true, warnings });
+    fs.writeFileSync(path.join(reviewDir, `${resolved.version}.warnings.txt`), warnings.length ? "DRAFT — NOT CLEARED FOR DELIVERY\n" + warnings.map((p) => `WARNING ${p.id}: ${p.message}`).join("\n") + "\n" : "No rights or compilation warnings. Client approval and final QC are still required.\n");
     let output, qc, review;
     if (composition.projectDir) {
       compiled.resolvedPlan.composition = { captions: composition.captions, cardProblems: composition.cardProblems || [] };

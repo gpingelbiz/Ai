@@ -184,8 +184,15 @@ export function letterboxCards(fragment, box, plan) {
     if (i < 0) throw new Error(`speaker card ${row.id}: missing from letterbox plan`);
     const l = row.layout, overlay = row.mode === "overlay", identity = ["title", "booking"].includes(row.type) && !overlay;
     const inset = l.inset || l.x;
+    // Insert cards keep their content height; a card whose content is taller than the reduced box cannot fit.
+    const content = l.contentHeight || l.h;
+    if (!identity && !overlay && content > box.height - inset * 2) throw new Error(`speaker card ${row.id}: cannot fit inside letterbox active area`);
     const h = identity || overlay ? l.h : box.height - inset * 2;
-    const y = identity ? (box.height - h) / 2 : row.type === "testimonial-name" ? box.height * 0.95 - h : overlay ? box.height * 0.05 : inset;
+    // A keyword keeps its own placement (centre or lower third), scaled into the active box.
+    const position = row.position || row.card?.position;
+    const y = identity ? (box.height - h) / 2 : row.type === "testimonial-name" ? box.height * 0.95 - h
+      : row.type === "keyword" ? (position === "lower-third" ? box.height * 0.92 - h : (box.height - h) / 2)
+      : overlay ? box.height * 0.05 : inset;
     if (y < 0 || y + h > box.height || identity && h > box.height - inset * 2) throw new Error(`speaker card ${row.id}: cannot fit inside letterbox active area`);
     const selector = `#speaker-card-${i}`;
     css.push(`${selector}${overlay ? "" : " > .sc-copy"}{top:${y}px!important;height:${h}px!important}`);

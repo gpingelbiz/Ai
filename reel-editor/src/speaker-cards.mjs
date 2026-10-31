@@ -315,7 +315,7 @@ function baseLayout(card, t, canvas, mode) {
       + [card.name, card.title, card.org].filter(Boolean).reduce((sum, text) => sum + fitText(text, body, 30, innerWidth, t.type.body.lineHeight).height, 0)
       + t.spacing.md * 2 + t.spacing.xs * 2 + t.spacing.xs / 2;
   }
-  return { x: inset, y: mode === "overlay" ? H * 0.05 : inset, w, h, name: titleName, fits: w > 0 && contentHeight <= h - pad * 2 };
+  return { x: inset, y: mode === "overlay" ? H * 0.05 : inset, w, h, name: titleName, contentHeight: contentHeight + pad * 2, fits: w > 0 && contentHeight <= h - pad * 2 };
 }
 
 function attribution(card, t) {
@@ -440,7 +440,7 @@ export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas =
     if (!rendered.layout.fits) throw new Error(`speaker card ${entry.id}: text cannot fit at the minimum readable sizes`);
     for (const asset of rendered.assets) asset.itemId = entry.id;
     fragments.push(rendered);
-    review.push({ id: entry.id, type: resolved.card.type, mode, ...span, text: rendered.text, proofIds: resolved.card.logos || (resolved.card.proofId ? [resolved.card.proofId] : []), problems: resolved.problems, layout: rendered.layout });
+    review.push({ id: entry.id, type: resolved.card.type, mode, position: resolved.card.position, ...span, text: rendered.text, proofIds: resolved.card.logos || (resolved.card.proofId ? [resolved.card.proofId] : []), problems: resolved.problems, layout: rendered.layout });
   });
   const warnings = [...new Set(fragments.flatMap((f) => f.warnings))];
   for (const warning of warnings) log(`[reel] ${warning}`);

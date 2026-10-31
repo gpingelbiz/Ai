@@ -166,3 +166,19 @@ test("compiled look keeps cutaway and audio clocks exact, writes review evidence
   const joinedMeta = await probeSource(joined.base); assert.equal(joined.resolvedPlan.frames, 33); assert.ok(Math.abs(joinedMeta.videoDuration - 1.1) <= 1 / 30); assert.ok(Math.abs(joinedMeta.videoDuration - joinedMeta.audioStreams[0].duration) <= 1 / 30);
 
 });
+
+test("letterbox keeps a keyword card where it was placed and checks insert content against the reduced box", async () => {
+  const { letterboxCards } = await import("../src/speaker-look.mjs");
+  const box = { y: 131, height: 818 };
+  const plan = { items: [{ id: "q1", kind: "card" }], overlays: [{ id: "k1" }, { id: "k2" }] };
+  const fragment = { css: "", review: [
+    { id: "q1", type: "quote", mode: "insert", layout: { x: 96, inset: 96, h: 888, contentHeight: 400 } },
+    { id: "k1", type: "keyword", mode: "overlay", position: "center", layout: { x: 192, h: 146 } },
+    { id: "k2", type: "keyword", mode: "overlay", position: "lower-third", layout: { x: 192, h: 146 } }] };
+  const out = letterboxCards(fragment, box, plan);
+  const y = (id) => out.review.find((r) => r.id === id).layout.y - box.y;
+  assert.ok(Math.abs(y("k1") - (818 - 146) / 2) < 1, "centred keyword stays centred in the active box");
+  assert.ok(y("k2") > 818 * 0.6, "lower-third keyword stays low");
+  const tall = { css: "", review: [{ id: "q1", type: "quote", mode: "insert", layout: { x: 96, inset: 96, h: 888, contentHeight: 700 } }] };
+  assert.throws(() => letterboxCards(tall, box, { items: [{ id: "q1", kind: "card" }], overlays: [] }), /cannot fit inside letterbox/);
+});

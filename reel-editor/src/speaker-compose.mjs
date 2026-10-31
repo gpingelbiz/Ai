@@ -35,9 +35,9 @@ ${box.y ? `.speaker-letterbox{position:absolute;left:0;width:${width}px;height:$
 </style></head><body><div id="root" data-composition-id="speaker" data-start="0" data-width="${width}" data-height="${height}" data-duration="${D}" data-fps="${fps}">
 <video id="footage" src="assets/base.mp4" data-start="0" data-duration="${D}" data-track-index="0" data-has-audio="true" playsinline></video>
 ${cards.html}
-${captionHTML}
 ${motion.html}
 ${box.y ? '<div class="speaker-letterbox top"></div><div class="speaker-letterbox bottom"></div>' : ""}
+${captionHTML}
 ${audioCues.map((cue, n) => `<audio id="speaker-cue-${n}" src="${esc(cue.asset)}" data-start="0" data-duration="${D}" data-track-index="${6 + n}" data-automation="${esc(JSON.stringify({ version: 1, lanes: [{ target: "volume", points: cue.points }] }))}"></audio>`).join("\n")}
 ${music ? `<audio id="speaker-music" src="assets/music.wav" data-start="0" data-duration="${D}" data-track-index="6" data-automation="${esc(JSON.stringify({ version: 1, lanes: [{ target: "volume", points: music }] }))}"></audio>` : ""}
 </div><script>const tl=gsap.timeline({paused:true});
