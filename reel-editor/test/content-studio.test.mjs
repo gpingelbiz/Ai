@@ -12,7 +12,7 @@ import { driveLink, dropboxDirect, fileServer } from "../src/studio-host.mjs";
 import { openSlots, retryable, madeName, zonedNow, addDays, runDaily, proofScreenshots } from "../src/daily.mjs";
 import { runStudioPreflight, preflightProblems } from "../src/studio-preflight.mjs";
 import { waitingClips, reelSlot, normalizeBestTimes, reelEnv } from "../src/studio-reels.mjs";
-import { studioAgents } from "../src/studio-cli.mjs";
+import { agentSlug, studioAgents } from "../src/studio-cli.mjs";
 import { personalizeStartHere, stripStudio } from "../src/brandkit.mjs";
 import { legacyHeadSize, slideHTML } from "../src/slides.mjs";
 import { contrast } from "../src/brandtokens.mjs";
@@ -635,6 +635,15 @@ test("agents: a daily run every morning and a Raw Reels watcher, both on this st
   assert.match(daily.plist, /\/Users\/x\/\.local\/bin/);
   assert.match(reels.plist, /<key>WatchPaths<\/key><array><string>\/Users\/x\/Content Studio\/Raw Reels<\/string>/);
   assert.match(reels.plist, /<string>studio<\/string><string>reels<\/string>/);
+});
+
+test("agents: a client's studio on Greg's Mac is named after the client folder, so two studios never share a label", () => {
+  assert.equal(agentSlug("/Users/x/Content Studio", "/Users/x"), "content-studio", "a client's own Mac keeps the old name");
+  assert.equal(agentSlug("/Users/g/Reels/clients/julee-gracey/Content Studio", "/Users/g"), "julee-gracey");
+  assert.equal(agentSlug("/Users/g/Reels/clients/devo-fitness/Content Studio", "/Users/g"), "devo-fitness");
+  assert.equal(agentSlug("/Users/g/Studios/Jordan Studio", "/Users/g"), "jordan-studio", "a named folder keeps its own name");
+  const [daily, reels] = studioAgents("/Users/g/Reels/clients/julee-gracey/Content Studio", { node: "/n", home: "/Users/g" });
+  assert.deepEqual([daily.label, reels.label], ["com.pingel.content-studio.daily.julee-gracey", "com.pingel.content-studio.reels.julee-gracey"]);
 });
 
 test("kit: Start Here keeps the Content Studio section only in a Content Studio kit", () => {
