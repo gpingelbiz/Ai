@@ -4,6 +4,7 @@ import path from "node:path";
 import { PNG } from "pngjs";
 import { ocrBinary, parseOcrJSON } from "./evidence.mjs";
 import { ensureDir, PKG_ROOT, run } from "./util.mjs";
+import { policyProblems, policyApplies } from "./policy.mjs";
 
 const PHOTO_KINDS = new Set(["photo", "photosplit", "phototop", "splittop", "story", "cover-top", "cover-doc", "cover-card", "cover-compare", "cover-list"]);
 const PHOTO_FIELDS = ["photo", "image"];
@@ -233,6 +234,7 @@ export function lintSlideCopy(slide, neverSay = [], context = {}) {
     if (/\bghost\s*(?:p\s*(?:&|and|n)?\s*l|pnl|p\.\s*l\.)\b/i.test(text)) problems.push({ code: "copy-ghost-pl", message: `${field} names Ghost P&L` });
     if (/\b(?:comment|dm|message|reply|text|type)\s+(?:me\s+)?["'“”]?ghost\b/i.test(text) || (kindOf(slide) === "cta" && /\bghost\b/i.test(text)) || (/cta|call.?to.?action/i.test(field) && /\bghost\b/i.test(text))) problems.push({ code: "copy-ghost-cta", message: `${field} uses GHOST as a call to action` });
     for (const phrase of neverSay) if (clean(phrase) && phrasePattern(clean(phrase)).test(text)) problems.push({ code: "copy-never-say", message: `${field} uses the never-say phrase "${clean(phrase)}"` });
+    if (context.policy) for (const p of policyProblems(text, { slides: true })) problems.push({ code: `copy-policy-${p.id}`, message: `${field}: ${p.reason} (content-policy.json)` });
   }
   return problems;
 }
@@ -404,7 +406,7 @@ function addTextProblems(problems, parts, ocr) {
 export async function preflightSlides({ spec, files, brand, history = null, options = {} }) {
   const slides = Array.isArray(spec?.slides) ? spec.slides : [];
   const width = Number(spec?.width || 1080), height = Number(spec?.height || (spec?.square ? 1080 : 1350));
-  const results = slides.map((slide, index) => ({ index: index + 1, file: files?.[index] || "", problems: lintSlideCopy(slide, brandNeverSay(brand || {}, options), { index: index + 1 }).map((item) => ({ ...item, fix: item.fix || "shorten" })) }));
+  const results = slides.map((slide, index) => ({ index: index + 1, file: files?.[index] || "", problems: lintSlideCopy(slide, brandNeverSay(brand || {}, options), { index: index + 1, policy: options.policy ?? policyApplies(brand || {}) }).map((item) => ({ ...item, fix: item.fix || "shorten" })) }));
   const sequenceProblems = slide2LayoutProblems(slides);
   if (sequenceProblems.length && results[1]) results[1].problems.push(...sequenceProblems);
   if (!slides.length) results.push({ index: 0, file: "", problems: [problem("spec-empty", "slide spec has no slides", "none")] });

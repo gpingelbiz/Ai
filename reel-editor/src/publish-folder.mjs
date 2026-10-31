@@ -4,6 +4,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
+import { policyProblems } from "./policy.mjs";
 
 /**
  * The Publish folder (Desktop/Reels/Publish -> ~/Reels/publish): a reel dropped there posts to Instagram by itself.
@@ -47,23 +48,12 @@ export function coverMilliseconds(meta = {}, fallback = 50) {
 }
 
 /**
- * Caption words Greg has ruled out of every post (Greg 2026-10-17 "dont talk about ghost PnL", 2026-10-20 no mention of
- * his wife anywhere in post copy). A caption that hits one posts as a DRAFT with the reason, never straight out.
- * Returns the first rule it breaks, or "".
+ * Caption words Greg has ruled out of every post, from his rule book (policy/content-policy.json: the Ghost P&L, his
+ * wife, retired framework names and keywords, the hiring portal, income claims, dashes). A caption that hits one posts
+ * as a DRAFT with the reason, never straight out. Returns the first rule it breaks, or "".
  */
 export function bannedInCaption(text) {
-  const s = String(text || "");
-  if (/\bghost\s*(p\s*(&|and|n)?\s*l|pnl|p\.l\.)/i.test(s) || /\bcomment\s+["']?ghost\b/i.test(s)) return "it mentions the Ghost P&L";
-  if (/\b(my wife|maria|my mrs|my missus)\b/i.test(s)) return "it mentions his wife";
-  // Brand Guide v10 (2026-10-29) retired the v9 framework names and keyword asks.
-  if (/\b(five rooms|wrong scoreboard|closer line|defend\s*\/\s*decide|a\.c\.r\.a\.?|six leaks)\b/i.test(s)) return "it uses a retired v9 framework name";
-  if (/\b(comment|dm|type|text|send|reply)\s+(me\s+)?(with\s+)?(the\s+word\s+)?["'“]?(ghost|scale|leaks|freedom)\b/i.test(s)) return "it asks for a retired keyword (GHOST, SCALE, LEAKS or FREEDOM)";
-  // Greg's standing rules (brand guide v10, 2026-10-31 product audit): the hiring portal never appears in content,
-  // no income claims, no dashes in copy written as him.
-  if (/\bhiring\s+portal\b/i.test(s)) return "it mentions the hiring portal";
-  if (/\b(six|seven|eight|6|7|8)[\s-]figures?\b/i.test(s) || /\$\s?\d[\d,.]*\s?k?\s*(a|per|\/)\s*(month|mo|year|yr)\b/i.test(s) || /\b(made|make|making|earned|earn)\s+\$\s?\d/i.test(s)) return "it makes an income claim";
-  if (/[—–]/.test(s) || /\s-\s/.test(s)) return "it uses a dash";
-  return "";
+  return policyProblems(text)[0]?.reason || "";
 }
 
 /** A reel marked to skip its trial copy: `trial: false` in its metadata or caption file, or #public / #notrial in a name. */

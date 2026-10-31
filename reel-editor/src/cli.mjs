@@ -47,6 +47,7 @@ Usage
   reel preflight <spec.json> [--dir <png dir>] [--brand <brand.json|preset>] [--history <file.json>] [--json]
                                     fail-closed rendered-slide checks; exits 0 only when the verdict is schedule
   reel grid-check --new <png> --recent <png>... [--json]
+  reel policy <caption file|text>... [--slides] [--json]  check copy against Greg's rule book (policy/content-policy.json)
                                     check the real Instagram 3:4 crop and reject a fourth near-identical grid tile
   reel textcheck <workdir|render.mp4> [--json]
                                     blocking Vision check for clipped, face-covered or flashed reel text
@@ -384,6 +385,17 @@ export async function main(argv) {
         console.log(`verdict: ${result.verdict}`);
       }
       if (result.verdict !== "schedule") process.exitCode = 1;
+      return;
+    }
+    case "policy": {
+      const { opts, positionals } = parse(rest, { json: { type: "boolean" }, slides: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals.length) return console.log(USAGE);
+      const { policyProblems, POLICY_FILE } = await import("./policy.mjs");
+      const text = positionals.map((p) => (fs.existsSync(p) ? fs.readFileSync(p, "utf8") : p)).join("\n");
+      const problems = policyProblems(text, { slides: !!opts.slides });
+      if (opts.json) console.log(JSON.stringify({ policy: POLICY_FILE, ok: !problems.length, problems }, null, 2));
+      else console.log(problems.length ? problems.map((p) => `policy: ${p.id}: ${p.reason}`).join("\n") : "policy: ok");
+      if (problems.length) process.exitCode = 1;
       return;
     }
     case "grid-check": {
