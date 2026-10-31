@@ -106,3 +106,14 @@ test("speaker draft fixes from Julee's first render", async () => {
     overlays: [{ id: "o", at: "t1", offset: 0.3, duration: 4.5, start: 0.3, end: 4.8, card: { type: "testimonial-name", proofId: "tp" } }] };
   assert.ok(!cardChecks(plan, { manifest }).some((c) => c.code === "card-testimonial-name"), "whole-clip proof (out: null) matches its name card");
 });
+
+test("speaker delivery rights include the headshot shown on the booking card", async () => {
+  const { rightsChecks } = await import("../src/speaker-qc.mjs");
+  const plan = { items: [{ id: "b1", kind: "card", duration: 6, card: { type: "booking" } }] };
+  const base = { identity: { name: "Jane Doe", headshot: "proof/photos/jane.jpg", headshotRights: "r-h" }, sources: [], proof: [] };
+  const pending = rightsChecks(plan, { ...base, rights: [{ id: "r-h", status: "pending" }] }, true).find((c) => c.assetType === "headshot");
+  assert.equal(pending.level, "fail");
+  const ok = rightsChecks(plan, { ...base, rights: [{ id: "r-h", status: "approved" }] }, true).find((c) => c.assetType === "headshot");
+  assert.equal(ok.level, "pass");
+  assert.equal(rightsChecks(plan, { ...base, identity: { name: "Jane Doe" }, rights: [] }, true).some((c) => c.assetType === "headshot"), false);
+});

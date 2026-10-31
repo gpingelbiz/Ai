@@ -4,8 +4,9 @@ import { createHash } from "node:crypto";
 import { resolveBrandTokens, tokensCSS, readableOn, contrast } from "./brandtokens.mjs";
 import { esc } from "./text.mjs";
 import { identityLeaks } from "./speaker-guard.mjs";
+import { assetPath, headshotProblems } from "./speaker-intake.mjs";
 import { existsSync } from "node:fs";
-import { PKG_ROOT } from "./util.mjs";
+import { PKG_ROOT, run } from "./util.mjs";
 
 const TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic"];
 const HEADINGS = { "spoke-at": "Spoke at", client: "Hired by", "featured-in": "Featured in", "available-at": "Available at" };
@@ -29,6 +30,11 @@ function rightsProblems(proof, manifest, final) {
 // Contact details hide behind formatting: "(555) 123-4567" vs "5551234567", "https://www.x.com/a/" vs "x.com/a".
 const digitsOf = (s) => String(s || "").replace(/\D/g, "");
 const bareUrl = (s) => String(s || "").toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+/** Display only; keep the full approved URL in the card data and review. */
+export function bookingUrlDisplay(url) {
+  return clean(url).replace(/^https?:\/\//i, "").replace(/^www\./i, "").split(/[?#]/u)[0].replace(/\/+$/, "");
+}
+
 export function leaksContact(text, identity = {}) {
   const lower = String(text).toLowerCase(), digits = digitsOf(text), bare = bareUrl(text).replace(/https?:\/\/(www\.)?/g, "").replace(/(^|\s)www\./g, "$1");
   const phone = digitsOf(identity.phone), email = clean(identity.email).toLowerCase(), url = bareUrl(clean(identity.bookingUrl));
@@ -37,7 +43,7 @@ export function leaksContact(text, identity = {}) {
     || (url && bare.includes(url)));
 }
 
-export function resolveCard(input, { manifest = {}, final = false } = {}) {
+export function resolveCard(input, { manifest = {}, final = false, clientDir, mode = "insert" } = {}) {
   const problems = [];
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const type = clean(source.type);
@@ -63,6 +69,10 @@ export function resolveCard(input, { manifest = {}, final = false } = {}) {
     field("roleLine", identity.roleLine);
     if (!card.name) add("card-name", "manifest.identity.name is missing");
     if (!card.roleLine) add("card-role", "manifest.identity.roleLine is missing");
+    if (type === "booking" || mode === "insert") {
+      if (identity.headshot != null) card.headshot = identity.headshot;
+      problems.push(...headshotProblems(clientDir, manifest, { final }).map((p) => ({ ...p, code: "card-headshot" })));
+    }
   }
   if (type === "title") { allow("tagline"); field("tagline", identity.tagline); }
   if (type === "booking") {
@@ -166,7 +176,7 @@ function brandTokens(tokens) {
 
 function palette(t) {
   const c = t.colors;
-  // Use ink on a solid plate, including overlays. Accent is decoration, never low-contrast body copy.
+  // Keep a readable brand pair for every plate; booking routes may use a contrast-checked accent.
   const normal = contrast(c.ink, c.surface) >= 4.5 && readableOn(c.ink, c.surface, 4.5) === c.ink;
   if (normal) return { ink: c.ink, surface: c.surface, warnings: [] };
   if (contrast(c.ink, c.paper) >= 4.5) return { ink: c.ink, surface: c.paper, warnings: ["speaker cards: low contrast; using the brand text/background pair"] };
@@ -204,17 +214,25 @@ function fitText(text, preferred, minimum, width, lineHeight) {
   return { fontSize, minimum, lines, height: Math.ceil(lines * fontSize * lineHeight) };
 }
 
-/** Shrink to the minimum, then wrap. Very long copy fails preflight instead of shrinking below readable sizes. */
-export function bookingLayout(card, { tokens, canvas } = {}) {
+// Identity inserts share one text/photo grid. Overlay titles keep their compact footprint over footage.
+function identityLayout(card, { tokens, canvas } = {}) {
   const t = brandTokens(tokens), { width: W, height: H } = dimensions(canvas);
-  const inset = Math.max(W * 0.05, t.spacing.xxl), w = W - inset * 2, gap = t.spacing.md;
-  const name = fitText(card.name, Math.max(72, t.typeScale.xl), 72, w, Math.max(1.1, t.type.display.lineHeight));
+  const inset = Math.max(W * 0.05, t.spacing.xxl), gap = t.spacing.md;
+  const photo = card.headshot ? { x: W - inset - W * 0.43, y: H * 0.1, w: W * 0.43, h: H * 0.8 } : null;
+  const w = photo ? photo.x - inset - t.spacing.lg : W - inset * 2;
+  const name = fitText(card.name, Math.max(84, t.typeScale.xl), 84, w, Math.max(1.1, t.type.display.lineHeight));
   const role = fitText(card.roleLine, Math.max(40, t.typeScale.md), 40, w, t.type.body.lineHeight);
-  const text = fitText(card.text, Math.max(40, t.typeScale.md), 40, w, t.type.body.lineHeight);
-  const route = fitText(card.mode === "bureau" ? card.bureauName : card.url, Math.max(48, t.typeScale.lg), 48, w, t.type.body.lineHeight);
-  const h = name.height + role.height + text.height + route.height + gap * 3;
-  return { x: inset, y: (H - h) / 2, w, h, inset, gap, name, role, text, route, fits: h <= H - inset * 2 };
+  const text = card.type === "booking" ? fitText(card.text, Math.max(40, t.typeScale.md), 40, w, t.type.body.lineHeight) : null;
+  const route = card.type === "booking" ? fitText(card.mode === "bureau" ? card.bureauName : bookingUrlDisplay(card.url), Math.max(52, t.typeScale.lg), 52, w, t.type.body.lineHeight) : null;
+  const tagline = card.type === "title" && card.tagline ? fitText(card.tagline, Math.max(30, t.typeScale.sm), 30, w, t.type.body.lineHeight) : null;
+  const fields = [name, role, text, route, tagline].filter(Boolean);
+  const ruleHeight = card.type === "title" ? t.spacing.xs / 2 : 0;
+  const h = fields.reduce((sum, field) => sum + field.height, 0) + gap * (fields.length - 1 + (ruleHeight ? 1 : 0)) + ruleHeight;
+  return { x: inset, y: (H - h) / 2, w, h, inset, gap, name, role, text, route, tagline, photo, fits: w > 0 && h <= H - inset * 2 };
 }
+
+/** Shrink to the minimum, then wrap. Very long copy fails preflight instead of shrinking below readable sizes. */
+export function bookingLayout(card, options) { return identityLayout({ ...card, type: "booking" }, options); }
 
 /** A single evenly spaced row; every logo receives the same height and contain box. */
 export function logoWallLayout(count, { tokens, canvas } = {}) {
@@ -245,23 +263,26 @@ function cssRules(t, colors) {
 .sc-heading { position:absolute; margin:0; font-family:var(--brand-display-font); line-height:var(--brand-display-line-height); }
 .sc-quote { margin:0; font-family:var(--brand-display-font); line-height:var(--brand-display-line-height); }
 .sc-route { font-weight:var(--sc-bold); }
+.sc-testimonial-name, .sc-topic { background:color-mix(in srgb, var(--sc-surface) 88%, transparent); }
+.sc-headshot { position:absolute; object-fit:cover; object-position:center top; border-radius:var(--brand-radius-md); }
 `;
 }
 
 function baseLayout(card, t, canvas, mode) {
   const { width: W, height: H } = dimensions(canvas), inset = Math.max(W * 0.05, t.spacing.xxl);
-  const body = Math.max(30, t.typeScale.sm), name = Math.max(40, t.typeScale.md), meta = Math.max(24, t.typeScale.xs);
+  const body = Math.max(30, t.typeScale.sm);
   if (card.type === "booking") return bookingLayout(card, { tokens: t, canvas });
+  if (card.type === "title" && mode === "insert") return identityLayout(card, { tokens: t, canvas });
   if (card.type === "testimonial-name") {
     const pad = t.spacing.md, gap = t.spacing.xs, w = W * 0.6;
-    const n = fitText(card.name, name, 40, w - pad * 2, t.type.body.lineHeight);
-    const title = card.title ? fitText(card.title, body, 30, w - pad * 2, t.type.body.lineHeight) : null;
-    const org = card.org ? fitText(card.org, meta, 24, w - pad * 2, t.type.body.lineHeight) : null;
+    const n = fitText(card.name, Math.max(60, t.typeScale.md), 60, w - pad * 2, t.type.body.lineHeight);
+    const title = card.title ? fitText(card.title, Math.max(40, body), 40, w - pad * 2, t.type.body.lineHeight) : null;
+    const org = card.org ? fitText(card.org, Math.max(36, t.typeScale.xs), 36, w - pad * 2, t.type.body.lineHeight) : null;
     const h = n.height + (title?.height || 0) + (org?.height || 0) + [title, org].filter(Boolean).length * gap + pad * 2;
     return { x: W * 0.05, y: H * 0.95 - h, w, h, pad, gap, name: n, title, org, fits: h <= H * 0.25 };
   }
   if (card.type === "topic") {
-    const text = fitText(card.text, Math.max(40, t.typeScale.md), 40, W * 0.65, t.type.body.lineHeight);
+    const text = fitText(card.text, Math.max(44, t.typeScale.md), 44, W * 0.7 - t.spacing.md * 2, t.type.body.lineHeight);
     return { x: inset, y: H * 0.05, w: W * 0.7, h: text.height + t.spacing.md * 2, text, fits: text.height + t.spacing.md * 2 <= H * 0.25 };
   }
   const w = W - inset * 2, h = mode === "overlay" ? H * 0.25 : H - inset * 2;
@@ -286,12 +307,13 @@ function attribution(card, t) {
 
 /** One resolved card. Pure output; callers validate provenance with resolveCard before calling a renderer. */
 function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert", start = 0, end, manifest = {}, clientDir } = {}) {
+  if (identityLeak(card)) throw new Error(`speaker card ${id}: contains Greg's identity`);
   const t = brandTokens(tokens), size = dimensions(canvas), colors = palette(t), layout = baseLayout(card, t, size, mode);
   const duration = cardDuration(card, size);
   const stop = roundFrame(end ?? start + duration, size.fps);
   start = roundFrame(start, size.fps);
   if (!Number.isFinite(start) || !Number.isFinite(stop) || start < 0 || stop <= start) throw new Error(`speaker card ${id}: invalid output start/end`);
-  const minHold = card.type === "booking" ? 5 : ["testimonial-name", "logo-wall"].includes(card.type) ? 4 : card.type === "quote" ? duration : 3;
+  const minHold = card.type === "booking" ? 6 : ["testimonial-name", "logo-wall"].includes(card.type) ? 4 : card.type === "quote" ? duration : 3;
   const slack = Math.max(0, Math.round((stop - start - minHold) * size.fps));
   const enterFrames = Math.min(9, Math.max(0, Math.floor(t.motion.enterMs * size.fps / 1000)), Math.floor(slack / 2));
   const exitFrames = Math.min(6, Math.max(0, Math.floor(t.motion.exitMs * size.fps / 1000)), slack - enterFrames);
@@ -303,10 +325,11 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
   let content = "";
   if (card.type === "title") {
     const pad = mode === "overlay" ? t.spacing.sm : 0;
-    content = `<div class="sc-copy" style="${mode === "overlay" ? `inset:${pad}px` : copyStyle}">${display(card.name, "sc-name", layout.name.fontSize)}<div class="sc-rule"></div>${display(card.roleLine, "sc-body", Math.max(40, t.typeScale.md))}${card.tagline ? display(card.tagline, "sc-body", Math.max(30, t.typeScale.sm)) : ""}</div>`;
+    content = `<div class="sc-copy" style="${mode === "overlay" ? `inset:${pad}px` : copyStyle}">${display(card.name, "sc-name", layout.name.fontSize)}<div class="sc-rule"></div>${display(card.roleLine, "sc-body", layout.role?.fontSize ?? Math.max(40, t.typeScale.md))}${card.tagline ? display(card.tagline, "sc-body", layout.tagline?.fontSize ?? Math.max(30, t.typeScale.sm)) : ""}</div>`;
     fields.push(card.name, card.roleLine, card.tagline);
   } else if (card.type === "booking") {
-    content = `<div class="sc-copy" style="${copyStyle};gap:${layout.gap}px">${display(card.name, "sc-name", layout.name.fontSize)}${display(card.roleLine, "sc-body", layout.role.fontSize)}${display(card.text, "sc-body", layout.text.fontSize)}${display(card.mode === "bureau" ? card.bureauName : card.url, "sc-body sc-route", layout.route.fontSize)}</div>`;
+    const routeColor = contrast(t.colors.accent, colors.surface) >= 4.5 ? t.colors.accent : colors.ink;
+    content = `<div class="sc-copy" style="${copyStyle};gap:${layout.gap}px">${display(card.name, "sc-name", layout.name.fontSize)}${display(card.roleLine, "sc-body", layout.role.fontSize)}${display(card.text, "sc-body", layout.text.fontSize)}<div class="sc-body sc-route" style="font-size:${layout.route.fontSize}px;color:${routeColor}">${esc(card.mode === "bureau" ? card.bureauName : bookingUrlDisplay(card.url))}</div></div>`;
     fields.push(card.name, card.roleLine, card.text, card.mode === "bureau" ? card.bureauName : card.url);
   } else if (card.type === "testimonial-name") {
     content = `<div class="sc-copy sc-attribution" style="inset:${layout.pad}px;gap:${layout.gap}px">${display(card.name, "sc-body sc-route", layout.name.fontSize)}${card.title ? display(card.title, "sc-body", layout.title.fontSize) : ""}${card.org ? display(card.org, "sc-body", layout.org.fontSize) : ""}</div>`;
@@ -333,13 +356,21 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
     content = `<div class="sc-copy sc-body" style="inset:${t.spacing.md}px;font-size:${layout.text.fontSize}px">${esc(card.text)}</div>`;
     fields.push(card.text);
   } else throw new Error(`speaker card ${id}: unknown type ${card.type}`);
+  if (layout.photo) {
+    if (!path.isAbsolute(card.headshot) && !clientDir) throw new Error(`speaker card ${id}: clientDir is required for a relative headshot`);
+    const source = assetPath(clientDir || path.dirname(card.headshot), card.headshot);
+    const ref = `speaker-asset-${createHash("sha256").update(source).digest("hex").slice(0, 16)}${path.extname(source).toLowerCase()}`;
+    assets.push({ ref, source, headshot: true, itemId: id });
+    const p = layout.photo;
+    content += `<img class="sc-headshot" src="${esc(ref)}" alt="" style="left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px">`;
+  }
   const overlay = mode === "overlay" || ["testimonial-name", "topic"].includes(card.type);
-  const bold = Math.max(...t.type.body.weights);
+  const bold = Math.max(700, ...t.type.body.weights);
   const html = `<div id="${esc(id)}" class="speaker-card clip sc-${overlay ? "overlay" : "insert"} sc-${card.type}" style="--sc-bold:${bold};${overlay ? copyStyle : ""}" data-start="${start}" data-duration="${stop - start}" data-track-index="4">${content}</div>`;
   const enter = enterFrames / size.fps, exit = exitFrames / size.fps;
   const timeline = `tl.fromTo(${js(`#${id}`)}, {autoAlpha:0}, {autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false}, ${start});\ntl.fromTo(${js(`#${id}`)}, {autoAlpha:1}, {autoAlpha:0,duration:${exit},ease:${js(t.motion.exitEase)},immediateRender:false}, ${stop - exit});`;
   return { html, css: cssRules(t, colors), timeline, layout, assets, warnings: colors.warnings,
-    durationHints: { min: card.type === "booking" ? 5 : card.type === "testimonial-name" ? 4 : card.type === "quote" ? duration : card.type === "logo-wall" ? 4 : 3, recommended: duration, max: card.type === "quote" ? 8 : card.type === "logo-wall" ? 6 : null, enter, exit, fullyLegible: stop - start - enter - exit },
+    durationHints: { min: card.type === "booking" ? 6 : card.type === "testimonial-name" ? 4 : card.type === "quote" ? duration : card.type === "logo-wall" ? 4 : 3, recommended: duration, max: card.type === "quote" ? 8 : card.type === "logo-wall" ? 6 : null, enter, exit, fullyLegible: stop - start - enter - exit },
     text: fields.filter(Boolean) };
 }
 
@@ -370,13 +401,13 @@ function cardEntries(plan) {
  */
 export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas = resolvedPlan.canvas, clientDir, final = false, log = console.log } = {}) {
   const t = brandTokens(tokens), size = dimensions(canvas);
-  const problems = cardChecks(resolvedPlan, { manifest, final, tokens: t });
+  const problems = cardChecks(resolvedPlan, { manifest, final, tokens: t, clientDir });
   if (identityLeak(resolvedPlan)) throw new Error("speaker cards: plan contains Greg's identity");
   if (final && problems.some((p) => p.level === "error")) throw new Error(`speaker cards final preflight: ${problems.filter((p) => p.level === "error").map((p) => p.message).join("; ")}`);
   // Structural review findings are returned; invalid card copy and unsafe layouts cannot be rendered.
   const fragments = [], review = [];
   cardEntries(resolvedPlan).forEach(({ entry, mode }, i) => {
-    const resolved = resolveCard(entry.card, { manifest, final });
+    const resolved = resolveCard(entry.card, { manifest, final, clientDir, mode });
     const errors = resolved.problems.filter((p) => p.level === "error");
     if (errors.length) throw new Error(`speaker card ${entry.id}: ${errors.map((p) => p.message).join("; ")}`);
     const span = outputSpan(entry, size.fps);
@@ -400,13 +431,27 @@ export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas =
 }
 
 /** Copy only supplied local files; stable content hashes avoid basename collisions and preserve originals. */
-export async function copyCardAssets(fragment, projectDir) {
+export async function copyCardAssets(fragment, projectDir, { convertImage = run } = {}) {
   const result = structuredClone(fragment);
   for (const asset of result.assets || []) {
     let bytes;
     try { bytes = await fs.readFile(asset.source); }
     catch (error) { throw new Error(`speaker card ${asset.itemId || "font"}: cannot read ${asset.source}: ${error.message}`); }
-    const name = `${createHash("sha256").update(bytes).digest("hex").slice(0, 20)}${path.extname(asset.source).toLowerCase()}`;
+    let ext = path.extname(asset.source).toLowerCase();
+    if (asset.headshot && ext === ".heic") {
+      const dir = path.join(projectDir, "assets/speaker-cards");
+      await fs.mkdir(dir, { recursive: true });
+      const temp = await fs.mkdtemp(path.join(dir, ".headshot-"));
+      try {
+        const jpg = path.join(temp, "headshot.jpg");
+        await convertImage("sips", ["-s", "format", "jpeg", asset.source, "--out", jpg], { capture: true });
+        bytes = await fs.readFile(jpg);
+        if (!bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))) throw new Error("sips did not produce a JPEG image");
+        ext = ".jpg";
+      } catch (error) { throw new Error(`speaker card ${asset.itemId}: cannot convert headshot ${asset.source}: ${error.message}`); }
+      finally { await fs.rm(temp, { recursive: true, force: true }); }
+    }
+    const name = `${createHash("sha256").update(bytes).digest("hex").slice(0, 20)}${ext}`;
     const relative = `assets/speaker-cards/${name}`;
     await fs.mkdir(path.join(projectDir, "assets/speaker-cards"), { recursive: true });
     await fs.writeFile(path.join(projectDir, relative), bytes);
@@ -419,13 +464,13 @@ export async function copyCardAssets(fragment, projectDir) {
 }
 
 /** Card preflight returns findings only; an empty list means pass. Draft rights findings remain visible warnings. */
-export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, tokens } = {}) {
+export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, tokens, clientDir } = {}) {
   const findings = [];
   const add = (code, message) => findings.push(problem(code, message));
   if (identityLeak(resolvedPlan)) add("card-identity", "speaker plan contains Greg's identity");
   const entries = cardEntries(resolvedPlan), fps = resolvedPlan.canvas?.fps || 30;
   const cards = entries.map(({ entry, mode }) => {
-    const resolved = resolveCard(entry.card, { manifest, final });
+    const resolved = resolveCard(entry.card, { manifest, final, clientDir, mode });
     findings.push(...resolved.problems.map((p) => ({ ...p, itemId: entry.id, message: `${entry.id}: ${p.message}` })));
     let span = null;
     try { span = outputSpan(entry, fps); } catch (error) { add("card-time", error.message); }
@@ -442,13 +487,19 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
   for (const c of cards) {
     if (!c.span) continue;
     const duration = c.span.end - c.span.start;
-    const minimum = c.card.type === "booking" ? 5 : c.card.type === "testimonial-name" ? 4 : c.card.type === "quote" ? cardDuration(c.card, { fps }) : c.card.type === "logo-wall" ? 4 : 0;
+    const minimum = c.card.type === "booking" ? 6 : c.card.type === "testimonial-name" ? 4 : c.card.type === "quote" ? cardDuration(c.card, { fps }) : c.card.type === "logo-wall" ? 4 : 0;
     if (duration < minimum - 1e-7) add("card-hold", `${c.entry.id}: ${c.card.type} holds ${duration}s; needs at least ${minimum}s`);
     if (["logo-wall", "quote"].includes(c.card.type) && duration > (c.card.type === "quote" ? 8 : 6) + 1e-7) add("card-hold", `${c.entry.id}: ${c.card.type} hold exceeds its reading window`);
     if (c.mode === "overlay" && ["booking", "quote", "logo-wall"].includes(c.card.type)) add("card-mode", `${c.entry.id}: ${c.card.type} must be an insert`);
     if (c.mode === "insert" && ["testimonial-name", "topic"].includes(c.card.type)) add("card-mode", `${c.entry.id}: ${c.card.type} must be an overlay`);
     // Authored size overrides are rejected by resolveCard; also report their readable minimum explicitly.
-    const minima = c.card.type === "booking" ? { nameFontSize: 72, roleFontSize: 40, urlFontSize: 48, fontSize: 40 } : { fontSize: 24 };
+    const minima = ({
+      booking: { nameFontSize: 84, roleFontSize: 40, textFontSize: 40, urlFontSize: 52, fontSize: 40 },
+      title: { nameFontSize: c.mode === "insert" ? 84 : 72, roleFontSize: 40, taglineFontSize: 30, fontSize: 40 },
+      "testimonial-name": { nameFontSize: 60, titleFontSize: 40, orgFontSize: 36, fontSize: 60 },
+      topic: { fontSize: 44 }, quote: { fontSize: 54, nameFontSize: 30, titleFontSize: 30, orgFontSize: 30 },
+      "logo-wall": { fontSize: 54, headingFontSize: 54 },
+    })[c.card.type] || {};
     for (const [key, min] of Object.entries(minima)) if (Number.isFinite(c.entry.card?.[key]) && c.entry.card[key] < min) add("card-text-size", `${c.entry.id}: ${key} is below ${min}px`);
   }
   const overlays = cards.filter((c) => c.mode === "overlay" && c.span);

@@ -57,7 +57,7 @@ open -e "$client/work/plans/full.json"
 reel speaker "$client" --version full --plan-only --draft
 ```
 
-The starter reserves the highest-ranked complete story/teaching passage for the core, picks a separate one-liner opening, adds manifest title/booking cards, and uses an approved named video testimonial with its name overlay when it fits. Approved attributed quote proof can fill the proof section. It leaves notes for unavailable sections. Verify every passage against the original and edit ranges, order, cards, overlays, cutaways and music by hand. It never pads the runtime or shortens a story to a budget. Full budgets are opening 12, identity 13, proof 20, core 110, room/testimonial 40, close 9 and booking 6 seconds. The name overlay begins with the opening; the final booking card holds at least five seconds.
+The starter reserves the highest-ranked complete story/teaching passage for the core, picks a separate one-liner opening, adds manifest title/booking cards, and uses an approved named video testimonial with its name overlay when it fits. Approved attributed quote proof can fill the proof section. It leaves notes for unavailable sections. Verify every passage against the original and edit ranges, order, cards, overlays, cutaways and music by hand. It never pads the runtime or shortens a story to a budget. Full budgets are opening 12, identity 13, proof 20, core 110, room/testimonial 40, close 9 and booking 6 seconds. The name overlay begins with the opening; card preflight requires six fully readable seconds for the final booking card.
 
 `--version short` and `--version teaser` create independent plans from original source candidates. A long story cannot be truncated into either; select a shorter complete passage manually if needed. Unfilled sections stay omitted. A plan containing only cards needs usable footage before rendering a real reel.
 
@@ -203,6 +203,21 @@ The example illustrates the shared contract. Add the `t-sonia-src` source and `r
 
 `loadManifest(folder)` returns `{ manifest, problems }`. Problems have `{ level: "error" | "warn", id, message }`. Malformed/unreadable manifests return a manifest error rather than a partial result.
 
+### Optional client headshot
+
+Add the client's own real photo to `identity`; the plan still uses `{ "type": "booking" }` or `{ "type": "title" }` without a photo override:
+
+```json
+{
+  "headshot": "proof/headshot.jpg",
+  "headshotRights": "r-headshot"
+}
+```
+
+`identity.headshot` accepts a relative client path or an explicit absolute path. The file must exist, stay within the client folder when relative (including symlinks), and have a matching JPEG/JPG, PNG, HEIC or WebP image signature. Intake reports invalid paths and types as errors. The optional `headshotRights` references `manifest.rights`; a missing, unknown or pending permission is a draft warning and an error in strict compilation and final card checks. Record approved clearance before the approval draft.
+
+Booking cards and inserted title cards copy this photo into `project/assets/speaker-cards/` with a stable content-hash filename. HEIC originals are converted locally with macOS `sips` into a JPEG in those composition assets; originals are never changed. Conversion failures identify the card and photo. Title overlays over footage do not show or require the headshot. No generated or stock portrait is used.
+
 ## Brand and truth rules
 
 The client brand file must exist and supply a name, display font and body font. Legacy brand files use `name` and `fonts.display/body`; semantic v2 brands use `identity.name` and `type.display/body`. Visual tokens come through `resolveBrandTokens()` and `tokensCSS()`.
@@ -281,6 +296,27 @@ Card objects are rendered by the separate `speaker-cards.mjs` integration. Their
 | topic | exact text from identity or proof |
 
 Direct booking shows the client's route. Bureau booking uses `identity.bureau` and suppresses direct contact. Logo headings are “Spoke at”, “Clients”, “Featured in” or “Available at”, matching the registry relationship. Quotes and attributions must match the supplied proof exactly.
+
+### Card readability at 1920×1080
+
+| Text role | Minimum pixels |
+| --- | ---: |
+| Testimonial name, body font, bold | 60 |
+| Testimonial title / organization | 40 / 36 |
+| Booking and inserted title name, display font | 84 |
+| Booking and title role line / booking instruction | 40 / 40 |
+| Booking URL or bureau name, body font, bold | 52 |
+| Title tagline | 30 |
+| Title overlay name | 72 |
+| Topic label | 44 |
+| Quote / quote attribution | 54 / 30 |
+| Logo-wall heading | 54 |
+
+Testimonials sit bottom-left inside a 5% inset on an 88% brand-surface plate with the brand radius. Topic labels use the same plate at the top-left. Text shrinks only to its minimum, then wraps; copy that cannot fit fails card checks. Authored size overrides are unsupported and below-minimum sizes receive an explicit finding.
+
+Booking and inserted title text is vertically centred. With a headshot, text occupies the left column and the photo occupies about the right 43% of the canvas, at 80% canvas height, vertically centred, with the brand radius and top-centre cover framing. Without a photo, text uses the safe full width. Booking cards reserve six fully legible seconds; animation uses only additional hold time.
+
+`bookingUrlDisplay()` removes `https://`, `http://`, leading `www.`, query strings, fragments and trailing slashes for display only: `https://www.site.com/speaking/?campaign=reel` displays as `site.com/speaking`. The full approved URL remains in resolved card data and review text. The route uses the brand accent when it meets 4.5:1 contrast on the card surface, otherwise the card text colour. Headshot paths and permission ids cannot serve as topic copy.
 
 ## Index and compiled output
 

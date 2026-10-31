@@ -33,6 +33,38 @@ export function assetPath(folder, file) {
   return resolved;
 }
 
+/** A headshot is a supplied identity photo. Missing clearance is visible in drafts and blocks finals. */
+export function headshotProblems(folder, manifest, { final = false, checkFile = true } = {}) {
+  const identity = manifest?.identity || {}, problems = [];
+  const add = (message, level = "error") => problems.push({ level, id: "identity.headshot", message: `identity.headshot: ${message}` });
+  if (identity.headshot == null) {
+    if (identity.headshotRights != null) add("headshotRights requires a headshot");
+    return problems;
+  }
+  if (typeof identity.headshot !== "string" || !identity.headshot.trim()) { add("photo path must be a non-empty string"); return problems; }
+  const ext = path.extname(identity.headshot).toLowerCase();
+  if (![".jpg", ".jpeg", ".png", ".heic", ".webp"].includes(ext)) add("photo must be jpg, jpeg, png, heic or webp");
+  else if (checkFile) {
+    try {
+      if (!folder && !path.isAbsolute(identity.headshot)) throw new Error("clientDir is required for a relative headshot");
+      const source = assetPath(folder || path.dirname(identity.headshot), identity.headshot);
+      const header = Buffer.alloc(32), fd = fs.openSync(source, "r");
+      let n;
+      try { n = fs.readSync(fd, header, 0, header.length, 0); } finally { fs.closeSync(fd); }
+      const bytes = header.subarray(0, n);
+      const matches = ext === ".png" ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        : [".jpg", ".jpeg"].includes(ext) ? bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
+        : ext === ".webp" ? bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP"
+        : bytes.toString("ascii", 4, 8) === "ftyp" && /heic|heix|hevc|hevx|mif1|msf1/.test(bytes.toString("ascii", 8));
+      if (!matches) add(`file is not a ${ext.slice(1)} image: ${identity.headshot}`);
+    } catch (error) { add(error.message); }
+  }
+  if (identity.headshotRights != null && (typeof identity.headshotRights !== "string" || !identity.headshotRights.trim())) add("headshotRights must be a non-empty rights id");
+  const right = (Array.isArray(manifest.rights) ? manifest.rights : []).find((r) => r?.id === identity.headshotRights);
+  if (right?.status !== "approved") add(`rights ${identity.headshotRights || "(missing)"} are ${right?.status || "unknown"}; ${final ? "approved rights required" : "draft use only"}`, final ? "error" : "warn");
+  return problems;
+}
+
 export function validateManifest(folder, manifest) {
   const problems = [];
   const add = (id, message, level = "error") => problems.push({ level, id, message });
@@ -42,6 +74,7 @@ export function validateManifest(folder, manifest) {
   if (!String(m.clientId || "").trim()) add("manifest", "clientId is missing");
   if (!String(m.identity?.name || "").trim()) add("identity", "name is missing");
   if (m.identity?.bookingMode != null && !["direct", "bureau"].includes(m.identity.bookingMode)) add("identity", "bookingMode must be direct or bureau");
+  problems.push(...headshotProblems(folder, m));
   if (!m.brand?.file) add("brand", "brand.file is missing");
   const collections = {};
   for (const key of ["sources", "proof", "rights", "music"]) {

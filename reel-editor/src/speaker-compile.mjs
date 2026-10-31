@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { assetPath, assertNoGreg, LOGO_RELATIONSHIPS } from "./speaker-intake.mjs";
+import { assetPath, assertNoGreg, LOGO_RELATIONSHIPS, headshotProblems } from "./speaker-intake.mjs";
 import { probeSource } from "./speaker-index.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
 import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr } from "./hdr.mjs";
@@ -66,6 +66,9 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     if (!c || !CARD_TYPES.includes(c.type)) { add(id, `invalid card.type: ${c?.type}`); return; }
     const proof = c.proofId ? proofs.get(c.proofId) : null;
     if (c.proofId && !proof) add(id, `unknown proofId: ${c.proofId}`);
+    if (c.type === "booking" || c.type === "title" && items.some((i) => i.id === id && i.kind === "card")) {
+      for (const p of headshotProblems(null, manifest, { final: !draft, checkFile: false })) add(id, p.message, p.level);
+    }
     if (c.type === "title") for (const k of ["name", "roleLine", "tagline"]) text(id, c[k], identity[k] || "", k);
     if (c.type === "booking") {
       const mode = c.mode || identity.bookingMode;
@@ -90,7 +93,7 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
       }
     }
     if (c.type === "topic") {
-      const allowed = [...Object.values(identity).filter((v) => typeof v === "string"), ...(manifest.proof || []).map((p) => p.text)];
+      const allowed = [...Object.entries(identity).filter(([key, v]) => !["headshot", "headshotRights"].includes(key) && typeof v === "string").map(([, v]) => v), ...(manifest.proof || []).map((p) => p.text)];
       if (!c.text || !allowed.includes(c.text)) add(id, "topic text must come from manifest identity or proof");
     }
     if (c.type === "logo-wall") {

@@ -4,9 +4,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import vm from "node:vm";
+import { headshotProblems, validateManifest } from "../src/speaker-intake.mjs";
+import { validatePlan } from "../src/speaker-compile.mjs";
 import { resolveBrandTokens, contrast } from "../src/brandtokens.mjs";
 import {
-  resolveCard, cardDuration, bookingLayout, logoWallLayout, titleCard, bookingCard,
+  resolveCard, cardDuration, bookingLayout, bookingUrlDisplay, logoWallLayout, titleCard, bookingCard,
   testimonialNameCard, quoteCard, logoWallCard, topicCard, speakerCardsHTML, copyCardAssets, cardChecks,
 } from "../src/speaker-cards.mjs";
 
@@ -212,19 +214,19 @@ test("logo layout rejects counts outside its contract", () => {
 test("booking shrinks to its minimum, wraps very long names and keeps its route readable", () => {
   const card = good({ type: "booking" });
   const ordinary = bookingLayout(card, { tokens });
-  assert.equal(ordinary.name.fontSize, 72);
-  assert.ok(ordinary.route.fontSize >= 48);
+  assert.equal(ordinary.name.fontSize, 84);
+  assert.ok(ordinary.route.fontSize >= 52);
   assert.ok(ordinary.role.fontSize >= 40);
   assert.ok(ordinary.y >= 96);
   const long = bookingLayout({ ...card, name: "Professor Alexandria Catherine Montgomery-Worthington of the International Leadership Institute" }, { tokens });
-  assert.equal(long.name.fontSize, 72);
+  assert.equal(long.name.fontSize, 84);
   assert.ok(long.name.lines > 1);
   assert.ok(long.fits);
   const oversized = structuredClone(tokens);
   oversized.typeScale.xl = 140;
   const shrunk = bookingLayout({ ...card, name: "Alexandria Catherine Montgomery-Worthington" }, { tokens: oversized });
   assert.ok(shrunk.name.fontSize < 140);
-  assert.ok(shrunk.name.fontSize >= 72);
+  assert.ok(shrunk.name.fontSize >= 84);
   assert.equal(bookingLayout({ ...card, name: "word ".repeat(200) }, { tokens }).fits, false);
 });
 
@@ -253,17 +255,17 @@ test("six pure renderers use escaped copy, token CSS and deterministic absolute 
   }
 });
 
-test("five-second booking and four-second attribution hold fully legible; no fade steals reading time", () => {
-  for (const [render, spec, seconds] of [[bookingCard, { type: "booking" }, 5], [testimonialNameCard, { type: "testimonial-name", proofId: "t1" }, 4]]) {
+test("six-second booking and four-second attribution hold fully legible; no fade steals reading time", () => {
+  for (const [render, spec, seconds] of [[bookingCard, { type: "booking" }, 6], [testimonialNameCard, { type: "testimonial-name", proofId: "t1" }, 4]]) {
     const result = render(good(spec), { tokens, start: 10, end: 10 + seconds });
     assert.equal(result.durationHints.fullyLegible, seconds);
     assert.equal(result.durationHints.enter, 0);
     assert.equal(result.durationHints.exit, 0);
   }
-  assert.ok(bookingCard(good({ type: "booking" }), { tokens, start: 0, end: 6 }).durationHints.fullyLegible >= 5);
+  assert.ok(bookingCard(good({ type: "booking" }), { tokens, start: 0, end: 6 }).durationHints.fullyLegible >= 6);
 });
 
-test("lower third stays below the middle 40% and uses a solid brand plate and radius", () => {
+test("lower third stays below the middle 40% and uses an 88% brand plate and radius", () => {
   const r = testimonialNameCard(good({ type: "testimonial-name", proofId: "t1" }), { tokens });
   assert.ok(r.layout.y >= 1080 * 0.7);
   assert.equal(r.layout.x, 1920 * 0.05);
@@ -333,12 +335,12 @@ test("preflight requires a matching testimonial name within one second, held on 
   assert.ok(has(cardChecks(p, { manifest: m }), "card-testimonial-name"));
 });
 
-test("preflight requires one final booking insert held at least five seconds", () => {
+test("preflight requires one final booking insert held at least six seconds", () => {
   const p = plan();
   assert.deepEqual(cardChecks(p, { manifest }), []);
   p.items[1].outputEnd = 16.9;
   assert.ok(has(cardChecks(p, { manifest }), "card-hold"));
-  p.items[1].outputEnd = 17;
+  p.items[1].outputEnd = 18;
   assert.deepEqual(cardChecks(p, { manifest }), []);
   p.items.push(clip("late", "talk", 17, 20));
   assert.ok(has(cardChecks(p, { manifest }), "card-booking-last"));
@@ -559,4 +561,241 @@ test("named client fonts never alias repository defaults, while supplied client 
   assert.equal(fragment.assets.length, 2);
   assert.ok(fragment.assets.every((a) => a.font));
   assert.ok(fragment.css.includes("/tmp/client/fonts/Display.ttf"));
+});
+
+const photoBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=", "base64");
+async function headshotFixture(t) {
+  const clientDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "speaker-headshot-")));
+  t.after(() => fs.rm(clientDir, { recursive: true, force: true }));
+  await fs.mkdir(path.join(clientDir, "proof"));
+  await fs.writeFile(path.join(clientDir, "proof", "client & photo.png"), photoBytes);
+  const m = makeManifest();
+  m.identity.headshot = "proof/client & photo.png";
+  m.identity.headshotRights = "approved";
+  return { m, clientDir, source: path.join(clientDir, m.identity.headshot) };
+}
+
+test("booking URL display removes protocol, www, query, fragment and trailing slash, preserving paths and case", () => {
+  for (const [input, expected] of [
+    ["https://www.juleegracey.com/", "juleegracey.com"], ["http://www.site.com/speaking/", "site.com/speaking"],
+    [" HTTPS://WWW.Site.com/Speaking/?utm_source=reel#book ", "Site.com/Speaking"],
+    ["site.com/speaking?campaign=one", "site.com/speaking"], ["www.site.com///", "site.com"],
+    ["https://site.com?redirect=/other/", "site.com"], ["site.com/speaking#booking", "site.com/speaking"],
+    ["", ""], [undefined, ""],
+  ]) assert.equal(bookingUrlDisplay(input), expected);
+  const m = makeManifest();
+  m.identity.bookingUrl = "https://www.juleegracey.com/speaking/?utm_source=reel";
+  const p = plan(), f = speakerCardsHTML(p, { manifest: m, tokens });
+  assert.match(f.html, />juleegracey.com\/speaking<\/div>/);
+  assert.ok(!f.html.includes("utm_source"));
+  assert.ok(f.review[0].text.includes(m.identity.bookingUrl));
+  assert.equal(resolve({ type: "booking" }, m).card.url, m.identity.bookingUrl);
+});
+
+test("all card types render at their readable font minimums and preflight flags smaller authored sizes", () => {
+  const specs = [
+    [titleCard, { type: "title" }, { nameFontSize: 84, roleFontSize: 40, taglineFontSize: 30 }, [84, 40, 30]],
+    [bookingCard, { type: "booking" }, { nameFontSize: 84, roleFontSize: 40, textFontSize: 40, urlFontSize: 52 }, [84, 40, 40, 52]],
+    [testimonialNameCard, { type: "testimonial-name", proofId: "t1" }, { nameFontSize: 60, titleFontSize: 40, orgFontSize: 36 }, [60, 40, 36]],
+    [quoteCard, { type: "quote", proofId: "q1" }, { fontSize: 54, nameFontSize: 30, titleFontSize: 30, orgFontSize: 30 }, [54, 30]],
+    [logoWallCard, { type: "logo-wall", relationship: "spoke-at", logos: ["logo0", "logo1", "logo2"] }, { headingFontSize: 54 }, [54]],
+    [topicCard, { type: "topic", text: "Sales confidence" }, { fontSize: 44 }, [44]],
+  ];
+  const small = structuredClone(tokens);
+  for (const key of Object.keys(small.typeScale)) small.typeScale[key] = 1;
+  for (const [render, spec, minima, expected] of specs) {
+    const r = render(good(spec), { tokens: small, manifest, clientDir: "/tmp/client" });
+    assert.deepEqual([...r.html.matchAll(/font-size:(\d+)px/g)].map((m) => Number(m[1])), expected, spec.type);
+    for (const [key, min] of Object.entries(minima)) {
+      const entry = { ...spec, [key]: min - 1 };
+      const p = plan();
+      if (["testimonial-name", "topic"].includes(spec.type)) p.overlays = [overlay("small", entry, 0, 6)];
+      else p.items.unshift(insert("small", entry, 0, 6));
+      assert.ok(cardChecks(p, { manifest, tokens: small }).some((p) => p.code === "card-text-size" && p.message.includes(`${key} is below ${min}px`)), `${spec.type}.${key}`);
+    }
+  }
+  const r = testimonialNameCard(good({ type: "testimonial-name", proofId: "t1" }), { tokens: small });
+  assert.ok(Number(r.html.match(/--sc-bold:(\d+)/)[1]) >= 700);
+  assert.match(r.html, /class="sc-body sc-route" style="font-size:60px"/);
+  assert.match(r.css, /\.sc-testimonial-name, \.sc-topic \{ background:color-mix\(in srgb, var\(--sc-surface\) 88%, transparent\)/);
+  assert.match(r.css, /border-radius:var\(--brand-radius-md\)/);
+  const title = titleCard(good({ type: "title" }), { tokens: small, mode: "overlay" });
+  assert.equal(title.layout.name.fontSize, 72);
+  const p = plan();
+  p.overlays = [overlay("small-title", { type: "title", nameFontSize: 71 }, 0, 4)];
+  assert.ok(cardChecks(p, { manifest, tokens: small }).some((p) => p.code === "card-text-size" && /below 72px/.test(p.message)));
+});
+
+test("headshot booking and inserted title share a safe, centred two-column layout; overlays stay over footage", async (t) => {
+  const { m, clientDir, source } = await headshotFixture(t);
+  for (const [type, render] of [["booking", bookingCard], ["title", titleCard]]) {
+    const result = resolve({ type }, m, { clientDir });
+    assert.deepEqual(result.problems, []);
+    const r = render(result.card, { tokens, clientDir, manifest: m });
+    assert.ok(r.layout.fits);
+    assert.equal(r.layout.y + r.layout.h / 2, 540);
+    assert.equal(r.layout.photo.y, 108);
+    assert.equal(r.layout.photo.h, 864);
+    assert.ok(r.layout.photo.w >= 1920 * 0.4 && r.layout.photo.w <= 1920 * 0.45);
+    assert.ok(r.layout.x + r.layout.w + tokens.spacing.lg <= r.layout.photo.x);
+    assert.equal(r.layout.photo.x + r.layout.photo.w, 1824);
+    assert.ok(r.layout.name.fontSize >= 84);
+    assert.ok(r.layout.role.fontSize >= 40);
+    assert.match(r.html, /<img class="sc-headshot"/);
+    assert.match(r.css, /object-fit:cover; object-position:center top/);
+    assert.deepEqual(r.assets.map((a) => a.source), [source]);
+    assert.ok(!/greg\s*pingel|officialgregpingel|pingel/i.test(r.html + r.timeline + r.css));
+    if (type === "booking") {
+      assert.ok(r.layout.text.fontSize >= 40);
+      assert.ok(r.layout.route.fontSize >= 52);
+      assert.equal(r.durationHints.fullyLegible, 6);
+    }
+  }
+  const p = plan();
+  p.overlays = [overlay("title", { type: "title" }, 0, 4)];
+  const f = speakerCardsHTML(p, { manifest: m, clientDir, tokens });
+  assert.equal(f.assets.filter((a) => a.headshot).length, 1, "only the booking insert uses the photo");
+  assert.equal(f.review[0].layout.photo, undefined);
+  assert.equal(f.review[1].layout.photo.h, 864);
+  assert.throws(() => speakerCardsHTML(p, { manifest: m, tokens }), /book.*clientDir is required/);
+});
+
+test("no-headshot booking fills the safe width and vertically centres its larger text block", () => {
+  const card = good({ type: "booking" }), r = bookingCard(card, { tokens });
+  assert.equal(r.layout.photo, null);
+  assert.equal(r.layout.x, 96);
+  assert.equal(r.layout.w, 1728);
+  assert.equal(r.layout.y + r.layout.h / 2, 540);
+  assert.ok(r.layout.name.fontSize >= 84 && r.layout.route.fontSize >= 52);
+  assert.ok(!r.html.includes('<img'));
+  assert.deepEqual(r.assets, []);
+  assert.match(r.html, new RegExp(`color:${tokens.colors.accent}`));
+  const low = structuredClone(tokens);
+  low.colors.accent = low.colors.surface;
+  assert.match(bookingCard(card, { tokens: low }).html, new RegExp(`color:${tokens.colors.ink}`));
+});
+
+test("headshot validation rejects missing files, non-images, extension spoofing and escaping relative paths", async (t) => {
+  const { m, clientDir, source } = await headshotFixture(t);
+  assert.deepEqual(headshotProblems(clientDir, m), []);
+  m.identity.headshot = source;
+  assert.deepEqual(headshotProblems(null, m), []);
+  m.identity.headshot = "proof/missing.jpg";
+  assert.match(headshotProblems(clientDir, m)[0].message, /identity.headshot.*file not found.*missing.jpg/);
+  assert.ok(validateManifest(clientDir, m).some((p) => p.id === "identity.headshot" && p.level === "error"));
+  m.identity.headshot = "proof/video.mp4";
+  assert.match(headshotProblems(clientDir, m)[0].message, /must be jpg/);
+  m.identity.headshot = "proof/fake.png";
+  await fs.writeFile(path.join(clientDir, m.identity.headshot), "not a photo");
+  assert.match(headshotProblems(clientDir, m)[0].message, /not a png image/);
+  for (const headshot of ["../outside.png", 12, ""]) {
+    m.identity.headshot = headshot;
+    assert.equal(headshotProblems(clientDir, m)[0].level, "error");
+  }
+  await fs.symlink(source, path.join(clientDir, "proof", "inside.png"));
+  m.identity.headshot = "proof/inside.png";
+  assert.deepEqual(headshotProblems(clientDir, m), []);
+  const outside = await fs.mkdtemp(path.join(os.tmpdir(), "speaker-outside-photo-"));
+  t.after(() => fs.rm(outside, { recursive: true, force: true }));
+  await fs.writeFile(path.join(outside, "photo.png"), photoBytes);
+  await fs.symlink(path.join(outside, "photo.png"), path.join(clientDir, "proof", "outside.png"));
+  m.identity.headshot = "proof/outside.png";
+  assert.match(headshotProblems(clientDir, m)[0].message, /symlink escapes/);
+  m.identity.headshot = source;
+  m.identity.headshotRights = 42;
+  assert.ok(headshotProblems(clientDir, m).some((p) => p.level === "error" && /rights id/.test(p.message)));
+  m.identity.headshotRights = "approved";
+  assert.ok(headshotProblems(clientDir, { ...m, rights: null }).some((p) => p.level === "warn"));
+  delete m.identity.headshot;
+  assert.match(headshotProblems(clientDir, m)[0].message, /requires a headshot/);
+});
+
+test("JPEG, PNG, WebP and HEIC signatures validate only with matching allowed extensions", async (t) => {
+  const { m, clientDir } = await headshotFixture(t);
+  for (const [ext, bytes] of [["jpg", Buffer.from([255, 216, 255, 224])], ["jpeg", Buffer.from([255, 216, 255, 224])],
+    ["png", photoBytes], ["webp", Buffer.from("RIFF1234WEBPVP8 ")], ["heic", Buffer.from("\0\0\0\x18ftypheic\0\0\0\0mif1heic")]]) {
+    m.identity.headshot = `proof/photo.${ext.toUpperCase()}`;
+    await fs.writeFile(path.join(clientDir, m.identity.headshot), bytes);
+    assert.deepEqual(headshotProblems(clientDir, m), [], ext);
+    await fs.writeFile(path.join(clientDir, m.identity.headshot), "wrong signature");
+    assert.ok(headshotProblems(clientDir, m).some((p) => /not a .* image/.test(p.message)), ext);
+  }
+});
+
+test("headshot rights warn in draft review, fail final cards and strict compile, and are unused by overlay titles", async (t) => {
+  const { m, clientDir } = await headshotFixture(t);
+  const p = plan(), manual = { schemaVersion: 1, clientId: m.clientId, version: "full", revision: 1, canvas,
+    items: [{ id: "book", kind: "card", role: "booking", duration: 6, card: { type: "booking" } }] };
+  for (const rights of ["waiting", "unknown", "missing", undefined]) {
+    m.identity.headshotRights = rights;
+    assert.ok(headshotProblems(clientDir, m).some((p) => p.level === "warn" && /rights/.test(p.message)));
+    assert.ok(headshotProblems(clientDir, m, { final: true }).some((p) => p.level === "error" && /rights/.test(p.message)));
+    const f = speakerCardsHTML(p, { manifest: m, clientDir, tokens });
+    assert.ok(has(f.problems, "card-headshot", "warn"));
+    assert.ok(has(f.review[0].problems, "card-headshot", "warn"));
+    assert.throws(() => speakerCardsHTML(p, { manifest: m, clientDir, tokens, final: true }), /book.*headshot.*rights/);
+    assert.ok(validatePlan(manual, { manifest: m, index: {}, draft: true }).some((p) => p.id === "book" && p.level === "warn" && /headshot/.test(p.message)));
+    assert.ok(validatePlan(manual, { manifest: m, index: {} }).some((p) => p.id === "book" && p.level === "error" && /headshot/.test(p.message)));
+    assert.deepEqual(resolve({ type: "title" }, m, { mode: "overlay" }).problems, []);
+    manual.items[0].card = { type: "title" };
+    assert.ok(validatePlan(manual, { manifest: m, index: {} }).some((p) => /headshot/.test(p.message)));
+    manual.items[0].card = { type: "booking" };
+  }
+  m.identity.headshotRights = "approved";
+  assert.deepEqual(validatePlan(manual, { manifest: m, index: {} }), []);
+  assert.deepEqual(speakerCardsHTML(p, { manifest: m, clientDir, tokens, final: true }).problems, []);
+  for (const text of [m.identity.headshot, m.identity.headshotRights, "An invented topic"]) {
+    manual.items[0].card = { type: "topic", text };
+    assert.ok(validatePlan(manual, { manifest: m, index: {} }).some((p) => /topic text must come from/.test(p.message)));
+  }
+  manual.items[0].card = { type: "topic", text: m.identity.tagline };
+  assert.deepEqual(validatePlan(manual, { manifest: m, index: {} }), []);
+});
+
+test("headshots copy with exact bytes and stable names; HEIC uses sips JPEG output without changing the original", async (t) => {
+  const { m, clientDir, source } = await headshotFixture(t);
+  const p = plan();
+  p.items.unshift(insert("identity", { type: "title" }, 0, 4));
+  const f = speakerCardsHTML(p, { manifest: m, clientDir, tokens });
+  const before = structuredClone(f), project = path.join(clientDir, "project");
+  const copied = await copyCardAssets(f, project);
+  assert.deepEqual(f, before);
+  assert.equal(copied.assets.length, 2);
+  assert.equal(copied.assets[0].file, copied.assets[1].file);
+  assert.deepEqual(await fs.readFile(path.join(project, copied.assets[0].file)), photoBytes);
+  assert.deepEqual(await fs.readFile(source), photoBytes);
+  assert.ok(!copied.html.includes("speaker-asset-"));
+  assert.deepEqual(await copyCardAssets(f, project), copied);
+  m.identity.headshot = "proof/photo.HEIC";
+  const heicBytes = Buffer.from("\0\0\0\x18ftypheic\0\0\0\0mif1heic");
+  await fs.writeFile(path.join(clientDir, m.identity.headshot), heicBytes);
+  const heic = speakerCardsHTML(plan(), { manifest: m, clientDir, tokens });
+  const jpeg = Buffer.from([255, 216, 255, 224, 0, 1, 2]);
+  let calls = 0;
+  const convertImage = async (command, args, options) => {
+    calls++;
+    assert.equal(command, "sips");
+    assert.deepEqual(args.slice(0, 4), ["-s", "format", "jpeg", path.join(clientDir, m.identity.headshot)]);
+    assert.equal(options.capture, true);
+    await fs.writeFile(args.at(-1), jpeg);
+  };
+  const jpg = await copyCardAssets(heic, project, { convertImage });
+  assert.equal(calls, 1);
+  assert.match(jpg.assets[0].file, /[a-f0-9]{20}\.jpg$/);
+  assert.deepEqual(await fs.readFile(path.join(project, jpg.assets[0].file)), jpeg);
+  assert.deepEqual(await fs.readFile(path.join(clientDir, m.identity.headshot)), heicBytes);
+  assert.ok(jpg.html.includes(jpg.assets[0].file));
+  assert.deepEqual(await copyCardAssets(heic, project, { convertImage }), jpg);
+  await assert.rejects(copyCardAssets(heic, project, { convertImage: async () => { throw new Error("converter unavailable"); } }), /book.*cannot convert headshot.*converter unavailable/);
+  assert.ok(!(await fs.readdir(path.join(project, "assets/speaker-cards"))).some((name) => name.startsWith(".headshot-")));
+});
+
+test("headshot and raw renderer identity leaks fail clearly and authored headshot overrides are refused", async (t) => {
+  const { m, clientDir } = await headshotFixture(t);
+  assert.ok(has(resolve({ type: "booking", headshot: "invented.png" }, m, { clientDir }).problems, "card-provenance"));
+  for (const leak of ["Greg Pingel", "officialgregpingel", "pingel"]) {
+    m.identity.headshot = `proof/${leak}.png`;
+    assert.ok(has(resolve({ type: "booking" }, m, { clientDir }).problems, "card-identity"));
+    assert.throws(() => bookingCard({ ...good({ type: "booking" }), name: leak }, { tokens }), /Greg/);
+  }
 });
