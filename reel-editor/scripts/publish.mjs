@@ -23,7 +23,8 @@ export function buildPost(workDir, { mediaUrl = "", date = "", trial = false } =
   let caption = null;
   try { caption = JSON.parse(fs.readFileSync(path.join(workDir, "caption.json"), "utf8")); } catch {}
   const text = caption ? [caption.caption, "", (caption.hashtags || []).slice(0, 5).join(" ")].join("\n").trim() : (plan.hook?.text || plan.name);
-  const ai = !!(plan.broll && plan.broll.length);
+  // Cuts from the speaker's own clips (the library engine) are real footage, not AI.
+  const ai = (plan.broll || []).some((b) => !b.real);
   return {
     text,
     hook: plan.hook?.text || "",

@@ -38,6 +38,9 @@ Usage
                                     (description with chapters, titles, captions.srt, thumbnails, endscreen.json,
                                     edit.v3.json). Captions off by default (--captions burns them in)
   reel usage                        what the paid generations (Runway b-roll) cost this month and last, and the balance
+  reel broll-library [dir] [--preset p] [--force]  index a folder of the speaker's own b-roll clips (length, shape,
+                                    faces, a description Claude writes from the frames, cached as <clip>.json) and list it;
+                                    dir defaults to the preset's broll.library
   reel clips <long video> [--count 5] [--plan-only] [--replan] [--no-layout] [edit options]
                                     one long recording into several reels: Claude picks 30-90 s windows with a
                                     hook and a score, each is cut out and edited (clips.json lists them)
@@ -136,6 +139,8 @@ Options (edit / batch)
   --broll-cut <s>          hard (default) | flash | blur | whip (a horizontal slide with directional blur)
   --broll-engine <e>       codex (stills drawn by Codex) | runway (generated video clips via the Runway API; needs
                            RUNWAY_API_KEY, about 30 credits = $0.30 per 5-second clip; every clip goes in the usage ledger)
+                           | library (2-second cuts from the speaker's own clips in broll.library; Claude picks the clip)
+  --broll-library <dir>    a folder of the speaker's own clips to cut b-roll from (sets --broll-engine library)
   --no-cadence             no cut cadence (the frame otherwise cuts between two framings every 2.5-4.5 s)
   --cold-open              with b-roll: frame 0 shows a still under the hook for 0.6 s, then flashes to you. --no-cold-open off
   --sounds                 small CC0 sounds on the edits: card lands, word slam, camera move, flash, marker. --no-sounds off
@@ -251,6 +256,7 @@ const EDIT_OPTIONS = {
   "zoom-style": { type: "string" },
   "broll-cut": { type: "string" },
   "broll-engine": { type: "string" },
+  "broll-library": { type: "string" },
   "no-cadence": { type: "boolean" },
   "cold-open": { type: "boolean" },
   "no-cold-open": { type: "boolean" },
@@ -446,6 +452,19 @@ export async function main(argv) {
       const { makeYouTube } = await import("./youtube.mjs");
       const r = await makeYouTube(positionals[0], opts);
       if (r.output) console.log(r.output);
+      return;
+    }
+    case "broll-library": {
+      const { opts, positionals } = parse(rest, { preset: { type: "string" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help) return console.log(USAGE);
+      const preset = loadPreset(opts.preset);
+      const dir = positionals[0] ? path.resolve(positionals[0]) : preset.broll?.library;
+      if (!dir || !fs.existsSync(dir)) throw new Error(`no b-roll library folder${dir ? ` at ${dir}` : ": give one, or set broll.library (brand.json brollLibrary)"}`);
+      const { indexLibrary } = await import("./broll-library.mjs");
+      const clips = await indexLibrary(dir, { world: preset.broll?.world || "", force: !!opts.force });
+      for (const c of clips) console.log(`${c.file}  ${c.duration.toFixed(1)} s ${c.orientation}${c.faces.length ? ", face" : ""}${c.described ? "" : " (no description: Claude was not available)"}
+  ${c.description}`);
+      console.log(`${clips.length} clip${clips.length === 1 ? "" : "s"} in ${dir}`);
       return;
     }
     case "usage": {

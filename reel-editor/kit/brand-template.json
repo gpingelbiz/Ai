@@ -35,6 +35,8 @@
   },
   "world": "Who they are and where they live and work, for the b-roll: their business, their city, their setting, the things that show up in their life. One or two sentences, concrete.",
   "brollStyle": "",
+  "_brollLibrary": "A folder of their own clips (lifestyle, events, behind the scenes), inside their reel folder: their b-roll reels then cut to that real footage, full screen for about 2 seconds, instead of AI stills. Each clip is described once and never used twice in a reel. Empty = AI stills from their world.",
+  "brollLibrary": "",
   "carouselStyle": "The look of their carousel pictures: light, colors, texture. Never another creator's style.",
   "voice": "How they talk in captions: who they talk to, words they use, words they never use, how long, emojis or not.",
   "terms": ["Their program name", "Their framework"],

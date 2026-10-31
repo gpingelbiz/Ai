@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { readJSON, deepMerge, PKG_ROOT, warn } from "./util.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
@@ -28,6 +29,8 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
     p.fonts = { ...p.fonts };
     for (const k of ["display", "displayItalic", "body"]) if (own.fonts[k] && !path.isAbsolute(own.fonts[k])) p.fonts[k] = path.resolve(path.dirname(file), own.fonts[k]);
   }
+  // So does its b-roll library (the client's own clips sit in their reel folder, a kit's in ~/.reel).
+  if (typeof own.broll?.library === "string" && own.broll.library.trim()) p.broll = { ...p.broll, library: path.resolve(path.dirname(file), own.broll.library.trim().replace(/^~(?=\/|$)/, os.homedir())) };
   let brand = p.brand?.schemaVersion === 2 ? p.brand : null;
   if (p.brandFile) {
     const candidates = path.isAbsolute(p.brandFile)
@@ -134,6 +137,8 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noAnnotate) p.captions.annotate = false;
   if (o.zoomStyle) p.zooms.style = o.zoomStyle;
   if (o.brollCut) p.broll.cut = o.brollCut;
+  // --broll-library <folder>: cut to that folder's own clips (the "library" engine unless --broll-engine says otherwise).
+  if (o.brollLibrary) { p.broll.library = path.resolve(String(o.brollLibrary).replace(/^~(?=\/|$)/, os.homedir())); if (!o.brollEngine) p.broll.engine = "library"; }
   if (o.brollEngine) {
     // A preset that is not a Runway preset (a client's brand, from the Runway drop folder) gets the pingel-runway
     // timing and budget under its own look, instead of the 2-second still timing.

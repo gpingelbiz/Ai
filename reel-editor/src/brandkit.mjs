@@ -31,6 +31,7 @@ export function checkBrand(b) {
   const hs = b.look?.hookSeconds;
   if (hs != null && hs !== "reel" && !(Number(hs) >= 1 && Number(hs) <= 60)) out.push('look.hookSeconds is a number of seconds (1-60) or "reel"');
   if (b.look?.pace && !["fast", "calm"].includes(b.look.pace)) out.push('look.pace is "fast" or "calm"');
+  if (b.brollLibrary != null && typeof b.brollLibrary !== "string") out.push('brollLibrary is a folder of their own clips, like "broll-library" (inside their reel folder)');
   if (b.looks?.only != null) {
     const only = Array.isArray(b.looks.only) ? b.looks.only.map((x) => String(x).toLowerCase().trim()) : [];
     for (const x of only) if (!LOOK_IDS.includes(x) || x === "gregcard") out.push(`looks.only: "${x}" is not a look they can use (${LOOK_IDS.filter((id) => id !== "gregcard").join(", ")})`);
@@ -79,6 +80,7 @@ export function brandPreset(b, { fonts = {} } = {}) {
   const quietCaps = look.captions === "quiet" || look.captions === "serif";
   // Only what the brand file asks for is written, so a brand file without these fields keeps Greg's behaviour.
   const coldOpen = look.coldOpen != null ? look.coldOpen !== false : calm ? false : null;
+  const brollLibrary = String(compat.brollLibrary ?? b.brollLibrary ?? "").trim();
   return {
     name: `brand-${kitSlug(b)}`,
     extends: "pingel-brand",
@@ -106,8 +108,9 @@ export function brandPreset(b, { fonts = {} } = {}) {
     // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
     graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : { every: 10, max: 6 }), clearStart: 0 },
-    // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
-    broll: { world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim(), max: 3, every: 12, clearStart: 0 },
+    // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples. brollLibrary (a folder of
+    // their own clips, relative to their reel folder) switches their b-roll to cuts from that real footage instead.
+    broll: { world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim(), max: 3, every: 12, clearStart: 0, ...(brollLibrary ? { engine: "library", library: brollLibrary } : {}) },
     carousel: { handle: identity.handle || "", style: String(compat.carouselStyle ?? b.carouselStyle ?? "").trim() },
     lowerThird: { name: identity.name, handle: identity.handle || "" },
   };
