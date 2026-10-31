@@ -56,7 +56,7 @@ export function speakerHelp(config = speakerConfig()) {
 const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 export function speakerPlist(config = speakerConfig(), folders = speakerClients(config, { activeOnly: true }).map((c) => c.folder), env = process.env) {
   const entries = { HOME: config.home, SPEAKER_HOME: config.home, SPEAKER_CLIENTS_ROOT: config.root, SPEAKER_DESKTOP_ROOT: config.desktop,
-    SPEAKER_REEL: config.reel, PATH: `${config.home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin` };
+    SPEAKER_REEL: config.reel, PATH: `${config.home}/.local/bin:${config.home}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin` };
   for (const key of ["SPEAKER_LOCK", "SPEAKER_STABLE_SECONDS", "SPEAKER_STABLE_ATTEMPTS"]) if (env[key]) entries[key] = env[key];
   const log = env.SPEAKER_LAUNCH_LOG || path.join(config.root, "watch-launchd.log");
   return `<?xml version="1.0" encoding="UTF-8"?>
