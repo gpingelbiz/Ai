@@ -61,7 +61,7 @@ export function bannedInCaption(text) {
   return "";
 }
 
-/** A reel marked to go straight to followers: `trial: false` in its metadata or caption file, or #public / #notrial in a name. */
+/** A reel marked to skip its trial copy: `trial: false` in its metadata or caption file, or #public / #notrial in a name. */
 export function publicReel({ entry = "", dir = null, video = "", captionRaw = "", meta = {} } = {}) {
   if (meta?.trial === false) return true;
   if (/(?:^|[\s,{])["']?trial["']?\s*:\s*false\b/im.test(String(captionRaw || ""))) return true;
@@ -69,40 +69,13 @@ export function publicReel({ entry = "", dir = null, video = "", captionRaw = ""
 }
 
 /**
- * Was the newest reel filed under Scheduled/ a Trial Reel? Reads the receipts `done` wrote ("Trial Reel: yes"), newest
- * first, skipping drafts. null when nothing has been scheduled yet.
+ * Every reel also goes out a second time as a separate Trial Reel (Greg 2026-10-31: "every reel that we post, we also
+ * post it separately as a trial reel"). The regular reel reaches his followers (and TikTok); the trial copy, Instagram
+ * only, is shown to non-followers first. A draft gets no copy, a reel marked #trial is already a trial, and #public /
+ * #notrial / trial:false skip the copy.
  */
-export function lastScheduledTrial(root = ROOT) {
-  const dir = path.join(root, SCHEDULED);
-  let receipts = [];
-  try {
-    receipts = fs.readdirSync(dir).map((e) => path.join(dir, e, "Scheduled.txt")).filter((f) => fs.existsSync(f))
-      .map((f) => ({ f, t: fs.statSync(f).mtimeMs })).sort((a, b) => b.t - a.t);
-  } catch { return null; }
-  for (const { f } of receipts) {
-    const text = fs.readFileSync(f, "utf8");
-    if (/^Saved as a DRAFT/m.test(text)) continue;
-    return /^Trial Reel: yes/m.test(text);
-  }
-  return null;
-}
-
-/**
- * Every other reel goes out as a Trial Reel (Greg 2026-10-31, "Do all 7": Instagram shows a trial to non-followers
- * first, so half the reels test for new reach while the other half still reach his followers). A reel marked either
- * way keeps its mark; drafts never count. The first reel after a trial is public, and with no history the first is
- * public too. Changes the items in place.
- */
-export function alternateTrials(items, { last = null } = {}) {
-  let prev = last ?? true;
-  for (const item of items) {
-    if (!item || item.draft) continue;
-    if (item.trialSource !== "auto") { prev = !!item.trial; continue; }
-    item.trial = !prev;
-    item.instagramType = item.trial ? "TRIAL_REEL" : "REEL";
-    prev = item.trial;
-  }
-  return items;
+export function wantsTrialCopy({ draft = false, trial = false, skip = false } = {}) {
+  return !draft && !trial && !skip;
 }
 
 /** Networks a reel also goes to besides Instagram (Greg 2026-10-31: every reel to TikTok). REEL_PUBLISH_CROSSPOST="" turns it off. */
@@ -200,12 +173,11 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   if (!caption.caption) { draft = true; why = "there is no caption"; }
   const banned = bannedInCaption(postText(caption));
   if (banned && !draft) { draft = true; why = banned; }
-  const marked = trialReel({ entry, dir, video, captionRaw, meta, root });
-  const pub = !marked && publicReel({ entry, dir, video, captionRaw, meta });
-  const trial = marked;
+  const trial = trialReel({ entry, dir, video, captionRaw, meta, root });
+  const trialCopy = wantsTrialCopy({ draft, trial, skip: !trial && publicReel({ entry, dir, video, captionRaw, meta }) });
   const text = postText(caption);
   const providers = reelProviders({ text, names: [entry, dir && path.basename(dir), video && path.basename(video)] });
-  return { root, entry, dir, video, captionFile, caption, notes, text, isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, trial, trialSource: marked || pub ? "marked" : "auto", instagramType: trial ? "TRIAL_REEL" : "REEL", providers, tiktok: providers.includes("tiktok") ? tiktokData({ isAiGenerated: !!ai }) : null, metaFile: metaPath, checkFile: noteFile || null, textcheckFile: textcheckFile || null, droppedAt: Math.round(st.mtimeMs) };
+  return { root, entry, dir, video, captionFile, caption, notes, text, isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, trial, trialCopy, instagramType: trial ? "TRIAL_REEL" : "REEL", providers, tiktok: providers.includes("tiktok") ? tiktokData({ isAiGenerated: !!ai }) : null, metaFile: metaPath, checkFile: noteFile || null, textcheckFile: textcheckFile || null, droppedAt: Math.round(st.mtimeMs) };
 }
 
 // Where delivered reels live: the Desktop Reels folder (where the drop folders deliver).
@@ -236,11 +208,9 @@ export function scan({ root = ROOT, now = Date.now() } = {}) {
     try { return fs.statSync(folder).isDirectory() ? fs.readdirSync(folder).map((child) => path.join(entry, child)) : [entry]; }
     catch { return [entry]; }
   });
-  const items = entries.map((e) => readItem(e, { root, now })).filter(Boolean)
+  return entries.map((e) => readItem(e, { root, now })).filter(Boolean)
     // Oldest drop first; things dropped in the same few minutes go in name order (Clip 1 before Clip 2).
     .sort((a, b) => Math.floor((a.droppedAt || 0) / 300000) - Math.floor((b.droppedAt || 0) / 300000) || a.entry.localeCompare(b.entry, undefined, { numeric: true }));
-  alternateTrials(items.filter((i) => i.video && !i.waiting && !i.problem), { last: lastScheduledTrial(root) });
-  return items;
 }
 
 /** File an item under Scheduled/ or Not posted/ with a receipt next to it. */
@@ -281,9 +251,10 @@ function uniquePath(p) {
  * The posting day: the first day from today with no Instagram reel scheduled yet (`taken` = ["YYYY-MM-DD"]), and
  * today only when its best hour is still 2 h out. `bestByDay` = {day: [hours, best first]} from Metricool.
  * `busy` = {day: [hours]} of every other post that day (carousels, statics, drafts): a reel never goes within
- * `minGap` hours of one (Greg 2026-10-22: "dont post them at the same time as other posts").
+ * `minGap` hours of one (Greg 2026-10-22: "dont post them at the same time as other posts"). `notBefore` (a day) places
+ * a reel's trial copy on its regular reel's day or later.
  */
-export function pickSlot({ now, taken = [], bestByDay = {}, busy = {}, tz = "America/Phoenix", minLead = 2, minGap = 2, fallbackHour = 18, dayHours = [8, 21] }) {
+export function pickSlot({ now, taken = [], bestByDay = {}, busy = {}, tz = "America/Phoenix", minLead = 2, minGap = 2, fallbackHour = 18, dayHours = [8, 21], notBefore = null }) {
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" });
   const parts = (d) => Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
   const p = parts(now);
@@ -292,7 +263,7 @@ export function pickSlot({ now, taken = [], bestByDay = {}, busy = {}, tz = "Ame
     const d = new Date(now.getTime() + k * 86400000);
     const q = parts(d);
     const day = `${q.year}-${q.month}-${q.day}`;
-    if (taken.includes(day)) continue;
+    if (taken.includes(day) || (notBefore && day < notBefore)) continue;
     const clear = (h) => (busy[day] || []).every((b) => Math.abs(b - h) >= minGap) && (day !== today || h >= hourNow + minLead);
     // The best hours first; when every best hour is next to another post, any clear daytime hour nearest the best one.
     const best = bestByDay[day] || [fallbackHour];

@@ -6,7 +6,7 @@ import path from "node:path";
 // The delivered-reels lookup must never read the real ~/Desktop/Reels (an iCloud folder can stall the whole run):
 // point it at an empty folder before the module reads REEL_WATCH_DONE.
 process.env.REEL_WATCH_DONE = fs.mkdtempSync(path.join(os.tmpdir(), "reel-desk-"));
-const { parseCaption, postText, readItem, scan, fileItem, pickSlot, coverMilliseconds, bannedInCaption, trialReel, publicReel, lastScheduledTrial, alternateTrials, reelProviders, tiktokData } = await import("../src/publish-folder.mjs");
+const { parseCaption, postText, readItem, scan, fileItem, pickSlot, coverMilliseconds, bannedInCaption, trialReel, publicReel, wantsTrialCopy, reelProviders, tiktokData } = await import("../src/publish-folder.mjs");
 const { buildPost } = await import("../scripts/publish.mjs");
 
 const CAPTION_TXT = `HOOK
@@ -172,37 +172,31 @@ test("caption gate: Ghost P&L, the GHOST keyword and any mention of his wife hol
   assert.equal(it.why, "it mentions the Ghost P&L");
 });
 
-test("every other reel is a Trial Reel: public first, marks win, drafts don't count, history carries over", () => {
-  const items = [{ trialSource: "auto" }, { trialSource: "auto", draft: true }, { trialSource: "auto" }, { trialSource: "marked", trial: true }, { trialSource: "auto" }];
-  alternateTrials(items);
-  assert.deepEqual(items.map((i) => !!i.trial), [false, false, true, true, false]);
-  assert.equal(items[2].instagramType, "TRIAL_REEL");
-  assert.equal(items[1].instagramType, undefined, "a draft is left alone");
-  const after = [{ trialSource: "auto" }];
-  alternateTrials(after, { last: false });
-  assert.equal(after[0].trial, true, "after a public reel comes a trial");
+test("every reel gets a separate trial copy, except drafts, reels already marked #trial, and #public / #notrial", () => {
+  assert.equal(wantsTrialCopy({}), true);
+  assert.equal(wantsTrialCopy({ draft: true }), false);
+  assert.equal(wantsTrialCopy({ trial: true }), false);
+  assert.equal(wantsTrialCopy({ skip: true }), false);
   assert.equal(publicReel({ entry: "Reel 3 #public" }), true);
   assert.equal(publicReel({ meta: { trial: false } }), true);
   assert.equal(publicReel({ entry: "Reel 3" }), false);
+  const root = tmp();
+  for (const name of ["Reel 9", "Reel 10 #notrial", "Reel 11 #trial"]) {
+    const folder = path.join(root, name);
+    fs.mkdirSync(folder);
+    fs.writeFileSync(path.join(folder, "r.mp4"), "x"); old(path.join(folder, "r.mp4"));
+    fs.writeFileSync(path.join(folder, "caption.txt"), "Cap.");
+  }
+  const got = Object.fromEntries(scan({ root }).filter((i) => i.video).map((i) => [i.entry, [i.instagramType, i.trialCopy]]));
+  assert.deepEqual(got["Reel 9"], ["REEL", true], "a regular reel plus its trial copy");
+  assert.deepEqual(got["Reel 10 #notrial"], ["REEL", false]);
+  assert.deepEqual(got["Reel 11 #trial"], ["TRIAL_REEL", false], "already a trial: no second copy");
 });
 
-test("the last scheduled receipt decides the next reel; drafts are skipped", () => {
-  const root = tmp();
-  assert.equal(lastScheduledTrial(root), null);
-  const put = (name, text, ageS) => { const d = path.join(root, "Scheduled", name); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, "Scheduled.txt"); fs.writeFileSync(f, text); const t = new Date(Date.now() - ageS * 1000); fs.utimesSync(f, t, t); };
-  put("A", "Scheduled to post on Instagram at 2026-11-03T12:00:00-07:00.\nTrial Reel: yes. Instagram shows it", 300);
-  assert.equal(lastScheduledTrial(root), true);
-  put("B", "Saved as a DRAFT in Metricool for you to look at (x)", 10);
-  assert.equal(lastScheduledTrial(root), true, "a draft is not a posted reel");
-  put("C", "Scheduled to post on Instagram at 2026-11-04T12:00:00-07:00.", 5);
-  assert.equal(lastScheduledTrial(root), false);
-  const folder = path.join(root, "Reel 9");
-  fs.mkdirSync(folder);
-  fs.writeFileSync(path.join(folder, "r.mp4"), "x"); old(path.join(folder, "r.mp4"));
-  fs.writeFileSync(path.join(folder, "caption.txt"), "Cap.");
-  const next = scan({ root }).find((i) => i.video);
-  assert.equal(next.trial, true, "after a public reel the scan makes the next one a trial");
-  assert.equal(next.instagramType, "TRIAL_REEL");
+test("slot: a trial copy lands on its reel's day, 2 h from the reel, or later", () => {
+  const now = new Date("2026-11-02T07:00:00-07:00");
+  assert.deepEqual(pickSlot({ now, notBefore: "2026-11-03", busy: { "2026-11-03": [12] }, bestByDay: { "2026-11-03": [12, 13, 18] } }), { day: "2026-11-03", hour: 18 });
+  assert.deepEqual(pickSlot({ now, notBefore: "2026-11-03", busy: { "2026-11-03": [8, 10, 12, 14, 16, 18, 20] }, bestByDay: { "2026-11-04": [9] } }), { day: "2026-11-04", hour: 9 });
 });
 
 test("reels also go to TikTok unless marked #igonly or the caption is too long; AI b-roll sets TikTok's AI label", () => {
