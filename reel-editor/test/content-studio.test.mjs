@@ -830,3 +830,26 @@ test("kit: a Content Studio kit names its own installer everywhere and links to 
   assert.match(plain, /Install Reel Editor\.command/);
   assert.doesNotMatch(plain, /<td>Publish<\/td>/, "the Publish folder is a Content Studio piece");
 });
+
+test("kit: Start Here lists every service to sign up for with a clickable link; the kit folder has the same links", async () => {
+  const { SIGNUPS, signupsFor, signupLinks } = await import("../src/signups.mjs");
+  assert.ok(SIGNUPS.every((s) => /^https:\/\//.test(s.url) && s.what && s.name), "every service has a page and a reason");
+  const html = fs.readFileSync(new URL("../kit/Start Here.html", import.meta.url), "utf8");
+  const jane = { name: "Jane Doe", colors: { text: "#FFFFFF", accent: "#E94B8A" } };
+  const studio = personalizeStartHere(html, jane, { studio: true });
+  const reel = personalizeStartHere(html, jane);
+  for (const page of [studio, reel]) {
+    assert.doesNotMatch(page, /<!-- signups -->/);
+    assert.match(page, /<h2>What to sign up for<\/h2>/);
+    assert.match(page, /<a href="https:\/\/claude\.com\/pricing">Claude \(Pro or Max\)<\/a>/);
+    assert.match(page, /<a href="https:\/\/dev\.runwayml\.com\/">Runway API<\/a>/);
+    assert.match(page, /<td>Runway key<\/td>/);
+  }
+  assert.match(studio, /<a href="https:\/\/metricool\.com\/pricing\/">Metricool<\/a><\/td><td>Needed<\/td>/);
+  assert.doesNotMatch(reel, /metricool\.com\/pricing/, "a reel-only kit does not post, so no Metricool");
+  assert.deepEqual(signupsFor({ studio: true }).map((s) => s.id), ["claude", "metricool", "epidemic", "chatgpt", "elevenlabs", "runway", "sandcastles"]);
+  const links = signupLinks({ studio: true });
+  assert.equal(Object.keys(links).length, 7);
+  assert.match(links["Metricool.webloc"], /<string>https:\/\/metricool\.com\/pricing\/<\/string>/);
+  assert.ok(!("Metricool.webloc" in signupLinks()), "reel kit: no Metricool link");
+});

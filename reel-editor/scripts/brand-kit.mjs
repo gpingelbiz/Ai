@@ -11,6 +11,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { checkBrand, brandPreset, youtubePreset, brandDictionary, brandVoice, fetchFont, personalizeStartHere } from "../src/brandkit.mjs";
 import { PKG_ROOT } from "../src/util.mjs";
+import { signupLinks } from "../src/signups.mjs";
 
 const args = process.argv.slice(2);
 const file = args.find((a, i) => !a.startsWith("--") && !["--out", "--studio"].includes(args[i - 1]));
@@ -59,6 +60,9 @@ const installer = GUIDE ? "Install Content Studio.command" : "Install Reel Edito
 fs.copyFileSync(path.join(PKG_ROOT, "kit", installer), path.join(kit, installer));
 fs.chmodSync(path.join(kit, installer), 0o755);
 fs.writeFileSync(path.join(kit, "Start Here.html"), personalizeStartHere(fs.readFileSync(path.join(PKG_ROOT, "kit", "Start Here.html"), "utf8"), brand, { studio: !!GUIDE }));
+// "Sign up here": a double-click link to each service's plans, the same list as Start Here's table.
+fs.mkdirSync(path.join(kit, "Sign up here"), { recursive: true });
+for (const [name, body] of Object.entries(signupLinks({ studio: !!GUIDE }))) fs.writeFileSync(path.join(kit, "Sign up here", name), body);
 
 fs.mkdirSync(OUT, { recursive: true });
 const zip = path.join(OUT, `${kitName}.zip`);
