@@ -90,3 +90,19 @@ test("speaker desktop fixes: a broken client manifest is skipped, and case-only 
   const contents = files.map((f) => fs.readFileSync(path.join(client, "footage", "Event", f), "utf8")).sort();
   assert.deepEqual(contents, ["first version", "second version, different case"]);
 });
+
+test("speaker draft fixes from Julee's first render", async () => {
+  const fs = await import("node:fs");
+  const { speakerLoudnessFilter, LIMIT } = await import("../src/speaker-normalize.mjs");
+  const f = speakerLoudnessFilter({ input_i: "-17.2", input_tp: "-0.5", input_lra: "6", input_thresh: "-27", target_offset: "0.1" });
+  assert.match(f, /loudnorm=I=-14:TP=-2/); assert.match(f, /alimiter=limit=0\.79/); assert.ok(LIMIT < 10 ** (-1 / 20));
+  assert.match(fs.readFileSync(new URL("../src/speaker-qc.mjs", import.meta.url), "utf8"), /blackdetect=d=0\.1:pix_th=0\.10:pic_th=0\.999/);
+  const { cardChecks } = await import("../src/speaker-cards.mjs");
+  const manifest = { identity: { name: "Jane Doe", roleLine: "Speaker" },
+    sources: [{ id: "t", kind: "testimonial", rights: "r" }], rights: [{ id: "r", status: "approved" }],
+    proof: [{ id: "tp", kind: "testimonial-video", sourceId: "t", in: 0, out: null, attribution: { name: "Sonia", title: "Student", org: "" }, rights: "r" }] };
+  const plan = { canvas: { width: 1920, height: 1080, fps: 30 },
+    items: [{ id: "t1", kind: "clip", sourceId: "t", in: 9.6, out: 29.5, start: 0, end: 19.9 }, { id: "b1", kind: "card", start: 19.9, end: 25.9, duration: 6, card: { type: "booking" } }],
+    overlays: [{ id: "o", at: "t1", offset: 0.3, duration: 4.5, start: 0.3, end: 4.8, card: { type: "testimonial-name", proofId: "tp" } }] };
+  assert.ok(!cardChecks(plan, { manifest }).some((c) => c.code === "card-testimonial-name"), "whole-clip proof (out: null) matches its name card");
+});

@@ -469,7 +469,7 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
     if (source.kind !== "testimonial") continue;
     let span;
     try { span = outputSpan(item, fps); } catch (error) { add("card-time", error.message); continue; }
-    const proof = (manifest.proof || []).filter((p) => p.kind === "testimonial-video" && p.sourceId === source.id && p.in <= item.in && p.out >= item.out);
+    const proof = (manifest.proof || []).filter((p) => p.kind === "testimonial-video" && p.sourceId === source.id && (p.in ?? 0) <= item.in && (p.out == null || p.out >= item.out));
     const identified = overlays.some((c) => c.card.type === "testimonial-name" && c.card.name && c.entry.at === item.id && c.span.start >= span.start && c.span.start <= span.start + 1 && c.span.end <= span.end + 1e-7 && c.span.end - c.span.start >= 4 - 1e-7 && proof.some((p) => p.id === c.card.proofId));
     if (!identified) add("card-testimonial-name", `${item.id}: needs a matching testimonial-name overlay starting within 1s, held at least 4s on this testimonial`);
   }

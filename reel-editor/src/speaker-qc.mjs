@@ -87,7 +87,7 @@ async function encoding(file) {
 }
 
 async function blackGaps(file) {
-  const { err } = await run("ffmpeg", ["-hide_banner", "-nostats", "-i", file, "-an", "-vf", "scale=160:-2,blackdetect=d=0.1:pix_th=0.10", "-f", "null", "-"], { capture: true });
+  const { err } = await run("ffmpeg", ["-hide_banner", "-nostats", "-i", file, "-an", "-vf", "scale=160:-2,blackdetect=d=0.1:pix_th=0.10:pic_th=0.999", "-f", "null", "-"], { capture: true });
   return [...err.matchAll(/black_start:([\d.]+)\s+black_end:([\d.]+)/g)].map((m) => ({ start: +m[1], end: +m[2] }));
 }
 

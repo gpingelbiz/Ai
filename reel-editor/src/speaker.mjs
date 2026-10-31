@@ -11,7 +11,7 @@ import { readJSON, writeJSON, ensureDir, log } from "./util.mjs";
 
 import { composeSpeakerProject } from "./speaker-compose.mjs";
 import { render } from "./render.mjs";
-import { normalizeDelivery } from "./pipeline.mjs";
+import { speakerNormalize } from "./speaker-normalize.mjs";
 import { speakerQC, writeQC } from "./speaker-qc.mjs";
 import { buildReview, writeRevision } from "./speaker-review.mjs";
 import { approve, deliver } from "./speaker-deliver.mjs";
@@ -63,7 +63,7 @@ export function planSummary(resolved, manifest) {
 }
 
 /** No plan selection, publish routes or client approval state is inferred here. */
-export async function runSpeaker(folder, opts = {}, { index: indexImpl = indexSources, compile: compileImpl = compileVersion, compose: composeImpl = composeSpeaker, loudness: loudnessImpl = measureLoudness, render: renderImpl = render, normalize: normalizeImpl = normalizeDelivery, qc: qcImpl = speakerQC, review: reviewImpl = buildReview, print = log } = {}) {
+export async function runSpeaker(folder, opts = {}, { index: indexImpl = indexSources, compile: compileImpl = compileVersion, compose: composeImpl = composeSpeaker, loudness: loudnessImpl = measureLoudness, render: renderImpl = render, normalize: normalizeImpl = speakerNormalize, qc: qcImpl = speakerQC, review: reviewImpl = buildReview, print = log } = {}) {
   folder = path.resolve(folder);
   const { manifest, problems } = loadManifest(folder);
   errors(problems);
