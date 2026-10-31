@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { slug, writeJSON, readJSON, VIDEO_EXTS } from "./util.mjs";
+import { identityLeaks } from "./speaker-guard.mjs";
 
 export const SOURCE_KINDS = ["stage", "podcast", "webinar", "interview", "testimonial", "broll", "photo"];
 export const PROOF_KINDS = ["testimonial-video", "quote", "logo", "press", "book", "number", "award"];
@@ -10,13 +11,8 @@ const IMAGES = new Set([".png", ".jpg", ".jpeg", ".webp", ".heic", ".tif", ".tif
 
 /** Deliberately checks values, including nested card text; object keys are not rendered. */
 export function assertNoGreg(obj, label = "speaker") {
-  const walk = (value, at) => {
-    if (typeof value === "string" && /greg pingel|officialgregpingel|pingel/i.test(value)) {
-      throw new Error(`${at}: speaker brand safety rejected a string containing Greg's identity`);
-    }
-    if (value && typeof value === "object") for (const [key, child] of Object.entries(value)) walk(child, `${at}.${key}`);
-  };
-  walk(obj, label);
+  const leak = identityLeaks(obj, label)[0];
+  if (leak) throw new Error(`${leak}: speaker brand safety rejected a string containing Greg's identity`);
   return obj;
 }
 

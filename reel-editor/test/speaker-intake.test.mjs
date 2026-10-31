@@ -88,8 +88,10 @@ test("init discovers media recursively, disambiguates ids, never overwrites and 
 });
 
 test("brand safety rejects all nested identity strings case-insensitively", () => {
-  for (const text of ["Greg Pingel", "@officialgregpingel", "PINGEL", "A Pingel quotation", "/Users/gregpingel/Clients/Julee Gracey/brand.json"]) assert.throws(() => assertNoGreg({ cards: [{ text }] }), /brand safety/);
+  for (const text of ["Greg Pingel", "@officialgregpingel", "PINGEL", "A Pingel quotation"]) assert.throws(() => assertNoGreg({ cards: [{ text }] }), /brand safety/);
   assert.doesNotThrow(() => assertNoGreg({ name: "Julee Gracey", text: "Real words" }));
+  // The client's files live under the operator's home folder on Greg's Mac: paths are masked, not identity.
+  assert.doesNotThrow(() => assertNoGreg({ brand: { file: "/Users/gregpingel/Clients/Julee Gracey/brand.json" } }));
 });
 
 test("speaker preset is resolved, neutral and disables every automatic short-form treatment", () => {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { resolveBrandTokens, tokensCSS, readableOn, contrast } from "./brandtokens.mjs";
 import { esc } from "./text.mjs";
+import { identityLeaks } from "./speaker-guard.mjs";
 
 const TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic"];
 const HEADINGS = { "spoke-at": "Spoke at", client: "Hired by", "featured-in": "Featured in", "available-at": "Available at" };
@@ -14,15 +15,8 @@ const roundFrame = (s, fps) => Math.round(s * fps) / fps;
 const js = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 const rectOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
-// Local home-directory names are infrastructure, not client identity. Still inspect the filename and all copy.
-function identityLeak(value, key = "") {
-  if (typeof value === "string") {
-    const text = ["file", "path", "source", "clientDir"].includes(key) && path.isAbsolute(value)
-      ? value.replace(/^\/Users\/[^/]+\//, "/Users/local/") : value;
-    return /greg\s+pingel|officialgregpingel|pingel/i.test(text);
-  }
-  return value && typeof value === "object" && Object.entries(value).some(([k, v]) => identityLeak(v, k));
-}
+// Home-folder names in file paths are masked by speaker-guard.mjs; all copy is still inspected.
+const identityLeak = (value) => identityLeaks(value).length > 0;
 
 function rightsProblems(proof, manifest, final) {
   const right = (manifest.rights || []).find((r) => r.id === proof.rights);

@@ -3,6 +3,7 @@ import path from "node:path";
 import { probe } from "./probe.mjs";
 import { measureLoudness, silences } from "./preflight.mjs";
 import { run, writeJSON } from "./util.mjs";
+import { identityLeaks } from "./speaker-guard.mjs";
 
 /** Accept the explicit output fields, or start/end from a compiled plan. Never use source in/out as output time. */
 export function outputSpan(item) {
@@ -51,14 +52,7 @@ export function rightsChecks(plan, manifest, final = false) {
 }
 
 /** Filesystem paths can contain the operator's home name; inspect all editorial text, excluding path metadata. */
-export function identityProblems(value, prefix = "") {
-  if (typeof value === "string") return /greg\s*pingel|officialgregpingel|pingel/i.test(value) ? [prefix || "text"] : [];
-  if (!value || typeof value !== "object") return [];
-  return Object.entries(value).flatMap(([key, val]) => {
-    if (/^(?:path|file|src|video|fontFile|sourceFile|evidence)$/i.test(key) && typeof val === "string" && (path.isAbsolute(val) || /^(?:footage|proof|music|work)\//.test(val))) return [];
-    return identityProblems(val, prefix ? `${prefix}.${key}` : key);
-  });
-}
+export const identityProblems = (value, prefix = "") => identityLeaks(value, prefix);
 
 /** Remove the union of card inserts from a detector span; a gap straddling a card still has to pass. */
 export function gapsOutsideCards(gaps, plan, min = 1.5) {

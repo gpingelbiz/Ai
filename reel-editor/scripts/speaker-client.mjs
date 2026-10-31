@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { hasGregIdentity } from "../src/speaker-guard.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export function speakerConfig(env = process.env) {
@@ -28,7 +29,7 @@ export function safeName(name) {
 }
 export function assertSpeakerBrand(brand) {
   if (!brand || typeof brand !== "object" || Array.isArray(brand)) throw new Error("Brand file must contain a JSON object.");
-  if (/greg\s+pingel|officialgregpingel|pingel/i.test(JSON.stringify(brand))) throw new Error("Refusing speaker brand: it contains Greg Pingel's identity (pingel). Supply the client's brand.");
+  if (hasGregIdentity(JSON.stringify(brand))) throw new Error("Refusing speaker brand: it contains Greg Pingel's identity (pingel). Supply the client's brand.");
   return brand;
 }
 export function manifestSkeleton(name, slug, brandFile) {

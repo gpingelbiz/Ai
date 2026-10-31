@@ -96,6 +96,7 @@ test("legacy render snapshots: no signature and no house list keep every existin
     "pingel-brand": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",
     "pingel-runway": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",
     "pingel-v2": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",
+    speaker: "02fd8099cebdcecbf752ed364a994eb4b9b706388112c8db6eedc3512df3f83a",
     youtube: "1e0120f8f3c4dc3eb9b118ca35c0c75fdda699f6089095cbc22e7ab8baa4278f",
   };
   for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_")).sort()) {
