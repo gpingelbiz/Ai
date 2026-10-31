@@ -151,7 +151,8 @@ export function parseSpeakerArgs(argv) {
   } });
   if (values.help || !positionals.length) return { help: true };
   const commands = ["init", "index", "candidates", "reactions", "plan", "draft", "comments", "approve", "deliver", "status"];
-  const explicit = commands.includes(positionals[0]);
+  // "reel speaker plan" with no other argument is the client folder ./plan when it exists, not the command.
+  const explicit = commands.includes(positionals[0]) && !(positionals.length === 1 && fs.existsSync(positionals[0]));
   const command = explicit ? positionals.shift() : "draft";
   if (positionals.length !== (command === "comments" ? 2 : 1)) throw new Error(`speaker ${command} requires one client folder${command === "comments" ? " and one comments file" : ""}; use reel speaker --help`);
   if (values.version && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(values.version)) throw new Error("speaker --version must be a safe folder name");

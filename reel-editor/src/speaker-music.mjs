@@ -35,16 +35,27 @@ export function speakerMusicLane(plan, words = []) {
   for (let a = 0; a < ranges.length; a++) for (let b = a + 1; b < ranges.length; b++) {
     if (ranges[a].from <= ranges[b].to && ranges[b].from <= ranges[a].to) throw new Error(`speaker music: overlapping sections ${ranges[a].from}-${ranges[a].to} and ${ranges[b].from}-${ranges[b].to}`);
   }
-  const points = [];
+  // Neighbouring items with the same music state form one run with one ducking lane, so the bed only fades where it
+  // actually turns on or off (or changes level), never at every cut inside a section.
+  const runs = [];
   for (const [n, item] of items.entries()) {
     const explicit = ranges.find((s) => n >= s.from && n <= s.to);
     const active = explicit || (!ranges.length && !item.protect && item.role !== "core");
     const level = active ? 10 ** ((explicit?.gainDb ?? -20) / 20) : 0;
-    const start = item.startFrame / fps, end = item.endFrame / fps, d = end - start;
+    const swell = item.protect || ["core", "room", "testimonial"].includes(item.role) ? 1 : 2.2;
+    const last = runs.at(-1);
+    if (last && last.level === level && last.swell === swell && last.endFrame === item.startFrame) last.endFrame = item.endFrame;
+    else runs.push({ level, swell, startFrame: item.startFrame, endFrame: item.endFrame });
+  }
+  const points = [];
+  for (const [n, run] of runs.entries()) {
+    const start = run.startFrame / fps, end = run.endFrame / fps, d = end - start;
     const local = words.filter((w) => w.end > start && w.start < end).map((w) => ({ ...w, start: Math.max(0, w.start - start), end: Math.min(d, w.end - start + 0.5) }));
-    const lane = duckingLane(local, { duration: d, start: 0, level, swell: item.protect || ["core", "room", "testimonial"].includes(item.role) ? 1 : 2.2, minGap: 1.2, ramp: 0.8, fadeIn: Math.min(0.35, d / 3), fadeOut: Math.min(0.5, d / 3) });
+    // Fade in only from silence and out only into silence; a level change between two active runs is a cut.
+    const fadeIn = runs[n - 1]?.level ? 0 : Math.min(0.35, d / 3), fadeOut = runs[n + 1]?.level ? 0 : Math.min(0.5, d / 3);
+    const lane = duckingLane(local, { duration: d, start: 0, level: run.level, swell: run.swell, minGap: 1.2, ramp: 0.8, fadeIn, fadeOut });
     let cursor = 0;
-    for (let frame = item.startFrame; frame < item.endFrame; frame++) {
+    for (let frame = run.startFrame; frame < run.endFrame; frame++) {
       const t = frame / fps - start;
       while (cursor + 1 < lane.length && lane[cursor + 1].t <= t) cursor++;
       const a = lane[cursor], b = lane[cursor + 1] || a;

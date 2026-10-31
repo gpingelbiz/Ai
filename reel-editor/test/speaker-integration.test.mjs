@@ -203,3 +203,24 @@ test("composition copies supplied fonts/assets and exports native music automati
   assert.ok(!html.includes(path.join(folder, "client.ttf")));
   assert.ok(fs.existsSync(path.join(c.projectDir, "assets/music.wav")));
 });
+
+test("speaker music: one bed across consecutive active items with no dip at the cut, fades only where it turns on or off", async () => {
+  const { speakerMusicLane } = await import("../src/speaker-music.mjs");
+  const plan = { canvas: { fps: 30 }, duration: 12, music: { file: "m.mp3" }, items: [
+    { id: "a", role: "opening", startFrame: 0, endFrame: 180 },
+    { id: "b", role: "opening", startFrame: 180, endFrame: 270 },
+    { id: "c", role: "core", protect: true, startFrame: 270, endFrame: 360 },
+  ] };
+  const lane = speakerMusicLane(plan, []);
+  const at = (t) => lane.find((p) => Math.abs(p.t - t) < 1e-6).v;
+  assert.ok(at(6.0) > 0.05 && Math.abs(at(6.0) - at(5.9)) < 1e-6, "no dip at the a/b cut");
+  assert.equal(at(9.5), 0, "off under the protected core");
+  const sectioned = speakerMusicLane({ ...plan, music: { file: "m.mp3", sections: [{ from: "a", to: "b", gainDb: -24 }] } }, []);
+  assert.ok(sectioned.find((p) => Math.abs(p.t - 6.0) < 1e-6).v > 0.05);
+});
+
+test("speaker starter plan protects testimonial clips", async () => {
+  const fs = await import("node:fs");
+  const src = fs.readFileSync(new URL("../src/speaker-plan.mjs", import.meta.url), "utf8");
+  assert.match(src, /protect: \["core", "room", "testimonial"\]\.includes\(role\)/);
+});

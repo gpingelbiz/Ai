@@ -22,7 +22,7 @@ export function starterPlan(manifest, candidates = [], { version = "full" } = {}
   const used = [];
   const free = (c) => !used.some((u) => u.sourceId === c.sourceId && u.in < c.out && u.out > c.in);
   const add = (item) => { const result = { id: `i${String(plan.items.length + 1).padStart(2, "0")}`, ...item }; plan.items.push(result); return result; };
-  const clip = (c, role) => { used.push(c); return add({ kind: "clip", sourceId: c.sourceId, in: c.in, out: c.out, role, fit: "contain", audio: "source", protect: role === "core" || role === "room", note: `Candidate ${c.id}; verify source context.` }); };
+  const clip = (c, role) => { used.push(c); return add({ kind: "clip", sourceId: c.sourceId, in: c.in, out: c.out, role, fit: "contain", audio: "source", protect: ["core", "room", "testimonial"].includes(role), note: `Candidate ${c.id}; verify source context.` }); };
   const pick = (role, kinds) => ranked.find((c) => free(c) && kinds.includes(c.kind) && c.out - c.in <= budgets[role] + 1e-6);
   // Reserve the best complete core before choosing a potentially overlapping opening.
   const core = pick("core", ["story", "origin", "teaching", "demonstration", ...(version === "full" ? [] : ["one_liner"])]);

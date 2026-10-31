@@ -38,7 +38,7 @@ export function validateWordSpan(words, startWord, endWord, { sourceId, wordIds 
   selected.forEach((w, k) => {
     if (sourceOf(w) != null && sourceOf(w) !== owner) fail(label, `word ${w.id} crosses sources`);
     if (typeof w.text !== "string" || !w.text.trim()) fail(label, `word ${w.id} has no source text`);
-    if (!Number.isFinite(w.start) || !Number.isFinite(w.end) || w.start < 0 || w.end <= w.start || (k && (w.start < selected[k - 1].start || w.end < selected[k - 1].end))) fail(label, `word ${w.id} has invalid or reversed timing`);
+    if (!Number.isFinite(w.start) || !Number.isFinite(w.end) || w.start < 0 || w.end < w.start || (k && (w.start < selected[k - 1].start || w.end < selected[k - 1].end))) fail(label, `word ${w.id} has invalid or reversed timing`);
   });
   if (wordIds && (!Array.isArray(wordIds) || wordIds.length !== selected.length || wordIds.some((id, k) => id !== selected[k].id))) fail(label, "word ids have gaps or are out of order");
   return { i0, i1, words: selected, text: selected.map((w) => w.text).join(" ") };
