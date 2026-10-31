@@ -9,8 +9,11 @@ import { groupWords } from "./captions.mjs";
 import { sliceWords } from "./clips.mjs";
 import { readJSON, writeJSON, ensureDir, run, warn } from "./util.mjs";
 
+import { musicProblems } from "./speaker-music.mjs";
+import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
+
 const ROLES = ["opening", "identity", "proof", "core", "room", "testimonial", "close", "booking", "montage"];
-const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic"];
+const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic", "keyword"];
 const finite = (x) => typeof x === "number" && Number.isFinite(x);
 const sourceRow = (index, id) => index?.sources?.[id] || index?.[id];
 const seconds = (frame, fps) => frame / fps;
@@ -166,14 +169,27 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
       if (!right || right.status !== "approved") add(item.id, `rights ${item.rights || "(missing)"} are ${right?.status || "missing"}${draft ? "; draft only" : "; approved rights required"}`, draft && right ? "warn" : "error");
     }
   }
-  if (plan.music) {
-    if (!(manifest.music || []).some((m) => m.file === plan.music.file && String(m.license || "").trim())) add("music", "track must be listed with a licence in manifest.music; draft music skipped", draft ? "warn" : "error");
-    if (!Array.isArray(plan.music.sections)) add("music", "music.sections must be an array");
-    for (const s of Array.isArray(plan.music.sections) ? plan.music.sections : []) {
-      if (!s || typeof s !== "object") { add("music", "music sections must be objects"); continue; }
-      if (!byId.has(s.from) || !byId.has(s.to) || items.indexOf(byId.get(s.from)) > items.indexOf(byId.get(s.to))) add("music", "section from/to must name items in playback order");
-      if (!finite(s.gainDb) || s.gainDb > 0 || s.gainDb < -96) add("music", "section gainDb must be between -96 and 0");
+  problems.push(...musicProblems({ ...plan, items }, manifest, { draft }));
+  problems.push(...motionProblems({ ...plan, items, overlays: overlays.filter(Boolean) }, manifest));
+  const montages = Array.isArray(plan.montage) ? plan.montage : [];
+  for (const m of montages.filter(Boolean)) {
+    const target = byId.get(m.over);
+    if (target && m.offset + m.duration > duration(target) + 1e-7) add(m.id, "montage extends past its target item");
+    for (const [n, shot] of (Array.isArray(m.shots) ? m.shots : []).entries()) {
+      if (!shot) continue;
+      range({ ...shot, id: `${m.id} shot ${n + 1}` });
+      const source = sources.get(shot.sourceId), right = (manifest.rights || []).find((r) => r.id === source?.rights);
+      if (source && right?.status !== "approved") add(m.id, `shot ${shot.sourceId}: approved rights required${draft ? "; draft only" : ""}`, draft && right ? "warn" : "error");
     }
+  }
+  if (overlays.some((o) => o?.card?.type === "keyword") && items.every((i) => finite(duration(i)))) {
+    let frame = 0;
+    const timed = items.map((i) => { const start = frame / 30; frame += Math.round(duration(i) * 30); return { ...i, start, end: frame / 30 }; });
+    const keyed = overlays.filter(Boolean).map((o) => { const target = timed.find((i) => i.id === o.at); return { ...o, start: (target?.start || 0) + Math.round(o.offset * 30) / 30 }; });
+    const partial = { ...plan, items: timed, overlays: keyed };
+    const transcriptReady = keyed.filter((o) => o.card?.type === "keyword").every((o) => Array.isArray(sourceRow(index, byId.get(o.at)?.sourceId)?.words));
+    if (transcriptReady) problems.push(...validateKeywords(partial, timelineWords(partial, index), manifest));
+    else add("keyword", "keyword truth check requires indexed output words before composition", "warn");
   }
   return problems;
 }

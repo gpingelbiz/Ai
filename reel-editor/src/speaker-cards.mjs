@@ -8,7 +8,7 @@ import { assetPath, headshotProblems } from "./speaker-intake.mjs";
 import { existsSync } from "node:fs";
 import { PKG_ROOT, run } from "./util.mjs";
 
-const TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic"];
+const TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic", "keyword"];
 const HEADINGS = { "spoke-at": "Spoke at", client: "Hired by", "featured-in": "Featured in", "available-at": "Available at" };
 const clean = (s) => typeof s === "string" ? s.trim() : "";
 const words = (s) => clean(s).split(/\s+/u).filter(Boolean).length;
@@ -147,6 +147,16 @@ export function resolveCard(input, { manifest = {}, final = false, clientDir, mo
     card.text = clean(source.text);
     if (!card.text || words(card.text) >= 8) add("card-topic-length", "topic must have 1 to 7 words");
   }
+  if (type === "keyword") {
+    allow("text", "position", "motion");
+    card.text = clean(source.text);
+    card.position = source.position || "center";
+    card.motion = source.motion || "scale";
+    if (mode !== "overlay") add("card-mode", "keyword must be an overlay");
+    if (words(card.text) < 1 || words(card.text) > 3) add("card-keyword", "keyword needs one to three transcript words");
+    if (!["center", "lower-third"].includes(card.position) || !["scale", "slide"].includes(card.motion)) add("card-keyword", "invalid keyword position or motion");
+    // Full transcript provenance is checked by validateKeywords at compilation and composition.
+  }
   for (const key of Object.keys(source)) if (!allowed.has(key)) add("card-provenance", `unsupported field ${key}`);
   if (identityLeak(card) && !problems.some((p) => p.code === "card-identity")) add("card-identity", "resolved copy contains Greg's identity");
   return { card, problems };
@@ -155,7 +165,7 @@ export function resolveCard(input, { manifest = {}, final = false, clientDir, mo
 /** Reading time is rounded up to complete frames. A 25-word excerpt uses the maximum eight seconds. */
 export function cardDuration(card, { fps = 30 } = {}) {
   if (card.type === "quote") return ceilFrame(Math.max(5, Math.min(8, words(card.text) / 3 + 1.5)), fps);
-  return ({ title: 4, booking: 6, "testimonial-name": 4, "logo-wall": 5, topic: 4 })[card.type] || 4;
+  return ({ title: 4, booking: 6, "testimonial-name": 4, "logo-wall": 5, topic: 4, keyword: 2 })[card.type] || 4;
 }
 
 function brandTokens(tokens) {
@@ -264,6 +274,8 @@ function cssRules(t, colors) {
 .sc-quote { margin:0; font-family:var(--brand-display-font); line-height:var(--brand-display-line-height); }
 .sc-route { font-weight:var(--sc-bold); }
 .sc-testimonial-name, .sc-topic { background:color-mix(in srgb, var(--sc-surface) 88%, transparent); }
+.sc-keyword { background:transparent; text-align:center; }
+.sc-keyword .sc-copy { align-items:center; color:var(--sc-ink); background:color-mix(in srgb, var(--sc-surface) 88%, transparent); border-radius:var(--brand-radius-md); padding:var(--space-sm); }
 .sc-headshot { position:absolute; object-fit:cover; object-position:center top; border-radius:var(--brand-radius-md); }
 `;
 }
@@ -271,6 +283,11 @@ function cssRules(t, colors) {
 function baseLayout(card, t, canvas, mode) {
   const { width: W, height: H } = dimensions(canvas), inset = Math.max(W * 0.05, t.spacing.xxl);
   const body = Math.max(30, t.typeScale.sm);
+  if (card.type === "keyword") {
+    const text = fitText(card.text, Math.max(120, t.typeScale.display), 84, W * 0.8, t.type.display.lineHeight);
+    const h = text.height + t.spacing.sm * 2;
+    return { x: W * 0.1, y: card.position === "lower-third" ? H * 0.74 : (H - h) / 2, w: W * 0.8, h, text, fits: h <= H * 0.22 };
+  }
   if (card.type === "booking") return bookingLayout(card, { tokens: t, canvas });
   if (card.type === "title" && mode === "insert") return identityLayout(card, { tokens: t, canvas });
   if (card.type === "testimonial-name") {
@@ -352,6 +369,9 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
       return `<div class="sc-logo" style="left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px"><img src="${esc(ref)}" alt=""></div>`;
     }).join("");
     fields.push(card.heading);
+  } else if (card.type === "keyword") {
+    content = `<div class="sc-copy sc-name" style="inset:0;font-size:${layout.text.fontSize}px">${esc(card.text)}</div>`;
+    fields.push(card.text);
   } else if (card.type === "topic") {
     content = `<div class="sc-copy sc-body" style="inset:${t.spacing.md}px;font-size:${layout.text.fontSize}px">${esc(card.text)}</div>`;
     fields.push(card.text);
@@ -368,9 +388,13 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
   const bold = Math.max(700, ...t.type.body.weights);
   const html = `<div id="${esc(id)}" class="speaker-card clip sc-${overlay ? "overlay" : "insert"} sc-${card.type}" style="--sc-bold:${bold};${overlay ? copyStyle : ""}" data-start="${start}" data-duration="${stop - start}" data-track-index="4">${content}</div>`;
   const enter = enterFrames / size.fps, exit = exitFrames / size.fps;
-  const timeline = `tl.fromTo(${js(`#${id}`)}, {autoAlpha:0}, {autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false}, ${start});\ntl.fromTo(${js(`#${id}`)}, {autoAlpha:1}, {autoAlpha:0,duration:${exit},ease:${js(t.motion.exitEase)},immediateRender:false}, ${stop - exit});`;
+  let timeline = `tl.fromTo(${js(`#${id}`)}, {autoAlpha:0}, {autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false}, ${start});\ntl.fromTo(${js(`#${id}`)}, {autoAlpha:1}, {autoAlpha:0,duration:${exit},ease:${js(t.motion.exitEase)},immediateRender:false}, ${stop - exit});`;
+  if (card.type === "keyword") {
+    const target = js(`#${id} .sc-copy`), enter = 6 / size.fps;
+    timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.fromTo(${target},${card.motion === "slide" ? "{y:48,autoAlpha:0}" : "{scale:0.82,autoAlpha:0}"},{y:0,scale:1,autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
+  }
   return { html, css: cssRules(t, colors), timeline, layout, assets, warnings: colors.warnings,
-    durationHints: { min: card.type === "booking" ? 6 : card.type === "testimonial-name" ? 4 : card.type === "quote" ? duration : card.type === "logo-wall" ? 4 : 3, recommended: duration, max: card.type === "quote" ? 8 : card.type === "logo-wall" ? 6 : null, enter, exit, fullyLegible: stop - start - enter - exit },
+    durationHints: { min: card.type === "keyword" ? 1.2 : card.type === "booking" ? 6 : card.type === "testimonial-name" ? 4 : card.type === "quote" ? duration : card.type === "logo-wall" ? 4 : 3, recommended: duration, max: card.type === "keyword" ? 2.5 : card.type === "quote" ? 8 : card.type === "logo-wall" ? 6 : null, enter, exit, fullyLegible: stop - start - enter - exit },
     text: fields.filter(Boolean) };
 }
 
@@ -379,6 +403,7 @@ export const bookingCard = (card, options) => renderCard({ ...card, type: "booki
 export const testimonialNameCard = (card, options) => renderCard({ ...card, type: "testimonial-name" }, { ...options, mode: "overlay" });
 export const quoteCard = (card, options) => renderCard({ ...card, type: "quote" }, options);
 export const logoWallCard = (card, options) => renderCard({ ...card, type: "logo-wall" }, options);
+export const keywordCard = (card, options) => renderCard({ ...card, type: "keyword" }, { ...options, mode: "overlay" });
 export const topicCard = (card, options) => renderCard({ ...card, type: "topic" }, { ...options, mode: "overlay" });
 
 function outputSpan(entry, fps) {
@@ -491,7 +516,7 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
     if (duration < minimum - 1e-7) add("card-hold", `${c.entry.id}: ${c.card.type} holds ${duration}s; needs at least ${minimum}s`);
     if (["logo-wall", "quote"].includes(c.card.type) && duration > (c.card.type === "quote" ? 8 : 6) + 1e-7) add("card-hold", `${c.entry.id}: ${c.card.type} hold exceeds its reading window`);
     if (c.mode === "overlay" && ["booking", "quote", "logo-wall"].includes(c.card.type)) add("card-mode", `${c.entry.id}: ${c.card.type} must be an insert`);
-    if (c.mode === "insert" && ["testimonial-name", "topic"].includes(c.card.type)) add("card-mode", `${c.entry.id}: ${c.card.type} must be an overlay`);
+    if (c.mode === "insert" && ["testimonial-name", "topic", "keyword"].includes(c.card.type)) add("card-mode", `${c.entry.id}: ${c.card.type} must be an overlay`);
     // Authored size overrides are rejected by resolveCard; also report their readable minimum explicitly.
     const minima = ({
       booking: { nameFontSize: 84, roleFontSize: 40, textFontSize: 40, urlFontSize: 52, fontSize: 40 },
