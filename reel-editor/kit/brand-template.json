@@ -15,7 +15,7 @@
     "body": "Montserrat"
   },
   "look": {
-    "_note": "hook: headline | gold | box. captions: reveal (word by word) | pop (bold outlined) | quiet (word by word in their body font at 600, smaller, no outline, the keyword in an accent box). annotate: hand-drawn marker on the key word. slams: climax words that stamp in. behind: the hook runs behind their head.",
+    "_note": "hook: headline | gold | box. captions: reveal (word by word) | pop (bold outlined) | quiet (word by word in their body font at 600, smaller, no outline, the keyword in an accent box) | serif (quiet, set in their display serif). annotate: hand-drawn marker on the key word. slams: climax words that stamp in. behind: the hook runs behind their head.",
     "hook": "headline",
     "captions": "reveal",
     "annotate": true,

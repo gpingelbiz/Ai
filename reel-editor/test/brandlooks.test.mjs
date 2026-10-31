@@ -122,6 +122,15 @@ test("quiet captions, the quiet phone labels and name tag: only for a brand that
   const b = brandPreset({ ...julee, look: { captions: "quiet" } }).captions;
   assert.deepEqual([b.style, b.quiet, b.fontSizeFrac], ["reveal", true, 0.029]);
   assert.deepEqual(checkBrand({ ...julee, look: { captions: "quiet" } }), []);
+  assert.doesNotMatch(hers, /\.cap-line \{ font-family: "Look Serif", "Anton", serif;/, "quiet stays in the body font");
+  const serif = renderHTML(base({ captions: { quiet: true, serif: true }, graphics: { includeLooks: ["note"] } }), "assets/footage.mp4");
+  assert.match(serif, /\.cap-line \{ font-family: "Look Serif", "Anton", serif; font-weight: 500;/, "serif captions use the display serif");
+  assert.match(serif, /\.cap \.w\.k \{ color: #111111; background: #FFB27D;/, "the keyword keeps the accent box");
+  const bs = brandPreset({ ...julee, look: { captions: "serif" } }).captions;
+  assert.deepEqual([bs.style, bs.quiet, bs.serif, bs.fontSizeFrac], ["reveal", true, true, 0.033]);
+  assert.equal(brandPreset({ ...julee, look: { captions: "quiet" } }).captions.serif, undefined);
+  assert.deepEqual(checkBrand({ ...julee, look: { captions: "serif" } }), []);
+  assert.match(checkBrand({ ...julee, look: { captions: "script" } }).join(), /"reveal", "pop", "quiet" or "serif"/);
   const g = loadPreset("pingel-brand");
   assert.equal(mergeOverrides(g, { hookSeconds: "reel" }).hook.duration, "reel");
   assert.equal(mergeOverrides(g, { hookSeconds: "6" }).hook.duration, 6);

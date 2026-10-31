@@ -23,7 +23,7 @@ export function checkBrand(b) {
   for (const k of ["text", "accent"]) if (!HEX.test(b.colors?.[k] || "")) out.push(`colors.${k} must be a hex color like #FFFFFF`);
   for (const k of ["stroke", "bg"]) if (b.colors?.[k] && !HEX.test(b.colors[k])) out.push(`colors.${k} must be a hex color like #000000`);
   if (b.look?.hook && !["headline", "gold", "box"].includes(b.look.hook)) out.push('look.hook is "headline", "gold" or "box"');
-  if (b.look?.captions && !["reveal", "pop", "quiet"].includes(b.look.captions)) out.push('look.captions is "reveal", "pop" or "quiet"');
+  if (b.look?.captions && !["reveal", "pop", "quiet", "serif"].includes(b.look.captions)) out.push('look.captions is "reveal", "pop", "quiet" or "serif"');
   for (const k of ["hookCase", "captionCase"]) if (b.look?.[k] && !["upper", "sentence"].includes(b.look[k])) out.push(`look.${k} is "upper" or "sentence"`);
   const hs = b.look?.hookSeconds;
   if (hs != null && hs !== "reel" && !(Number(hs) >= 1 && Number(hs) <= 60)) out.push('look.hookSeconds is a number of seconds (1-60) or "reel"');
@@ -73,6 +73,7 @@ export function brandPreset(b, { fonts = {} } = {}) {
     ? { ...b, name: identity.name, handle: identity.handle, looks: compat.looks || { only: tokens.houseLooks || [] } }
     : b;
   const calm = look.pace === "calm";
+  const quietCaps = look.captions === "quiet" || look.captions === "serif";
   // Only what the brand file asks for is written, so a brand file without these fields keeps Greg's behaviour.
   const coldOpen = look.coldOpen != null ? look.coldOpen !== false : calm ? false : null;
   return {
@@ -83,7 +84,8 @@ export function brandPreset(b, { fonts = {} } = {}) {
     colors: { text: colors.ink, accent: colors.accent, stroke: colors.stroke || "#000000", bg: colors.surface || "#0B0B0D" },
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.displayItalic ? { displayItalic: fonts.displayItalic } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
     // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
-    captions: { style: look.captions === "quiet" ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(look.captions === "quiet" ? { quiet: true, fontSizeFrac: 0.029 } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
+    // serif: the same in their display serif (BossBabe's and Jasmine Star's podcast captions), a touch larger.
+    captions: { style: quietCaps ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(quietCaps ? { quiet: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
     hook: {
       style: look.hook || "headline", behind: look.behind !== false,
       ...(look.hookCase ? { uppercase: look.hookCase !== "sentence" } : {}),
