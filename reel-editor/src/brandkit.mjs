@@ -4,6 +4,7 @@ import path from "node:path";
 import { PKG_ROOT, slug } from "./util.mjs";
 import { LOOKS, LOOK_IDS } from "./looks.mjs";
 import { upgradeBrandV1 } from "./brandtokens.mjs";
+import { signupsHTML } from "./signups.mjs";
 import { deepMerge, readJSON } from "./util.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
 import { assertNoGreg } from "./speaker-intake.mjs";
@@ -234,6 +235,7 @@ export function personalizeStartHere(html, b, { studio = false } = {}) {
     ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/<b>Install Reel Editor\.command<\/b>/g, "<b>Install Content Studio.command</b>")
     : stripStudio(html);
   return page
+    .replace("<!-- signups -->", signupsHTML({ studio }))
     .replace(/<title>Reel Editor: Start Here<\/title>/, `<title>${esc(who)}: Start Here</title>`)
     .replace(/<h1>Reel Editor<\/h1>/, `<h1>${esc(who)}</h1>`)
     .replace(/<tr><td>Your look<\/td><td>[\s\S]*?<\/td><\/tr>/, `<tr><td>Your look</td><td>Already set: this kit carries your colors${b.fonts?.display || b.fonts?.body ? ", fonts" : ""}, caption voice and words. The installer does not ask.</td></tr>`)

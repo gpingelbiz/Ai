@@ -178,7 +178,7 @@ fi
 ok "look: $LOOK"
 
 # ---------------------------------------------------------------- 6. Settings
-bold "6/7  ElevenLabs and settings"
+bold "6/7  Keys and settings"
 KEY=""
 if grep -q '^export ELEVENLABS_API_KEY=' "$ZSHRC" 2>/dev/null; then
   ok "ElevenLabs key already set (kept)"
@@ -186,6 +186,14 @@ else
   note "ElevenLabs Scribe is the most accurate transcription (key from elevenlabs.io, Developers, API Keys)."
   ask_secret "Paste your ElevenLabs API key, or press Return to skip:"
   KEY="$REPLY"
+fi
+RWKEY=""
+if grep -q '^export RUNWAY_API_KEY=' "$ZSHRC" 2>/dev/null; then
+  ok "Runway key already set (kept)"
+else
+  note "Runway makes short video b-roll for Raw - Reel with Runway B-roll, about 30 cents a clip (key and credits at dev.runwayml.com)."
+  ask_secret "Paste your Runway API key, or press Return to skip:"
+  RWKEY="$REPLY"
 fi
 [ -n "$WATCH" ] || { ask "Turn on the drop folder (drop a clip, get a reel)? [Y/n]:" y; case "$REPLY" in n*|N*) WATCH=n ;; *) WATCH=y ;; esac; }
 
@@ -208,9 +216,36 @@ else
   esac
 fi
 
+# Claude Code writes the graphic cards, the captions and the hook ideas, on the person's own Claude plan. Optional:
+# without it, reels come without cards and captions. A Content Studio kit installs and signs it in later (step 2 of
+# its setup), so it is not asked twice.
+CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"; [ -n "$CLAUDE_BIN" ] || { [ -x "$HOME/.local/bin/claude" ] && CLAUDE_BIN="$HOME/.local/bin/claude"; }
+claude_ok() { [ -n "$CLAUDE_BIN" ] && perl -e 'alarm 120; exec @ARGV' "$CLAUDE_BIN" -p "Reply with the word OK and nothing else." --tools "" --strict-mcp-config --output-format text 2>/dev/null | grep -q OK; }
+if [ "$STUDIO" != 1 ]; then
+  if [ -z "$CLAUDE_BIN" ]; then
+    ask "Add Claude for graphic cards, captions and hook ideas (needs a Claude Pro or Max plan)? [Y/n]:" y
+    case "$REPLY" in
+      n*|N*) note "Claude skipped: reels come without cards, captions and hook ideas" ;;
+      *) if curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1; then CLAUDE_BIN="$HOME/.local/bin/claude"; ok "Claude Code installed"
+         else note "Claude Code did not install. Later: run  curl -fsSL https://claude.ai/install.sh | bash  in Terminal."; fi ;;
+    esac
+  fi
+  if [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ]; then
+    if claude_ok; then ok "Claude signed in: cards, captions and hook ideas on"
+    elif [ "$YES" != 1 ] && [ -r /dev/tty ]; then
+      note "Sign in with YOUR Claude account (Pro or Max). Claude opens here: follow the sign-in, then type /exit and press Return."
+      "$CLAUDE_BIN" < /dev/tty > /dev/tty 2>&1 || true
+      if claude_ok; then ok "Claude signed in: cards, captions and hook ideas on"; else note "Claude is not signed in yet. Later: type  claude  in Terminal and sign in."; fi
+    else note "Claude is not signed in. Later: type  claude  in Terminal and sign in."; fi
+  fi
+fi
+
 touch "$ZSHRC"
 # Keep a call-to-action someone set by hand; a re-run must not wipe it.
 CTA_LINE="$(grep '^export REEL_WATCH_CTA=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
+# Keys saved by an earlier run sit inside our block, which is rewritten below: carry them over.
+EL_LINE="$(grep '^export ELEVENLABS_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
+RW_LINE="$(grep '^export RUNWAY_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
 [ -n "$CTA_LINE" ] || CTA_LINE='export REEL_WATCH_CTA=""   # call-to-action for drop-folder reels, e.g. "Comment WORD"'
 # Replace our block (and loose reel lines from older setups); leave everything else in ~/.zshrc alone.
 tmp="$(mktemp)"
@@ -228,7 +263,8 @@ awk '/^# >>> reel-editor >>>/{skip=1} !skip && !/^export (REEL_[A-Z_]+|PRODUCER_
     echo "export REEL_WATCH_RAW=\"$HOME/Reels/raw\""
     echo "export REEL_WATCH_DONE=\"$HOME/Desktop/Reels\""
   fi
-  [ -z "$KEY" ] || echo "export ELEVENLABS_API_KEY=\"$KEY\""
+  if [ -n "$KEY" ]; then echo "export ELEVENLABS_API_KEY=\"$KEY\""; elif [ -n "$EL_LINE" ] && ! grep -q '^export ELEVENLABS_API_KEY=' "$tmp"; then echo "$EL_LINE"; fi
+  if [ -n "$RWKEY" ]; then echo "export RUNWAY_API_KEY=\"$RWKEY\""; elif [ -n "$RW_LINE" ] && ! grep -q '^export RUNWAY_API_KEY=' "$tmp"; then echo "$RW_LINE"; fi
   echo "# <<< reel-editor <<<"
 } >> "$tmp"
 cat "$tmp" > "$ZSHRC" && rm -f "$tmp"
@@ -237,6 +273,7 @@ export REEL_PYTHON="$VENV/bin/python" PRODUCER_BROWSER_GPU_MODE=hardware REEL_PR
 [ -z "$YTPRESET" ] || export REEL_YOUTUBE_PRESET="$YTPRESET"
 [ -z "$DICT" ] || export REEL_DICTIONARY="$DICT"
 [ -z "$KEY" ] || export ELEVENLABS_API_KEY="$KEY"
+[ -z "$RWKEY" ] || export RUNWAY_API_KEY="$RWKEY"
 
 if [ "$WATCH" = y ]; then
   mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-carousel" "$HOME/Reels/raw-long" "$HOME/Reels/raw-youtube" "$HOME/Reels/raw-runway" "$HOME/Reels/music" "$HOME/Desktop/Reels"
