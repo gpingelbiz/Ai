@@ -739,7 +739,7 @@ test("reels: an edited reel is filed in Made and scheduled; one stranded in deli
   assert.notEqual(next[0].day, "2026-11-01", "one reel a day");
 });
 
-test("reels: reels.trial posts every reel as a Trial Reel; the studio checks it is true or false", async () => {
+test("reels: reels.trial posts every reel as a Trial Reel; the studio checks it is true or false; covers/ is skipped", async () => {
   const dir = sampleCopy({ timezone: "America/Phoenix", publish: { mode: "schedule" }, reels: { trial: true } });
   const s = loadStudio(dir);
   const folder = path.join(s.paths.reels, "delivered", "2026-11-01 Reel 1");
@@ -754,8 +754,11 @@ test("reels: reels.trial posts every reel as a Trial Reel; the studio checks it 
     hostFiles: async (files) => ({ urls: files.map(() => "https://host/v.mp4"), close: async () => {} }),
     createPost: async (connector, input) => { created.push(JSON.parse(input.info)); return { plannerUrl: "", id: 1 }; },
   };
+  fs.mkdirSync(path.join(s.paths.reels, "delivered", "covers"), { recursive: true });
+  fs.writeFileSync(path.join(s.paths.reels, "delivered", "covers", "history.json"), "[]");
   const { runReels } = await import("../src/studio-reels.mjs");
   const r = await runReels(dir, { now: NOW, deps });
+  assert.equal(r.length, 1, "the editor's covers folder is not a reel");
   assert.equal(r[0].trial, true);
   assert.equal(created[0].instagramData.type, "TRIAL_REEL");
   assert.match(fs.readFileSync(path.join(r[0].made, "Scheduled.txt"), "utf8"), /Trial Reel: yes/);
