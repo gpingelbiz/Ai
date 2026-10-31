@@ -64,7 +64,7 @@ export const STUDIO_DEFAULTS = {
   daysAhead: 3,
   maxPerRun: 4,
   carouselSlides: [5, 8],
-  reels: { enabled: true, earliest: 8, latest: 20, fallbackHour: 12, gapHours: 2, look: "auto" },
+  reels: { enabled: true, earliest: 8, latest: 20, fallbackHour: 12, gapHours: 2, look: "auto", trial: false },
   metricool: { brand: "", blogId: "", networks: ["instagram"], connector: "" },
   publish: { mode: "schedule" },
   hosting: { route: "tunnel", folder: "" },
@@ -133,6 +133,7 @@ export function checkStudio(config, { publishing = true } = {}) {
   if (!nets.length || nets.some((n) => !NETWORKS.includes(n))) out.push(`metricool.networks lists where posts go: ${NETWORKS.join(", ")}`);
   if (!["auto", "always"].includes(c.ai?.label)) out.push('ai.label is "auto" (labelled when a picture is AI-made) or "always"; AI pictures are always labelled');
   if (![true, false, "auto"].includes(c.ai?.broll)) out.push('ai.broll is true, false or "auto" (AI pictures only when Codex is set up)');
+  if (typeof c.reels?.trial !== "boolean") out.push("reels.trial is true (every reel posts as an Instagram Trial Reel) or false");
   const sc = c.slideColors;
   if (!sc || typeof sc !== "object" || Array.isArray(sc)) out.push('slideColors is like {"bg": "#FFF3EE", "text": "#111111", "accent": "#FFB27D"}');
   else {

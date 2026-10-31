@@ -739,6 +739,30 @@ test("reels: an edited reel is filed in Made and scheduled; one stranded in deli
   assert.notEqual(next[0].day, "2026-11-01", "one reel a day");
 });
 
+test("reels: reels.trial posts every reel as a Trial Reel; the studio checks it is true or false", async () => {
+  const dir = sampleCopy({ timezone: "America/Phoenix", publish: { mode: "schedule" }, reels: { trial: true } });
+  const s = loadStudio(dir);
+  const folder = path.join(s.paths.reels, "delivered", "2026-11-01 Reel 1");
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, "Ask for the sale.mp4"), "mp4");
+  fs.writeFileSync(path.join(folder, "caption.txt"), "Ask for the sale.");
+  fs.writeFileSync(path.join(folder, ".reel.json"), JSON.stringify({ preflight: "pass" }));
+  const created = [];
+  const deps = {
+    scheduledPosts: async () => [],
+    bestTimes: async () => ({ data: [] }),
+    hostFiles: async (files) => ({ urls: files.map(() => "https://host/v.mp4"), close: async () => {} }),
+    createPost: async (connector, input) => { created.push(JSON.parse(input.info)); return { plannerUrl: "", id: 1 }; },
+  };
+  const { runReels } = await import("../src/studio-reels.mjs");
+  const r = await runReels(dir, { now: NOW, deps });
+  assert.equal(r[0].trial, true);
+  assert.equal(created[0].instagramData.type, "TRIAL_REEL");
+  assert.match(fs.readFileSync(path.join(r[0].made, "Scheduled.txt"), "utf8"), /Trial Reel: yes/);
+  assert.deepEqual(checkStudio({ client: "x", reels: { trial: "yes" } }, { publishing: false }), ["reels.trial is true (every reel posts as an Instagram Trial Reel) or false"]);
+  assert.deepEqual(checkStudio({ client: "x" }, { publishing: false }), [], "off by default");
+});
+
 test("preflightProblems turns the shared check's 1-based slide numbers into the kit's 0-based indexes", () => {
   const result = { verdict: "retry", slides: [{ index: 1, file: "01.png", problems: [{ code: "ocr-handle", message: "handle", fix: "recrop" }] }, { index: 0, file: "", problems: [{ code: "spec-empty", message: "empty", fix: "none" }] }], photoHashes: [] };
   assert.deepEqual(preflightProblems(result).map((problem) => problem.index), [0, -1]);

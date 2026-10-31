@@ -168,7 +168,8 @@ export async function scheduleReel(studio, edited, { now = new Date(), deps = {}
   const textHold = (typeof textcheck === "string" ? textcheck : textcheck?.verdict) === "hold";
   const why = !postText(caption) ? "there is no caption" : textHold ? `its text check is on hold: ${textcheck?.notes?.[0] || "text check reported a hold"}` : meta.preflight === "fail" ? "its check failed" : "";
   const ai = c.ai?.label === "always" || !!meta.isAiGenerated;
-  const trial = trialReel({ entry: path.basename(folder), dir: folder, video, captionRaw, meta, root: path.dirname(folder) });
+  // reels.trial: every reel goes out as a Trial Reel (a client who allows Trial Reels only); otherwise #trial or trial: true.
+  const trial = c.reels?.trial === true || trialReel({ entry: path.basename(folder), dir: folder, video, captionRaw, meta, root: path.dirname(folder) });
   const posts = readPosts(studio.paths);
   const { day: today } = zonedNow(c.timezone, now);
   let scheduled = [], best = {};
