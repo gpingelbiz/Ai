@@ -51,6 +51,20 @@ open -e "$client/work/candidates/all.json"
 
 ### 4. Create and edit the plan
 
+#### Compare repeated stories before planning
+
+`reel speaker candidates "$client"` also compares repeated stories/points across events. To compare the saved inventory again without candidate finding or transcription, run:
+
+```bash
+reel speaker stories "$client"
+```
+
+`work/candidates/stories.json` (version 1) records labels and each telling's setup/turn/result coverage. One Claude call sees only candidate IDs, event names and transcript text; code drops unknown/duplicate IDs and accepts no model timestamps or quotes. Offline fallback uses content-word cosine (0.28 threshold, four shared words minimum, length check). Unchanged text reuses this separate cache; saved audio evidence and scores refresh without ASR.
+
+Comparisons show event, in/out, length, audio, reactions, score and BEST. `all.json` retains other tellings as `alternates`; leads prefer clean, usable, unknown, weak, reject, then score. Long `alternate-only` restrictions remain. Passage `audioQuality` takes precedence over the separately identified `sourceAudioQuality` fallback. No measurement means unknown. Source IDs `all` and `stories` are reserved for inventory files. Review every selection; grouping never edits a plan or combines performances.
+
+Reaction association version 1 adds `containedReactionIds`, `followingReactionIds`, their union `reactionIds`, and `reactionAssociations` with `overlapSeconds`. Unverified IDs are `reactionHints`; only `verified:true` earns the five-point bonus. `reactionTailOut` suggests a speech-free extension through a reaction without changing `out`. Listen before editing. Re-run `candidates` to refresh old reaction records; transcripts remain cached.
+
 ```bash
 reel speaker plan "$client" --version full
 open -e "$client/work/plans/full.json"
