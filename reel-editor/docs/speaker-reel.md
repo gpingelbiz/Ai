@@ -285,9 +285,10 @@ Each version has its own plan at `work/plans/<version>.json`, schemaVersion 1. F
 
 The overlay/cutaway example refers to additional items and sources; add them to a complete playable plan or omit those arrays.
 
-Items play back to back. Overlays and cutaways add no time.
+Items play back to back. Overlays and cutaways add no time. Cutaway visibility uses half-open integer frame windows `[startFrame, endFrame)` with both pictures on a 1/30 time base, including adjacent cutaways at fractional-second boundaries.
 
 - `item.kind`: clip or card.
+- `audioCarry` on a card: `{ "preceding": "close-clip", "sourceId": "stage", "in": 1047.90, "out": 1054.40 }` continues the immediately preceding clip's real source audio from the card's first frame. The preceding item must be an audible clip using that same source; the source must have usable audio (`audio:"ok"`, never `bad` or `none`). `in` must equal that clip's `out` within one frame. Resolution snaps it to the actual frame-rounded source end, preventing repeats or gaps. The range must stay within the source and fit the card duration. It reuses the preceding dialogue's channel selection, fixed gain and optional limiter settings without renormalizing applause. The preceding clip does not fade out at this join; the carry fades its final 0.25 seconds (or its whole duration if shorter), then pads the remaining card with silence. Carry audio adds no transcript words or captions. Its resolved source range and frame count appear in the plan and map.
 - `role`: opening, identity, proof, core, room, testimonial, close, booking or montage.
 - `fit`: `wash`, `blur`, `contain` or `cover`, on clips and picture-only cutaways (including montage shots). Omitted values resolve to `wash` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `wash` cover-scales the same frame to 192×108, blurs it there (sigma 20), adds 20% saturation, darkens luma to 0.8, and applies a soft vignette before smooth upscaling. Very light, static uniform grain (strength 2, seed 42) reduces 8-bit banding. The sharp picture floats above this colour field with a soft 32%-opacity shadow, offset 8 pixels down; the shadow is blurred once and repeated. The card fits within 90% of the visible width/height, including any letterbox, and never exceeds 1.5× source enlargement, so small sources can stay smaller. Explicit `blur` keeps the original graph: a full-frame blur, 35% darker and slightly desaturated, with no card margin or shadow. `contain` keeps the client-brand frame. These three preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources, warns above 1.5× and needs visual review. Explicit saved fits always win.
 - `audio`: source or mute. A source marked none/bad must use mute when selected as a timeline clip. A cutaway always supplies picture only.
@@ -426,6 +427,17 @@ Sections name inclusive timeline items, never overlap authored spans, and are si
 
 For new cue plans, omitted `gainDb` means approximately −18 dB under speech and −6 dB without speech. An explicit `gainDb` sets the speech level, with restrained pause lifts. Ducking uses output words, anticipates speech by 150 ms and retains a 600 ms release; short gaps never swell. Protected passages do not swell. `fadeIn`/`fadeOut` are seconds; track crossfades clamp to the 0.5–1.0 second range. All cue automation uses integer output frames, and assets use exact 48 kHz sample padding.
 
+A music section may supply `gainPoints` instead of automatic ducking and swelling:
+
+```json
+{ "from": "opening", "to": "identity", "track": "build", "gainPoints": [
+  { "at": 0, "db": -24 }, { "at": 6, "db": -12 },
+  { "at": 10.8, "db": -60 }, { "at": 12, "db": -6 }
+] }
+```
+
+`at` is seconds from the section's first item start, inclusive of zero and the section end. Points must be a nonempty array, finite, strictly ascending and within the section; `db` is an absolute gain between −96 and 0. Times round to the nearest output frame; two points may not resolve to the same frame. Gains interpolate linearly **in dB**, hold before the first and after the last point inside the section, and are silent outside it. These points replace `gainDb`, speech ducking, pause swelling, automatic edge fades and crossfades touching that section; author the full build, vacuum, hit and fades in the points. Both single-file and multi-track sections support them. The baked 48 kHz bed evaluates the same dB envelope per stereo sample, without amplitude interpolation between frames. The example requires a section at least 12 seconds long.
+
 Composition measures the actual automated music bed and dialogue over matching speech windows. `work/<version>/music-qc.json` records both stem LUFS measurements. Speech less than **8 LU** above its bed produces a visible review warning. Unavailable measurements produce one warning, never a made-up pass. The existing `speakerNormalize` and encoded-file speaker QC retain the **−14 LUFS / ≤−1 dBTP** delivery target.
 
 ### Beat timing and montage shot lists
@@ -475,12 +487,12 @@ Title and booking names reveal with a 0.6-second mask on the absolute GSAP timel
 {
   "sfx": [{
     "id": "proof-whoosh", "at": "proof", "file": "music/whoosh.wav",
-    "gainDb": -24, "start": 0, "duration": 0.6
+    "gainDb": -24, "start": 0, "offset": 0.2, "duration": 0.6
   }]
 }
 ```
 
-`at` names an item with a decorative incoming transition or a card/overlay entry. `start` selects the source offset; `duration` defaults to 0.6 seconds (maximum six). `gainDb` is explicit (−96 to 0). The complete audible interval must avoid every protected item, including a reaction beginning after the cue. The file must be registered as a licensed `kind:"sfx"` asset. No stock applause, reactions or automatic whooshes are inserted.
+`at` names an item with a decorative incoming transition or a card/overlay entry. Optional `offset` is finite, non-negative seconds after that entry (default 0), rounded to the nearest output frame. The shifted start must precede the timeline end. Protection checks use that shifted audible interval, including its frame-rounded duration; the sound may extend past its anchor item, but cannot touch protected footage. `start` selects the source offset; `duration` defaults to 0.6 seconds (maximum six). `gainDb` is explicit (−96 to 0). The complete audible interval must avoid every protected item, including a reaction beginning after the cue. The file must be registered as a licensed `kind:"sfx"` asset. No stock applause, reactions or automatic whooshes are inserted.
 
 `composition.json` records individual cue files, source offsets, output times, volume points and warnings. Composition multiplies each prepared cue by its gain lane and sums them into one `assets/music-bed.wav`, which the HTML references with no renderer automation. HyperFrames 0.8 rendered some separate cue elements silent. Existing daily-reel presets, composer and golden-frame fixtures are unchanged. Run `node --test test/speaker-motion.test.mjs` for the offline motion/audio checks, then `npm test`; golden/Chrome rendering still needs the normal render environment.
 

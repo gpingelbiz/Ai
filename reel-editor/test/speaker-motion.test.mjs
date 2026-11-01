@@ -301,3 +301,112 @@ test("source beat offsets repeat across looped tracks and stay within section bo
   assert.deepEqual(sectionBeatTimes([0, 0.5, 1, 1.5], { sourceStart: 1, outputStart: 3, outputEnd: 6, trackDuration: 2 }), [3, 3.5, 4, 4.5, 5, 5.5, 6]);
   assert.throws(() => sectionBeatTimes([0], { sourceStart: 2, outputStart: 0, outputEnd: 4, trackDuration: 2 }), /offset/);
 });
+
+test("gainPoints replace speech ducking, pause swells, automatic fades and crossfade tails with held dB gains", () => {
+  const p = plan();
+  p.music.sections[0].gainPoints = [{ at: 0.5, db: -24 }, { at: 1.5, db: -12 }, { at: 3, db: -48 }];
+  const cues = speakerMusicCues(p, words), cue = cues[0];
+  assert.equal(cue.outputEnd, 4, "authored section never grows a crossfade tail");
+  for (const [time, db] of [[0, -24], [0.25, -24], [1, -18], [1.5, -12], [2.2, -28.8], [3.5, -48]]) assert.ok(Math.abs(at(cue, time) - 10 ** (db / 20)) < 1e-10, `${time}: ${db} dB`);
+  assert.deepEqual(cue.points, speakerMusicCues(p, [])[0].points, "words cannot alter authored gains");
+  assert.equal(at(cue, 4), 0);
+  p.music.sections[0].gainPoints = [{ at: 0.51, db: -24 }, { at: 1.49, db: -12 }];
+  assert.deepEqual(speakerMusicCues(p)[0].gainPoints.map((point) => point.t), [0.5, 1.5]);
+  // A single-file plan with only the new field must select the cue path too.
+  p.music = { file: "a.wav", sections: [{ from: "b", to: "b", gainDb: -20, gainPoints: [{ at: 0, db: -30 }] }] };
+  const lane = speakerMusicLane(p, words);
+  assert.ok(Math.abs(lane[180].v - 10 ** (-30 / 20)) < 1e-10);
+  assert.equal(lane[119].v, 0); assert.equal(lane[240].v, 0);
+});
+
+test("gainPoints validation rejects empty, nonfinite, unordered, out-of-section and out-of-range gains", () => {
+  for (const points of [[], {}, [null], [{ at: NaN, db: -12 }], [{ at: 0, db: Infinity }], [{ at: -1, db: -12 }], [{ at: 4.01, db: -12 }], [{ at: 0, db: -97 }], [{ at: 0, db: 1 }], [{ at: 1, db: -12 }, { at: 0, db: -18 }], [{ at: 0, db: -12 }, { at: 0.01, db: -18 }]]) {
+    const p = plan(); p.music.sections[0].gainPoints = points;
+    assert.ok(musicProblems(p, manifest).some((e) => /gainPoints/.test(e.message)), JSON.stringify(points));
+    assert.throws(() => speakerMusicCues(p), /gainPoints/);
+    assert.ok(validatePlan(p, { manifest, index }).some((e) => /gainPoints/.test(e.message)));
+  }
+  const p = plan(); p.music.sections[0].gainPoints = [{ at: 0, db: -96 }, { at: 4, db: 0 }];
+  assert.deepEqual(musicProblems(p, manifest), []);
+});
+
+test("bakeCues follows authored dB interpolation at every 48 kHz sample, holding ends and section bounds", async (t) => {
+  const { bakeCues } = await import("../src/speaker-compose.mjs");
+  const folder = temp(t), asset = path.join(folder, "constant.wav");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "aevalsrc=0.5|0.5:s=48000:d=2", "-c:a", "pcm_f32le", asset], { capture: true });
+  const p = plan(); p.duration = 2; p.items = [item("a", 0, 0.5), item("b", 0.5, 1.5), item("c", 1.5, 2)];
+  p.music = { file: "a.wav", sections: [{ from: "b", to: "b", gainPoints: [{ at: 0.2, db: -40 }, { at: 0.8, db: -4 }] }] };
+  const cue = speakerMusicCues(p)[0]; cue.asset = "constant.wav";
+  const bed = path.join(folder, "bed.f32");
+  await bakeCues(folder, p, [cue], bed);
+  const pcm = fs.readFileSync(bed);
+  let maxError = 0;
+  for (let n = 0; n < 96000; n++) {
+    const time = n / 48000, db = -40 + 36 * Math.max(0, Math.min(1, (time - 0.7) / 0.6));
+    const expected = time >= 0.5 && time < 1.5 ? 0.5 * 10 ** (db / 20) : 0;
+    for (const channel of [0, 1]) maxError = Math.max(maxError, Math.abs(pcm.readFloatLE((n * 2 + channel) * 4) - expected));
+  }
+  assert.ok(maxError < 2e-8, `sample gain error ${maxError}`);
+  t.diagnostic(`96,000 stereo samples checked; maximum gain error ${maxError.toExponential(3)}`);
+});
+
+test("SFX offset quantizes at the anchor and protects the shifted audible interval in validation and composition", () => {
+  const p = plan(); p.items[1].transition = "dip";
+  p.sfx = [{ id: "late", at: "b", offset: 0.051, file: "hit.wav", gainDb: -24, duration: 0.6 }];
+  assert.deepEqual(motionProblems(p, manifest), []);
+  assert.equal(speakerSfxCues(p)[0].outputStart, 4 + 2 / 30);
+  p.sfx[0].offset = 3.5;
+  assert.ok(motionProblems(p, manifest).some((e) => /protected/.test(e.message)));
+  assert.throws(() => speakerSfxCues(p), /protected/);
+  p.sfx[0].offset = 3.4;
+  assert.deepEqual(motionProblems(p, manifest), [], "effect ending at protected start is legal");
+  assert.ok(Math.abs(speakerSfxCues(p)[0].duration - 0.6) < 1e-10);
+  for (let frames = 1; frames <= 119; frames++) {
+    p.sfx[0].offset = (120 - frames) / 30; p.sfx[0].duration = frames / 30;
+    assert.deepEqual(motionProblems(p, manifest), [], `half-open protection boundary with ${frames} sound frames`);
+    assert.equal(speakerSfxCues(p)[0].duration, frames / 30);
+  }
+  p.sfx[0].duration = 0.6;
+  for (const offset of [-0.01, NaN, Infinity, 8]) {
+    p.sfx[0].offset = offset;
+    assert.ok(motionProblems(p, manifest).some((e) => /offset/.test(e.message)));
+    assert.throws(() => speakerSfxCues(p), /offset/);
+  }
+  // Overlay anchor uses the overlay's own frame-rounded entry, then applies the effect offset.
+  p.overlays = [{ id: "title", at: "a", offset: 0.051, duration: 1, start: 2 / 30, card: { type: "title" } }];
+  p.sfx[0] = { ...p.sfx[0], at: "title", offset: 0.051 };
+  assert.deepEqual(motionProblems(p, manifest), []);
+  assert.equal(speakerSfxCues(p)[0].outputStart, 4 / 30);
+  // An anchor may be protected if the shifted sound starts after that protected passage.
+  p.items[0].protect = true; delete p.items[1].transition; p.sfx[0].offset = 4;
+  assert.deepEqual(motionProblems(p, manifest), []);
+  assert.equal(speakerSfxCues(p)[0].outputStart, 4 + 2 / 30);
+});
+
+test("single-file gainPoints compose into the baked bed even with a legacy gainDb present", async (t) => {
+  const folder = temp(t), work = path.join(folder, "work/full"); fs.mkdirSync(work, { recursive: true });
+  fs.writeFileSync(path.join(work, "base.mp4"), "fixture"); writeJSON(path.join(work, "words.json"), []);
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=1", path.join(folder, "a.wav")], { capture: true });
+  const p = plan(); p.duration = 1; p.items = [item("a", 0, 1)];
+  p.music = { file: "a.wav", sections: [{ from: "a", to: "a", gainDb: -20, gainPoints: [{ at: 0, db: -36 }, { at: 0.5, db: -6 }, { at: 1, db: -24 }] }] };
+  const result = await composeSpeakerProject(work, p, { manifest, tokens, print: () => {} });
+  const composition = JSON.parse(fs.readFileSync(path.join(work, "composition.json")));
+  assert.equal(composition.music.length, 1);
+  assert.match(fs.readFileSync(result.html, "utf8"), /assets\/music-bed.wav/);
+  const decode = async (name) => {
+    const out = path.join(folder, `${name}.f32`);
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-i", path.join(result.projectDir, `assets/${name}.wav`), "-ac", "2", "-f", "f32le", out], { capture: true });
+    return fs.readFileSync(out);
+  };
+  const input = await decode("music-0"), bed = await decode("music-bed");
+  let maxError = 0;
+  for (let n = 0; n < 48000; n++) {
+    const time = n / 48000, db = time <= 0.5 ? -36 + 60 * time : -6 - 36 * (time - 0.5);
+    for (const channel of [0, 1]) {
+      const offset = (n * 2 + channel) * 4;
+      maxError = Math.max(maxError, Math.abs(bed.readFloatLE(offset) - input.readFloatLE(offset) * 10 ** (db / 20)));
+    }
+  }
+  assert.ok(maxError < 2e-8, `composed gain error ${maxError}`);
+  t.diagnostic(`single-file composition: 48,000 stereo samples checked; maximum error ${maxError.toExponential(3)}`);
+});

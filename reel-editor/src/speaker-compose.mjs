@@ -3,7 +3,7 @@ import path from "node:path";
 import { activeBox, letterboxCards } from "./speaker-look.mjs";
 import { speakerCardsHTML, copyCardAssets } from "./speaker-cards.mjs";
 import { compileVersion, resolvePlan, captionFiles } from "./speaker-compile.mjs";
-import { licensedMusic, speakerMusicLane, speakerMusicCues, speechBedWarnings } from "./speaker-music.mjs";
+import { authoredCueGain, licensedMusic, speakerMusicLane, speakerMusicCues, speechBedWarnings } from "./speaker-music.mjs";
 import { assertNoGreg } from "./speaker-intake.mjs";
 import { esc } from "./text.mjs";
 import { ensureDir, copyOrLink, PKG_ROOT, readJSON, writeJSON, run } from "./util.mjs";
@@ -112,7 +112,7 @@ export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, p
   for (const ext of ["srt", "vtt"]) fs.writeFileSync(path.join(workDir, `captions.${ext}`), captionData[ext]);
   let music = null;
   const audioCues = [];
-  const advanced = Boolean(resolvedPlan.music?.tracks || resolvedPlan.music?.sections?.some((s) => s.gainDb == null || s.start != null || s.fadeIn != null || s.fadeOut != null || s.snap) || resolvedPlan.sfx?.length);
+  const advanced = Boolean(resolvedPlan.music?.tracks || resolvedPlan.music?.sections?.some((s) => s.gainDb == null || s.start != null || s.fadeIn != null || s.fadeOut != null || s.snap || s.gainPoints != null) || resolvedPlan.sfx?.length);
   if (advanced) {
     for (const [n, cue] of speakerMusicCues(resolvedPlan, words).entries()) {
       if (!files[cue.track]) continue;
@@ -193,10 +193,12 @@ export function speakerSfxCues(plan) {
   return (plan.sfx || []).map((s) => {
     const target = entries.find((i) => i.id === s.at);
     if (!target || !(target.card || target.transition && target.transition !== "cut")) throw new Error(`SFX ${s.id}: needs a transition or card entry`);
-    const outputStart = target.start ?? target.outputStart, duration = Math.round((s.duration ?? 0.6) * fps) / fps;
-    const outputEnd = Math.min(plan.duration, outputStart + duration);
-    if (plan.items.some((i) => i.protect && (i.start ?? i.outputStart) < outputEnd && (i.end ?? i.outputEnd) > outputStart)) throw new Error(`SFX ${s.id}: overlaps protected speech or reaction`);
-    return { ...s, outputStart, duration: outputEnd - outputStart, points: [{ t: 0, v: 10 ** (s.gainDb / 20) }, { t: plan.duration, v: 10 ** (s.gainDb / 20) }] };
+    if (s.offset != null && (!Number.isFinite(s.offset) || s.offset < 0)) throw new Error(`SFX ${s.id}: offset must be non-negative`);
+    const startFrame = Math.round((target.start ?? target.outputStart) * fps) + Math.round((s.offset ?? 0) * fps);
+    const endFrame = Math.min(Math.round(plan.duration * fps), startFrame + Math.round((s.duration ?? 0.6) * fps));
+    if (startFrame >= Math.round(plan.duration * fps)) throw new Error(`SFX ${s.id}: offset starts past the timeline`);
+    if (plan.items.some((i) => i.protect && Math.round((i.start ?? i.outputStart) * fps) < endFrame && Math.round((i.end ?? i.outputEnd) * fps) > startFrame)) throw new Error(`SFX ${s.id}: overlaps protected speech or reaction`);
+    return { ...s, outputStart: startFrame / fps, duration: (endFrame - startFrame) / fps, points: [{ t: 0, v: 10 ** (s.gainDb / 20) }, { t: plan.duration, v: 10 ** (s.gainDb / 20) }] };
   });
 }
 
@@ -210,8 +212,9 @@ export async function bakeCues(projectDir, plan, cues, bedFile, { runImpl = run,
       await runImpl("ffmpeg", ["-y", "-loglevel", "error", "-i", path.join(projectDir, cue.asset), "-ar", String(sampleRate), "-ac", "2", "-f", "f32le", file], { capture: true });
       fds.push(fs.openSync(file, "r"));
     }
-    // Music lanes hold one point per frame; SFX lanes hold two. Both interpolate linearly in time.
+    // Authored music interpolates in dB per sample; existing music and SFX keep amplitude interpolation.
     const lanes = cues.map((cue) => {
+      if (cue.gainPoints) return (t) => authoredCueGain(cue, t);
       let k = 0;
       return (t) => {
         const p = cue.points;
@@ -227,7 +230,11 @@ export async function bakeCues(projectDir, plan, cues, bedFile, { runImpl = run,
         const samples = Math.min(size, count - offset), mixed = Buffer.alloc(samples * 4);
         for (const [n] of cues.entries()) {
           const input = Buffer.alloc(samples * 4), available = fs.readSync(fds[n], input, 0, input.length, offset * 4);
-          for (let i = 0; i * 4 < available; i++) mixed.writeFloatLE(mixed.readFloatLE(i * 4) + input.readFloatLE(i * 4) * lanes[n]((offset + i) / 2 / sampleRate), i * 4);
+          for (let i = 0; i * 4 < available; i++) {
+            // Both channels of an authored gain use the same sample clock. Keep legacy interpolation unchanged.
+            const sample = cues[n].gainPoints ? Math.floor((offset + i) / 2) : (offset + i) / 2;
+            mixed.writeFloatLE(mixed.readFloatLE(i * 4) + input.readFloatLE(i * 4) * lanes[n](sample / sampleRate), i * 4);
+          }
         }
         fs.writeSync(output, mixed);
       }
