@@ -597,7 +597,8 @@ test("all card types render at their readable font minimums and preflight flags 
     [titleCard, { type: "title" }, { nameFontSize: 84, roleFontSize: 40, taglineFontSize: 30 }, [84, 40, 30]],
     [bookingCard, { type: "booking" }, { nameFontSize: 84, roleFontSize: 40, textFontSize: 40, urlFontSize: 52 }, [84, 40, 40, 52]],
     [testimonialNameCard, { type: "testimonial-name", proofId: "t1" }, { nameFontSize: 60, titleFontSize: 40, orgFontSize: 36 }, [60, 40, 36]],
-    [quoteCard, { type: "quote", proofId: "q1" }, { fontSize: 54, nameFontSize: 30, titleFontSize: 30, orgFontSize: 30 }, [54, 30]],
+    // Pull quote: accent mark at 2.4x; the quote is sized for about two lines from 84px, never below 54px.
+    [quoteCard, { type: "quote", proofId: "q1" }, { fontSize: 54, nameFontSize: 30, titleFontSize: 30, orgFontSize: 30 }, [202, 84, 30]],
     [logoWallCard, { type: "logo-wall", relationship: "spoke-at", logos: ["logo0", "logo1", "logo2"] }, { headingFontSize: 54 }, [54]],
     [topicCard, { type: "topic", text: "Sales confidence" }, { fontSize: 44 }, [44]],
   ];
@@ -614,6 +615,9 @@ test("all card types render at their readable font minimums and preflight flags 
       assert.ok(cardChecks(p, { manifest, tokens: small }).some((p) => p.code === "card-text-size" && p.message.includes(`${key} is below ${min}px`)), `${spec.type}.${key}`);
     }
   }
+  const long = structuredClone(manifest); long.proof.find((p) => p.id === "q1").text = "word ".repeat(25).trim();
+  const longQuote = quoteCard(good({ type: "quote", proofId: "q1" }, long), { tokens: small, manifest: long, clientDir: "/tmp/client" });
+  assert.equal(longQuote.layout.quote.fontSize >= 54, true); assert.match(longQuote.html, /class="sc-mark" aria-hidden="true"/);
   const r = testimonialNameCard(good({ type: "testimonial-name", proofId: "t1" }), { tokens: small });
   assert.ok(Number(r.html.match(/--sc-bold:(\d+)/)[1]) >= 700);
   assert.match(r.html, /class="sc-body sc-route" style="font-size:60px"/);

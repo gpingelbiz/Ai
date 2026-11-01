@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { validatePlan, resolvePlan, timelineWords, captionFiles, planUsage, fitGeometry, safeMonoFilter, compileVersion } from "../src/speaker-compile.mjs";
+import { validatePlan, resolvePlan, timelineWords, captionFiles, planUsage, fitGeometry, safeMonoFilter, compileVersion, dialogueLevel } from "../src/speaker-compile.mjs";
 import { probeSource } from "../src/speaker-index.mjs";
 import { speakerPreset } from "../src/brandkit.mjs";
 import { run, writeJSON } from "../src/util.mjs";
@@ -166,6 +166,8 @@ test("real speaker compile joins landscape, a one-second card, portrait and pict
   const p = structuredClone(plan);
   p.items[0].in = 0; p.items[0].out = 1;
   p.items[2].in = 0; p.items[2].out = 1;
+  // The portrait default is now the blurred fill (speaker-look); this test checks the flat brand pad of "contain".
+  p.items[2].fit = "contain";
   p.overlays[0].offset = 0; p.overlays[0].duration = 1;
   p.cutaways[0].offset = 0.5; p.cutaways[0].in = 0; p.cutaways[0].out = 0.5;
   const messages = [];
@@ -196,4 +198,29 @@ test("real speaker compile joins landscape, a one-second card, portrait and pict
     assert.ok(Math.abs(meta.videoDuration - 1.1) <= 1 / 30);
     assert.ok(Math.abs(meta.videoDuration - meta.audioStreams[0].duration) <= 1 / 30);
   });
+});
+
+test("dialogue level: true-peak cap by default; opt-in limit takes full gain behind a -2 dBFS lookahead limiter", async (t) => {
+  assert.equal(dialogueLevel({ i: -21.8, tp: -2.9 }).limiter, "");
+  assert.equal(dialogueLevel({ i: -21.8, tp: -2.9 }).gain.toFixed(2), "1.40");
+  const limited = dialogueLevel({ i: -21.8, tp: -2.9 }, { limit: true });
+  assert.equal(limited.gain.toFixed(2), "5.80"); assert.match(limited.limiter, /^alimiter=limit=0.794:.*level=false:latency=true$/);
+  assert.deepEqual(dialogueLevel({ i: -12, tp: -0.5 }, { limit: true }), { gain: -4, limiter: "" });
+  assert.deepEqual(dialogueLevel({ i: -80, tp: -60 }, { limit: true }), { gain: 0, limiter: "" });
+  const bad = structuredClone(plan); bad.items[0].limit = "yes"; bad.items[2].limit = true;
+  const messages = validatePlan(bad, options).map((p) => `${p.id}: ${p.message}`);
+  assert.ok(messages.includes("a: limit must be true or false") && messages.includes("c: limit needs source audio"), messages.join("\n"));
+  // Real ffmpeg: a quiet tone with sharp spikes keeps its exact length and stays under the limit after +12 dB.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-limit-")); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const pcm = Buffer.alloc(48000 * 4);
+  for (let n = 0; n < 48000; n++) pcm.writeFloatLE(0.05 * Math.sin(2 * Math.PI * 300 * n / 48000) + (n % 4800 === 100 ? 0.25 : 0), n * 4);
+  fs.writeFileSync(path.join(dir, "in.f32"), pcm);
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "f32le", "-ar", "48000", "-ac", "1", "-i", path.join(dir, "in.f32"), "-af", `volume=12dB,${limited.limiter}`, "-f", "f32le", path.join(dir, "out.f32")], { capture: true });
+  const out = fs.readFileSync(path.join(dir, "out.f32"));
+  assert.equal(out.length, pcm.length);
+  let peak = 0; for (let n = 0; n < 48000; n++) peak = Math.max(peak, Math.abs(out.readFloatLE(n * 4)));
+  assert.ok(peak <= 0.795, `limited peak ${peak}`);
+  // Delay compensation keeps the tone where it was: the steady part matches the gained input within the limiter's margin.
+  const at = 24000 + 2400, ratio = out.readFloatLE(at * 4) / (pcm.readFloatLE(at * 4) * 10 ** (12 / 20));
+  assert.ok(Math.abs(ratio - 1) < 0.05, `aligned gain ratio ${ratio}`);
 });

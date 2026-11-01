@@ -79,3 +79,13 @@ test("mood prompt lists the moods on disk and allows none", () => {
   assert.match(p, /"none":false/);
   const r = seeded("abc"); assert.ok(r() >= 0 && r() < 1);
 });
+
+test("a zero fade-out holds the ducked level to the end instead of ramping the last stretch to silence", () => {
+  const words = [{ start: 1, end: 2 }, { start: 5, end: 6 }];
+  for (const lane of [duckingLane(words, { duration: 10, level: 0.3, start: 0, fadeIn: 0, fadeOut: 0, minGap: 1.2 }), duckingLaneFromEnvelope({ step: 0.02, db: Array.from({ length: 500 }, (_, i) => (i >= 50 && i < 100) || (i >= 250 && i < 300) ? -20 : -60) }, { duration: 10, level: 0.3, start: 0, fadeIn: 0, fadeOut: 0, minGap: 1.2 })]) {
+    assert.deepEqual(lane.at(-1), { t: 10, v: 0.3 });
+    assert.ok(lane.every((p) => p.v >= 0.3 - 1e-9), JSON.stringify(lane));
+  }
+  // The default fade-out still ends at zero for the daily reels.
+  assert.deepEqual(duckingLane(words, { duration: 10, level: 0.3 }).at(-1), { t: 10, v: 0 });
+});

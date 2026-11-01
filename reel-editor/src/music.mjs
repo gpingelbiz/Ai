@@ -94,6 +94,12 @@ export async function chooseMoods({ transcript, hook, moods, voice }) {
  * Volume lane for the bed: `level` under speech, swelling to `level * swell` in pauses of `minGap` seconds or
  * more, with short ramps. Returns [{t, v}] in reel time, starting at `start` with a fade in and ending with a fade out.
  */
+/** With no fade-out the lane holds its level to the end; a zero point at the same time would win the de-duplication
+ * and turn the whole last stretch into a linear fade. Speaker cues fade their edges separately. */
+function tail(start, duration, level, fadeOut) {
+  return fadeOut > 0 ? [{ t: r3(Math.max(start, duration - fadeOut)), v: level }, { t: r3(duration), v: 0 }] : [{ t: r3(duration), v: level }];
+}
+
 export function duckingLane(words, { duration, level = 0.1, swell = 2.2, minGap = 0.9, ramp = 0.35, start = 0.5, fadeIn = 1, fadeOut = 1.5 } = {}) {
   const hi = Math.min(1, level * swell);
   const pts = [{ t: r3(start), v: 0 }, { t: r3(Math.min(duration, start + fadeIn)), v: level }];
@@ -104,7 +110,7 @@ export function duckingLane(words, { duration, level = 0.1, swell = 2.2, minGap 
     const up = Math.min(ramp, (g1 - g0) / 3);
     pts.push({ t: r3(g0 + 0.1), v: level }, { t: r3(g0 + 0.1 + up), v: hi }, { t: r3(g1 - 0.15 - up), v: hi }, { t: r3(g1 - 0.15), v: level });
   }
-  pts.push({ t: r3(Math.max(start, duration - fadeOut)), v: level }, { t: r3(duration), v: 0 });
+  pts.push(...tail(start, duration, level, fadeOut));
   // Monotonic, de-duplicated times.
   const out = [];
   for (const p of pts) {
@@ -161,7 +167,7 @@ export function duckingLaneFromEnvelope(env, { duration, words = [], level = 0.1
       { t: r3(g1 + attack), v: level },
     );
   }
-  pts.push({ t: r3(Math.max(start, duration - fadeOut)), v: level }, { t: r3(duration), v: 0 });
+  pts.push(...tail(start, duration, level, fadeOut));
   const out = [];
   for (const p of pts) {
     if (p.t < start || p.t > duration) continue;

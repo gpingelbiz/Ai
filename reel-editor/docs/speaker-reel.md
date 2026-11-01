@@ -275,9 +275,10 @@ Items play back to back. Overlays and cutaways add no time.
 
 - `item.kind`: clip or card.
 - `role`: opening, identity, proof, core, room, testimonial, close, booking or montage.
-- `fit`: contain by default; portrait and small sources sit in a client-brand frame, preserving aspect ratio. Cover is allowed only for landscape sources. Contain limits linear enlargement to 1.5× and warns when a source cannot fill the desired area. Cover warns above 1.5× and needs visual review.
+- `fit`: omitted values resolve to `blur` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `blur` centres the sharp picture over a heavily blurred, 35% darker and slightly desaturated copy of the same frames. `contain` keeps the client-brand frame. Both preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources, warns above 1.5× and needs visual review. Explicit saved fits always win.
 - `audio`: source or mute. A source marked none/bad must use mute when selected as a timeline clip. A cutaway always supplies picture only.
 - `protect: true`: no internal trimming, retiming, denoise or silence cuts. All items already stay at speed 1.0. Meaningful pauses and real reactions remain intact. Normalization and 10 ms edge fades do not rearrange the passage.
+- `limit: true` (optional, source audio only): each clip normally receives fixed gain toward −16 LUFS, stopping at −1.5 dBTP. A peaky phone recording can stay several LU quiet that way. With `limit`, the clip takes the full gain, and a delay-compensated lookahead limiter holds its sample peaks at −2 dBFS. It never compresses between peaks and never cuts silence. Use it only where the review hears a quiet clip.
 - `in` and `out` are original source seconds, with `0 <= in < out`. Out cannot exceed the indexed duration. Photos can be held for the requested duration; audio-only sources use a plain brand frame.
 - Overlays target `at`; cutaways target `over`. Offset is relative to the target item. Entries must fit inside the target and cutaways must not overlap. Item durations, offsets and overlay durations resolve to integer frames using nearest-frame rounding.
 - Versions and item ids use safe folder/file names. Revision is a positive integer. Duplicate ids and versions are errors.
@@ -353,3 +354,118 @@ The compiler uses hard picture cuts and a re-encoded ffmpeg concatenation. No au
 `runSpeaker()` orchestrates brand safety, indexing, validation, compilation, composition, rendering, normalization, QC and review. `composeSpeaker(workDir, resolvedPlan, { manifest, preset, tokens, captions })` writes a dedicated landscape HyperFrames project and returns its paths. It uses `speakerCardsHTML()`/`copyCardAssets()` and client tokensCSS without the general composer's stock font setup. `speakerHTML()`, `speakerMusicLane()`, `licensedMusic()`, `starterPlan()`, `writeStarterPlan()` and `parseSpeakerArgs()` are exported for offline verification. Render/normalize/QC/index/analysis dependencies can be injected; tests never call live ASR/Claude or Chrome.
 
 Run `npm test`. The focused speaker tests use only fake ASR and tiny generated ffmpeg sources. The real compiler fixture includes landscape sine audio, portrait footage, a silent one-second card and a picture-only cutaway, and verifies dimensions, frame rate, colour tags, portrait padding and A/V duration. Chrome/HyperFrames and golden renders require a separate permitted environment. Real footage still needs an operator to verify intelligibility, lip sync, reaction context, spelling, permissions and final client approval.
+
+
+## Speaker picture finishing
+
+These are plan options; no new CLI flags or preset keys are required. Defaults apply when fields are omitted, including on saved plans. Existing explicit `fit: "contain"` choices remain flat client-brand frames; change those entries to `"blur"` to adopt the new portrait treatment.
+
+```json
+{
+  "look": { "grade": "auto", "letterbox": null },
+  "items": [
+    { "id": "stage", "kind": "clip", "sourceId": "stage-camera", "in": 12, "out": 20, "role": "core", "stabilize": true, "push": 1 },
+    { "id": "phone", "kind": "clip", "sourceId": "phone-camera", "in": 5, "out": 12, "role": "room", "fit": "blur", "look": { "grade": "off" } }
+  ],
+  "cutaways": [
+    { "id": "detail", "over": "stage", "offset": 2, "sourceId": "detail-camera", "in": 0, "out": 3, "push": 1.06 }
+  ]
+}
+```
+
+Merge these fields into a complete plan with its existing schema, canvas, identity and rights records.
+
+- `look.grade`: `"auto"` (default) or `"off"`. Auto measures each used source after rotation/SDR conversion, caches its exposure and neutral-colour statistics, and holds one correction throughout that source. Exposure correction is bounded to ±0.3 EV; neutral balance offsets stop at ±0.015 per RGB channel. Saturated/strongly coloured stages skip white balance. A shared gentle luminance S-curve and slight warmth follow. A broad skin-hue region is excluded from chromatic correction; no denoising, sharpening, grain or invented detail is added. This is conservative matching, with human colour review still required.
+- Item/cutaway `look: { "grade": "off" }` bypasses both source matching and house grade, useful for original title cards. `"auto"` can also opt an entry back into a plan whose grade is off.
+- Item/cutaway `stabilize: true` enables two-pass vidstab on the selected picture range with up to one second of original handles at each end. Manifest `source.handheld: true` supplies this default for every use of that source; explicit `stabilize: false` disables it. The transform uses smoothing 15 and a 3% base zoom plus adaptive edge coverage. Cache identity includes source content, range, available duration, rotation/SDR normalization and settings. A failed pass logs one line, records a review warning, and uses the original picture. Original dialogue is always extracted separately at the original source times.
+- Item/cutaway `push`: 1 to 1.2. Items default to 1; cutaways longer than 1.5 seconds default to 1.06. Set 1 to disable. The smooth, deterministic move reaches its final scale on the last output frame and runs at 4× internal precision. For `contain`/`blur`, the foreground reserves the move's margin so it remains fully visible and never exceeds 1.5× source enlargement.
+- `look.letterbox`: `null` (default), `2.35` or `2.39`. Bars mask the composed picture, leaving 1920×818 or 1920×804 active pixels. Cards, lower thirds and burned captions stay within that area. A composition adapter reflows the existing card boxes without shrinking type; layouts that cannot fit fail with the card ID. Check heads, hands and slides before using either crop. The resolved plan carries an informational finding shown on the review page.
+
+Colour measurements and deterministic LUTs live in `work/index/look/<key>.look.json` and `<key>.cube`; stabilized picture-only ranges live in `work/index/look/stabilize/`. The original index/transcript JSON is unchanged. Review pairs for each used source/grade mode are written to `work/<version>/look/*-before.jpg` and `*-after.jpg`, sampled at the same original source time. `look/look.json` records the grade settings, cache keys and active box. These frames show colour correction before framing, motion and composited cards. Optional measurement/review-frame failures log once per source operation; failed measurement falls back to the shared gentle house grade.
+
+`plan.resolved.json` records actual fits, pushes, stabilization requests, plan look and active box. `composition.json` records letterbox/active-box metadata and adjusted card review geometry. Existing `base.mp4`, map, words and sidecar contracts retain their timing and dimensions. Final composition adds the bars; the base assembly remains full 1920×1080. All source audio and cutaway L-cuts use the existing compiler clock. Hardware encoding still uses the existing VideoToolbox helper, with its existing automatic software fallback.
+
+## Speaker motion and sound cues
+
+The following additions are optional plan fields; there are no new CLI flags or preset options. Existing single-file music plans retain their existing mix. New cue plans use the client's brand and licensed local files only. No media, music, reactions or proof is generated.
+
+### Multiple tracks and source offsets
+
+Register each music file in `manifest.music` with a nonempty `license`. Effects additionally need `kind: "sfx"`. The same final licensing guard checks **all** tracks and effects; unlicensed/missing draft assets stay silent with a review warning.
+
+```json
+{
+  "music": {
+    "tracks": [
+      { "id": "build", "file": "music/build.wav" },
+      { "id": "drive", "file": "music/drive.wav" }
+    ],
+    "sections": [
+      { "from": "opening", "to": "identity", "track": "build", "start": 18, "snap": "beats", "fadeIn": 0.5, "fadeOut": 0.75 },
+      { "from": "proof", "to": "proof-end", "track": "drive", "start": 4, "gainDb": -18 }
+    ]
+  }
+}
+```
+
+Sections name inclusive timeline items, never overlap authored spans, and are silent elsewhere. `start` is the source-track offset in seconds, independent of output time. The single-file `{file, sections}` form also accepts `start`, `fadeIn`, `fadeOut` and `snap`. Track changes at adjacent section boundaries overlap for 0.5–1.0 seconds (default 23 frames at 30 fps); the outgoing track fades away by the first word of a named protected section. There is no tail into an unnamed core or reaction. Explicit sections alone can enable music over protected/core footage.
+
+For new cue plans, omitted `gainDb` means approximately −18 dB under speech and −6 dB without speech. An explicit `gainDb` sets the speech level, with restrained pause lifts. Ducking uses output words, anticipates speech by 150 ms and retains a 600 ms release; short gaps never swell. Protected passages do not swell. `fadeIn`/`fadeOut` are seconds; track crossfades clamp to the 0.5–1.0 second range. All cue automation uses integer output frames, and assets use exact 48 kHz sample padding.
+
+Composition measures the actual automated music bed and dialogue over matching speech windows. `work/<version>/music-qc.json` records both stem LUFS measurements. Speech less than **8 LU** above its bed produces a visible review warning. Unavailable measurements produce one warning, never a made-up pass. The existing `speakerNormalize` and encoded-file speaker QC retain the **−14 LUFS / ≤−1 dBTP** delivery target.
+
+### Beat timing and montage shot lists
+
+`speakerBeats(file, {indexDir})` (default cache: `./work/index`) uses ffmpeg PCM decoding and a local energy-flux/tempo tracker in JavaScript. It needs no Python, model, API or package install. The full file SHA-256 and tracker version key `work/index/beats-v1-<hash>.json`; the JSON stores `{schemaVersion, hash, beats}`. Beat times refer to the original track before the section's `start` offset. Sparse or strongly syncopated music still needs an operator to audition the result.
+
+A music section with `"snap":"beats"` enables picture snapping. Existing cutaway boundaries move at most **four frames** and never yield less than **0.8 seconds** of picture. Small range extensions use only indexed source handles; a snap never reads past the original file. Protected items retain their picture timing. At a join, `"snap":true` on the incoming item permits snapping only when **both neighbours are muted montage clips**; dialogue boundaries never move. The joined source ranges are revalidated by the existing compiler.
+
+To time pictures over one unchanged dialogue item, add a montage helper:
+
+```json
+{
+  "montage": [{
+    "id": "opening-pictures", "over": "opening", "offset": 0, "duration": 4, "every": 2,
+    "shots": [
+      { "sourceId": "stage-wide-broll", "in": 2, "out": 4, "fit": "contain" },
+      { "sourceId": "arrival-broll", "in": 0, "out": 2, "fit": "contain" },
+      { "sourceId": "book-signing", "in": 4, "out": 6, "fit": "contain" },
+      { "sourceId": "stage-angle-broll", "in": 1, "out": 3, "fit": "cover" }
+    ]
+  }]
+}
+```
+
+Each shot must reference a manifest `broll` or `photo` source, have cleared or draft-warned rights and provide enough original duration. `every` is 1 or 2 beats; intervals below 0.8 seconds combine with the next beat. Supply one shot per resulting interval; insufficient shots or handles fail with the helper id. Extra shots remain unused. Only a music section with beat snapping can drive a montage. Helpers cannot cover protected items, and they cannot manufacture or relocate reactions.
+
+Because the original compiler bakes pictures into `base.mp4`, optional beat changes run through `compileVersion` again during composition. It rewrites base/map/words/resolved-plan/sidecars together. This costs an additional compile pass only for beat-enabled plans. Missing beat analysis fails open once with unchanged pictures. The editable plan and original media stay untouched; inspect `plan.resolved.json` and the review for the actual picture placements.
+
+### Transcript keywords, reveals, transitions and effects
+
+A keyword is an overlay with one to three verbatim, ordered words from the target item's output transcript:
+
+```json
+{
+  "id": "keyword-1", "at": "opening", "offset": 2.1, "duration": 1.8,
+  "card": { "type": "keyword", "text": "Decide Anyway", "position": "center", "motion": "scale" }
+}
+```
+
+`position` is `center` (default) or `lower-third`; `motion` is `scale` (default) or `slide`. The entry takes six frames, then the card holds until its end. The overlay window is 1.2–2.5 seconds; use at least 1.4 seconds to retain 1.2 seconds fully settled. Keywords use only the client's display font, ink, surface and radius. Unknown/reordered words, words from another item/source, testimonials and keyword starts less than 20 seconds apart fail. Plan-only runs without transcripts warn that indexed-word validation is still required; rendering refuses ungrounded text. Speaker identification within a shared microphone source still requires operator review.
+
+Title and booking names reveal with a 0.6-second mask on the absolute GSAP timeline and then hold. Reserve at least **6.6 seconds** for a booking card to retain six fully readable seconds after its reveal; historical six-second plans remain accepted for compatibility.
+
+`transition` on an incoming item is `cut` (default), `dip` (eight frames to the brand surface), `flash` (four frames, white at 60%) or `whip` (six frames of directional blur/slide). A reel may have at most four decorative transitions. Neither side of a decorative boundary may touch protected footage or the core; transitions never add time. Effects remain opt-in:
+
+```json
+{
+  "sfx": [{
+    "id": "proof-whoosh", "at": "proof", "file": "music/whoosh.wav",
+    "gainDb": -24, "start": 0, "duration": 0.6
+  }]
+}
+```
+
+`at` names an item with a decorative incoming transition or a card/overlay entry. `start` selects the source offset; `duration` defaults to 0.6 seconds (maximum six). `gainDb` is explicit (−96 to 0). The complete audible interval must avoid every protected item, including a reaction beginning after the cue. The file must be registered as a licensed `kind:"sfx"` asset. No stock applause, reactions or automatic whooshes are inserted.
+
+`composition.json` records individual cue files, source offsets, output times, volume points and warnings. Composition multiplies each prepared cue by its gain lane and sums them into one `assets/music-bed.wav`, which the HTML references with no renderer automation. HyperFrames 0.8 rendered some separate cue elements silent. Existing daily-reel presets, composer and golden-frame fixtures are unchanged. Run `node --test test/speaker-motion.test.mjs` for the offline motion/audio checks, then `npm test`; golden/Chrome rendering still needs the normal render environment.
