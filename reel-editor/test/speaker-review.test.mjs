@@ -189,3 +189,23 @@ test("speaker approval rejects files or feedback changed while QC is running", a
   await assert.rejects(approve(folder, "full", { ...approval, qc: async () => { if (!recorded) { writeRevision(folder, "full", "FULL-i01: new feedback"); recorded = true; } return passingQC(); } }), /review state changed during approval/);
   assert.equal(reviewState(folder, "full").state, "revision");
 });
+
+test("review lists only visible baked-picture intersections with exact times and escaped reasons", async (t) => {
+  const { folder, build } = fixture(t);
+  const indexDir = path.join(folder, "work", "index");
+  fs.mkdirSync(indexDir, { recursive: true });
+  fs.writeFileSync(path.join(indexDir, "sources.json"), JSON.stringify({ sources: { stage: { key: "stage-key" }, broll: { key: "room-key" } } }));
+  fs.writeFileSync(path.join(indexDir, "stage-key.inserts.json"), JSON.stringify({ version: 1, sourceId: "stage", inserts: [
+    { start: 100.2, end: 100.7, kind: "insert", confidence: 0.8, reason: "Unusual <picture> & camera" },
+    { start: 102.1, end: 102.9, kind: "title-card", confidence: 0.8, reason: "Covered flag must not appear" },
+  ] }));
+  fs.writeFileSync(path.join(indexDir, "room-key.inserts.json"), JSON.stringify({ version: 1, sourceId: "broll", inserts: [
+    { start: 10.2, end: 10.6, kind: "slide", confidence: 0.7, reason: "Cutaway contains a slide" },
+  ] }));
+  const res = await build(), html = fs.readFileSync(res.index, "utf8");
+  assert.match(html, /Likely baked inserts/);
+  assert.match(html, /source 100.2–100.7s · output 0.2–0.7s/);
+  assert.match(html, /Unusual &lt;picture&gt; &amp; camera/);
+  assert.match(html, /Cutaway contains a slide/);
+  assert.doesNotMatch(html, /Covered flag must not appear/);
+});

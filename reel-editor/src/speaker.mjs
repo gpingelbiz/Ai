@@ -18,6 +18,8 @@ import { approve, deliver } from "./speaker-deliver.mjs";
 import { findCandidates, writeCandidates, describeCandidates } from "./speaker-moments.mjs";
 import { findReactions } from "./reactions.mjs";
 import { shotCandidates } from "./shots.mjs";
+// Optional baked-picture observations have their own cache and never change editorial ranges.
+import { detectInserts, analyzeSpeakerInserts } from "./speaker-inserts.mjs";
 import { writeStarterPlan } from "./speaker-plan.mjs";
 import { speakerStatus } from "../scripts/speaker-status.mjs";
 
@@ -27,6 +29,7 @@ export const SPEAKER_HELP = `reel speaker: build and review a client's landscape
   reel speaker index <folder> [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model name] [--language en]
   reel speaker candidates <folder> [--source id]
   reel speaker reactions <folder> [--source id]
+  reel speaker inserts <folder> [--source id]
   reel speaker plan <folder> --version full|short|teaser [--replan]
   reel speaker draft <folder> --version v [--captions] [--render-only]
   reel speaker comments <folder> --version v <file>
@@ -151,7 +154,7 @@ export function parseSpeakerArgs(argv) {
     engine: { type: "string" }, language: { type: "string" }, model: { type: "string" }, source: { type: "string" }, replan: { type: "boolean" }, by: { type: "string" },
   } });
   if (values.help || !positionals.length) return { help: true };
-  const commands = ["init", "index", "candidates", "reactions", "plan", "draft", "comments", "approve", "deliver", "status"];
+  const commands = ["inserts", "init", "index", "candidates", "reactions", "plan", "draft", "comments", "approve", "deliver", "status"];
   // "reel speaker plan" with no other argument is the client folder ./plan when it exists, not the command.
   const explicit = commands.includes(positionals[0]) && !(positionals.length === 1 && fs.existsSync(positionals[0]));
   const command = explicit ? positionals.shift() : "draft";
@@ -159,7 +162,7 @@ export function parseSpeakerArgs(argv) {
   if (values.version && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(values.version)) throw new Error("speaker --version must be a safe folder name");
   if (["plan", "comments", "approve", "deliver"].includes(command) && !values.version) throw new Error(`speaker ${command} requires --version`);
   if (command === "approve" && !values.by?.trim()) throw new Error("speaker approve requires --by with the client's approver name");
-  for (const [flag, allowed] of [["add-new", ["init"]], ["source", ["candidates", "reactions"]], ["replan", ["plan"]], ["by", ["approve"]]]) {
+  for (const [flag, allowed] of [["add-new", ["init"]], ["source", ["candidates", "reactions", "inserts"]], ["replan", ["plan"]], ["by", ["approve"]]]) {
     if (values[flag] != null && !allowed.includes(command)) throw new Error(`--${flag} is only available with reel speaker ${allowed.join(" or ")}`);
   }
   if (values["plan-only"] && values["render-only"]) throw new Error("choose either --plan-only or --render-only");
@@ -168,7 +171,7 @@ export function parseSpeakerArgs(argv) {
 }
 
 /** Detectors only suggest; neither shots nor reaction scores create editorial truth. */
-export async function analyzeSpeaker(folder, { source, reactionsOnly = false } = {}, { reactions: react = findReactions, shots = shotCandidates, candidates = findCandidates, print = log, ask } = {}) {
+export async function analyzeSpeaker(folder, { source, reactionsOnly = false } = {}, { reactions: react = findReactions, shots = shotCandidates, inserts = detectInserts, candidates = findCandidates, print = log, ask } = {}) {
   folder = path.resolve(folder);
   const { manifest, problems } = loadManifest(folder); errors(problems); assertNoGreg(manifest, "manifest");
   const brand = readJSON(assetPath(folder, manifest.brand.file)); assertNoGreg(brand, "brand");
@@ -176,6 +179,7 @@ export async function analyzeSpeaker(folder, { source, reactionsOnly = false } =
   const selected = manifest.sources.filter((s) => !source || s.id === source);
   if (!selected.length) throw new Error(`speaker: unknown sourceId ${source}`);
   const words = {}, lines = {}, envelope = {}, reactions = {}, sourceShots = {}, sources = [];
+  const sourceInserts = {};
   const rights = new Map(manifest.rights.map((r) => [r.id, r.status]));
   for (const s of selected) {
     const row = index.sources[s.id], file = assetPath(folder, s.path);
@@ -184,6 +188,10 @@ export async function analyzeSpeaker(folder, { source, reactionsOnly = false } =
     if (reactionsOnly) continue;
     let observations = [];
     if (row.hasVideo) observations = await shots(file, { meta: row, log: print });
+    // Only talk-like sources are compared for recurring room angles. Detector output remains advisory.
+    if (row.hasVideo && ["stage", "podcast", "webinar", "interview"].includes(s.kind)) {
+      sourceInserts[s.id] = await inserts(file, row, { indexDir: path.join(folder, "work", "index"), sourceId: s.id, log: print });
+    }
     sourceShots[s.id] = observations;
     writeJSON(path.join(folder, "work", "index", `${row.key}.shots.json`), { sourceId: s.id, shots: observations });
     words[s.id] = row.words.map((w, i) => ({ ...w, id: `${s.id}-w${i}`, sourceId: s.id }));
@@ -193,6 +201,7 @@ export async function analyzeSpeaker(folder, { source, reactionsOnly = false } =
   if (reactionsOnly) return reactions;
   const list = await candidates({ sources, words, lines, envelope, reactions, brief: manifest.brief, ...(ask ? { ask } : {}) });
   for (const c of list) for (const entry of [c, ...(c.alternates || [])]) {
+    entry.inserts = (sourceInserts[entry.sourceId] || []).filter((flag) => flag.start < entry.out && flag.end > entry.in);
     entry.shots = (sourceShots[entry.sourceId] || []).filter((shot) => shot.start < entry.out && shot.end > entry.in);
   }
   // A --source refresh preserves the other talks' candidates.
@@ -213,6 +222,7 @@ export async function speakerMain(argv, deps = {}) {
     print(`speaker manifest: ${result.added} files added; ${result.file}`); return result;
   }
   if (command === "status") { const result = (deps.status || speakerStatus)(path.resolve(folder)); print(result); return result; }
+  if (command === "inserts") return (deps.analyzeInserts || analyzeSpeakerInserts)(folder, { source: options.source }, deps);
   if (command === "candidates" || command === "reactions") return (deps.analyze || analyzeSpeaker)(folder, { source: options.source, reactionsOnly: command === "reactions" }, deps);
   if (command === "plan") {
     const { manifest, problems } = loadManifest(folder); errors(problems); assertNoGreg(manifest, "manifest");
