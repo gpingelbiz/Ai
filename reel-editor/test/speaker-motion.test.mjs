@@ -198,6 +198,8 @@ test("transition count and core placement rules; title/booking reveal finishes b
   assert.deepEqual(calls.map((c) => [c[2].duration, c[3]]), [[0.6, 0], [0.6, 4]]);
   const html = speakerHTML(p, { manifest, cards: { css: "", html: "", timeline: "" } });
   assert.match(html, /clipPath/); assert.ok(!html.includes("undefined"));
+  // The finished mask extends past the line box top and bottom, so descenders are never clipped.
+  assert.match(html, /clipPath:"inset\(-0\.35em -0\.1em -0\.45em 0\)"/);
 });
 
 test("SFX entry timing, full-span protection and licence validation", () => {

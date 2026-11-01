@@ -153,13 +153,13 @@ export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, p
   return { base, projectDir, html: path.join(projectDir, "index.html"), captions: burn, cards: cards.review, cardProblems: cards.problems, warnings };
 }
 
-/** All effects use absolute frame times. Title masks finish at 18 frames and then hold. */
+/** All effects use absolute frame times. Title masks finish at 18 frames and then hold. The mask reaches past the line box so a tight display line height never cuts a descender (the y in Gracey). */
 export function speakerMotionHTML(plan) {
   const fps = plan.canvas.fps, html = [], timeline = [];
   const entries = [...(plan.items || []).filter((i) => i.kind === "card"), ...(plan.overlays || [])];
   for (const [n, entry] of entries.entries()) if (["title", "booking"].includes(entry.card?.type)) {
     const start = entry.start ?? entry.outputStart;
-    timeline.push(`tl.fromTo(${js(`#speaker-card-${n} .sc-name`)},{clipPath:"inset(0 100% 0 0)"},{clipPath:"inset(0 0% 0 0)",duration:0.6,ease:"power2.out",immediateRender:false},${start});`);
+    timeline.push(`tl.fromTo(${js(`#speaker-card-${n} .sc-name`)},{clipPath:"inset(-0.35em 100% -0.45em 0)"},{clipPath:"inset(-0.35em -0.1em -0.45em 0)",duration:0.6,ease:"power2.out",immediateRender:false},${start});`);
   }
   for (const [n, item] of (plan.items || []).entries()) {
     const type = item.transition || "cut";
