@@ -19,7 +19,7 @@ test("classify close, medium and wide using face/body geometry", () => {
   assert.equal(classifyShot({ ...wide(), bodies: [box(0.50)] }), "unknown");
   assert.equal(classifyShot({ faces: [box(0.08)] }), "unknown");
   assert.equal(classifyShot({ faces: [], bodies: [box(0.4)] }), "unknown");
-  assert.equal(classifyShot({ ...wide(), width: 1080, height: 1920 }), "unknown");
+  assert.equal(classifyShot({ ...wide(), width: 1080, height: 1920 }), "medium");
 });
 
 test("audience candidate needs six small faces across two rows or eight bodies", () => {
@@ -90,11 +90,12 @@ test("injected Vision runner samples original landscape at two fps without refra
   assert.equal(groups[0].end, 2);
 });
 
-test("failed decode samples stay unknown; portrait footage is skipped", async (t) => {
+test("failed decode samples stay unknown; portrait footage reaches Vision", async (t) => {
   const { file, meta } = fixture(t);
   const groups = await shotCandidates(file, { meta, run: async () => ({ width: 1920, height: 1080, frames: [sample(0, audience()), sample(1, audience())] }) });
   assert.ok(groups.every((g) => g.kind === "unknown"));
-  assert.deepEqual(await shotCandidates(file, { meta: { ...meta, width: 720, height: 1280 }, run: () => assert.fail("portrait must not run Vision") }), []);
+  const portrait = await shotCandidates(file, { meta: { ...meta, width: 720, height: 1280 }, run: async (_, times) => ({ width: 720, height: 1280, frames: times.map((t) => ({ t, faces: [box(0.2)] })) }) });
+  assert.equal(portrait[0].kind, "close");
 });
 
 test("Vision work is batched and grouping continues across batch boundaries", async (t) => {
@@ -118,4 +119,26 @@ test("optional Vision failure logs once; missing file and invalid fps are clear 
   await assert.rejects(shotCandidates(`${file}-missing`), /no such source/);
   await assert.rejects(shotCandidates(file, { meta, fps: 0 }), /fps/);
   await assert.rejects(shotCandidates(file, { meta: { ...meta, width: undefined } }), /geometry/);
+});
+
+
+test("portrait face thresholds distinguish full-body wide, medium and close in upright geometry", () => {
+  const portrait = (data) => ({ width: 2160, height: 3840, rotationCw: 90, ...data });
+  assert.equal(classifyShot(portrait({ faces: [box(0.18)] })), "close");
+  assert.equal(classifyShot(portrait({ faces: [box(0.07)] })), "medium");
+  assert.equal(classifyShot(portrait({ faces: [box(0.06)], bodies: [box(0.4)] })), "wide");
+  assert.equal(classifyShot(portrait({ faces: [box(0.06)] })), "unknown");
+  assert.equal(classifyShot(portrait(audience())), "audience-candidate");
+});
+
+test("Vision display geometry wins over probe rotation without a second rotation", async (t) => {
+  const { file, meta } = fixture(t);
+  for (const rotationCw of [0, 90, 270]) {
+    const groups = await shotCandidates(file, { meta: { ...meta, width: 2160, height: 3840, rotationCw }, run: async (_, times) => ({ width: 540, height: 960, frames: times.map((t) => ({ t, faces: [box(0.18)] })) }) });
+    assert.equal(groups[0].kind, "close");
+    assert.equal(groups[0].samples[0].width, 540);
+    assert.equal(groups[0].samples[0].height, 960);
+  }
+  const landscape = await shotCandidates(file, { meta: { ...meta, rotationCw: 90 }, run: async (_, times) => ({ width: 960, height: 540, frames: times.map((t) => ({ t, faces: [box(0.18)] })) }) });
+  assert.equal(landscape[0].kind, "medium");
 });

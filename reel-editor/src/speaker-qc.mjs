@@ -6,6 +6,7 @@ import { run, writeJSON } from "./util.mjs";
 import { identityLeaks } from "./speaker-guard.mjs";
 import { audioQualityWarnings } from "./speaker-audio-quality.mjs";
 import { resolveCard } from "./speaker-cards.mjs";
+import { loadInsertFlags, insertWarnings } from "./speaker-inserts.mjs";
 
 /** Accept the explicit output fields, or start/end from a compiled plan. Never use source in/out as output time. */
 export function outputSpan(item) {
@@ -138,6 +139,9 @@ export async function speakerQC(video, { resolvedPlan, manifest, final = false, 
     catch { /* Optional alternate evidence must not block delivery checks. */ }
   }
   checks.push(...audioQualityWarnings(plan, audioCandidates, manifest));
+  // Optional original-picture flags: subtract cutaways, then inspect their own picture sources too.
+  const clientFolder = folder || path.resolve(path.dirname(typeof resolvedPlan === "string" ? resolvedPlan : video), "../..");
+  checks.push(...insertWarnings(plan, deps.inserts || loadInsertFlags(clientFolder)));
   checks.push(...rightsChecks(plan, manifest, final));
   for (const p of plan.composition?.cardProblems || []) checks.push({ code: p.code, level: p.level === "error" ? "fail" : "warn", message: p.message });
   const identity = [...identityProblems(plan, "plan"), ...identityProblems(manifest, "manifest")];
