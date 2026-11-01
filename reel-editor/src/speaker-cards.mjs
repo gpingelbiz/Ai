@@ -272,6 +272,7 @@ function cssRules(t, colors) {
 .sc-logo img { width:100%; height:100%; object-fit:contain; }
 .sc-heading { position:absolute; margin:0; font-family:var(--brand-display-font); line-height:var(--brand-display-line-height); }
 .sc-quote { margin:0; font-family:var(--brand-display-font); line-height:var(--brand-display-line-height); }
+.sc-mark { font-family:var(--brand-display-font); line-height:1; color:var(--brand-accent); flex-shrink:0; }
 .sc-route { font-weight:var(--sc-bold); }
 .sc-testimonial-name, .sc-topic { background:color-mix(in srgb, var(--sc-surface) 88%, transparent); }
 .sc-keyword { background:transparent; text-align:center; }
@@ -305,17 +306,19 @@ function baseLayout(card, t, canvas, mode) {
   const w = W - inset * 2, h = mode === "overlay" ? H * 0.25 : H - inset * 2;
   const pad = mode === "overlay" ? t.spacing.sm : 0, innerWidth = w - pad * 2;
   const titleName = fitText(card.name, Math.max(72, mode === "overlay" ? t.typeScale.xl : t.typeScale.display), 72, innerWidth, t.type.display.lineHeight);
-  let contentHeight = 0;
+  let contentHeight = 0, quote = null;
   if (card.type === "title") {
     contentHeight = titleName.height + fitText(card.roleLine, Math.max(40, t.typeScale.md), 40, innerWidth, t.type.body.lineHeight).height
       + (card.tagline ? fitText(card.tagline, Math.max(30, t.typeScale.sm), 30, innerWidth, t.type.body.lineHeight).height : 0)
       + t.spacing.md * (card.tagline ? 3 : 2) + t.spacing.xs / 2;
   } else if (card.type === "quote") {
-    contentHeight = fitText(card.text, Math.max(54, t.typeScale.lg), 54, innerWidth, t.type.display.lineHeight).height
+    // A pull quote: large display type wrapped to 80% of the width under an accent opening mark.
+    quote = fitText(card.text, Math.max(84, t.typeScale.xl), 54, innerWidth * 0.8, t.type.display.lineHeight);
+    contentHeight = Math.ceil(quote.fontSize * 1.6 * 0.55) + quote.height
       + [card.name, card.title, card.org].filter(Boolean).reduce((sum, text) => sum + fitText(text, body, 30, innerWidth, t.type.body.lineHeight).height, 0)
-      + t.spacing.md * 2 + t.spacing.xs * 2 + t.spacing.xs / 2;
+      + t.spacing.md * 2 + t.spacing.xs * 2;
   }
-  return { x: inset, y: mode === "overlay" ? H * 0.05 : inset, w, h, name: titleName, contentHeight: contentHeight + pad * 2, fits: w > 0 && contentHeight <= h - pad * 2 };
+  return { x: inset, y: mode === "overlay" ? H * 0.05 : inset, w, h, name: titleName, quote, contentHeight: contentHeight + pad * 2, fits: w > 0 && contentHeight <= h - pad * 2 };
 }
 
 function attribution(card, t) {
@@ -352,7 +355,7 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
     content = `<div class="sc-copy sc-attribution" style="inset:${layout.pad}px;gap:${layout.gap}px">${display(card.name, "sc-body sc-route", layout.name.fontSize)}${card.title ? display(card.title, "sc-body", layout.title.fontSize) : ""}${card.org ? display(card.org, "sc-body", layout.org.fontSize) : ""}</div>`;
     fields.push(card.name, card.title, card.org);
   } else if (card.type === "quote") {
-    content = `<div class="sc-copy" style="${copyStyle}"><div class="sc-rule"></div><blockquote class="sc-quote" style="font-size:${Math.max(54, t.typeScale.lg)}px">${esc(card.text)}</blockquote>${attribution(card, t)}</div>`;
+    content = `<div class="sc-copy" style="${copyStyle}"><div class="sc-mark" aria-hidden="true" style="font-size:${Math.round(layout.quote.fontSize * 1.6)}px;height:${Math.ceil(layout.quote.fontSize * 1.6 * 0.55)}px">&#8220;</div><blockquote class="sc-quote" style="font-size:${layout.quote.fontSize}px;max-width:80%">${esc(card.text)}</blockquote>${attribution(card, t)}</div>`;
     fields.push(card.text, card.name, card.title, card.org);
   } else if (card.type === "logo-wall") {
     const boxes = logoWallLayout(card.logos.length, { tokens: t, canvas: size });
