@@ -171,7 +171,7 @@ export function speakerMotionHTML(plan) {
   const fps = plan.canvas.fps, html = [], timeline = [];
   const entries = [...(plan.items || []).filter((i) => i.kind === "card"), ...(plan.overlays || [])];
   for (const [n, entry] of entries.entries()) if (["title", "booking"].includes(entry.card?.type)) {
-    if (entry.card.type === "title" && entry.card.reveal === "cut" || entry.card.type === "booking" && entry.card.layout === "premium") continue;
+    if (entry.card.layout === "cinematic" || entry.card.type === "title" && entry.card.reveal === "cut" || entry.card.type === "booking" && entry.card.layout === "premium") continue;
     const start = entry.start ?? entry.outputStart;
     timeline.push(`tl.fromTo(${js(`#speaker-card-${n} .sc-name`)},{clipPath:"inset(-0.35em 100% -0.45em 0)"},{clipPath:"inset(-0.35em -0.1em -0.45em 0)",duration:0.6,ease:"power2.out",immediateRender:false},${start});`);
   }

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { lookOptions, activeBox, defaultFit, fitGraph, pushScale, pushFilter, neutralStats, skinWeight, gradeSettings, gradePixel, gradeCube, prepareGrade, stabilizationKey, stabilizeRange, lookReviewFrames, letterboxCards, filterPath } from "../src/speaker-look.mjs";
+import { createHash } from "node:crypto";
+import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, pushScale, pushFilter, neutralStats, skinWeight, gradeSettings, gradePixel, gradeCube, prepareGrade, stabilizationKey, stabilizeRange, lookReviewFrames, letterboxCards, filterPath } from "../src/speaker-look.mjs";
 import { fitGeometry, resolvePlan, compileVersion } from "../src/speaker-compile.mjs";
 import { speakerHTML, composeSpeakerProject } from "../src/speaker-compose.mjs";
 import { speakerCardsHTML } from "../src/speaker-cards.mjs";
@@ -49,6 +50,55 @@ test("explicit blur retains the exact original filter graph, including with an a
   ]);
 });
 
+test("reviewed source and clip grades validate ranges, source ids, scope and unknown keys even when off", () => {
+  const p = structuredClone(plan);
+  p.look = { grade: "auto", sources: { phone: { ev: -1, saturation: 0.5, contrast: 0 } } };
+  p.items[0].grade = { ev: 1, saturation: 1.5, contrast: 0.1 };
+  assert.doesNotThrow(() => resolvePlan(p, { manifest, index }));
+  const badTrims = [null, [], 1, { exposure: 0 }, { ev: -1.001 }, { ev: 1.001 }, { ev: "0" }, { ev: NaN }, { ev: Infinity }, { saturation: 0.499 }, { saturation: 1.501 }, { saturation: null }, { contrast: -0.001 }, { contrast: 0.101 }, { contrast: true }];
+  for (const trim of badTrims) for (const mode of ["auto", "off"]) {
+    const badSource = structuredClone(p); badSource.look.grade = mode; badSource.look.sources.phone = trim;
+    assert.throws(() => resolvePlan(badSource, { manifest, index }), /look.sources.phone/);
+    const badItem = structuredClone(p); badItem.look.grade = mode; badItem.items[0].grade = trim;
+    assert.throws(() => resolvePlan(badItem, { manifest, index }), /a: grade/);
+  }
+  for (const sources of [null, [], "phone", { missing: {} }]) {
+    assert.throws(() => resolvePlan({ ...p, look: { sources } }, { manifest, index }), /look.sources/);
+  }
+  assert.throws(() => lookOptions({ grades: "auto" }), /unknown key grades/);
+  const card = structuredClone(p); card.items.push({ id: "card", kind: "card", duration: 1, role: "proof", card: { type: "title" }, grade: {} });
+  assert.throws(() => resolvePlan(card, { manifest, index }), /card: grade requires a clip item/);
+  const cut = structuredClone(p); cut.cutaways.push({ id: "x", over: "a", offset: 0, sourceId: "phone", in: 0, out: 1, grade: {} });
+  assert.throws(() => resolvePlan(cut, { manifest, index }), /x: grade requires a clip item/);
+  const overlay = structuredClone(p); overlay.overlays.push({ id: "o", at: "a", offset: 0, duration: 1, card: { type: "title" }, grade: {} });
+  assert.throws(() => resolvePlan(overlay, { manifest, index }), /o: grade requires a clip item/);
+  const montage = structuredClone(p); montage.montage = [{ id: "m", over: "a", offset: 0, duration: 1, shots: [{ sourceId: "phone", in: 0, out: 1, grade: {} }] }];
+  assert.throws(() => resolvePlan(montage, { manifest, index }), /m: grade requires a clip item/);
+  const entryLook = structuredClone(p); entryLook.items[0].look = { sources: { phone: {} } };
+  assert.throws(() => resolvePlan(entryLook, { manifest, index }), /a: look: unknown key sources/);
+});
+
+test("reviewed EV and contrast replace automatic values; missing fields and neutral balance stay automatic", () => {
+  const stats = { luma: 0.1, saturation: 0.3 }, neutral = { r: 0.5, g: 0.6, b: 0.4, fraction: 0.5 };
+  const automatic = gradeSettings(stats, neutral), source = { ev: 0.2, saturation: 0.94, contrast: 0.015 };
+  const reviewed = gradeSettings(stats, neutral, source);
+  assert.equal(automatic.ev, 0.3); assert.equal(reviewed.ev, 0.2);
+  assert.equal(reviewed.contrast, 0.015); assert.equal(reviewed.saturation, 0.94);
+  assert.deepEqual(reviewed.balance, automatic.balance); assert.equal(reviewed.warmth, automatic.warmth);
+  assert.deepEqual(gradeSettings(stats, neutral, {}), automatic);
+  assert.deepEqual(gradeSettings(stats, neutral, { saturation: 0.9 }), { ...automatic, saturation: 0.9 });
+  const item = gradeSettings(stats, neutral, { ...source, ev: -0.15, saturation: 0.92 });
+  assert.equal(item.ev, -0.15); assert.equal(item.saturation, 0.92); assert.equal(item.contrast, 0.015);
+  const base = { ...automatic, ev: 0, contrast: 0, warmth: 0, balance: [0, 0, 0] }, patch = [0.1, 0.12, 0.14];
+  for (const ev of [-1, 1]) {
+    const pixel = gradePixel(patch, { ...base, ev });
+    pixel.forEach((v, i) => assert.ok(Math.abs(v - patch[i] * 2 ** ev) < 1e-12, `full reviewed EV ${ev}`));
+  }
+  const graded = gradePixel(patch, automatic), y = graded[0] * 0.2126 + graded[1] * 0.7152 + graded[2] * 0.0722;
+  assert.deepEqual(gradePixel(patch, { ...automatic, saturation: 1 }), graded);
+  assert.deepEqual(gradePixel(patch, { ...automatic, saturation: 0.9 }), graded.map((v) => y + 0.9 * (v - y)));
+});
+
 test("wash blurs tiny same-frame colours, adds seeded grain and caches a soft card shadow", () => {
   for (const letterbox of [null, 2.35, 2.39]) for (const push of [1, 1.06, 1.2]) {
     const active = activeBox(letterbox), g = fitGeometry({ width: 1080, height: 1920 }, "wash");
@@ -87,6 +137,8 @@ test("grade limits exposure, ignores coloured stages and preserves skin hue acro
   const neutral = { r: 0.5, g: 0.6, b: 0.4, fraction: 0.5 };
   assert.deepEqual(gradeSettings({ saturation: 0.8 }, neutral).balance, [0, 0, 0]);
   const settings = gradeSettings({ luma: 0.35, saturation: 0.3 }, neutral);
+  // Pinned from the original automatic LUT: reviewed trims must not change an untrimmed grade.
+  assert.equal(createHash("sha256").update(gradeCube(settings)).digest("hex"), "11300af594c36ec33808a79ab1e4ae7b219322a4af45d5208c5249c5acf7c47e");
   assert.ok(settings.balance.every((v) => Math.abs(v) <= 0.015)); assert.ok(settings.balance[1] < 0 && settings.balance[2] > 0);
   const hue = ([r, g, b]) => 60 * (g - b) / (Math.max(r, g, b) - Math.min(r, g, b));
   for (const skin of [[0.76, 0.5, 0.36], [0.42, 0.27, 0.18], [0.9, 0.73, 0.64]]) {
@@ -138,6 +190,116 @@ test("source measurements are cached and optional review extraction fails open",
   assert.equal(await lookReviewFrames("source.mp4", { dir, name: "source", execute: async () => { throw new Error("bad"); }, print: (s) => logs.push(s) }), false); assert.equal(logs.length, 2);
   const calls = []; assert.equal(await lookReviewFrames("source.mp4", { dir, name: "source", execute: async (_, args) => { calls.push(args); fs.writeFileSync(args.at(-1), "review frame"); } }), true); assert.equal(calls.length, 2);
   assert.match(filterPath("/tmp/a:b.cube"), /\\\\:/);
+});
+
+test("grade cache identities include each reviewed value, reuse source measurements and preserve the legacy identity", async (t) => {
+  const dir = temp(t); let measures = 0, samples = 0;
+  const options = { sourceKey: "reviewed", meta: { duration: 1 }, cacheDir: dir,
+    measure: async () => { measures++; return { luma: 0.1 }; },
+    execute: async (_, args) => { samples++; fs.writeFileSync(args.at(-1), Buffer.from([128, 140, 128])); } };
+  const trim = { ev: 0.2, saturation: 0.94, contrast: 0.015 };
+  const first = await prepareGrade("source.mp4", { ...options, overrides: trim });
+  const lutTime = fs.statSync(first.lut).mtimeMs;
+  const again = await prepareGrade("source.mp4", { ...options, overrides: { contrast: 0.015, saturation: 0.94, ev: 0.2 } });
+  assert.equal(again.key, first.key); assert.equal(again.lut, first.lut); assert.equal(fs.statSync(first.lut).mtimeMs, lutTime);
+  assert.equal(first.settings.ev, 0.2);
+  const keys = new Set([first.key]);
+  for (const change of [{ ev: 0.21 }, { saturation: 0.93 }, { contrast: 0.016 }]) {
+    const other = await prepareGrade("source.mp4", { ...options, overrides: { ...trim, ...change } });
+    assert.ok(!keys.has(other.key)); keys.add(other.key);
+    assert.notEqual(fs.readFileSync(first.lut, "utf8"), fs.readFileSync(other.lut, "utf8"));
+  }
+  const automatic = await prepareGrade("source.mp4", options), empty = await prepareGrade("source.mp4", { ...options, overrides: {} });
+  const legacyKey = createHash("sha256").update(JSON.stringify({ version: 1, sourceKey: "reviewed", preFilter: "" })).digest("hex");
+  assert.equal(automatic.key, legacyKey); assert.equal(empty.key, automatic.key); assert.equal(automatic.settings.ev, 0.3);
+  assert.equal(fs.readFileSync(automatic.lut, "utf8"), gradeCube(gradeSettings(automatic.stats, automatic.neutral)));
+  assert.deepEqual(first.settings.balance, automatic.settings.balance);
+  assert.equal(measures, 1); assert.equal(samples, 12);
+  const normalized = gradeOverrides({ contrast: 0, ev: 0, saturation: 1 });
+  assert.deepEqual(Object.keys(normalized), ["ev", "saturation", "contrast"]);
+});
+
+test("measurement fallback retains reviewed trims and invalid overrides fail before measurement", async (t) => {
+  const dir = temp(t), logs = [];
+  const overrides = { ev: -0.8, saturation: 0.9, contrast: 0 };
+  const options = { sourceKey: "broken", meta: { duration: 1 }, cacheDir: dir,
+    measure: async () => { throw new Error("measurement unavailable"); }, print: (message) => logs.push(message) };
+  const grade = await prepareGrade("source.mp4", { ...options, overrides });
+  assert.equal(grade.fallback, true); assert.deepEqual(grade.settings, gradeSettings({}, null, overrides));
+  assert.equal(fs.readFileSync(grade.lut, "utf8"), gradeCube(grade.settings)); assert.equal(logs.length, 1);
+  await assert.rejects(prepareGrade("source.mp4", { ...options, overrides: { ev: 2 } }), /grade.ev/);
+  assert.equal(logs.length, 1, "validation cannot silently fall back to an automatic grade");
+  const recovered = await prepareGrade("source.mp4", { ...options, overrides,
+    measure: async () => ({ luma: 0.3 }),
+    execute: async (_, args) => fs.writeFileSync(args.at(-1), Buffer.from([128, 140, 128])) });
+  assert.equal(recovered.key, grade.key); assert.equal(recovered.fallback, undefined);
+  assert.notDeepEqual(recovered.settings.balance, grade.settings.balance);
+  assert.equal(fs.readFileSync(recovered.lut, "utf8"), gradeCube(recovered.settings));
+  assert.notEqual(gradeCube(grade.settings), gradeCube(recovered.settings), "successful retry replaces the fallback LUT");
+});
+
+test("lavfi saturation 0.9 lowers colour-patch chroma through the actual LUT", async (t) => {
+  const dir = temp(t), settings = gradeSettings({ luma: 0.42 });
+  const pixels = [];
+  for (const saturation of [1, 0.9]) {
+    const lut = path.join(dir, `sat-${saturation}.cube`), raw = path.join(dir, `sat-${saturation}.rgb`);
+    fs.writeFileSync(lut, gradeCube({ ...settings, saturation }));
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-filter_threads", "1", "-f", "lavfi", "-i", "color=c=0x4080C0:s=32x32:r=30:d=0.1", "-vf", `format=rgb24,lut3d=file=${filterPath(lut)}:interp=tetrahedral`, "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+    pixels.push([...fs.readFileSync(raw).subarray(0, 3)]);
+  }
+  const chroma = pixels.map((rgb) => Math.max(...rgb) - Math.min(...rgb));
+  const luma = pixels.map(([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
+  assert.ok(chroma[1] < chroma[0] * 0.93 && chroma[1] > chroma[0] * 0.87, `chroma ${chroma}`);
+  assert.ok(Math.abs(luma[1] - luma[0]) < 1, `luma ${luma}`);
+  t.diagnostic(`saturation 1.0 -> 0.9: RGB ${pixels[0]} -> ${pixels[1]}; chroma ${chroma[0]} -> ${chroma[1]} (${(chroma[1] / chroma[0]).toFixed(4)}x); luma ${luma.map((v) => v.toFixed(4)).join(" -> ")}`);
+});
+
+test("compiled item trims have distinct LUTs and evidence, stay off cutaways and later items, and obey grade mode", { timeout: 120000 }, async (t) => {
+  const dir = temp(t), file = path.join(dir, "phone.mp4");
+  writeJSON(path.join(dir, "brand.json"), brand);
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0xC28262:s=64x64:r=30:d=1", "-c:v", "libx264", "-preset", "ultrafast", file], { capture: true });
+  const meta = await probeSource(file), p = structuredClone(plan);
+  const clip = { ...p.items[0], out: 0.2, fit: "contain", push: 1, stabilize: false };
+  const itemTrim = { ev: -0.15, saturation: 0.92 };
+  p.look = { grade: "auto", sources: { phone: { ev: 0.1, saturation: 1, contrast: 0.015 } } };
+  p.items = [clip, { ...clip, id: "s5", grade: itemTrim }, { ...clip, id: "later" },
+    { ...clip, id: "same", grade: { saturation: 0.92, ev: -0.15 } }, { ...clip, id: "off", look: { grade: "off" }, grade: { ev: 1 } }];
+  p.cutaways = [{ id: "x", over: "s5", offset: 0, sourceId: "phone", in: 0, out: 0.1, fit: "contain", push: 1, stabilize: false }];
+  const options = { manifest, index: { sources: { phone: { ...meta, words: [] } } }, tokens, encoder: "libx264", print: () => {} };
+  const compiled = await compileVersion(dir, p, options);
+  const evidence = JSON.parse(fs.readFileSync(path.join(compiled.workDir, "look", "look.json")));
+  const source = evidence.sources.phone, item = evidence.items.s5;
+  assert.equal(source.settings.ev, 0.1); assert.equal(source.settings.saturation, 1); assert.equal(source.settings.contrast, 0.015);
+  assert.equal(item.settings.ev, -0.15); assert.equal(item.settings.saturation, 0.92); assert.equal(item.settings.contrast, 0.015);
+  assert.deepEqual(item.settings.balance, source.settings.balance); assert.equal(item.sourceId, "phone");
+  assert.notEqual(item.key, source.key); assert.equal(item.key, evidence.items.same.key);
+  assert.deepEqual(Object.keys(evidence.items).sort(), ["s5", "same"]);
+  assert.equal(source.fallback, false); assert.equal(item.fallback, false);
+  assert.equal(fs.readdirSync(path.join(dir, "work", "index", "look")).filter((name) => name.endsWith(".cube")).length, 2);
+  assert.equal(fs.readdirSync(path.join(compiled.workDir, "look")).filter((name) => name.endsWith(".jpg")).length, 6);
+  const raw = path.join(dir, "compiled.rgb");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-i", compiled.base, "-vf", "crop=2:2:960:540", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+  const data = fs.readFileSync(raw), pixel = (frame) => [...data.subarray(frame * 12, frame * 12 + 3)];
+  const distance = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+  assert.equal(data.length, 30 * 12);
+  assert.ok(distance(pixel(0), pixel(6)) <= 3, `cutaway uses source grade: ${pixel(0)}, ${pixel(6)}`);
+  assert.ok(distance(pixel(0), pixel(12)) <= 3, "later item returns to source grade");
+  assert.ok(distance(pixel(0), pixel(9)) >= 10, "item override changes actual decoded picture");
+  assert.ok(distance(pixel(9), pixel(18)) <= 3, "equal effective trims share the same picture grade");
+  t.diagnostic(`compiled centre RGB: source ${pixel(0)}, cutaway ${pixel(6)}, s5 ${pixel(9)}, later ${pixel(12)}, same ${pixel(18)}, off ${pixel(24)}; 30 frames`);
+
+  // An entry can still opt into auto on an off plan; an off entry ignores all reviewed trims.
+  const off = { ...p, version: "off", look: { ...p.look, grade: "off" }, cutaways: [],
+    items: [{ ...clip, id: "ignored", grade: itemTrim }, { ...clip, id: "optin", look: { grade: "auto" }, grade: itemTrim }] };
+  const offCompiled = await compileVersion(dir, off, options);
+  const offEvidence = JSON.parse(fs.readFileSync(path.join(offCompiled.workDir, "look", "look.json")));
+  assert.deepEqual(Object.keys(offEvidence.items), ["optin"]);
+  assert.equal(offEvidence.items.optin.key, item.key); assert.equal(offEvidence.sources.phone.key, source.key);
+  const ignored = { ...off, version: "ignored", items: [off.items[0]] };
+  const ignoredCompiled = await compileVersion(dir, ignored, options);
+  const ignoredEvidence = JSON.parse(fs.readFileSync(path.join(ignoredCompiled.workDir, "look", "look.json")));
+  assert.deepEqual(ignoredEvidence.sources, {}); assert.deepEqual(ignoredEvidence.items, {});
+  assert.deepEqual(p.items[1].grade, itemTrim, "compilation leaves requested trims untouched");
 });
 
 test("letterbox boxes and client card placements stay inside the active picture at full readable type sizes", () => {

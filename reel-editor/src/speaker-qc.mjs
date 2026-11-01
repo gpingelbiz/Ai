@@ -5,7 +5,7 @@ import { measureLoudness, silences } from "./preflight.mjs";
 import { run, writeJSON } from "./util.mjs";
 import { identityLeaks } from "./speaker-guard.mjs";
 import { audioQualityWarnings } from "./speaker-audio-quality.mjs";
-import { resolveCard } from "./speaker-cards.mjs";
+import { resolveCard, cardCopyEvidence } from "./speaker-cards.mjs";
 import { loadInsertFlags, insertWarnings } from "./speaker-inserts.mjs";
 
 /** Accept the explicit output fields, or start/end from a compiled plan. Never use source in/out as output time. */
@@ -26,6 +26,8 @@ export function usedAssets(plan, manifest) {
   const sourceIds = new Set(), proofIds = new Set();
   const entries = [...(plan.items || []), ...(plan.overlays || []), ...(plan.cutaways || [])];
   for (const item of entries) {
+    if (item.card?.type === "event-list") for (const id of Array.isArray(item.card.sourceIds) ? item.card.sourceIds : []) sourceIds.add(id);
+    if (item.card) for (const id of cardCopyEvidence(item.card, manifest).proofIds) proofIds.add(id);
     if (item.sourceId) sourceIds.add(item.sourceId);
     if (item.proofId) proofIds.add(item.proofId);
     if (item.card?.proofId) proofIds.add(item.card.proofId);

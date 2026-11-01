@@ -309,6 +309,7 @@ Card objects are rendered by the separate `speaker-cards.mjs` integration. Their
 | testimonial-name | proofId; or name, title, org matching a supplied attribution |
 | quote | proofId; or exact text (25 words maximum), name, optional title and org |
 | logo-wall | heading, relationship, logos (3 to 6 distinct proof ids, all with the same relationship) |
+| event-list | heading (`Spoke at` by default), sourceIds (exact source events, deduplicated in listed order), optional mergeYears; overlays require cinematic layout |
 | topic | exact text from identity or proof |
 
 Direct booking shows the client's route. Bureau booking uses `identity.bureau` and suppresses direct contact. Logo headings are “Spoke at”, “Clients”, “Featured in” or “Available at”, matching the registry relationship. Quotes and attributions must match the supplied proof exactly.
@@ -362,6 +363,47 @@ For example, these are card objects within the existing overlay/insert entries:
 The example text must already exist in the appropriate transcript or manifest/proof record. Compact title, keyword and topic layouts are overlays only. The new boxes reflow within the active picture for either supported letterbox without reducing type. Premium booking photos retain their fixed width and use the active picture's height. Oversize copy fails preflight instead of clipping or shrinking below these sizes. Collision checks use actual rectangles when client tokens are supplied; without them they reserve conservative boxes. Standard-only plans keep their historical collision rules.
 
 Composition passes the existing source index to card layout. Portrait side placement reserves the foreground's maximum wash width, including its push allowance; if dimensions are unavailable but the resolved fit is `wash`, it reserves the widest portrait. Low-resolution footage can leave more space than the card uses. These fixed layouts cannot detect a face or hand in landscape footage or a different picture cut over the target: inspect the finished reel. Review both five-second quotes at normal playback speed, and confirm the full approved booking destination remains correct.
+
+### Cinematic overlays and text-only event proof
+
+`layout: "cinematic"` opts title, topic and keyword **overlays** into typography directly over the footage. The text box has no background, border or plate. A full-width scrim occupies only the bottom third of the active picture: a CSS gradient from transparent through 8% black at 35%, 28% at 70%, to 45% at the bottom. Three soft black text shadows (2/3, 6/18 and 14/40 px offset/blur) support white display type. These are composition layers; no ffmpeg source or fit filter changes.
+
+Text begins at x96, occupies at most 1344 px (70% width), and ends 96 px above the active picture's bottom. Title names prefer 144 px and fit down to 120 px; optional `showRole` uses the brand body font at 40 px with 2.4 px tracking. `showRole: false` displays the manifest name alone. Cinematic titles omit the tagline. Topics use 84–104 px display type and an optional 32 px body-font `eyebrow`, styled in caps with the same tracking. Keywords use 104–128 px display type in the same lower-left position. `accent: true` adds an 80×4 px rule in the brand accent; omitted/false adds none. Main lines and roles may wrap to two lines, eyebrows to one. Oversized copy fails preflight; geometry adapts to either letterbox without reducing these minima.
+
+Topic `text` and `eyebrow` must each exactly match manifest identity or proof text, or together reconstruct one exact supplied line using a single space or comma-space. This permits `"Briefcase model, NBC’s Deal or No Deal"` to split into eyebrow `"Briefcase model"` and main `"NBC’s Deal or No Deal"` without authoring a new claim. The combined limit is seven words. Proof used by either field, or by their joined line, retains its rights requirements. Headshot paths/rights cannot supply copy. Keywords retain their existing transcript, duration and spacing requirements; cinematic placement is always lower-left.
+
+`motion: "rise"` moves only the copy upward 32 px while fading it in over **nine frames**, with `power2.out`; it holds, then the whole overlay fades linearly over its final **six frames**. Without `motion`, the same entry fades without movement. Every endpoint is calculated from absolute integer output frames at 30 fps. Cinematic title `reveal: "cut"` takes precedence over entry motion: the complete name is visible on its first frame, with no mask, scale settle or rise, including when `motion: "rise"` is also supplied. Its six-frame exit remains. Every cinematic overlay requires at least 16 frames; normal reading windows should be substantially longer. A four-second rise card has 3.5 fully settled seconds; a two-second keyword has 1.5. Standard layouts keep their existing reveals and motion.
+
+```json
+{ "type": "title", "layout": "cinematic", "showRole": false, "reveal": "cut" }
+{ "type": "topic", "layout": "cinematic", "eyebrow": "Briefcase model", "text": "NBC’s Deal or No Deal", "motion": "rise", "accent": true }
+{ "type": "keyword", "layout": "cinematic", "text": "Taking action", "motion": "rise" }
+```
+
+An inserted **event-list** provides text proof when real logo files are unavailable:
+
+```json
+{ "id": "stages", "kind": "card", "role": "proof", "duration": 5,
+  "card": { "type": "event-list", "heading": "Spoke at", "sourceIds": ["phs25", "another-event"] } }
+```
+
+List actual manifest source IDs. Every source must exist and have nonempty `event` text; the renderer uses those exact strings, deduplicated in the listed order. Sources sharing an event name still **all** retain their rights checks in draft, strict compilation and final delivery. The heading must be `Spoke at`, `Recent stages`, or exact identity/proof text of one to seven words; custom proof headings retain their proof rights too. No logos or pictures are generated or substituted. The inserted card shares the premium quote family's brand surface, display type and accent rule, with a 42 px body heading and 48–60 px event names in a 1488 px column at x216. Allow at most six rendered event lines (heading separate), including wraps. Hold **4–5 seconds**, static with cuts in/out; five seconds is the default. Existing insert output is unchanged when new options are omitted. Use fewer/shorter supplied events if the card fails fit checks. Event strings establish source provenance, not an endorsement; verify event names and permissions with the client.
+
+To keep real stage footage moving beneath the credentials, put an event-list in `overlays` with **`layout: "cinematic"`**. Other event-list overlay layouts fail validation. The overlay needs at least **3.0 seconds** and must fit entirely inside its host item's output span. Topic-count, keyword transcript and keyword-spacing rules do not apply.
+
+```json
+{ "id": "stages", "at": "stage-wide", "offset": 0.5, "duration": 5,
+  "card": { "type": "event-list", "layout": "cinematic", "heading": "Spoke at",
+    "sourceIds": ["phs24", "phs25", "another-event"], "mergeYears": true } }
+```
+
+The cinematic event list has no plate or box. Its full-height horizontal black scrim fades from 65% at the left edge to transparent at 55% of frame width; the remaining right side has no scrim. The text column is x144, width 1440, centred vertically within the active picture. A 32 px uppercase body-font eyebrow has 2.4 px tracking and an 80×4 px brand-accent rule. Each event uses the client's display font at 60–72 px, sized conservatively to fit one line, with 12 px gaps and the cinematic title's three text shadows. Six lines fit within safe margins at 16:9 and both supported letterboxes. Text that cannot fit at 60 px fails preflight; no truncation or rewriting occurs. Bars still mask outside the active picture. This is HTML/CSS/GSAP composition; the source ffmpeg fit graph is unchanged.
+
+Motion is automatic for cinematic event lists (`motion: "rise"` is also accepted): the scrim fades linearly over eight frames, the eyebrow rises 32 px over nine frames with `power2.out`, and the first event starts four frames after the eyebrow. Each following event starts four frames after the previous event, with the same nine-frame rise. For six lines, all copy is fully visible by **frame 33 / 1.1 seconds**. Everything exits together in one linear six-frame fade. Endpoints use absolute integer output frames at 30 fps; a minimum three-second overlay holds all six lines fully settled for 51 frames / 1.7 seconds before its exit. Allow more time for longer names.
+
+Optional **`mergeYears: true`** works in both insert and overlay mode and is off by default. Only strings with an identical prefix and a final four-digit ASCII year merge: `PowerHouse Summit 2024` and `PowerHouse Summit 2025` become `PowerHouse Summit 2024, 2025`. Prefix case, punctuation and spacing must match exactly; for example, a space and a dash are distinct prefixes. The first occurrence sets the line's position; years retain sourceIds order and are not sorted or repeated. Non-year suffixes, trailing whitespace and longer numbers stay untouched. The six-line limit applies after deduplication/merging; every listed source still requires rights, including duplicate/merged events. Review rows show the actual merged display text.
+
+Run `node --test test/speaker-cinematic.test.mjs` for provenance, rights, safe-area, actual bundled GSAP frame-seek and tiny lavfi base-picture checks. No browser rendering runs in these tests. On real footage, Claude must inspect the opening hit, small-cap tracking and actual installed fonts, the shadow/scrim over bright and dark shots, faces and gestures beneath every overlay, both letterbox crops, and normal-speed readability of all event lines. Conservative text estimates cannot certify browser glyph bounds or moving-picture contrast.
 
 ## Index and compiled output
 
@@ -419,13 +461,48 @@ These are plan options; no new CLI flags or preset keys are required. Defaults a
 
 Merge these fields into a complete plan with its existing schema, canvas, identity and rights records.
 
-- `look.grade`: `"auto"` (default) or `"off"`. Auto measures each used source after rotation/SDR conversion, caches its exposure and neutral-colour statistics, and holds one correction throughout that source. Exposure correction is bounded to ±0.3 EV; neutral balance offsets stop at ±0.015 per RGB channel. Saturated/strongly coloured stages skip white balance. A shared gentle luminance S-curve and slight warmth follow. A broad skin-hue region is excluded from chromatic correction; no denoising, sharpening, grain or invented detail is added to the sharp footage. This is conservative matching, with human colour review still required.
+- `look.grade`: `"auto"` (default) or `"off"`. Auto measures each used source after rotation/SDR conversion, caches its exposure and neutral-colour statistics, and holds one correction throughout that source unless a reviewed item trim is supplied. Automatic exposure correction is bounded to ±0.3 EV; neutral balance offsets stop at ±0.015 per RGB channel. Saturated/strongly coloured stages skip white balance. A shared gentle luminance S-curve and slight warmth follow. A broad skin-hue region is excluded from automatic neutral-balance and warmth shifts; no denoising, sharpening, grain or invented detail is added to the sharp footage. This is conservative matching, with human colour review still required.
 - Item/cutaway `look: { "grade": "off" }` bypasses both source matching and house grade, useful for original title cards. `"auto"` can also opt an entry back into a plan whose grade is off.
 - Item/cutaway `stabilize: true` enables two-pass vidstab on the selected picture range with up to one second of original handles at each end. Manifest `source.handheld: true` supplies this default for every use of that source; explicit `stabilize: false` disables it. The transform uses smoothing 15 and a 3% base zoom plus adaptive edge coverage. Cache identity includes source content, range, available duration, rotation/SDR normalization and settings. A failed pass logs one line, records a review warning, and uses the original picture. Original dialogue is always extracted separately at the original source times.
 - Item/cutaway `push`: 1 to 1.2. Items default to 1; cutaways longer than 1.5 seconds default to 1.06. Set 1 to disable. The smooth, deterministic move reaches its final scale on the last output frame and runs at 4× internal precision. For `contain`/`blur`/`wash`, the foreground reserves the move's margin so it remains fully visible and never exceeds 1.5× source enlargement. Wash pushes the completed picture (background, shadow and card together); its card remains within 90% of the letterbox active area at the end of the move.
 - `look.letterbox`: `null` (default), `2.35` or `2.39`. Bars mask the composed picture, leaving 1920×818 or 1920×804 active pixels. Cards, lower thirds and burned captions stay within that area. A composition adapter reflows the existing card boxes without shrinking type; layouts that cannot fit fail with the card ID. Check heads, hands and slides before using either crop. The resolved plan carries an informational finding shown on the review page.
 
-Colour measurements and deterministic LUTs live in `work/index/look/<key>.look.json` and `<key>.cube`; stabilized picture-only ranges live in `work/index/look/stabilize/`. The original index/transcript JSON is unchanged. Review pairs for each used source/grade mode are written to `work/<version>/look/*-before.jpg` and `*-after.jpg`, sampled at the same original source time. `look/look.json` records the grade settings, cache keys and active box. These frames show colour correction before framing, motion and composited cards. Optional measurement/review-frame failures log once per source operation; failed measurement falls back to the shared gentle house grade.
+### Reviewed source trims: `look.sources`
+
+Add source trims to the plan's top-level `look`. IDs must exist in `manifest.sources`; the only trim keys are `ev`, `saturation` and `contrast`. Every value must be a finite number in the inclusive range below. Unknown look/trim keys, unknown source IDs and malformed objects fail plan validation, including when grading is off.
+
+```json
+{
+  "look": {
+    "grade": "auto",
+    "sources": {
+      "nova-presentation-12-3-25": { "ev": 0, "saturation": 0.94, "contrast": 0.015 }
+    }
+  }
+}
+```
+
+- `ev`: −1 to +1. This is the final exposure setting, replacing automatic EV. For example, `0` removes an automatic +0.155 EV lift; it does not add zero to that lift.
+- `saturation`: 0.5 to 1.5, default 1. This multiplier follows the existing exposure, S-curve, neutral balance and warmth, inside the deterministic RGB LUT. It scales RGB chroma around Rec.709 luminance; out-of-gamut values clip.
+- `contrast`: 0 to 0.1, default 0.025. Replaces the shared luminance S-curve amount for this source.
+
+Missing fields retain their automatic/shared values. Neutral-balance offsets and the coloured-stage safeguard remain automatic. Source trims apply to both clip pictures and picture-only cutaways using that source.
+
+### Clip item `grade`
+
+A clip item's optional `grade` uses the same keys and ranges. Its fields override `look.sources[sourceId]` for that item; omitted fields inherit the source setting. Other items and cutaways retain their own source trims. Cards, overlays and cutaways cannot carry `grade`; montage shots use source trims too.
+
+```json
+{
+  "id": "s5", "kind": "clip", "sourceId": "nova-presentation-12-3-25",
+  "in": 243.40, "out": 257.80, "role": "core",
+  "grade": { "ev": -0.15, "saturation": 0.92 }
+}
+```
+
+With the Nova source trim above, `s5` uses EV −0.15, saturation 0.92 and contrast 0.015. A Nova cutaway over `s5` still uses EV 0, saturation 0.94 and contrast 0.015. Overrides apply only when that entry's effective `look.grade` is `"auto"`. An entry with `look.grade:"off"` bypasses all grading and trims; an explicit entry `"auto"` still opts into grading and trims on a plan whose grade is off. Omitting both new fields preserves the original automatic grade and its cache identity.
+
+Colour measurements and deterministic LUTs live in `work/index/look/<key>.look.json` and `<key>.cube`; stabilized picture-only ranges live in `work/index/look/stabilize/`. The original index/transcript JSON is unchanged. Trim variants share source measurements but have separate LUT/cache identities containing their effective override values; changing a value rebuilds that grade, while unchanged values reuse it regardless of JSON key order. Review pairs for each used source/grade mode or trim variant are written to `work/<version>/look/*-before.jpg` and `*-after.jpg`, sampled at the same original source time. `look/look.json` records effective source grades in `sources[sourceId]` and applied item overrides in `items[itemId]`, with settings, cache keys, fallback status and item source IDs, plus the active box. Entries with grading off have no applied-grade record. These frames show colour correction before framing, motion and composited cards. Optional measurement/review-frame failures log once per source operation; failed measurement falls back to the shared gentle house grade while retaining reviewed trims.
 
 `plan.resolved.json` records actual fits, pushes, stabilization requests, plan look and active box. `composition.json` records letterbox/active-box metadata and adjusted card review geometry. Existing `base.mp4`, map, words and sidecar contracts retain their timing and dimensions. Final composition adds the bars; the base assembly remains full 1920×1080. All source audio and cutaway L-cuts use the existing compiler clock. Hardware encoding still uses the existing VideoToolbox helper, with its existing automatic software fallback.
 

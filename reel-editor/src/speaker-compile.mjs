@@ -4,7 +4,7 @@ import { assetPath, assertNoGreg, LOGO_RELATIONSHIPS, headshotProblems } from ".
 import { probeSource } from "./speaker-index.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
 import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr } from "./hdr.mjs";
-import { lookOptions, activeBox, defaultFit, fitGraph, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
+import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
 import { measureLoudness } from "./preflight.mjs";
 import { groupWords } from "./captions.mjs";
 import { sliceWords } from "./clips.mjs";
@@ -12,10 +12,10 @@ import { readJSON, writeJSON, ensureDir, run, warn } from "./util.mjs";
 
 import { musicProblems } from "./speaker-music.mjs";
 import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
-import { cardOptionProblems } from "./speaker-cards.mjs";
+import { cardOptionProblems, cardCopyEvidence, resolveCard } from "./speaker-cards.mjs";
 
 const ROLES = ["opening", "identity", "proof", "core", "room", "testimonial", "close", "booking", "montage"];
-const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic", "keyword"];
+const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "event-list", "topic", "keyword"];
 const finite = (x) => typeof x === "number" && Number.isFinite(x);
 const sourceRow = (index, id) => index?.sources?.[id] || index?.[id];
 const seconds = (frame, fps) => frame / fps;
@@ -25,6 +25,8 @@ export function planUsage(plan, manifest) {
   const sourceIds = new Set([...plan.items.filter((i) => i.kind === "clip").map((i) => i.sourceId), ...plan.items.filter((i) => i.audioCarry).map((i) => i.audioCarry.sourceId), ...(plan.cutaways || []).map((x) => x.sourceId)]);
   const proofIds = new Set();
   for (const entry of [...plan.items, ...(plan.overlays || [])]) {
+    if (entry.card?.type === "event-list") for (const id of Array.isArray(entry.card.sourceIds) ? entry.card.sourceIds : []) sourceIds.add(id);
+    if (entry.card) for (const id of cardCopyEvidence(entry.card, manifest).proofIds) proofIds.add(id);
     if (entry.proofId) proofIds.add(entry.proofId);
     if (entry.card?.proofId) proofIds.add(entry.card.proofId);
     for (const id of Array.isArray(entry.card?.logos) ? entry.card.logos : []) proofIds.add(id);
@@ -50,7 +52,7 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   if (!plan || typeof plan !== "object") return [{ level: "error", id: "plan", message: "plan must be an object" }];
   if (!manifest || !index) return [{ level: "error", id: "plan", message: "manifest and source index are required" }];
   try { assertNoGreg(plan, "plan"); } catch (e) { add("plan", e.message); }
-  try { lookOptions(plan.look); } catch (e) { add("plan", e.message); }
+  try { lookOptions(plan.look, { sourceIds: (manifest.sources || []).map((s) => s.id) }); } catch (e) { add("plan", e.message); }
   if (plan.schemaVersion !== 1) add("plan", "schemaVersion must be 1");
   if (plan.clientId !== manifest?.clientId) add("plan", "clientId does not match the manifest");
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(plan.version || "")) add("plan", "version must be a safe folder name");
@@ -73,6 +75,13 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     const mode = overlays.some((o) => o?.id === id) ? "overlay" : "insert";
     for (const p of cardOptionProblems(c, mode)) add(id, p.message);
     const entry = [...items, ...overlays].find((i) => i?.id === id);
+    if (c.layout === "cinematic" && Math.round(entry?.duration * 30) < 16) add(id, "cinematic cards need at least 16 frames");
+    if (c.type === "event-list") {
+      for (const p of resolveCard(c, { manifest, mode, final: !draft }).problems) add(id, p.message, p.level);
+      if (mode === "overlay") {
+        if (Math.round(entry?.duration * 30) < 90) add(id, "event-list overlay needs at least 3 seconds");
+      } else if (Math.round(entry?.duration * 30) < 120 || Math.round(entry?.duration * 30) > 150) add(id, "event-list must hold 4 to 5 seconds");
+    }
     if (c.type === "topic" && c.layout === "compact" && entry?.duration > 3) add(id, "compact topic must hold at most 3s");
     const proof = c.proofId ? proofs.get(c.proofId) : null;
     if (c.proofId && !proof) add(id, `unknown proofId: ${c.proofId}`);
@@ -103,10 +112,9 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
       }
     }
     if (c.type === "topic") {
-      const allowed = [...Object.entries(identity).filter(([key, v]) => !["headshot", "headshotRights"].includes(key) && typeof v === "string").map(([, v]) => v), ...(manifest.proof || []).map((p) => p.text)];
-      if (!c.text || !allowed.includes(c.text)) add(id, "topic text must come from manifest identity or proof");
+      if (!c.text || !cardCopyEvidence(c, manifest).valid) add(id, "topic text must come from manifest identity or proof; eyebrow must have the same provenance");
       // Same count as the card renderer, so --plan-only catches it instead of a render failing minutes in.
-      if (c.text && String(c.text).trim().split(/\s+/u).filter(Boolean).length > 7) add(id, "topic must have 1 to 7 words");
+      if ([c.eyebrow, c.text].filter(Boolean).join(" ").trim().split(/\s+/u).filter(Boolean).length > 7) add(id, "topic and eyebrow must have 1 to 7 words combined");
     }
     if (c.type === "logo-wall") {
       if (!LOGO_RELATIONSHIPS.includes(c.relationship)) add(id, "logo-wall relationship is invalid");
@@ -119,7 +127,7 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   };
   const range = (i) => {
     const s = sources.get(i.sourceId), meta = sourceRow(index, i.sourceId);
-    try { if (i.look != null) lookOptions(i.look); } catch (e) { add(i.id, e.message); }
+    try { if (i.look != null) lookOptions(i.look, { allowSources: false }); } catch (e) { add(i.id, e.message); }
     try { pushScale(0, 2, i.push ?? 1); } catch (e) { add(i.id, e.message); }
     if (i.stabilize != null && typeof i.stabilize !== "boolean") add(i.id, "stabilize must be true or false");
     if (!s) { add(i.id, `unknown sourceId: ${i.sourceId}`); return; }
@@ -131,6 +139,10 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   };
   for (const i of [...items, ...overlays, ...cutaways]) {
     if (!i || typeof i !== "object") { add("plan", "timeline entries must be objects"); continue; }
+    if (Object.hasOwn(i, "grade")) {
+      if (!items.includes(i) || i.kind !== "clip") add(i.id, "grade requires a clip item; cutaways use look.sources");
+      try { gradeOverrides(i.grade, "grade"); } catch (e) { add(i.id, e.message); }
+    }
     if (typeof i.id !== "string" || !i.id.trim()) add("plan", "entry id is missing");
     else if (allIds.has(i.id)) add(i.id, "duplicate timeline id");
     else if (!/^[a-zA-Z0-9_-]+$/.test(i.id)) add(i.id, "timeline id must use letters, numbers, underscores or hyphens");
@@ -206,6 +218,7 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     if (target && m.offset + m.duration > duration(target) + 1e-7) add(m.id, "montage extends past its target item");
     for (const [n, shot] of (Array.isArray(m.shots) ? m.shots : []).entries()) {
       if (!shot) continue;
+      if (Object.hasOwn(shot, "grade")) add(m.id, "grade requires a clip item; montage shots use look.sources");
       range({ ...shot, id: `${m.id} shot ${n + 1}` });
       const source = sources.get(shot.sourceId), right = (manifest.rights || []).find((r) => r.id === source?.rights);
       if (source && right?.status !== "approved") add(m.id, `shot ${shot.sourceId}: approved rights required${draft ? "; draft only" : ""}`, draft && right ? "warn" : "error");
@@ -408,7 +421,10 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   const dir = ensureDir(path.join(folder, "work", resolved.version));
   const scratch = ensureDir(path.join(dir, "compile"));
   const sourceById = new Map(manifest.sources.map((s) => [s.id, s]));
+  const sourceTrims = new Map(Object.entries(resolved.look.sources || {}));
   const normalized = new Map(), grades = new Map(), reviewed = new Set(), stabilized = new Map();
+  const sourceGrades = new Map(), itemGrades = new Map();
+  const gradeEvidence = (grade) => ({ key: grade.key, settings: { saturation: 1, ...grade.settings }, fallback: grade.fallback || false });
   const lookDir = ensureDir(path.join(dir, "look")), lookIndex = ensureDir(path.join(folder, "work", "index", "look"));
   if (resolved.look.letterbox) resolved.problems.push({ level: "info", id: "look", message: `Cinematic ${resolved.look.letterbox}:1 letterbox; active image ${resolved.activeBox.width}x${resolved.activeBox.height}. Check heads, hands and slides in the crop.` });
   let chosenEncoder = encoder;
@@ -446,10 +462,20 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
       const preFilter = [...rotateFilters(data.rotation), data.hdr ? SDR_FILTER : ["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null].filter(Boolean).join(",");
       let grade = null;
       if ((entry.look?.grade ?? resolved.look.grade) === "auto") {
-        if (!grades.has(entry.sourceId)) grades.set(entry.sourceId, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
-        grade = grades.get(entry.sourceId);
+        const sourceTrim = gradeOverrides(sourceTrims.get(entry.sourceId));
+        const prepared = async (overrides) => {
+          const key = JSON.stringify([entry.sourceId, overrides]);
+          if (!grades.has(key)) grades.set(key, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, overrides, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
+          return grades.get(key);
+        };
+        grade = await prepared(sourceTrim);
+        sourceGrades.set(entry.sourceId, gradeEvidence(grade));
+        if (entry.kind === "clip" && entry.grade !== undefined) {
+          grade = await prepared(gradeOverrides({ ...sourceTrim, ...entry.grade }));
+          itemGrades.set(entry.id, { sourceId: entry.sourceId, ...gradeEvidence(grade) });
+        }
       }
-      const reviewKey = `${entry.sourceId}-${grade ? "auto" : "off"}`;
+      const reviewKey = `${entry.sourceId}-${grade ? grade.overrides ? grade.key : "auto" : "off"}`;
       if (!reviewed.has(reviewKey)) {
         reviewed.add(reviewKey);
         await lookReviewFrames(data.file, { at: data.source.kind === "photo" ? 0 : entry.in, beforeFilter: preFilter, afterFilter: grade?.filter || "", dir: lookDir, name: `${normalized.size}-${reviewKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`, print: (message) => print(`${entry.sourceId}: ${message}`) });
@@ -510,7 +536,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   const map = [...resolved.items.map((i) => ({ itemId: i.id, kind: i.kind, sourceId: i.sourceId ?? null, in: i.in ?? null, out: i.out ?? null, start: i.start, end: i.end, outputStart: i.start, outputEnd: i.end, role: i.role, ...(i.audioCarry ? { audioCarry: i.audioCarry } : {}) })),
     ...resolved.cutaways.map((x) => ({ itemId: x.over, cutawayId: x.id, kind: "cutaway", sourceId: x.sourceId, in: x.in, out: x.out, start: x.start, end: x.end, outputStart: x.start, outputEnd: x.end, role: resolved.items.find((i) => i.id === x.over).role, pictureOnly: true }))];
   const words = timelineWords(resolved, index), captions = captionFiles(words, resolved.duration);
-  writeJSON(path.join(lookDir, "look.json"), { schemaVersion: 1, look: resolved.look, activeBox: resolved.activeBox, sources: Object.fromEntries([...grades].map(([id, grade]) => [id, { key: grade.key, settings: grade.settings, fallback: grade.fallback || false }])) });
+  writeJSON(path.join(lookDir, "look.json"), { schemaVersion: 1, look: resolved.look, activeBox: resolved.activeBox, sources: Object.fromEntries(sourceGrades), items: Object.fromEntries(itemGrades) });
   writeJSON(path.join(dir, "map.json"), map);
   writeJSON(path.join(dir, "words.json"), words);
   writeJSON(path.join(dir, "plan.resolved.json"), resolved);
