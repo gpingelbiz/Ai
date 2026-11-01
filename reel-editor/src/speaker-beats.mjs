@@ -201,6 +201,10 @@ export function motionProblems(plan, manifest = {}) {
     const start = cursor; cursor += Math.round((i.kind === "clip" ? i.out - i.in : i.duration) * 30) / 30;
     return { id: i.id, start, end: cursor, protect: i.protect };
   });
+  // Keyword spacing from plan durations, so --plan-only catches it before a render (Julee draft 8 failed mid-render).
+  const keywordStarts = (plan.overlays || []).filter((o) => o?.card?.type === "keyword" && spans.some((sp) => sp.id === o.at))
+    .map((o) => ({ id: o.id, start: spans.find((sp) => sp.id === o.at).start + (Number(o.offset) || 0) })).sort((a, b) => a.start - b.start);
+  keywordStarts.forEach((k, n) => { if (n && k.start - keywordStarts[n - 1].start < 20 - 1e-7) add(k.id, "keyword overlays must be at least 20 seconds apart"); });
   const entries = [...items, ...(plan.overlays || [])], effectIds = new Set();
   for (const s of Array.isArray(plan.sfx) ? plan.sfx : []) {
     if (!s || typeof s !== "object") { add("sfx", "SFX must be objects"); continue; }
@@ -228,7 +232,6 @@ export function validateKeywords(plan, words, manifest = {}) {
     const item = plan.items.find((i) => i.id === o.at), wanted = normalize(o.card.text);
     const spoken = words.filter((w) => item && w.sourceId === item.sourceId && (w.itemId == null || w.itemId === item.id) && w.start >= item.start && w.end <= item.end + 1e-7).sort((a, b) => a.start - b.start).flatMap((w) => normalize(w.text));
     if (!wanted.length || !spoken.some((_, at) => wanted.every((word, i) => spoken[at + i] === word))) problems.push({ level: "error", id: o.id, message: "keyword words must occur in order in this speaker item's output transcript" });
-    if (n && o.start - overlays[n - 1].start < 20 - 1e-7) problems.push({ level: "error", id: o.id, message: "keyword overlays must be at least 20 seconds apart" });
   }
   return problems;
 }
