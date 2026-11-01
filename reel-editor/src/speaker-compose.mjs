@@ -15,7 +15,7 @@ import { measureLoudness } from "./preflight.mjs";
 const js = (value) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 /** Small landscape composition: one untouched base, client cards and optional verbatim captions. */
-export function speakerHTML(plan, { manifest, cards, cues = [], captions = false, music = null, audioCues = [] } = {}) {
+export function speakerHTML(plan, { manifest, cards, cues = [], captions = false, music = null, audioCues = [], bed = null } = {}) {
   assertNoGreg({ plan, manifest, cards: { html: cards.html, css: cards.css, timeline: cards.timeline }, cues }, "speaker HTML");
   const D = plan.duration, { width, height, fps } = plan.canvas;
   const box = activeBox(plan.look?.letterbox, plan.canvas);
@@ -38,7 +38,7 @@ ${cards.html}
 ${motion.html}
 ${box.y ? '<div class="speaker-letterbox top"></div><div class="speaker-letterbox bottom"></div>' : ""}
 ${captionHTML}
-${audioCues.map((cue, n) => `<audio id="speaker-cue-${n}" src="${esc(cue.asset)}" data-start="0" data-duration="${D}" data-track-index="${6 + n}" data-automation="${esc(JSON.stringify({ version: 1, lanes: [{ target: "volume", points: cue.points }] }))}"></audio>`).join("\n")}
+${bed ? `<audio id="speaker-bed" src="${esc(bed)}" data-start="0" data-duration="${D}" data-track-index="6"></audio>` : audioCues.map((cue, n) => `<audio id="speaker-cue-${n}" src="${esc(cue.asset)}" data-start="0" data-duration="${D}" data-track-index="${6 + n}" data-automation="${esc(JSON.stringify({ version: 1, lanes: [{ target: "volume", points: cue.points }] }))}"></audio>`).join("\n")}
 ${music ? `<audio id="speaker-music" src="assets/music.wav" data-start="0" data-duration="${D}" data-track-index="6" data-automation="${esc(JSON.stringify({ version: 1, lanes: [{ target: "volume", points: music }] }))}"></audio>` : ""}
 </div><script>const tl=gsap.timeline({paused:true});
 ${cards.timeline}
@@ -137,6 +137,17 @@ export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, p
     await prepareMusic("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(cue.start || 0), "-i", file, "-vn", "-af", `atrim=duration=${cue.duration},asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=${Math.max(0, cue.duration - 0.03)}:d=0.03,aresample=48000,asetpts=N/SR/TB,adelay=${Math.round(cue.outputStart * 48000)}S:all=1,apad,atrim=end_sample=${Math.round(resolvedPlan.duration * 48000)},asetpts=N/SR/TB`, "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", path.join(projectDir, cue.asset)], { capture: true });
     audioCues.push(cue);
   }
+  // HyperFrames 0.8 rendered some cue elements silent (Julee draft 4: the montage and booking cues), so cues reach it
+  // as one stem with the gain already in the samples.
+  let bed = null;
+  if (audioCues.length) {
+    const raw = path.join(projectDir, ".music-bed.f32");
+    try {
+      await bakeCues(projectDir, resolvedPlan, audioCues, raw, { runImpl: prepareMusic });
+      bed = "assets/music-bed.wav";
+      await prepareMusic("ffmpeg", ["-y", "-loglevel", "error", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", raw, "-c:a", "pcm_f32le", path.join(projectDir, bed)], { capture: true });
+    } finally { fs.rmSync(raw, { force: true }); }
+  }
   const bedCues = music ? [{ asset: "assets/music.wav", points: music }] : audioCues.filter((c) => c.section);
   if (bedCues.length && words.length) {
     try {
@@ -146,7 +157,7 @@ export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, p
     } catch (error) { warning(`WARNING music stem QC unavailable: ${error.message.split("\n")[0]}`); }
   }
   const burn = captions === true || resolvedPlan.captions === true || resolvedPlan.captions?.enabled === true;
-  const html = speakerHTML(resolvedPlan, { manifest, cards, cues: captionData.cues, captions: burn, music, audioCues });
+  const html = speakerHTML(resolvedPlan, { manifest, cards, cues: captionData.cues, captions: burn, music, audioCues, bed });
   fs.writeFileSync(path.join(projectDir, "index.html"), html);
   writeJSON(path.join(workDir, "composition.json"), { schemaVersion: 1, activeBox: box, letterbox: resolvedPlan.look?.letterbox ?? null, captions: burn, cards: cards.review, music: music ? { file: resolvedPlan.music.file, points: music } : audioCues, warnings });
   writeJSON(path.join(workDir, "plan.resolved.json"), resolvedPlan);
@@ -189,9 +200,9 @@ export function speakerSfxCues(plan) {
   });
 }
 
-/** Measure the real automated bed and dialogue over matching speech windows, including cue crossfades. */
-export async function measureSpeechBed(base, projectDir, plan, words, cues, { runImpl = run, measureImpl = measureLoudness } = {}) {
-  const dir = fs.mkdtempSync(path.join(projectDir, ".music-qc-")), sampleRate = 48000;
+/** Sum cue assets with their interpolated gain lanes into one raw stereo f32le stem at 48 kHz. */
+export async function bakeCues(projectDir, plan, cues, bedFile, { runImpl = run, sampleRate = 48000 } = {}) {
+  const dir = fs.mkdtempSync(path.join(projectDir, ".cue-bake-"));
   const fds = [];
   try {
     for (const [n, cue] of cues.entries()) {
@@ -199,24 +210,40 @@ export async function measureSpeechBed(base, projectDir, plan, words, cues, { ru
       await runImpl("ffmpeg", ["-y", "-loglevel", "error", "-i", path.join(projectDir, cue.asset), "-ar", String(sampleRate), "-ac", "2", "-f", "f32le", file], { capture: true });
       fds.push(fs.openSync(file, "r"));
     }
-    const bedFile = path.join(dir, "bed.f32"), output = fs.openSync(bedFile, "w");
+    // Music lanes hold one point per frame; SFX lanes hold two. Both interpolate linearly in time.
+    const lanes = cues.map((cue) => {
+      let k = 0;
+      return (t) => {
+        const p = cue.points;
+        while (k + 1 < p.length && p[k + 1].t <= t) k++;
+        const a = p[k], b = p[k + 1] || a;
+        return b.t > a.t ? a.v + (b.v - a.v) * Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t))) : a.v;
+      };
+    });
+    const output = fs.openSync(bedFile, "w");
     try {
       const count = Math.round(plan.duration * sampleRate) * 2, size = 16384;
       for (let offset = 0; offset < count; offset += size) {
         const samples = Math.min(size, count - offset), mixed = Buffer.alloc(samples * 4);
-        for (const [n, cue] of cues.entries()) {
+        for (const [n] of cues.entries()) {
           const input = Buffer.alloc(samples * 4), available = fs.readSync(fds[n], input, 0, input.length, offset * 4);
-          for (let i = 0; i * 4 < available; i++) {
-            const t = (offset + i) / 2 / sampleRate, frame = t * plan.canvas.fps;
-            const a = cue.points[Math.min(cue.points.length - 1, Math.floor(frame))], b = cue.points[Math.min(cue.points.length - 1, Math.floor(frame) + 1)];
-            // Legacy lanes and cue lanes are both frame-sampled, including their final zero point.
-            const gain = a.v + (b.v - a.v) * (frame - Math.floor(frame));
-            mixed.writeFloatLE(mixed.readFloatLE(i * 4) + input.readFloatLE(i * 4) * gain, i * 4);
-          }
+          for (let i = 0; i * 4 < available; i++) mixed.writeFloatLE(mixed.readFloatLE(i * 4) + input.readFloatLE(i * 4) * lanes[n]((offset + i) / 2 / sampleRate), i * 4);
         }
         fs.writeSync(output, mixed);
       }
     } finally { fs.closeSync(output); }
+  } finally {
+    for (const fd of fds) fs.closeSync(fd);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Measure the real automated bed and dialogue over matching speech windows, including cue crossfades. */
+export async function measureSpeechBed(base, projectDir, plan, words, cues, { runImpl = run, measureImpl = measureLoudness } = {}) {
+  const dir = fs.mkdtempSync(path.join(projectDir, ".music-qc-")), sampleRate = 48000;
+  try {
+    const bedFile = path.join(dir, "bed.f32");
+    await bakeCues(projectDir, plan, cues, bedFile, { runImpl, sampleRate });
     const windows = [];
     for (const item of plan.items.filter((i) => i.kind === "clip" && i.audio !== "mute")) {
       const spoken = words.filter((w) => (w.itemId === item.id || !w.itemId && w.sourceId === item.sourceId) && w.end > item.start && w.start < item.end);
@@ -231,7 +258,6 @@ export async function measureSpeechBed(base, projectDir, plan, words, cues, { ru
     }
     return windows;
   } finally {
-    for (const fd of fds) fs.closeSync(fd);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }

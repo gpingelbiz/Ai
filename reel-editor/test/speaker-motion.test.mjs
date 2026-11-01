@@ -242,7 +242,17 @@ test("real cue preparation honors offsets and delayed starts; matching automated
   const result = await composeSpeakerProject(work, p, { manifest, tokens, print: () => {} });
   const html = fs.readFileSync(result.html, "utf8"), composition = JSON.parse(fs.readFileSync(path.join(work, "composition.json")));
   assert.equal(composition.music.length, 3);
-  assert.match(html, /assets\/music-0.wav/); assert.match(html, /assets\/music-1.wav/); assert.match(html, /assets\/sfx-0.wav/);
+  // One baked stem reaches HyperFrames: no per-cue elements and no renderer-side automation.
+  assert.match(html, /<audio id="speaker-bed" src="assets\/music-bed.wav"/); assert.doesNotMatch(html, /speaker-cue-|data-automation/);
+  const stereo = async (asset) => { const out = path.join(folder, `${path.basename(asset)}.f32`); await run("ffmpeg", ["-y", "-loglevel", "error", "-i", path.join(result.projectDir, asset), "-ac", "2", "-ar", "48000", "-f", "f32le", out], { capture: true }); return fs.readFileSync(out); };
+  const bedPCM = await stereo("assets/music-bed.wav"), cuePCM = await Promise.all(composition.music.map((c) => stereo(c.asset)));
+  assert.equal(bedPCM.length / 8, 2.8 * 48000);
+  for (let n = 0; n < 2.8 * 48000; n += 4801) {
+    const time = n / 48000;
+    const gain = (points) => { const k = points.findLastIndex((p) => p.t <= time), a = points[k], b = points[k + 1] || a; return b.t > a.t ? a.v + (b.v - a.v) * (time - a.t) / (b.t - a.t) : a.v; };
+    const expected = composition.music.reduce((sum, c, i) => sum + cuePCM[i].readFloatLE(n * 8) * gain(c.points), 0);
+    assert.ok(Math.abs(bedPCM.readFloatLE(n * 8) - expected) < 1e-4, `bed sample ${n}: ${bedPCM.readFloatLE(n * 8)} vs ${expected}`);
+  }
   assert.ok(result.warnings.some((w) => w.id === "music-masking"), JSON.stringify(result.warnings));
   const qc = JSON.parse(fs.readFileSync(path.join(work, "music-qc.json")));
   assert.equal(qc.windows.length, 2); assert.ok(qc.windows.every((w) => Number.isFinite(w.speechLUFS) && Number.isFinite(w.bedLUFS)));
