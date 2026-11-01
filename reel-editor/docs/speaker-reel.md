@@ -419,13 +419,48 @@ These are plan options; no new CLI flags or preset keys are required. Defaults a
 
 Merge these fields into a complete plan with its existing schema, canvas, identity and rights records.
 
-- `look.grade`: `"auto"` (default) or `"off"`. Auto measures each used source after rotation/SDR conversion, caches its exposure and neutral-colour statistics, and holds one correction throughout that source. Exposure correction is bounded to ±0.3 EV; neutral balance offsets stop at ±0.015 per RGB channel. Saturated/strongly coloured stages skip white balance. A shared gentle luminance S-curve and slight warmth follow. A broad skin-hue region is excluded from chromatic correction; no denoising, sharpening, grain or invented detail is added to the sharp footage. This is conservative matching, with human colour review still required.
+- `look.grade`: `"auto"` (default) or `"off"`. Auto measures each used source after rotation/SDR conversion, caches its exposure and neutral-colour statistics, and holds one correction throughout that source unless a reviewed item trim is supplied. Automatic exposure correction is bounded to ±0.3 EV; neutral balance offsets stop at ±0.015 per RGB channel. Saturated/strongly coloured stages skip white balance. A shared gentle luminance S-curve and slight warmth follow. A broad skin-hue region is excluded from automatic neutral-balance and warmth shifts; no denoising, sharpening, grain or invented detail is added to the sharp footage. This is conservative matching, with human colour review still required.
 - Item/cutaway `look: { "grade": "off" }` bypasses both source matching and house grade, useful for original title cards. `"auto"` can also opt an entry back into a plan whose grade is off.
 - Item/cutaway `stabilize: true` enables two-pass vidstab on the selected picture range with up to one second of original handles at each end. Manifest `source.handheld: true` supplies this default for every use of that source; explicit `stabilize: false` disables it. The transform uses smoothing 15 and a 3% base zoom plus adaptive edge coverage. Cache identity includes source content, range, available duration, rotation/SDR normalization and settings. A failed pass logs one line, records a review warning, and uses the original picture. Original dialogue is always extracted separately at the original source times.
 - Item/cutaway `push`: 1 to 1.2. Items default to 1; cutaways longer than 1.5 seconds default to 1.06. Set 1 to disable. The smooth, deterministic move reaches its final scale on the last output frame and runs at 4× internal precision. For `contain`/`blur`/`wash`, the foreground reserves the move's margin so it remains fully visible and never exceeds 1.5× source enlargement. Wash pushes the completed picture (background, shadow and card together); its card remains within 90% of the letterbox active area at the end of the move.
 - `look.letterbox`: `null` (default), `2.35` or `2.39`. Bars mask the composed picture, leaving 1920×818 or 1920×804 active pixels. Cards, lower thirds and burned captions stay within that area. A composition adapter reflows the existing card boxes without shrinking type; layouts that cannot fit fail with the card ID. Check heads, hands and slides before using either crop. The resolved plan carries an informational finding shown on the review page.
 
-Colour measurements and deterministic LUTs live in `work/index/look/<key>.look.json` and `<key>.cube`; stabilized picture-only ranges live in `work/index/look/stabilize/`. The original index/transcript JSON is unchanged. Review pairs for each used source/grade mode are written to `work/<version>/look/*-before.jpg` and `*-after.jpg`, sampled at the same original source time. `look/look.json` records the grade settings, cache keys and active box. These frames show colour correction before framing, motion and composited cards. Optional measurement/review-frame failures log once per source operation; failed measurement falls back to the shared gentle house grade.
+### Reviewed source trims: `look.sources`
+
+Add source trims to the plan's top-level `look`. IDs must exist in `manifest.sources`; the only trim keys are `ev`, `saturation` and `contrast`. Every value must be a finite number in the inclusive range below. Unknown look/trim keys, unknown source IDs and malformed objects fail plan validation, including when grading is off.
+
+```json
+{
+  "look": {
+    "grade": "auto",
+    "sources": {
+      "nova-presentation-12-3-25": { "ev": 0, "saturation": 0.94, "contrast": 0.015 }
+    }
+  }
+}
+```
+
+- `ev`: −1 to +1. This is the final exposure setting, replacing automatic EV. For example, `0` removes an automatic +0.155 EV lift; it does not add zero to that lift.
+- `saturation`: 0.5 to 1.5, default 1. This multiplier follows the existing exposure, S-curve, neutral balance and warmth, inside the deterministic RGB LUT. It scales RGB chroma around Rec.709 luminance; out-of-gamut values clip.
+- `contrast`: 0 to 0.1, default 0.025. Replaces the shared luminance S-curve amount for this source.
+
+Missing fields retain their automatic/shared values. Neutral-balance offsets and the coloured-stage safeguard remain automatic. Source trims apply to both clip pictures and picture-only cutaways using that source.
+
+### Clip item `grade`
+
+A clip item's optional `grade` uses the same keys and ranges. Its fields override `look.sources[sourceId]` for that item; omitted fields inherit the source setting. Other items and cutaways retain their own source trims. Cards, overlays and cutaways cannot carry `grade`; montage shots use source trims too.
+
+```json
+{
+  "id": "s5", "kind": "clip", "sourceId": "nova-presentation-12-3-25",
+  "in": 243.40, "out": 257.80, "role": "core",
+  "grade": { "ev": -0.15, "saturation": 0.92 }
+}
+```
+
+With the Nova source trim above, `s5` uses EV −0.15, saturation 0.92 and contrast 0.015. A Nova cutaway over `s5` still uses EV 0, saturation 0.94 and contrast 0.015. Overrides apply only when that entry's effective `look.grade` is `"auto"`. An entry with `look.grade:"off"` bypasses all grading and trims; an explicit entry `"auto"` still opts into grading and trims on a plan whose grade is off. Omitting both new fields preserves the original automatic grade and its cache identity.
+
+Colour measurements and deterministic LUTs live in `work/index/look/<key>.look.json` and `<key>.cube`; stabilized picture-only ranges live in `work/index/look/stabilize/`. The original index/transcript JSON is unchanged. Trim variants share source measurements but have separate LUT/cache identities containing their effective override values; changing a value rebuilds that grade, while unchanged values reuse it regardless of JSON key order. Review pairs for each used source/grade mode or trim variant are written to `work/<version>/look/*-before.jpg` and `*-after.jpg`, sampled at the same original source time. `look/look.json` records effective source grades in `sources[sourceId]` and applied item overrides in `items[itemId]`, with settings, cache keys, fallback status and item source IDs, plus the active box. Entries with grading off have no applied-grade record. These frames show colour correction before framing, motion and composited cards. Optional measurement/review-frame failures log once per source operation; failed measurement falls back to the shared gentle house grade while retaining reviewed trims.
 
 `plan.resolved.json` records actual fits, pushes, stabilization requests, plan look and active box. `composition.json` records letterbox/active-box metadata and adjusted card review geometry. Existing `base.mp4`, map, words and sidecar contracts retain their timing and dimensions. Final composition adds the bars; the base assembly remains full 1920×1080. All source audio and cutaway L-cuts use the existing compiler clock. Hardware encoding still uses the existing VideoToolbox helper, with its existing automatic software fallback.
 
