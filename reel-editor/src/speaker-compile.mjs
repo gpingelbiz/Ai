@@ -105,6 +105,8 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     if (c.type === "topic") {
       const allowed = [...Object.entries(identity).filter(([key, v]) => !["headshot", "headshotRights"].includes(key) && typeof v === "string").map(([, v]) => v), ...(manifest.proof || []).map((p) => p.text)];
       if (!c.text || !allowed.includes(c.text)) add(id, "topic text must come from manifest identity or proof");
+      // Same count as the card renderer, so --plan-only catches it instead of a render failing minutes in.
+      if (c.text && String(c.text).trim().split(/\s+/u).filter(Boolean).length > 7) add(id, "topic must have 1 to 7 words");
     }
     if (c.type === "logo-wall") {
       if (!LOGO_RELATIONSHIPS.includes(c.relationship)) add(id, "logo-wall relationship is invalid");
