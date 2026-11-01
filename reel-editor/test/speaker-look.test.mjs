@@ -94,9 +94,12 @@ test("stabilisation cache includes source identity, range and settings and fails
 
 test("source measurements are cached and optional review extraction fails open", async (t) => {
   const dir = temp(t); let measures = 0, samples = 0;
-  const options = { sourceKey: "stable", meta: { duration: 2 }, cacheDir: dir, measure: async () => { measures++; return { luma: 0.4 }; }, execute: async (_, args) => { samples++; fs.writeFileSync(args.at(-1), Buffer.from([128, 140, 128])); } };
+  const seeks = [], measureOptions = [];
+  const options = { sourceKey: "stable", meta: { duration: 24 }, cacheDir: dir, measure: async (_, opts) => { measures++; measureOptions.push(opts); return { luma: 0.4 }; }, execute: async (_, args) => { samples++; seeks.push(Number(args[args.indexOf("-ss") + 1])); fs.writeFileSync(args.at(-1), Buffer.from([128, 140, 128])); } };
   const first = await prepareGrade("source.mp4", options), second = await prepareGrade("source.mp4", options);
-  assert.equal(first.filter, second.filter); assert.equal(measures, 1); assert.equal(samples, 1); assert.ok(fs.existsSync(first.lut));
+  assert.equal(first.filter, second.filter); assert.equal(measures, 1); assert.ok(fs.existsSync(first.lut));
+  // A keynote is sampled by twelve seeks, never a full decode, and the cache means no second pass.
+  assert.equal(samples, 12); assert.deepEqual(seeks, [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]); assert.equal(measureOptions[0].seek, true);
   const logs = [], fallback = await prepareGrade("source.mp4", { ...options, sourceKey: "broken", measure: async () => { throw new Error("bad"); }, print: (s) => logs.push(s) });
   assert.equal(fallback.fallback, true); assert.equal(logs.length, 1);
   assert.equal(await lookReviewFrames("source.mp4", { dir, name: "source", execute: async () => { throw new Error("bad"); }, print: (s) => logs.push(s) }), false); assert.equal(logs.length, 2);

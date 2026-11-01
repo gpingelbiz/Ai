@@ -388,8 +388,8 @@ export function finishFilter(stats, options = {}) {
   return filters.join(",");
 }
 
-/** Measure twelve evenly spaced, 96px samples in one ffmpeg decode. Settings are then held for the whole clip. */
-export async function measureClip(input, { duration = null, preFilter = "" } = {}) {
+/** Measure twelve evenly spaced, 96px samples in one ffmpeg decode (or twelve seeks with `seek`). Settings are then held for the whole clip. */
+export async function measureClip(input, { duration = null, preFilter = "", seek = false } = {}) {
   if (!(duration > 0)) {
     const { out } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", input], { capture: true });
     duration = Number(out.trim());
@@ -409,8 +409,22 @@ export async function measureClip(input, { duration = null, preFilter = "" } = {
       "metadata=print:file=-",
       "format=rgb24",
     ].filter(Boolean).join(",");
-    const result = await run("ffmpeg", ["-y", "-hide_banner", "-nostats", "-loglevel", "error", "-i", input, "-an", "-vf", vf, "-frames:v", "12", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
-    const pixels = fs.readFileSync(raw);
+    let result, pixels;
+    if (seek) {
+      // Long sources (a 30+ minute keynote) are sampled by seeking to the same 12 points instead of decoding every frame.
+      const frameVf = [preFilter, "scale=96:96:flags=area", "signalstats", "metadata=print:file=-", "format=rgb24"].filter(Boolean).join(",");
+      const outs = [], chunks = [];
+      for (let frame = 0; frame < 12; frame++) {
+        const one = path.join(dir, `sample-${frame}.rgb`);
+        const r = await run("ffmpeg", ["-y", "-hide_banner", "-nostats", "-loglevel", "error", "-ss", short(first + frame / sampleRate, 6), "-i", input, "-an", "-vf", frameVf, "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", one], { capture: true });
+        outs.push(r.out, r.err); chunks.push(fs.readFileSync(one));
+      }
+      result = { out: outs.join("\n"), err: "" };
+      pixels = Buffer.concat(chunks);
+    } else {
+      result = await run("ffmpeg", ["-y", "-hide_banner", "-nostats", "-loglevel", "error", "-i", input, "-an", "-vf", vf, "-frames:v", "12", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+      pixels = fs.readFileSync(raw);
+    }
     const frames = Math.floor(pixels.length / frameBytes);
     const yavg = [...`${result.out}\n${result.err}`.matchAll(/lavfi\.signalstats\.YAVG=([\d.]+)/g)].map((m) => Number(m[1]));
     if (frames !== 12 || yavg.length < 12) throw new Error(`expected 12 samples, got ${Math.min(frames, yavg.length)}`);

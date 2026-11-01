@@ -108,7 +108,7 @@ export function gradeCube(settings, size = 33) {
   return rows.join("\n") + "\n";
 }
 
-/** Measurements are held for a source, never chased frame by frame. HDR conversion happens before sampling. */
+/** Measurements are held for a source, never chased frame by frame. HDR conversion happens before sampling. Frames are reached by seeking: a full keynote is 30+ minutes. */
 export async function prepareGrade(file, { sourceKey, meta, preFilter = "", cacheDir, execute = run, measure = measureClip, print = console.warn } = {}) {
   const key = hash({ version: 1, sourceKey: sourceKey || sourceCacheKey(file), preFilter });
   const dir = ensureDir(cacheDir), facts = path.join(dir, `${key}.look.json`), lut = path.join(dir, `${key}.cube`);
@@ -116,12 +116,16 @@ export async function prepareGrade(file, { sourceKey, meta, preFilter = "", cach
     let data;
     if (fs.existsSync(facts)) data = readJSON(facts);
     else {
-      const stats = await measure(file, { duration: meta.duration, preFilter });
+      const stats = await measure(file, { duration: meta.duration, preFilter, seek: true });
       const raw = path.join(dir, `${key}.rgb`);
       try {
         const duration = meta.duration > 0 ? meta.duration : 1;
-        await execute("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-an", "-vf", [preFilter, `fps=${12 / duration}:start_time=${duration / 24}:round=near`, "scale=32:32:flags=area", "format=rgb24"].filter(Boolean).join(","), "-frames:v", "12", "-f", "rawvideo", raw], { capture: true });
-        data = { schemaVersion: 1, key, stats, neutral: neutralStats(fs.readFileSync(raw)) };
+        const chunks = [];
+        for (let frame = 0; frame < 12; frame++) {
+          await execute("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(duration / 24 + frame * duration / 12), "-i", file, "-an", "-vf", [preFilter, "scale=32:32:flags=area", "format=rgb24"].filter(Boolean).join(","), "-frames:v", "1", "-f", "rawvideo", raw], { capture: true });
+          chunks.push(fs.readFileSync(raw));
+        }
+        data = { schemaVersion: 1, key, stats, neutral: neutralStats(Buffer.concat(chunks)) };
       } finally { fs.rmSync(raw, { force: true }); }
       data.settings = gradeSettings(data.stats, data.neutral);
       writeJSON(facts, data);
