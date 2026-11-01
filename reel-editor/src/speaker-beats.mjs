@@ -194,7 +194,7 @@ export function motionProblems(plan, manifest = {}) {
     const tokens = String(o.card.text || "").trim().split(/\s+/u).filter(Boolean);
     if (tokens.length < 1 || tokens.length > 3) add(o.id, "keyword needs one to three transcript words");
     if (o.card.position != null && !["center", "lower-third"].includes(o.card.position)) add(o.id, "keyword position must be center or lower-third");
-    if (o.card.motion != null && !["scale", "slide"].includes(o.card.motion)) add(o.id, "keyword motion must be scale or slide");
+    if (o.card.motion != null && !(o.card.layout === "cinematic" ? ["rise"] : ["scale", "slide"]).includes(o.card.motion)) add(o.id, o.card.layout === "cinematic" ? "cinematic motion must be rise" : "keyword motion must be scale or slide");
   }
   let cursor = 0;
   const spans = items.map((i) => {

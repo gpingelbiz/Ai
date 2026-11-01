@@ -12,10 +12,10 @@ import { readJSON, writeJSON, ensureDir, run, warn } from "./util.mjs";
 
 import { musicProblems } from "./speaker-music.mjs";
 import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
-import { cardOptionProblems } from "./speaker-cards.mjs";
+import { cardOptionProblems, cardCopyEvidence, resolveCard } from "./speaker-cards.mjs";
 
 const ROLES = ["opening", "identity", "proof", "core", "room", "testimonial", "close", "booking", "montage"];
-const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic", "keyword"];
+const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "event-list", "topic", "keyword"];
 const finite = (x) => typeof x === "number" && Number.isFinite(x);
 const sourceRow = (index, id) => index?.sources?.[id] || index?.[id];
 const seconds = (frame, fps) => frame / fps;
@@ -25,6 +25,8 @@ export function planUsage(plan, manifest) {
   const sourceIds = new Set([...plan.items.filter((i) => i.kind === "clip").map((i) => i.sourceId), ...plan.items.filter((i) => i.audioCarry).map((i) => i.audioCarry.sourceId), ...(plan.cutaways || []).map((x) => x.sourceId)]);
   const proofIds = new Set();
   for (const entry of [...plan.items, ...(plan.overlays || [])]) {
+    if (entry.card?.type === "event-list") for (const id of Array.isArray(entry.card.sourceIds) ? entry.card.sourceIds : []) sourceIds.add(id);
+    if (entry.card) for (const id of cardCopyEvidence(entry.card, manifest).proofIds) proofIds.add(id);
     if (entry.proofId) proofIds.add(entry.proofId);
     if (entry.card?.proofId) proofIds.add(entry.card.proofId);
     for (const id of Array.isArray(entry.card?.logos) ? entry.card.logos : []) proofIds.add(id);
@@ -73,6 +75,11 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     const mode = overlays.some((o) => o?.id === id) ? "overlay" : "insert";
     for (const p of cardOptionProblems(c, mode)) add(id, p.message);
     const entry = [...items, ...overlays].find((i) => i?.id === id);
+    if (c.layout === "cinematic" && Math.round(entry?.duration * 30) < 16) add(id, "cinematic cards need at least 16 frames");
+    if (c.type === "event-list") {
+      for (const p of resolveCard(c, { manifest, mode, final: !draft }).problems) add(id, p.message, p.level);
+      if (Math.round(entry?.duration * 30) < 120 || Math.round(entry?.duration * 30) > 150) add(id, "event-list must hold 4 to 5 seconds");
+    }
     if (c.type === "topic" && c.layout === "compact" && entry?.duration > 3) add(id, "compact topic must hold at most 3s");
     const proof = c.proofId ? proofs.get(c.proofId) : null;
     if (c.proofId && !proof) add(id, `unknown proofId: ${c.proofId}`);
@@ -103,10 +110,9 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
       }
     }
     if (c.type === "topic") {
-      const allowed = [...Object.entries(identity).filter(([key, v]) => !["headshot", "headshotRights"].includes(key) && typeof v === "string").map(([, v]) => v), ...(manifest.proof || []).map((p) => p.text)];
-      if (!c.text || !allowed.includes(c.text)) add(id, "topic text must come from manifest identity or proof");
+      if (!c.text || !cardCopyEvidence(c, manifest).valid) add(id, "topic text must come from manifest identity or proof; eyebrow must have the same provenance");
       // Same count as the card renderer, so --plan-only catches it instead of a render failing minutes in.
-      if (c.text && String(c.text).trim().split(/\s+/u).filter(Boolean).length > 7) add(id, "topic must have 1 to 7 words");
+      if ([c.eyebrow, c.text].filter(Boolean).join(" ").trim().split(/\s+/u).filter(Boolean).length > 7) add(id, "topic and eyebrow must have 1 to 7 words combined");
     }
     if (c.type === "logo-wall") {
       if (!LOGO_RELATIONSHIPS.includes(c.relationship)) add(id, "logo-wall relationship is invalid");

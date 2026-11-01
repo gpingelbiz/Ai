@@ -30,6 +30,8 @@ function cardText(card = {}, manifest) {
     case "testimonial-name": return Object.values(proof?.attribution || { name: card.name, title: card.title, org: card.org }).filter(Boolean).join(" · ");
     case "quote": return [proof?.text ?? card.text, ...Object.values(proof?.attribution || { name: card.name, title: card.title, org: card.org })].filter(Boolean).join(" · ");
     case "logo-wall": return [card.heading, ...(card.logos || [])].filter(Boolean).join(" · ");
+    case "event-list": return [card.heading ?? "Spoke at", ...new Set((card.sourceIds || []).map((id) => (manifest.sources || []).find((s) => s.id === id)?.event).filter(Boolean))].join(" · ");
+    case "topic": return [card.eyebrow, card.text].filter(Boolean).join(" · ");
     default: return card.text || "";
   }
 }
@@ -48,7 +50,7 @@ export function reviewRows(plan, manifest, words = []) {
       const found = words.filter((w) => w.start >= start && w.start < end && (!item.sourceId || w.sourceId === item.sourceId)).map((w) => w.text ?? w.word ?? "");
       const excerpt = found.length > 35 ? `${found.slice(0, 25).join(" ")} … ${found.slice(-10).join(" ")}` : found.join(" ");
       // The client reviews what will be rendered: card text resolved from the manifest/proof, never raw plan text.
-      const resolved = item.card ? resolveCard(item.card, { manifest }) : null;
+      const resolved = item.card ? resolveCard(item.card, { manifest, mode: kind === "overlay" ? "overlay" : "insert" }) : null;
       const cardProblems = (resolved?.problems || []).filter((p) => !/rights/.test(p.code)).map((p) => p.message);
       const rowRights = rightsChecks({ items: [item] }, manifest);
       const status = rowRights.some((r) => r.status === "unknown" || r.level === "fail") ? "unknown" : rowRights.some((r) => r.status !== "approved") ? "pending" : "approved";

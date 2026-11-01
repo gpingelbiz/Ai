@@ -309,6 +309,7 @@ Card objects are rendered by the separate `speaker-cards.mjs` integration. Their
 | testimonial-name | proofId; or name, title, org matching a supplied attribution |
 | quote | proofId; or exact text (25 words maximum), name, optional title and org |
 | logo-wall | heading, relationship, logos (3 to 6 distinct proof ids, all with the same relationship) |
+| event-list | heading (`Spoke at` by default), sourceIds (exact source events, deduplicated in listed order) |
 | topic | exact text from identity or proof |
 
 Direct booking shows the client's route. Bureau booking uses `identity.bureau` and suppresses direct contact. Logo headings are “Spoke at”, “Clients”, “Featured in” or “Available at”, matching the registry relationship. Quotes and attributions must match the supplied proof exactly.
@@ -362,6 +363,33 @@ For example, these are card objects within the existing overlay/insert entries:
 The example text must already exist in the appropriate transcript or manifest/proof record. Compact title, keyword and topic layouts are overlays only. The new boxes reflow within the active picture for either supported letterbox without reducing type. Premium booking photos retain their fixed width and use the active picture's height. Oversize copy fails preflight instead of clipping or shrinking below these sizes. Collision checks use actual rectangles when client tokens are supplied; without them they reserve conservative boxes. Standard-only plans keep their historical collision rules.
 
 Composition passes the existing source index to card layout. Portrait side placement reserves the foreground's maximum wash width, including its push allowance; if dimensions are unavailable but the resolved fit is `wash`, it reserves the widest portrait. Low-resolution footage can leave more space than the card uses. These fixed layouts cannot detect a face or hand in landscape footage or a different picture cut over the target: inspect the finished reel. Review both five-second quotes at normal playback speed, and confirm the full approved booking destination remains correct.
+
+### Cinematic overlays and text-only event proof
+
+`layout: "cinematic"` opts title, topic and keyword **overlays** into typography directly over the footage. The text box has no background, border or plate. A full-width scrim occupies only the bottom third of the active picture: a CSS gradient from transparent through 8% black at 35%, 28% at 70%, to 45% at the bottom. Three soft black text shadows (2/3, 6/18 and 14/40 px offset/blur) support white display type. These are composition layers; no ffmpeg source or fit filter changes.
+
+Text begins at x96, occupies at most 1344 px (70% width), and ends 96 px above the active picture's bottom. Title names prefer 144 px and fit down to 120 px; optional `showRole` uses the brand body font at 40 px with 2.4 px tracking. `showRole: false` displays the manifest name alone. Cinematic titles omit the tagline. Topics use 84–104 px display type and an optional 32 px body-font `eyebrow`, styled in caps with the same tracking. Keywords use 104–128 px display type in the same lower-left position. `accent: true` adds an 80×4 px rule in the brand accent; omitted/false adds none. Main lines and roles may wrap to two lines, eyebrows to one. Oversized copy fails preflight; geometry adapts to either letterbox without reducing these minima.
+
+Topic `text` and `eyebrow` must each exactly match manifest identity or proof text, or together reconstruct one exact supplied line using a single space or comma-space. This permits `"Briefcase model, NBC’s Deal or No Deal"` to split into eyebrow `"Briefcase model"` and main `"NBC’s Deal or No Deal"` without authoring a new claim. The combined limit is seven words. Proof used by either field, or by their joined line, retains its rights requirements. Headshot paths/rights cannot supply copy. Keywords retain their existing transcript, duration and spacing requirements; cinematic placement is always lower-left.
+
+`motion: "rise"` moves only the copy upward 32 px while fading it in over **nine frames**, with `power2.out`; it holds, then the whole overlay fades linearly over its final **six frames**. Without `motion`, the same entry fades without movement. Every endpoint is calculated from absolute integer output frames at 30 fps. Cinematic title `reveal: "cut"` takes precedence over entry motion: the complete name is visible on its first frame, with no mask, scale settle or rise, including when `motion: "rise"` is also supplied. Its six-frame exit remains. Every cinematic overlay requires at least 16 frames; normal reading windows should be substantially longer. A four-second rise card has 3.5 fully settled seconds; a two-second keyword has 1.5. Standard layouts keep their existing reveals and motion.
+
+```json
+{ "type": "title", "layout": "cinematic", "showRole": false, "reveal": "cut" }
+{ "type": "topic", "layout": "cinematic", "eyebrow": "Briefcase model", "text": "NBC’s Deal or No Deal", "motion": "rise", "accent": true }
+{ "type": "keyword", "layout": "cinematic", "text": "Taking action", "motion": "rise" }
+```
+
+An inserted **event-list** provides text proof when real logo files are unavailable:
+
+```json
+{ "id": "stages", "kind": "card", "role": "proof", "duration": 5,
+  "card": { "type": "event-list", "heading": "Spoke at", "sourceIds": ["phs25", "another-event"] } }
+```
+
+List actual manifest source IDs. Every source must exist and have nonempty `event` text; the renderer uses those exact strings, deduplicated in the listed order. Sources sharing an event name still **all** retain their rights checks in draft, strict compilation and final delivery. The heading must be `Spoke at`, `Recent stages`, or exact identity/proof text of one to seven words; custom proof headings retain their proof rights too. No logos or pictures are generated or substituted. The card shares the premium quote family's brand surface, display type and accent rule, with a 42 px body heading and 48–60 px event names in a 1488 px column at x216. Allow at most six rendered event lines (heading separate), including wraps. Hold **4–5 seconds**, static with cuts in/out; five seconds is the default. Use fewer/shorter supplied events if the card fails fit checks. Event strings establish source provenance, not an endorsement; verify event names and permissions with the client.
+
+Run `node --test test/speaker-cinematic.test.mjs` for provenance, rights, safe-area, actual bundled GSAP frame-seek and tiny lavfi base-picture checks. No browser rendering runs in these tests. On real footage, Claude must inspect the opening hit, small-cap tracking and actual installed fonts, the shadow/scrim over bright and dark shots, faces and gestures beneath every overlay, both letterbox crops, and normal-speed readability of all event lines. Conservative text estimates cannot certify browser glyph bounds or moving-picture contrast.
 
 ## Index and compiled output
 
