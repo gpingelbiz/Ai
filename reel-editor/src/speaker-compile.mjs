@@ -78,7 +78,9 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     if (c.layout === "cinematic" && Math.round(entry?.duration * 30) < 16) add(id, "cinematic cards need at least 16 frames");
     if (c.type === "event-list") {
       for (const p of resolveCard(c, { manifest, mode, final: !draft }).problems) add(id, p.message, p.level);
-      if (Math.round(entry?.duration * 30) < 120 || Math.round(entry?.duration * 30) > 150) add(id, "event-list must hold 4 to 5 seconds");
+      if (mode === "overlay") {
+        if (Math.round(entry?.duration * 30) < 90) add(id, "event-list overlay needs at least 3 seconds");
+      } else if (Math.round(entry?.duration * 30) < 120 || Math.round(entry?.duration * 30) > 150) add(id, "event-list must hold 4 to 5 seconds");
     }
     if (c.type === "topic" && c.layout === "compact" && entry?.duration > 3) add(id, "compact topic must hold at most 3s");
     const proof = c.proofId ? proofs.get(c.proofId) : null;

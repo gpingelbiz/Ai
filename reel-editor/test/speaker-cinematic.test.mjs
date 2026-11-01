@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { resolveBrandTokens } from "../src/brandtokens.mjs";
 import { resolveCard, titleCard, topicCard, keywordCard, eventListCard, cardDuration, cardChecks, speakerCardsHTML } from "../src/speaker-cards.mjs";
 import { validatePlan, resolvePlan, planUsage, fitGeometry } from "../src/speaker-compile.mjs";
@@ -43,7 +44,7 @@ const withOverlay = (card, duration = 4, offset = 0.8) => {
 const withEvents = (card = events, duration = 5) => {
   const p = plan(); p.items.splice(1, 0, { id: "events", kind: "card", role: "proof", duration, card }); return p;
 };
-const resolve = (card, m = manifest, mode = card.type === "event-list" ? "insert" : "overlay") => {
+const resolve = (card, m = manifest, mode = card.type === "event-list" && card.layout !== "cinematic" ? "insert" : "overlay") => {
   const result = resolveCard(card, { manifest: m, mode }); assert.deepEqual(result.problems, []); return result.card;
 };
 const calls = (timeline) => {
@@ -51,7 +52,7 @@ const calls = (timeline) => {
   vm.runInNewContext(timeline, { tl: { set: (...args) => result.push(["set", ...args]), fromTo: (...args) => result.push(["fromTo", ...args]) } });
   return result;
 };
-const render = (card, options = {}) => ({ title: titleCard, topic: topicCard, keyword: keywordCard, "event-list": eventListCard })[card.type](resolve(card), { tokens, mode: card.type === "event-list" ? "insert" : "overlay", ...options });
+const render = (card, options = {}) => ({ title: titleCard, topic: topicCard, keyword: keywordCard, "event-list": eventListCard })[card.type](resolve(card), { tokens, mode: card.type === "event-list" && card.layout !== "cinematic" ? "insert" : "overlay", ...options });
 
 test("cinematic layout and its scoped options validate in plan and card preflight", () => {
   for (const spec of [title, topic, keyword]) {
@@ -333,4 +334,233 @@ test("lavfi base-picture smoke check: cinematic overlays leave the source graph 
   const base = hashes(["-vf", "null"]), fitted = hashes(["-filter_complex", graph, "-map", "[v]"]);
   assert.equal(fitted.length, 6); assert.deepEqual(fitted, base);
   t.diagnostic(`6/6 frames pixel-identical at 1920x1080/30fps (0.2s); graph: ${graph}`);
+});
+
+const wall = { ...events, layout: "cinematic" };
+const eventManifest = (names) => ({ ...structuredClone(manifest), sources: [manifest.sources[0], ...names.map((event, i) => ({ id: `e${i}`, event, kind: "stage", rights: "r" }))] });
+const wallFor = (m, options = {}) => ({ ...wall, sourceIds: m.sources.slice(1).map((s) => s.id), ...options });
+
+test("event-list overlays require cinematic in every preflight and preserve insert mode", () => {
+  for (const layout of [undefined, "standard", "compact", "premium"]) {
+    const card = { ...events, ...(layout ? { layout } : {}) };
+    assert.ok(resolveCard(card, { manifest, mode: "overlay" }).problems.some((p) => /cinematic/.test(p.message)));
+    assert.ok(validatePlan(withOverlay(card), { manifest, index }).some((p) => /cinematic/.test(p.message)));
+    const rp = resolvePlan(withOverlay(wall), { manifest, index }); rp.overlays[0].card = card;
+    assert.ok(cardChecks(rp, { manifest, tokens }).some((p) => /cinematic/.test(p.message)));
+    assert.throws(() => eventListCard(resolve(events), { tokens, mode: "overlay" }), /cinematic/);
+  }
+  assert.ok(resolveCard(wall, { manifest }).problems.some((p) => /overlay/.test(p.message)));
+  assert.ok(validatePlan(withEvents(wall), { manifest, index }).some((p) => /overlay/.test(p.message)));
+  for (const card of [wall, { ...wall, motion: "rise" }]) assert.deepEqual(validatePlan(withOverlay(card, 3), { manifest, index }), []);
+});
+
+test("event-list overlay reading window starts at 90 frames and stays within the host's frame clock", () => {
+  const short = 89 / 30;
+  assert.ok(validatePlan(withOverlay(wall, short), { manifest, index }).some((p) => /at least 3/.test(p.message)));
+  assert.throws(() => render(wall, { end: short }), /at least 3/);
+  const rp = resolvePlan(withOverlay(wall, 3), { manifest, index });
+  rp.overlays[0].outputEnd = rp.overlays[0].outputStart + short;
+  assert.ok(cardChecks(rp, { manifest, tokens }).some((p) => p.code === "card-hold"));
+  for (const duration of [3, 5, 6, 9.2]) {
+    const p = resolvePlan(withOverlay(wall, duration), { manifest, index });
+    assert.deepEqual(cardChecks(p, { manifest, tokens }), []);
+    assert.equal(render(wall, { end: duration }).durationHints.max, null);
+  }
+  assert.deepEqual(validatePlan(withOverlay(wall, 3, 7), { manifest, index }), []);
+  assert.ok(validatePlan(withOverlay(wall, 3, 211 / 30), { manifest, index }).some((p) => /extends past/.test(p.message)));
+});
+
+test("event-list overlays keep exact event provenance, heading proof and six-line limit", () => {
+  for (const card of [
+    { ...wall, heading: "Trusted by world leaders" }, { ...wall, heading: 4 },
+    { ...wall, sourceIds: [] }, { ...wall, sourceIds: ["missing"] },
+    { ...wall, events: ["Invented conference"] }, { ...wall, mergeYears: "true" },
+  ]) {
+    assert.ok(resolveCard(card, { manifest, mode: "overlay" }).problems.some((p) => p.level === "error"));
+    assert.ok(validatePlan(withOverlay(card), { manifest, index }).some((p) => p.level === "error"));
+  }
+  const missing = structuredClone(manifest); missing.sources[1].event = "";
+  assert.ok(resolveCard(wall, { manifest: missing, mode: "overlay" }).problems.some((p) => p.code === "card-event-source"));
+  const m = eventManifest(Array.from({ length: 7 }, (_, i) => `Conference ${i}`));
+  assert.ok(resolveCard(wallFor(m), { manifest: m, mode: "overlay" }).problems.some((p) => p.code === "card-event-lines"));
+  assert.ok(validatePlan(withOverlay(wallFor(m)), { manifest: m, index }).some((p) => /six event lines/.test(p.message)));
+  m.sources.slice(1).forEach((s, i) => { s.event = `PowerHouse Summit ${2020 + i}`; });
+  const merged = wallFor(m, { mergeYears: true });
+  assert.equal(resolve(merged, m).events.length, 1, "line limit follows merging");
+  assert.deepEqual(validatePlan(withOverlay(merged), { manifest: m, index }), []);
+  for (const heading of ["Spoke at", "Recent stages", "Selected stages", manifest.identity.tagline]) resolve({ ...wall, heading });
+});
+
+test("mergeYears is opt-in and merges only exact prefixes, preserving first appearance and year order", () => {
+  const names = ["PowerHouse Summit 2025", "Nova Presentation", "PowerHouse Summit 2024", "PowerHouse Summit 2025", "powerHouse Summit 2023", "PowerHouse Summit  2022", "PowerHouse Summit 2024 edition", "PowerHouse Summit-2021", "PowerHouse Summit 2026 ", "PowerHouse Summit 2023", "PowerHouse Summit 12345", "PowerHouse Summit ２０２０", "PowerHouse Summit 2027\n", "PowerHouse Summit-2020"];
+  const m = eventManifest(names), spec = wallFor(m);
+  // Resolve still reports the six-line limit; the exact intermediate lines remain inspectable.
+  const lines = (card) => resolveCard(card, { manifest: m, mode: "overlay" }).card.events;
+  assert.deepEqual(lines(spec), [...new Set(names)]);
+  assert.deepEqual(lines({ ...spec, mergeYears: false }), lines(spec));
+  assert.deepEqual(lines({ ...spec, mergeYears: true }), [
+    "PowerHouse Summit 2025, 2024, 2023", "Nova Presentation", "powerHouse Summit 2023", "PowerHouse Summit  2022", "PowerHouse Summit 2024 edition", "PowerHouse Summit-2021, 2020", "PowerHouse Summit 2026 ", "PowerHouse Summit 12345", "PowerHouse Summit ２０２０", "PowerHouse Summit 2027\n",
+  ]);
+  const small = eventManifest(names.slice(0, 4)), merged = wallFor(small, { mergeYears: true });
+  for (const mode of ["insert", "overlay"]) {
+    const spec = mode === "insert" ? { ...merged, layout: "standard" } : merged;
+    const result = resolveCard(spec, { manifest: small, mode });
+    assert.deepEqual(result.problems, []);
+    assert.deepEqual(result.card.events, ["PowerHouse Summit 2025, 2024", "Nova Presentation"]);
+  }
+  assert.ok(resolveCard({ ...title, mergeYears: true }, { manifest, mode: "overlay" }).problems.some((p) => /mergeYears/.test(p.message)));
+});
+
+test("merged event overlay retains every listed source and heading's rights in compile, cards, QC and review", () => {
+  const m = eventManifest(["PowerHouse Summit 2024", "PowerHouse Summit 2025", "PowerHouse Summit 2024"]);
+  m.sources[2].rights = m.sources[3].rights = m.proof[3].rights = "pending";
+  const spec = wallFor(m, { mergeYears: true, heading: "Selected stages" }), p = withOverlay(spec);
+  for (const usage of [planUsage(p, m), usedAssets(p, m)]) {
+    for (const id of ["e0", "e1", "e2"]) assert.ok(usage.sourceIds.includes(id));
+    assert.ok(usage.proofIds.includes("heading"));
+  }
+  for (const final of [false, true]) {
+    const problems = validatePlan(p, { manifest: m, index, draft: !final });
+    assert.ok(problems.some((p) => /rights/.test(p.message) && p.level === (final ? "error" : "warn")));
+    const rp = resolvePlan(p, { manifest: m, index, draft: true });
+    assert.ok(cardChecks(rp, { manifest: m, tokens, final }).some((p) => p.code === "card-rights" && p.level === (final ? "error" : "warn")));
+    for (const id of ["e1", "e2", "heading"]) assert.ok(rightsChecks(p, m, final).some((p) => p.assetId === id && p.level === (final ? "fail" : "warn")));
+    if (final) assert.throws(() => speakerCardsHTML(rp, { manifest: m, tokens, final }), /rights/);
+  }
+  const rp = resolvePlan(p, { manifest: m, index, draft: true });
+  const fragment = speakerCardsHTML(rp, { manifest: m, tokens });
+  const row = fragment.review.find((r) => r.id === "overlay");
+  assert.deepEqual(row.text, ["Selected stages", "PowerHouse Summit 2024, 2025"]);
+  assert.deepEqual(row.sourceIds, spec.sourceIds);
+  assert.equal(reviewRows(rp, m).find((r) => r.id === "overlay").text, row.text.join(" · "));
+  assert.equal(reviewRows(rp, m).find((r) => r.id === "overlay").rights, "pending");
+});
+
+test("six long cinematic event lines fit safe boxes and 60–72px type at full frame and both letterboxes", (t) => {
+  const m = eventManifest(Array.from({ length: 6 }, (_, i) => `International Leadership Summit ${2020 + i}`)), spec = wallFor(m);
+  for (const ratio of [null, 2.35, 2.39]) {
+    const p = withOverlay(spec); p.look = { letterbox: ratio };
+    const rp = resolvePlan(p, { manifest: m, index }), box = activeBox(ratio);
+    const f = letterboxCards(speakerCardsHTML(rp, { manifest: m, tokens }), box, rp);
+    const l = f.review.find((r) => r.id === "overlay").layout;
+    assert.ok(l.fits); assert.ok(l.x >= 120 && l.x + l.w <= 1824);
+    assert.ok(l.y >= box.y + 96 && l.y + l.h <= box.y + box.height - 96);
+    assert.equal(l.y + l.h / 2, box.y + box.height / 2);
+    for (const [i, line] of l.events.entries()) {
+      assert.equal(line.lines, 1); assert.ok(line.fontSize >= 60 && line.fontSize <= 72);
+      const y = line.y + box.y;
+      assert.ok(y >= box.y + 96 && y + line.h + 32 <= box.y + box.height - 64);
+      assert.ok(line.x >= 120 && line.x + line.w <= 1824);
+      if (i) assert.equal(line.y, l.events[i - 1].y + l.events[i - 1].h + l.gap);
+    }
+    assert.deepEqual(cardChecks(rp, { manifest: m, tokens }), []);
+    t.diagnostic(`${ratio ?? "16:9"}: box x${l.x}/y${l.y}/w${l.w}/h${l.h}; six ${l.events[0].fontSize}px lines`);
+  }
+  m.sources[1].event = "W".repeat(100);
+  const rp = resolvePlan(withOverlay(wallFor(m)), { manifest: m, index });
+  assert.ok(cardChecks(rp, { manifest: m, tokens }).some((p) => p.code === "card-text-fit"));
+  assert.throws(() => speakerCardsHTML(rp, { manifest: m, tokens }), /minimum readable/);
+});
+
+test("cinematic event HTML has only a full-height left gradient, brand type, accent eyebrow and text shadows", () => {
+  const r = render(wall);
+  assert.match(r.html, /sc-overlay sc-event-list sc-cinematic/);
+  assert.match(r.html, /sc-event-scrim.*aria-hidden="true"/);
+  assert.match(r.html, /sc-event-heading.*sc-cinematic-rule.*sc-eyebrow/);
+  assert.doesNotMatch(r.html, /background:|<img|sc-headshot/);
+  assert.match(r.css, /sc-cinematic\{[^}]*height:1080px;background:none;border-radius:0/);
+  assert.match(r.css, /sc-event-scrim\{position:absolute;inset:0;[^}]*linear-gradient\(to right,rgba\(0,0,0,0\.65\) 0%,rgba\(0,0,0,0\) 55%\)/);
+  assert.doesNotMatch(r.css, /::before|to bottom|height:33\.333333%/);
+  assert.match(r.css, /sc-cinematic-copy\{[^}]*background:none[^}]*text-shadow:0 2px 3px.*0 6px 18px.*0 14px 40px/);
+  assert.match(r.css, /sc-eyebrow\{[^}]*letter-spacing:2.4px;text-transform:uppercase/);
+  assert.match(r.css, /sc-cinematic-rule\{width:80px;height:4px;[^}]*var\(--brand-accent\)/);
+  assert.match(r.css, /\.sc-name \{ font-family:var\(--brand-display-font\)/);
+  assert.equal(r.assets.length, 0);
+  const m = eventManifest(['A & B <Summit> 2025']);
+  assert.match(eventListCard(resolve(wallFor(m), m), { tokens, mode: "overlay" }).html, /A &amp; B &lt;Summit&gt; 2025/);
+});
+
+test("event-wall stagger uses exact absolute frames: scrim 8, rise 9, starts 4 apart, one exit of 6", (t) => {
+  const m = eventManifest(Array.from({ length: 6 }, (_, i) => `Conference ${i}`));
+  const r = eventListCard(resolve(wallFor(m), m), { tokens, mode: "overlay", start: 31 / 30, end: 121 / 30 });
+  const c = calls(r.timeline), tweens = c.filter((v) => v[0] === "fromTo");
+  assert.equal(tweens.length, 9);
+  assert.equal(tweens[0][1], "#speaker-card .sc-event-scrim");
+  assert.equal(tweens[0][3].duration, 8 / 30); assert.equal(tweens[0][4], 31 / 30); assert.equal(tweens[0][3].ease, "none");
+  const rises = tweens.slice(1, -1);
+  for (const [i, rise] of rises.entries()) {
+    assert.equal(rise[4], (31 + i * 4) / 30);
+    assert.equal(rise[2].y, 32); assert.equal(rise[2].autoAlpha, 0);
+    assert.equal(rise[3].y, 0); assert.equal(rise[3].autoAlpha, 1);
+    assert.equal(rise[3].duration, 9 / 30); assert.equal(rise[3].ease, "power2.out");
+  }
+  assert.equal(tweens.at(-1)[1], "#speaker-card");
+  assert.equal(tweens.at(-1)[4], 115 / 30); assert.equal(tweens.at(-1)[3].duration, 6 / 30);
+  assert.equal(tweens.at(-1)[3].ease, "none");
+  assert.equal(r.durationHints.enter, 33 / 30); assert.equal(r.durationHints.exit, 6 / 30); assert.equal(r.durationHints.fullyLegible, 51 / 30);
+  assert.ok(r.durationHints.enter <= 1.5);
+  assert.doesNotMatch(speakerMotionHTML(resolvePlan(withOverlay(wall), { manifest, index })).timeline, /speaker-card-1/);
+  t.diagnostic("six lines: final settle at +33 frames (1.1s); 3s overlay holds all lines for 51 frames (1.7s) before exit");
+});
+
+test("bundled GSAP seeks each event line and scrim forward and backward without early flashes", () => {
+  const m = eventManifest(Array.from({ length: 6 }, (_, i) => `Conference ${i}`));
+  const r = eventListCard(resolve(wallFor(m), m), { tokens, mode: "overlay", start: 31 / 30, end: 121 / 30 });
+  const { tl, targets } = seekable(r.timeline), root = targets.get("#speaker-card");
+  const frames = [...Array.from({ length: 124 }, (_, i) => i), ...Array.from({ length: 124 }, (_, i) => 123 - i)];
+  for (const frame of frames) {
+    tl.seek(frame / 30);
+    if (frame < 31 || frame >= 121) { assert.equal(root.autoAlpha, 0, `hidden at ${frame}`); continue; }
+    assert.ok(Math.abs(root.autoAlpha - Math.min(1, (121 - frame) / 6)) < 0.00001);
+    assert.ok(Math.abs(targets.get("#speaker-card .sc-event-scrim").autoAlpha - Math.min(1, (frame - 31) / 8)) < 0.00001);
+    for (let i = 0; i <= 6; i++) {
+      const selector = i ? `#speaker-card .sc-event-line-${i - 1}` : "#speaker-card .sc-event-heading";
+      const target = targets.get(selector), p = Math.max(0, Math.min(1, (frame - 31 - 4 * i) / 9));
+      const eased = 1 - (1 - p) ** 3;
+      assert.ok(Math.abs(target.autoAlpha - eased) < 0.00001, `${selector} alpha at ${frame}`);
+      // Before its tween starts, the hidden line's initial transform is irrelevant to painting.
+      if (frame >= 31 + 4 * i) assert.ok(Math.abs(target.y - 32 * (1 - eased)) < 0.0001, `${selector} y at ${frame}`);
+    }
+  }
+});
+
+test("event walls do not consume topic count or keyword duration, transcript and 20-second spacing rules", () => {
+  const p = plan();
+  p.overlays = Array.from({ length: 4 }, (_, i) => ({ id: `events-${i}`, at: "talk", offset: i, duration: 3, card: wall }));
+  const emptyWords = structuredClone(index); emptyWords.sources.talk.words = [];
+  assert.deepEqual(validatePlan(p, { manifest, index: emptyWords }), []);
+  const rp = resolvePlan(p, { manifest, index: emptyWords });
+  assert.ok(!cardChecks(rp, { manifest, tokens }).some((p) => /topic|keyword/.test(p.code)));
+});
+
+test("event wall collision checks use its centred column, including conservative token-free geometry", () => {
+  const m = eventManifest(Array.from({ length: 6 }, (_, i) => `Conference ${i}`));
+  const p = withOverlay(wallFor(m)); p.overlays.push({ id: "name", at: "talk", offset: 0.8, duration: 4, card: title });
+  const rp = resolvePlan(p, { manifest: m, index });
+  for (const options of [{ manifest: m, tokens }, { manifest: m }]) assert.ok(cardChecks(rp, options).some((p) => p.code === "card-overlay-collision"));
+  p.overlays[1].offset = 4.8;
+  for (const options of [{ manifest: m, tokens }, { manifest: m }]) assert.ok(!cardChecks(resolvePlan(p, { manifest: m, index }), options).some((p) => p.code === "card-overlay-collision"));
+});
+
+test("legacy event-list insert output stays byte-identical at 4/5 seconds and all active picture sizes", () => {
+  const m = { sources: [{ id: "a", event: "Nova Presentation", rights: "r" }, { id: "b", event: "PowerHouse Summit 2025", rights: "r" }], rights: [{ id: "r", status: "approved" }] };
+  const card = resolve({ type: "event-list", heading: "Spoke at", sourceIds: ["a", "b", "a"] }, m);
+  // SHA-256 of complete render results captured from speaker/d10 before the event-wall implementation.
+  const hashes = ["55708bb3efb3863750d0764ee39407b6f1a92b79aa3c50d0f232e81c9073c8d5", "c93ab54e67d8e5eec395aa8f758c61c05bfe93ce5059922b6ebb082341ff9f85", "7e07a7cd58ed8a4a10613a347bf058670d4e00d4ebcde15a0e83ec265f26067b", "e941ef8eb38347de420b0c5ea3290470ed8990d4336f6c32812143b4e1544405", "951e597c8663e29a3a1721091db31f118ec3f9aa222153a29c86a8f75f289e9b", "f8d20d9d18728b20ad8265d179ccdb53cf522fb446af62f6ccdf203d9b14c64a"];
+  let n = 0;
+  for (const ratio of [null, 2.35, 2.39]) for (const duration of [4, 5]) {
+    const result = eventListCard(card, { tokens, canvas: { ...canvas, activeBox: activeBox(ratio) }, id: "legacy-events", start: 31 / 30, end: (31 + duration * 30) / 30 });
+    assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), hashes[n++]);
+  }
+});
+
+test("lavfi event-wall smoke check: overlay adds no base filters and preserves 6/6 moving source frames", (t) => {
+  const plain = resolvePlan(plan(), { manifest, index }), overlaid = resolvePlan(withOverlay(wall), { manifest, index });
+  assert.deepEqual(overlaid.items, plain.items); assert.equal(overlaid.frames, plain.frames);
+  const graph = fitGraph("0:v", "v", fitGeometry(index.sources.talk, "contain", canvas), { frames: 6 }).join(";");
+  const input = ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30:duration=0.2"];
+  const hashes = (filters) => execFileSync("ffmpeg", [...input, ...filters, "-frames:v", "6", "-an", "-f", "framemd5", "pipe:1"], { encoding: "utf8" }).split("\n").filter((s) => /^0,/.test(s));
+  const source = hashes(["-vf", "null"]), fitted = hashes(["-filter_complex", graph, "-map", "[v]"]);
+  assert.equal(fitted.length, 6); assert.deepEqual(fitted, source);
+  t.diagnostic(`1920x1080 at 30fps, 0.2s: 6/6 MD5 matches, zero changed base pixels; graph: ${graph}`);
 });

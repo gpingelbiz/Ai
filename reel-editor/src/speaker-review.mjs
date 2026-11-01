@@ -30,7 +30,7 @@ function cardText(card = {}, manifest) {
     case "testimonial-name": return Object.values(proof?.attribution || { name: card.name, title: card.title, org: card.org }).filter(Boolean).join(" · ");
     case "quote": return [proof?.text ?? card.text, ...Object.values(proof?.attribution || { name: card.name, title: card.title, org: card.org })].filter(Boolean).join(" · ");
     case "logo-wall": return [card.heading, ...(card.logos || [])].filter(Boolean).join(" · ");
-    case "event-list": return [card.heading ?? "Spoke at", ...new Set((card.sourceIds || []).map((id) => (manifest.sources || []).find((s) => s.id === id)?.event).filter(Boolean))].join(" · ");
+    case "event-list": return [card.heading ?? "Spoke at", ...(card.events || [])].join(" · ");
     case "topic": return [card.eyebrow, card.text].filter(Boolean).join(" · ");
     default: return card.text || "";
   }
