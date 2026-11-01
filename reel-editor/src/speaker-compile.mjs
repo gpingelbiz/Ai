@@ -12,6 +12,7 @@ import { readJSON, writeJSON, ensureDir, run, warn } from "./util.mjs";
 
 import { musicProblems } from "./speaker-music.mjs";
 import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
+import { cardOptionProblems } from "./speaker-cards.mjs";
 
 const ROLES = ["opening", "identity", "proof", "core", "room", "testimonial", "close", "booking", "montage"];
 const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic", "keyword"];
@@ -69,6 +70,10 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   const text = (id, value, expected, field) => { if (value != null && value !== expected) add(id, `card ${field} must match supplied manifest/proof text exactly`); };
   const card = (id, c) => {
     if (!c || !CARD_TYPES.includes(c.type)) { add(id, `invalid card.type: ${c?.type}`); return; }
+    const mode = overlays.some((o) => o?.id === id) ? "overlay" : "insert";
+    for (const p of cardOptionProblems(c, mode)) add(id, p.message);
+    const entry = [...items, ...overlays].find((i) => i?.id === id);
+    if (c.type === "topic" && c.layout === "compact" && entry?.duration > 3) add(id, "compact topic must hold at most 3s");
     const proof = c.proofId ? proofs.get(c.proofId) : null;
     if (c.proofId && !proof) add(id, `unknown proofId: ${c.proofId}`);
     if (c.type === "booking" || c.type === "title" && items.some((i) => i.id === id && i.kind === "card")) {

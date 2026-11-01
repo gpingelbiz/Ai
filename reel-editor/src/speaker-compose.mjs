@@ -100,12 +100,14 @@ export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, p
   const projectDir = ensureDir(path.join(workDir, "project"));
   ensureDir(path.join(projectDir, "assets", "vendor"));
   const box = activeBox(resolvedPlan.look?.letterbox, resolvedPlan.canvas);
-  const cards = await copyCardAssets(letterboxCards(speakerCardsHTML(resolvedPlan, { manifest, tokens, canvas: { ...resolvedPlan.canvas, activeBox: box }, clientDir: folder, log: print }), box, resolvedPlan), projectDir);
+  const sideNames = resolvedPlan.overlays?.some((o) => o.card?.type === "testimonial-name" && o.card.layout === "premium");
+  const sourceIndex = sideNames && fs.existsSync(path.join(folder, "work/index/sources.json")) ? readJSON(path.join(folder, "work/index/sources.json")) : {};
+  const cards = await copyCardAssets(letterboxCards(speakerCardsHTML(resolvedPlan, { manifest, tokens, canvas: { ...resolvedPlan.canvas, activeBox: box }, clientDir: folder, index: sourceIndex, log: print }), box, resolvedPlan), projectDir);
   for (const p of cards.problems) print(`WARNING ${p.code}: ${p.message}`);
   copyOrLink(base, path.join(projectDir, "assets", "base.mp4"));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(projectDir, "assets", "vendor", "gsap.min.js"));
-  for (const card of cards.review) if (card.type === "booking" && card.end - card.start < 6.6 - 1e-7) {
-    const finding = { level: "warn", id: card.id, message: `${card.id}: reserve 6.6 seconds for six readable seconds after the name reveal` };
+  for (const card of cards.review) if (card.type === "booking" && card.end - card.start < (card.layout.activeAware ? 6.3 : 6.6) - 1e-7) {
+    const finding = { level: "warn", id: card.id, message: `${card.id}: reserve ${card.layout.activeAware ? 6.3 : 6.6} seconds for six readable seconds after the name reveal` };
     warnings.push(finding); print(`WARNING ${finding.message}`);
   }
   const captionData = captionFiles(words, resolvedPlan.duration);
@@ -164,11 +166,12 @@ export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, p
   return { base, projectDir, html: path.join(projectDir, "index.html"), captions: burn, cards: cards.review, cardProblems: cards.problems, warnings };
 }
 
-/** All effects use absolute frame times. Title masks finish at 18 frames and then hold. The mask reaches past the line box so a tight display line height never cuts a descender (the y in Gracey). */
+/** All effects use absolute frame times. Standard name masks finish at 18 frames, reaching past the line box to protect descenders (the y in Gracey). Cut titles and premium bookings bypass the mask. */
 export function speakerMotionHTML(plan) {
   const fps = plan.canvas.fps, html = [], timeline = [];
   const entries = [...(plan.items || []).filter((i) => i.kind === "card"), ...(plan.overlays || [])];
   for (const [n, entry] of entries.entries()) if (["title", "booking"].includes(entry.card?.type)) {
+    if (entry.card.type === "title" && entry.card.reveal === "cut" || entry.card.type === "booking" && entry.card.layout === "premium") continue;
     const start = entry.start ?? entry.outputStart;
     timeline.push(`tl.fromTo(${js(`#speaker-card-${n} .sc-name`)},{clipPath:"inset(-0.35em 100% -0.45em 0)"},{clipPath:"inset(-0.35em -0.1em -0.45em 0)",duration:0.6,ease:"power2.out",immediateRender:false},${start});`);
   }
