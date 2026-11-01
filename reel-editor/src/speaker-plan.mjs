@@ -1,6 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import { writeJSON, ensureDir } from "./util.mjs";
+import { audioQualityRank } from "./speaker-audio-quality.mjs";
+
+/** Equivalent performances keep the editorial score within ten points before audio breaks the tie. */
+export function preferredAudioCandidates(candidates, eligible = () => true) {
+  const compare = (a, b) => audioQualityRank(b.audioQuality) - audioQualityRank(a.audioQuality) || (b.score || 0) - (a.score || 0) || a.sourceId.localeCompare(b.sourceId) || a.in - b.in || String(a.id).localeCompare(String(b.id));
+  return candidates.flatMap((c) => {
+    const group = [c, ...(c.alternates || [])].filter((a) => a.audioQuality?.label !== "reject" && eligible(a));
+    const best = Math.max(...group.map((a) => a.score || 0));
+    const chosen = group.filter((a) => (a.score || 0) >= best - 10).sort(compare)[0];
+    return chosen ? [chosen] : [];
+  }).sort(compare);
+}
 
 export const SECTION_BUDGETS = {
   // Lane 12 (Max Partain benchmark): a 2-minute core, a quick opening and identity, 6 readable booking seconds.
@@ -18,15 +30,17 @@ export function starterPlan(manifest, candidates = [], { version = "full" } = {}
     targetSeconds: Object.values(budgets).reduce((a, b) => a + b, 0), items: [], overlays: [], cutaways: [], notes: [] };
   const sources = new Map(manifest.sources.map((s) => [s.id, s]));
   const rights = new Map(manifest.rights.map((r) => [r.id, r.status]));
-  const ranked = candidates.flatMap((c) => [c, ...(c.alternates || [])]).filter((c) => sources.get(c.sourceId)?.audio === "ok"
-    && Number.isFinite(c.in) && Number.isFinite(c.out) && c.in >= 0 && c.out > c.in).sort((a, b) => b.score - a.score || a.sourceId.localeCompare(b.sourceId) || a.in - b.in);
+  const eligible = (c) => sources.get(c.sourceId)?.audio === "ok"
+    && Number.isFinite(c.in) && Number.isFinite(c.out) && c.in >= 0 && c.out > c.in;
   const used = [];
   const free = (c) => !used.some((u) => u.sourceId === c.sourceId && u.in < c.out && u.out > c.in);
   const add = (item) => { const result = { id: `i${String(plan.items.length + 1).padStart(2, "0")}`, ...item }; plan.items.push(result); return result; };
-  const clip = (c, role) => { used.push(c); return add({ kind: "clip", sourceId: c.sourceId, in: c.in, out: c.out, role, fit: "contain", audio: "source", protect: ["core", "room", "testimonial"].includes(role), note: `Candidate ${c.id}; verify source context.` }); };
+  const clip = (c, role) => { used.push(c);
+    if (c.audioQuality?.label === "weak") plan.notes.push(`${role}: weak audio from ${c.sourceId} (${c.id}); audition and review cleaner performances.`);
+    return add({ kind: "clip", sourceId: c.sourceId, in: c.in, out: c.out, role, fit: "contain", audio: "source", protect: ["core", "room", "testimonial"].includes(role), note: `Candidate ${c.id}; verify source context.` }); };
   // A complete core story may run past its budget (Renée's runs 140 s); it is never cut to fit.
   const limit = (role) => role === "core" && version === "full" ? Math.max(budgets.core, 150) : budgets[role];
-  const pick = (role, kinds) => ranked.find((c) => free(c) && kinds.includes(c.kind) && c.out - c.in <= limit(role) + 1e-6);
+  const pick = (role, kinds) => preferredAudioCandidates(candidates, (c) => eligible(c) && free(c) && kinds.includes(c.kind) && c.out - c.in <= limit(role) + 1e-6)[0];
   // Reserve the best complete core before choosing a potentially overlapping opening.
   const core = pick("core", ["story", "origin", "teaching", "demonstration", ...(version === "full" ? [] : ["one_liner"])]);
   if (core) used.push(core);
@@ -36,7 +50,9 @@ export function starterPlan(manifest, candidates = [], { version = "full" } = {}
   // Put the supplied name on screen within the first three seconds even with a longer opening.
   if (opening) plan.overlays.push({ id: "o-title", at: plan.items[0].id, offset: 0, duration: Math.min(4, opening.out - opening.in), card: { type: "title" } });
   const testimonialBudget = budgets.room || budgets.proof;
-  const testimonial = (manifest.proof || []).find((p) => p.kind === "testimonial-video" && p.attribution?.name && rights.get(p.rights) === "approved"
+  // Manifest testimonials can share an exact measured candidate range; do not bypass a measured reject.
+  const measuredProof = (p) => ({ ...p, audioQuality: p.audioQuality || candidates.flatMap((c) => [c, ...(c.alternates || [])]).find((c) => c.sourceId === p.sourceId && c.in === p.in && c.out === p.out)?.audioQuality });
+  const testimonial = (manifest.proof || []).map(measuredProof).find((p) => p.kind === "testimonial-video" && p.audioQuality?.label !== "reject" && p.attribution?.name && rights.get(p.rights) === "approved"
     && rights.get(sources.get(p.sourceId)?.rights) === "approved" && sources.get(p.sourceId)?.audio === "ok" && Number.isFinite(p.in) && Number.isFinite(p.out)
     && p.in >= 0 && p.out - p.in >= 4 && p.out - p.in <= testimonialBudget && free(p));
   const addTestimonial = (role) => {

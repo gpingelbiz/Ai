@@ -4,6 +4,7 @@ import { probe } from "./probe.mjs";
 import { measureLoudness, silences } from "./preflight.mjs";
 import { run, writeJSON } from "./util.mjs";
 import { identityLeaks } from "./speaker-guard.mjs";
+import { audioQualityWarnings } from "./speaker-audio-quality.mjs";
 import { resolveCard } from "./speaker-cards.mjs";
 
 /** Accept the explicit output fields, or start/end from a compiled plan. Never use source in/out as output time. */
@@ -100,7 +101,7 @@ async function blackGaps(file) {
 }
 
 /** Strict speaker delivery QC. deps makes media measurements replaceable in offline tests. */
-export async function speakerQC(video, { resolvedPlan, manifest, final = false, captionFiles, deps = {} } = {}) {
+export async function speakerQC(video, { resolvedPlan, manifest, final = false, captionFiles, folder, candidates = null, deps = {} } = {}) {
   const plan = typeof resolvedPlan === "string" ? JSON.parse(fs.readFileSync(resolvedPlan, "utf8")) : resolvedPlan;
   const checks = [], duration = planDuration(plan), canvas = plan.canvas || { width: 1920, height: 1080, fps: 30 };
   const add = (code, ok, message) => checks.push({ code, level: ok ? "pass" : "fail", message });
@@ -129,6 +130,14 @@ export async function speakerQC(video, { resolvedPlan, manifest, final = false, 
       add(`captions-${ext}`, (end != null && end < meta.duration) || empty, `${path.basename(file)}: ${end != null ? `last cue ${end}s; video ${meta.duration}s` : empty ? "no spoken cues" : "missing or invalid captions"}`);
     }
   } catch (error) { add("media", false, `cannot check ${video}: ${error.message}`); }
+  // Quality is advisory; final byte/rights checks still control approval.
+  let audioCandidates = candidates || [];
+  const candidateFile = path.join(folder || path.resolve(path.dirname(video), "../.."), "work", "candidates", "all.json");
+  if (!candidates && candidateFile && fs.existsSync(candidateFile)) {
+    try { audioCandidates = JSON.parse(fs.readFileSync(candidateFile, "utf8")); }
+    catch { /* Optional alternate evidence must not block delivery checks. */ }
+  }
+  checks.push(...audioQualityWarnings(plan, audioCandidates, manifest));
   checks.push(...rightsChecks(plan, manifest, final));
   for (const p of plan.composition?.cardProblems || []) checks.push({ code: p.code, level: p.level === "error" ? "fail" : "warn", message: p.message });
   const identity = [...identityProblems(plan, "plan"), ...identityProblems(manifest, "manifest")];

@@ -51,6 +51,9 @@ export async function indexSources(folder, manifest, { brand = {}, engine = "aut
   const dictionary = brandDictionary({ ...brand, name: brand.name || brand.identity?.name });
   const prompt = [...dictionary.names, ...dictionary.terms, ...dictionary.phrases].join(", ");
   const settings = { engine: resolveEngine(engine), language, model, prompt };
+  // Audio analysis has its own cache and survives a normal index refresh with the same content key.
+  const previousIndexFile = path.join(dir, "sources.json");
+  const previousSources = fs.existsSync(previousIndexFile) ? readJSON(previousIndexFile).sources || {} : {};
   const sources = {};
   for (const source of manifest.sources) {
     const file = assetPath(folder, source.path);
@@ -94,6 +97,7 @@ export async function indexSources(folder, manifest, { brand = {}, engine = "aut
     // Cache raw ASR; changing spelling corrections reuses it and rebuilds the corrected view.
     const words = applyCorrections(rawWords, dictionary.corrections);
     const row = { ...meta, id: source.id, path: source.path, key, audio: source.audio, audioStream: audio?.index ?? null, words, lines: sentenceLines(words), envelope, cached };
+    if (previousSources[source.id]?.key === key && source.audio === "ok" && previousSources[source.id]?.audioQuality) row.audioQuality = previousSources[source.id].audioQuality;
     const existing = source.audio !== "ok" && fs.existsSync(factsFile) ? readJSON(factsFile) : null;
     writeJSON(factsFile, { ...row, ...(existing ? { words: existing.words || [], lines: existing.lines || [], envelope: existing.envelope || envelope } : {}), path: undefined, id: undefined, cached: undefined });
     sources[source.id] = row;

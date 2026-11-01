@@ -19,6 +19,7 @@ import { findCandidates, writeCandidates, describeCandidates } from "./speaker-m
 import { findReactions } from "./reactions.mjs";
 import { shotCandidates } from "./shots.mjs";
 import { writeStarterPlan } from "./speaker-plan.mjs";
+import { measureSpeakerQuality, measurePlanAudio } from "./speaker-audio-quality.mjs";
 import { speakerStatus } from "../scripts/speaker-status.mjs";
 
 export const SPEAKER_HELP = `reel speaker: build and review a client's landscape speaker reel
@@ -27,6 +28,7 @@ export const SPEAKER_HELP = `reel speaker: build and review a client's landscape
   reel speaker index <folder> [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model name] [--language en]
   reel speaker candidates <folder> [--source id]
   reel speaker reactions <folder> [--source id]
+  reel speaker quality <folder> [--source id]
   reel speaker plan <folder> --version full|short|teaser [--replan]
   reel speaker draft <folder> --version v [--captions] [--render-only]
   reel speaker comments <folder> --version v <file>
@@ -129,7 +131,8 @@ export async function runSpeaker(folder, opts = {}, { index: indexImpl = indexSo
       print(`${resolved.version}: rendering client cards${composition.captions ? " and captions" : ""}`);
       await renderImpl(composition.projectDir, output, { quality: "delivery", fps: resolved.canvas.fps });
       if (!await normalizeImpl(output)) print("WARNING delivery loudness normalization failed; check QC before approval");
-      qc = await qcImpl(output, { resolvedPlan: compiled.resolvedPlan, manifest, captionFiles: { srt: path.join(workDir, "captions.srt"), vtt: path.join(workDir, "captions.vtt") } });
+      await measurePlanAudio(folder, compiled.resolvedPlan, manifest, { index, print });
+      qc = await qcImpl(output, { resolvedPlan: compiled.resolvedPlan, manifest, folder, captionFiles: { srt: path.join(workDir, "captions.srt"), vtt: path.join(workDir, "captions.vtt") } });
       writeQC(workDir, qc);
       print(`${resolved.version}: quality checks ${qc.ok ? "passed" : "need attention"}`);
       review = await reviewImpl(folder, { version: resolved.version, video: { [composition.captions ? "open" : "clean"]: output }, resolvedPlan: compiled.resolvedPlan, manifest, qc: qcImpl });
@@ -151,7 +154,7 @@ export function parseSpeakerArgs(argv) {
     engine: { type: "string" }, language: { type: "string" }, model: { type: "string" }, source: { type: "string" }, replan: { type: "boolean" }, by: { type: "string" },
   } });
   if (values.help || !positionals.length) return { help: true };
-  const commands = ["init", "index", "candidates", "reactions", "plan", "draft", "comments", "approve", "deliver", "status"];
+  const commands = ["init", "index", "candidates", "reactions", "quality", "plan", "draft", "comments", "approve", "deliver", "status"];
   // "reel speaker plan" with no other argument is the client folder ./plan when it exists, not the command.
   const explicit = commands.includes(positionals[0]) && !(positionals.length === 1 && fs.existsSync(positionals[0]));
   const command = explicit ? positionals.shift() : "draft";
@@ -159,7 +162,7 @@ export function parseSpeakerArgs(argv) {
   if (values.version && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(values.version)) throw new Error("speaker --version must be a safe folder name");
   if (["plan", "comments", "approve", "deliver"].includes(command) && !values.version) throw new Error(`speaker ${command} requires --version`);
   if (command === "approve" && !values.by?.trim()) throw new Error("speaker approve requires --by with the client's approver name");
-  for (const [flag, allowed] of [["add-new", ["init"]], ["source", ["candidates", "reactions"]], ["replan", ["plan"]], ["by", ["approve"]]]) {
+  for (const [flag, allowed] of [["add-new", ["init"]], ["source", ["candidates", "reactions", "quality"]], ["replan", ["plan"]], ["by", ["approve"]]]) {
     if (values[flag] != null && !allowed.includes(command)) throw new Error(`--${flag} is only available with reel speaker ${allowed.join(" or ")}`);
   }
   if (values["plan-only"] && values["render-only"]) throw new Error("choose either --plan-only or --render-only");
@@ -168,7 +171,7 @@ export function parseSpeakerArgs(argv) {
 }
 
 /** Detectors only suggest; neither shots nor reaction scores create editorial truth. */
-export async function analyzeSpeaker(folder, { source, reactionsOnly = false } = {}, { reactions: react = findReactions, shots = shotCandidates, candidates = findCandidates, print = log, ask } = {}) {
+export async function analyzeSpeaker(folder, { source, reactionsOnly = false } = {}, { reactions: react = findReactions, shots = shotCandidates, candidates = findCandidates, print = log, ask, quality = measureSpeakerQuality } = {}) {
   folder = path.resolve(folder);
   const { manifest, problems } = loadManifest(folder); errors(problems); assertNoGreg(manifest, "manifest");
   const brand = readJSON(assetPath(folder, manifest.brand.file)); assertNoGreg(brand, "brand");
@@ -201,6 +204,9 @@ export async function analyzeSpeaker(folder, { source, reactionsOnly = false } =
   const file = writeCandidates(folder, [...prior, ...list]);
   if (list.length) print(describeCandidates(list));
   print(`${list.length} candidates saved: ${file}`);
+  // Optional, independently cached analysis never re-transcribes or blocks candidate discovery.
+  try { await quality(folder, { source, manifest, index, print }); }
+  catch (e) { print(`speaker audio quality unavailable (${e.message.split("\n")[0]})`); }
   return list;
 }
 
@@ -213,6 +219,7 @@ export async function speakerMain(argv, deps = {}) {
     print(`speaker manifest: ${result.added} files added; ${result.file}`); return result;
   }
   if (command === "status") { const result = (deps.status || speakerStatus)(path.resolve(folder)); print(result); return result; }
+  if (command === "quality") return (deps.quality || measureSpeakerQuality)(path.resolve(folder), { source: options.source, print });
   if (command === "candidates" || command === "reactions") return (deps.analyze || analyzeSpeaker)(folder, { source: options.source, reactionsOnly: command === "reactions" }, deps);
   if (command === "plan") {
     const { manifest, problems } = loadManifest(folder); errors(problems); assertNoGreg(manifest, "manifest");
