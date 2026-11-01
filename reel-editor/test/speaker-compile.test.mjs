@@ -235,3 +235,105 @@ test("dialogue level: true-peak cap by default; opt-in limit takes full gain beh
   const at = 24000 + 2400, ratio = out.readFloatLE(at * 4) / (pcm.readFloatLE(at * 4) * 10 ** (12 / 20));
   assert.ok(Math.abs(ratio - 1) < 0.05, `aligned gain ratio ${ratio}`);
 });
+
+test("adjacent cutaways use one frame clock at 31, 47, 62 and 124 with no base flashes", async (t) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "cutaway-frames-"));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  const { cutawayGraph } = await import("../src/speaker-compile.mjs");
+  const bounds = [31, 47, 62, 124, 140], colors = ["red", "lime", "blue", "white", "yellow"];
+  const args = ["-y", "-loglevel", "error", "-filter_complex_threads", "1"];
+  colors.forEach((color, n) => args.push("-f", "lavfi", "-i", `color=c=${color}:s=16x16:r=30:d=${n ? (bounds[n] - bounds[n - 1]) / 30 : 5}`));
+  const graph = ["[0:v]null[base]"];
+  let base = "base";
+  for (let n = 0; n < 4; n++) {
+    graph.push(`[${n + 1}:v]null[cut${n}]`, ...cutawayGraph(base, `cut${n}`, `pic${n}`, bounds[n], bounds[n + 1], `shift${n}`));
+    base = `pic${n}`;
+  }
+  const raw = path.join(folder, "frames.rgb");
+  await run("ffmpeg", [...args, "-filter_complex", graph.join(";"), "-map", `[${base}]`, "-frames:v", "150", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+  const pixels = fs.readFileSync(raw), expected = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255], [255, 255, 0]];
+  assert.equal(pixels.length, 150 * 16 * 16 * 3);
+  let maxError = 0;
+  for (let frame = 0; frame < 150; frame++) {
+    const cut = bounds.findIndex((start, n) => n < 4 && frame >= start && frame < bounds[n + 1]);
+    const color = expected[cut < 0 ? 0 : cut + 1];
+    for (let pixel = 0; pixel < 768; pixel++) {
+      const error = Math.abs(pixels[frame * 768 + pixel] - color[pixel % 3]);
+      maxError = Math.max(maxError, error);
+      assert.ok(error <= 3, `frame ${frame}, component ${pixel}: ${pixels[frame * 768 + pixel]}`);
+    }
+  }
+  t.diagnostic(`150/150 frames match; all 109 covered frames match their cutaway, zero base leaks; maximum RGB component error ${maxError}`);
+});
+
+test("audioCarry validates chronology, source audio, range, card length and immediate predecessor", () => {
+  const p = structuredClone(plan); p.overlays = []; p.cutaways = [];
+  p.items = [p.items[0], { ...p.items[1], audioCarry: { preceding: "a", sourceId: "stage", in: 5, out: 5.6 } }];
+  assert.deepEqual(validatePlan(p, options), []);
+  assert.deepEqual(planUsage(p, manifest).sourceIds, ["stage"]);
+  assert.equal(timelineWords(resolvePlan(p, options), index).some((w) => w.text === "After"), false, "carry never adds caption words");
+  const cases = [
+    [(p) => p.items[1].audioCarry = [], /object/],
+    [(p) => p.items[1].audioCarry.preceding = "other", /immediately preceding/],
+    [(p) => p.items[1].audioCarry.sourceId = "phone", /same source|usable/],
+    [(p) => p.items[1].audioCarry.in = 4.9, /contiguous/],
+    [(p) => p.items[1].audioCarry.out = 6.5, /fit inside/],
+    [(p) => p.items[1].audioCarry.out = 21, /past source/],
+    [(p) => p.items[1].audioCarry.out = NaN, /source range/],
+    [(p) => p.items[0].audio = "mute", /audible preceding/],
+    [(p) => p.items[0].audioCarry = p.items[1].audioCarry, /card item/],
+  ];
+  for (const [change, message] of cases) {
+    const bad = structuredClone(p); change(bad);
+    assert.ok(validatePlan(bad, options).some((e) => message.test(e.message)), String(message));
+  }
+  for (const audio of ["bad", "none"]) {
+    const m = structuredClone(manifest); m.sources[0].audio = audio;
+    assert.ok(validatePlan(p, { manifest: m, index }).some((e) => e.id === "b" && /usable/.test(e.message)));
+  }
+  const noAudio = structuredClone(index); noAudio.sources.stage.hasAudio = false;
+  assert.ok(validatePlan(p, { manifest, index: noAudio }).some((e) => e.id === "b" && /usable/.test(e.message)));
+  p.items[1].audioCarry.in = 5 + 1 / 30;
+  assert.equal(resolvePlan(p, options).items[1].audioCarry.in, 5, "within-frame authoring tolerance snaps to the source boundary");
+  p.items[0].out = 5.01; p.items[1].audioCarry.in = 5.01;
+  assert.equal(resolvePlan(p, options).items[1].audioCarry.in, 5, "carry follows the actual frame-rounded source end");
+});
+
+test("compiled card carries contiguous source audio with preceding gain, final 0.25s fade and silent padding", { timeout: 120000 }, async (t) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-carry-"));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(folder, "footage")); writeJSON(path.join(folder, "brand.json"), brand);
+  const pcm = Buffer.alloc(48000 * 2 * 2);
+  for (let n = 0; n < 96000; n++) pcm.writeInt16LE(Math.round((n < 24000 ? 6000 : 1000) * Math.sin(2 * Math.PI * (n < 24000 ? 220 : 880) * n / 48000)), n * 2);
+  const raw = path.join(folder, "source.s16"); fs.writeFileSync(raw, pcm);
+  const file = path.join(folder, "footage/stage.mp4");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=s=32x18:r=30:d=2", "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", raw, "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "pcm_s16le", "-f", "mov", file], { capture: true });
+  const m = structuredClone(manifest); m.sources = [m.sources[0]];
+  const idx = { sources: { stage: { ...await probeSource(file), words: [{ text: "Close", start: 0.1, end: 0.3 }, { text: "Applause", start: 0.6, end: 0.9 }] } } };
+  const p = { ...structuredClone(plan), look: { grade: "off" }, overlays: [], cutaways: [], items: [
+    { id: "close", kind: "clip", sourceId: "stage", in: 0, out: 0.5, role: "close" },
+    { id: "book", kind: "card", duration: 1, role: "booking", card: { type: "booking" }, audioCarry: { preceding: "close", sourceId: "stage", in: 0.5, out: 1.1 } },
+  ] };
+  const result = await compileVersion(folder, p, { manifest: m, index: idx, encoder: "libx264", print: () => {} });
+  const read = async (name) => {
+    const out = path.join(folder, `${name}.f32`);
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-i", path.join(result.workDir, `compile/${name}.wav`), "-ac", "1", "-f", "f32le", out], { capture: true });
+    return fs.readFileSync(out);
+  };
+  assert.deepEqual(result.map.find((row) => row.itemId === "book").audioCarry, result.resolvedPlan.items[1].audioCarry);
+  const clip = await read("close"), carry = await read("book");
+  const rms = (b, start, end) => { let sum = 0; for (let n = Math.round(start * 48000); n < Math.round(end * 48000); n++) sum += b.readFloatLE(n * 4) ** 2; return Math.sqrt(sum / Math.round((end - start) * 48000)); };
+  assert.ok(Math.abs(rms(carry, 0.1, 0.2) / rms(clip, 0.1, 0.2) - 1 / 6) < 0.002, "same dialogue gain rather than renormalized tail");
+  let crossings = 0;
+  for (let n = 4801; n < 9600; n++) if (carry.readFloatLE(n * 4) >= 0 && carry.readFloatLE((n - 1) * 4) < 0) crossings++;
+  assert.ok(crossings >= 87 && crossings <= 88, "card starts in the contiguous 880 Hz source range");
+  const gain = rms(clip, 0.1, 0.2) / (6000 / 32768 / Math.sqrt(2));
+  let maxError = 0;
+  for (let n = 0; n < 16000; n++) maxError = Math.max(maxError, Math.abs(carry.readFloatLE(n * 4) - pcm.readInt16LE((24000 + n) * 2) / 32768 * gain));
+  assert.ok(maxError < 0.0001, `contiguous source samples differ by ${maxError}`);
+  assert.ok(rms(clip, 0.48, 0.5) / rms(clip, 0.1, 0.12) > 0.95, "no outgoing fade before a carry");
+  assert.ok(rms(carry, 0.58, 0.6) / rms(carry, 0.1, 0.12) < 0.06, "last 0.25s fades away");
+  assert.equal(rms(carry, 0.6, 1), 0);
+  assert.deepEqual(result.words.map((w) => w.text), ["Close"]);
+  t.diagnostic(`carry: ${crossings} cycles/0.1s; RMS ratio ${(rms(carry, 0.1, 0.2) / rms(clip, 0.1, 0.2)).toFixed(5)}; padding RMS 0`);
+});

@@ -103,6 +103,15 @@ export function musicProblems(plan, manifest, { draft = false } = {}) {
     if (plan.music.tracks && !ids.has(s.track)) add(`section ${s.from}: unknown track ${s.track}`);
     if (s.gainDb != null && (!Number.isFinite(s.gainDb) || s.gainDb > 0 || s.gainDb < -96)) add(`section ${s.from}: gainDb must be between -96 and 0`);
     for (const key of ["start", "fadeIn", "fadeOut"]) if (s[key] != null && (!Number.isFinite(s[key]) || s[key] < 0)) add(`section ${s.from}: ${key} must be non-negative`);
+    if (s.gainPoints != null) {
+      const fps = plan.canvas?.fps || 30;
+      const frames = items.slice(from, to + 1).reduce((sum, i) => sum + Math.round((i.kind === "clip" ? i.out - i.in : i.duration) * fps), 0);
+      if (!Array.isArray(s.gainPoints) || !s.gainPoints.length) add(`section ${s.from}: gainPoints must be a non-empty array`);
+      else s.gainPoints.forEach((p, n) => {
+        if (!p || !Number.isFinite(p.at) || p.at < 0 || p.at > frames / fps || !Number.isFinite(p.db) || p.db < -96 || p.db > 0) add(`section ${s.from}: gainPoints need finite at within the section and db between -96 and 0`);
+        if (n && (!(p?.at > s.gainPoints[n - 1]?.at) || Math.round(p?.at * fps) <= Math.round(s.gainPoints[n - 1]?.at * fps))) add(`section ${s.from}: gainPoints must ascend on distinct output frames`);
+      });
+    }
     if (s.snap != null && s.snap !== "beats") add(`section ${s.from}: snap must be beats`);
     for (const other of sections.slice(0, n)) {
       const a = items.findIndex((i) => i.id === other?.from), b = items.findIndex((i) => i.id === other?.to);
@@ -114,6 +123,19 @@ export function musicProblems(plan, manifest, { draft = false } = {}) {
 }
 
 const dbGain = (db) => 10 ** (db / 20);
+
+/** Authored gains interpolate in dB and hold at either end, including between output frames in the bake. */
+export function gainAt(points, time) {
+  let k = 0;
+  while (k + 1 < points.length && points[k + 1].t <= time) k++;
+  const a = points[k], b = points[k + 1] || a;
+  const mix = b.t > a.t ? Math.max(0, Math.min(1, (time - a.t) / (b.t - a.t))) : 0;
+  return dbGain(a.db + (b.db - a.db) * mix);
+}
+
+export function authoredCueGain(cue, time) {
+  return time < cue.outputStart || time >= cue.outputEnd ? 0 : gainAt(cue.gainPoints, time);
+}
 
 /** Independent cue lanes permit two different tracks to overlap during a deterministic crossfade. */
 export function speakerMusicCues(plan, words = []) {
@@ -136,6 +158,7 @@ export function speakerMusicCues(plan, words = []) {
   }).sort((a, b) => a.outputStart - b.outputStart);
   for (let n = 0; n + 1 < cues.length; n++) {
     const a = cues[n], b = cues[n + 1];
+    if (a.section.gainPoints || b.section.gainPoints) continue;
     if (Math.abs(a.outputEnd - b.outputStart) > 1 / fps || a.track === b.track) continue;
     // Outgoing tail overlaps the incoming cue. Never leak it into an unnamed protected section.
     const boundaryItem = items.find((i) => i.id === b.section.from);
@@ -147,6 +170,15 @@ export function speakerMusicCues(plan, words = []) {
   }
   for (const cue of cues) {
     const startFrame = Math.round(cue.outputStart * fps), endFrame = Math.round(cue.outputEnd * fps), d = cue.outputEnd - cue.outputStart;
+    if (cue.section.gainPoints) {
+      cue.gainPoints = cue.section.gainPoints.map((p) => ({ t: cue.outputStart + Math.round(p.at * fps) / fps, db: p.db }));
+      cue.points = Array.from({ length: Math.round(plan.duration * fps) + 1 }, (_, frame) => {
+        const t = frame / fps;
+        return { t, v: authoredCueGain(cue, t) };
+      });
+      cue.duration = d;
+      continue;
+    }
     const localWords = words.filter((w) => w.end > cue.outputStart && w.start < cue.outputEnd).map((w) => ({ start: Math.max(0, w.start - cue.outputStart - 0.15), end: Math.min(d, w.end - cue.outputStart + 0.6) }));
     const level = dbGain(cue.section.gainDb ?? -18), high = cue.section.gainDb == null ? dbGain(-6) : Math.min(1, level * 2.2);
     const protectedCue = items.some((i) => i.protect && i.endFrame > startFrame && i.startFrame < endFrame);
@@ -178,7 +210,7 @@ export function speakerMusicCues(plan, words = []) {
 }
 
 export function speakerMusicLane(plan, words = []) {
-  if (!plan.music?.tracks && !plan.music?.sections?.some((s) => s.gainDb == null || s.start != null || s.fadeIn != null || s.fadeOut != null || s.snap)) return legacyMusicLane(plan, words);
+  if (!plan.music?.tracks && !plan.music?.sections?.some((s) => s.gainDb == null || s.start != null || s.fadeIn != null || s.fadeOut != null || s.snap || s.gainPoints != null)) return legacyMusicLane(plan, words);
   const cues = speakerMusicCues(plan, words);
   return Array.from({ length: Math.round(plan.duration * plan.canvas.fps) + 1 }, (_, n) => ({ t: n / plan.canvas.fps, v: cues.reduce((v, cue) => v + cue.points[n].v, 0) }));
 }

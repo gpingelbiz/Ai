@@ -38,3 +38,13 @@ test("keyword spacing is caught by the plan check, before any render", async () 
   plan.overlays.splice(1, 1);
   assert.deepEqual(motionProblems(plan, { sources: [{ id: "s", kind: "stage" }] }).filter((p) => /20 seconds apart/.test(p.message)), [], "k1 at 5 s and k3 at 30 s are 25 s apart");
 });
+
+test("topic word count is caught by the plan check", async () => {
+  const { validatePlan } = await import("../src/speaker-compile.mjs");
+  const manifest = { identity: { name: "Jane", roleLine: "Speaker", creditTv: "Briefcase model · NBC’s Deal or No Deal", creditOk: "Briefcase model, NBC’s Deal or No Deal" }, sources: [{ id: "s", kind: "stage", audio: "ok", rights: "r" }], proof: [], rights: [{ id: "r", status: "approved" }], music: [] };
+  const index = { sources: { s: { duration: 60, width: 1920, height: 1080, hasAudio: true, hasVideo: true } } };
+  const plan = (text) => ({ schemaVersion: 1, clientId: "c", version: "full", canvas: { width: 1920, height: 1080, fps: 30 }, items: [{ id: "a", kind: "clip", sourceId: "s", in: 0, out: 10, role: "core", audio: "source" }], overlays: [{ id: "t", at: "a", offset: 1, duration: 3, card: { type: "topic", text } }], cutaways: [] });
+  const msgs = (text) => validatePlan(plan(text), { manifest, index, draft: true }).map((p) => p.message || p).join(" | ");
+  assert.match(msgs(manifest.identity.creditTv), /1 to 7 words/);
+  assert.doesNotMatch(msgs(manifest.identity.creditOk), /1 to 7 words/);
+});

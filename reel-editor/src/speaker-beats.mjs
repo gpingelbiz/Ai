@@ -198,8 +198,8 @@ export function motionProblems(plan, manifest = {}) {
   }
   let cursor = 0;
   const spans = items.map((i) => {
-    const start = cursor; cursor += Math.round((i.kind === "clip" ? i.out - i.in : i.duration) * 30) / 30;
-    return { id: i.id, start, end: cursor, protect: i.protect };
+    const startFrame = cursor; cursor += Math.round((i.kind === "clip" ? i.out - i.in : i.duration) * 30);
+    return { id: i.id, startFrame, endFrame: cursor, start: startFrame / 30, end: cursor / 30, protect: i.protect };
   });
   // Keyword spacing from plan durations, so --plan-only catches it before a render (Julee draft 8 failed mid-render).
   const keywordStarts = (plan.overlays || []).filter((o) => o?.card?.type === "keyword" && spans.some((sp) => sp.id === o.at))
@@ -216,9 +216,13 @@ export function motionProblems(plan, manifest = {}) {
     if (!Number.isFinite(s.gainDb) || s.gainDb > 0 || s.gainDb < -96) add(s.id || "sfx", "SFX gainDb must be -96 to 0");
     if (s.duration != null && (!Number.isFinite(s.duration) || s.duration <= 0 || s.duration > 6)) add(s.id || "sfx", "SFX duration must be 0 to 6 seconds");
     if (s.start != null && (!Number.isFinite(s.start) || s.start < 0)) add(s.id || "sfx", "SFX start must be non-negative");
+    if (s.offset != null && (!Number.isFinite(s.offset) || s.offset < 0)) add(s.id || "sfx", "SFX offset must be non-negative");
     const protectedItem = target?.at ? byId.get(target.at) : target;
-    const span = spans.find((i) => i.id === protectedItem?.id), start = (span?.start || 0) + (target?.at ? target.offset : 0);
-    if (span && spans.some((i) => i.protect && i.start < start + (s.duration ?? 0.6) && i.end > start)) add(s.id || "sfx", "SFX cannot cover protected speech or reactions");
+    const span = spans.find((i) => i.id === protectedItem?.id);
+    const startFrame = (span?.startFrame || 0) + (target?.at ? Math.round(target.offset * 30) : 0) + Math.round((s.offset ?? 0) * 30);
+    const endFrame = Math.min(cursor, startFrame + Math.round((s.duration ?? 0.6) * 30));
+    if (startFrame >= cursor) add(s.id || "sfx", "SFX offset starts past the timeline");
+    if (span && spans.some((i) => i.protect && i.startFrame < endFrame && i.endFrame > startFrame)) add(s.id || "sfx", "SFX cannot cover protected speech or reactions");
   }
   return problems;
 }

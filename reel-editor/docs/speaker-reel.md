@@ -285,9 +285,10 @@ Each version has its own plan at `work/plans/<version>.json`, schemaVersion 1. F
 
 The overlay/cutaway example refers to additional items and sources; add them to a complete playable plan or omit those arrays.
 
-Items play back to back. Overlays and cutaways add no time.
+Items play back to back. Overlays and cutaways add no time. Cutaway visibility uses half-open integer frame windows `[startFrame, endFrame)` with both pictures on a 1/30 time base, including adjacent cutaways at fractional-second boundaries.
 
 - `item.kind`: clip or card.
+- `audioCarry` on a card: `{ "preceding": "close-clip", "sourceId": "stage", "in": 1047.90, "out": 1054.40 }` continues the immediately preceding clip's real source audio from the card's first frame. The preceding item must be an audible clip using that same source; the source must have usable audio (`audio:"ok"`, never `bad` or `none`). `in` must equal that clip's `out` within one frame. Resolution snaps it to the actual frame-rounded source end, preventing repeats or gaps. The range must stay within the source and fit the card duration. It reuses the preceding dialogue's channel selection, fixed gain and optional limiter settings without renormalizing applause. The preceding clip does not fade out at this join; the carry fades its final 0.25 seconds (or its whole duration if shorter), then pads the remaining card with silence. Carry audio adds no transcript words or captions. Its resolved source range and frame count appear in the plan and map.
 - `role`: opening, identity, proof, core, room, testimonial, close, booking or montage.
 - `fit`: `wash`, `blur`, `contain` or `cover`, on clips and picture-only cutaways (including montage shots). Omitted values resolve to `wash` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `wash` cover-scales the same frame to 192×108, blurs it there (sigma 20), adds 20% saturation, darkens luma to 0.8, and applies a soft vignette before smooth upscaling. Very light, static uniform grain (strength 2, seed 42) reduces 8-bit banding. The sharp picture floats above this colour field with a soft 32%-opacity shadow, offset 8 pixels down; the shadow is blurred once and repeated. The card fits within 90% of the visible width/height, including any letterbox, and never exceeds 1.5× source enlargement, so small sources can stay smaller. Explicit `blur` keeps the original graph: a full-frame blur, 35% darker and slightly desaturated, with no card margin or shadow. `contain` keeps the client-brand frame. These three preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources, warns above 1.5× and needs visual review. Explicit saved fits always win.
 - `audio`: source or mute. A source marked none/bad must use mute when selected as a timeline clip. A cutaway always supplies picture only.
@@ -332,6 +333,35 @@ Testimonials sit bottom-left inside a 5% inset on an 88% brand-surface plate wit
 Booking and inserted title text is vertically centred. With a headshot, text occupies the left column and the photo occupies about the right 43% of the canvas, at 80% canvas height, vertically centred, with the brand radius and top-centre cover framing. Without a photo, text uses the safe full width. Booking cards reserve six fully legible seconds; animation uses only additional hold time.
 
 `bookingUrlDisplay()` removes `https://`, `http://`, leading `www.`, query strings, fragments and trailing slashes for display only: `https://www.site.com/speaking/?campaign=reel` displays as `site.com/speaking`. The full approved URL remains in resolved card data and review text. The route uses the brand accent when it meets 4.5:1 contrast on the card surface, otherwise the card text colour. Headshot paths and permission ids cannot serve as topic copy.
+
+### Optional compact and premium cards
+
+All options below are opt-in. Omitted `layout` (or `layout: "standard"`) keeps the existing design. Copy still comes from the manifest, exact proof or, for keywords, the target transcript. Arbitrary coordinates, fonts and copy overrides remain unsupported.
+
+| Card | Options | Behaviour at 1920×1080 |
+| --- | --- | --- |
+| title | `reveal: "mask"` (default) or `"cut"` | Cut makes the complete title visible on its first frame, bypassing both the parent fade and the 0.6-second name mask. It cuts out at the end. |
+| title | `layout: "compact"`, optional `showRole: false` | Lower-left, 760 px maximum width, x96 with a 54 px bottom margin inside the active picture. Name 72–84 px; role 40 px. No rule or tagline. `showRole: false` displays only the manifest name and permits an absent role line. |
+| keyword | `layout: "compact"` | Lower-left, 620 px maximum width, same margins; 60–84 px display type. Six-frame entrance moves upward 24 px. Existing one-to-three-word, transcript, spacing and duration rules still apply. |
+| topic | `layout: "compact"` | Lower-left, 620 px maximum width, same margins; 44 px body type. Defaults to three seconds and cannot exceed three seconds. Existing one-to-seven-word and exact identity/proof rules still apply. |
+| quote | `layout: "premium"` | Pull quote at x216, width 1488 px, 92 px type with 1.12 line height; attribution name 44 px, descriptor/organization 36 px. Hard cut in/out, with at least five fully readable seconds; default five seconds, maximum eight. |
+| testimonial-name | `layout: "premium"` | For a portrait using `wash`, put the 60/40/36 px attribution in the left side space, at most 536 px wide. Use the target item's resolved fit, or `defaultFit` with indexed source geometry. Other fits and landscape sources retain their current placement. |
+| booking | `layout: "premium"` | 112 px name, 40 px role/instruction and 88 px bold booking URL or bureau name. The real headshot occupies a 560×840 portrait window at x1240/y120 without bars. The card, route and photo are visible on entry; supporting elements move into place over at most 0.30 seconds. Hold through the final frame. Reserve 6.3 seconds for six settled seconds; 6.6 seconds remains a good ending. |
+
+For example, these are card objects within the existing overlay/insert entries:
+
+```json
+{ "type": "title", "layout": "compact", "showRole": false, "reveal": "cut" }
+{ "type": "keyword", "layout": "compact", "text": "Taking action" }
+{ "type": "topic", "layout": "compact", "text": "TV host · FX sitcom star" }
+{ "type": "quote", "layout": "premium", "proofId": "approved-quote" }
+{ "type": "testimonial-name", "layout": "premium", "proofId": "approved-testimonial" }
+{ "type": "booking", "layout": "premium" }
+```
+
+The example text must already exist in the appropriate transcript or manifest/proof record. Compact title, keyword and topic layouts are overlays only. The new boxes reflow within the active picture for either supported letterbox without reducing type. Premium booking photos retain their fixed width and use the active picture's height. Oversize copy fails preflight instead of clipping or shrinking below these sizes. Collision checks use actual rectangles when client tokens are supplied; without them they reserve conservative boxes. Standard-only plans keep their historical collision rules.
+
+Composition passes the existing source index to card layout. Portrait side placement reserves the foreground's maximum wash width, including its push allowance; if dimensions are unavailable but the resolved fit is `wash`, it reserves the widest portrait. Low-resolution footage can leave more space than the card uses. These fixed layouts cannot detect a face or hand in landscape footage or a different picture cut over the target: inspect the finished reel. Review both five-second quotes at normal playback speed, and confirm the full approved booking destination remains correct.
 
 ## Index and compiled output
 
@@ -426,6 +456,17 @@ Sections name inclusive timeline items, never overlap authored spans, and are si
 
 For new cue plans, omitted `gainDb` means approximately −18 dB under speech and −6 dB without speech. An explicit `gainDb` sets the speech level, with restrained pause lifts. Ducking uses output words, anticipates speech by 150 ms and retains a 600 ms release; short gaps never swell. Protected passages do not swell. `fadeIn`/`fadeOut` are seconds; track crossfades clamp to the 0.5–1.0 second range. All cue automation uses integer output frames, and assets use exact 48 kHz sample padding.
 
+A music section may supply `gainPoints` instead of automatic ducking and swelling:
+
+```json
+{ "from": "opening", "to": "identity", "track": "build", "gainPoints": [
+  { "at": 0, "db": -24 }, { "at": 6, "db": -12 },
+  { "at": 10.8, "db": -60 }, { "at": 12, "db": -6 }
+] }
+```
+
+`at` is seconds from the section's first item start, inclusive of zero and the section end. Points must be a nonempty array, finite, strictly ascending and within the section; `db` is an absolute gain between −96 and 0. Times round to the nearest output frame; two points may not resolve to the same frame. Gains interpolate linearly **in dB**, hold before the first and after the last point inside the section, and are silent outside it. These points replace `gainDb`, speech ducking, pause swelling, automatic edge fades and crossfades touching that section; author the full build, vacuum, hit and fades in the points. Both single-file and multi-track sections support them. The baked 48 kHz bed evaluates the same dB envelope per stereo sample, without amplitude interpolation between frames. The example requires a section at least 12 seconds long.
+
 Composition measures the actual automated music bed and dialogue over matching speech windows. `work/<version>/music-qc.json` records both stem LUFS measurements. Speech less than **8 LU** above its bed produces a visible review warning. Unavailable measurements produce one warning, never a made-up pass. The existing `speakerNormalize` and encoded-file speaker QC retain the **−14 LUFS / ≤−1 dBTP** delivery target.
 
 ### Beat timing and montage shot lists
@@ -467,7 +508,7 @@ A keyword is an overlay with one to three verbatim, ordered words from the targe
 
 `position` is `center` (default) or `lower-third`; `motion` is `scale` (default) or `slide`. The entry takes six frames, then the card holds until its end. The overlay window is 1.2–2.5 seconds; use at least 1.4 seconds to retain 1.2 seconds fully settled. Keywords use only the client's display font, ink, surface and radius. Unknown/reordered words, words from another item/source, testimonials and keyword starts less than 20 seconds apart fail. Plan-only runs without transcripts warn that indexed-word validation is still required; rendering refuses ungrounded text. Speaker identification within a shared microphone source still requires operator review.
 
-Title and booking names reveal with a 0.6-second mask on the absolute GSAP timeline and then hold. Reserve at least **6.6 seconds** for a booking card to retain six fully readable seconds after its reveal; historical six-second plans remain accepted for compatibility.
+Standard title and booking names reveal with a 0.6-second mask on the absolute GSAP timeline and then hold. Reserve at least **6.6 seconds** for a standard booking card to retain six fully readable seconds after its reveal; historical six-second plans remain accepted for compatibility. Title `reveal: "cut"` and booking `layout: "premium"` use the entry behaviour described in the cards section above.
 
 `transition` on an incoming item is `cut` (default), `dip` (eight frames to the brand surface), `flash` (four frames, white at 60%) or `whip` (six frames of directional blur/slide). A reel may have at most four decorative transitions. Neither side of a decorative boundary may touch protected footage or the core; transitions never add time. Effects remain opt-in:
 
@@ -475,12 +516,12 @@ Title and booking names reveal with a 0.6-second mask on the absolute GSAP timel
 {
   "sfx": [{
     "id": "proof-whoosh", "at": "proof", "file": "music/whoosh.wav",
-    "gainDb": -24, "start": 0, "duration": 0.6
+    "gainDb": -24, "start": 0, "offset": 0.2, "duration": 0.6
   }]
 }
 ```
 
-`at` names an item with a decorative incoming transition or a card/overlay entry. `start` selects the source offset; `duration` defaults to 0.6 seconds (maximum six). `gainDb` is explicit (−96 to 0). The complete audible interval must avoid every protected item, including a reaction beginning after the cue. The file must be registered as a licensed `kind:"sfx"` asset. No stock applause, reactions or automatic whooshes are inserted.
+`at` names an item with a decorative incoming transition or a card/overlay entry. Optional `offset` is finite, non-negative seconds after that entry (default 0), rounded to the nearest output frame. The shifted start must precede the timeline end. Protection checks use that shifted audible interval, including its frame-rounded duration; the sound may extend past its anchor item, but cannot touch protected footage. `start` selects the source offset; `duration` defaults to 0.6 seconds (maximum six). `gainDb` is explicit (−96 to 0). The complete audible interval must avoid every protected item, including a reaction beginning after the cue. The file must be registered as a licensed `kind:"sfx"` asset. No stock applause, reactions or automatic whooshes are inserted.
 
 `composition.json` records individual cue files, source offsets, output times, volume points and warnings. Composition multiplies each prepared cue by its gain lane and sums them into one `assets/music-bed.wav`, which the HTML references with no renderer automation. HyperFrames 0.8 rendered some separate cue elements silent. Existing daily-reel presets, composer and golden-frame fixtures are unchanged. Run `node --test test/speaker-motion.test.mjs` for the offline motion/audio checks, then `npm test`; golden/Chrome rendering still needs the normal render environment.
 

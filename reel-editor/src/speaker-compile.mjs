@@ -12,6 +12,7 @@ import { readJSON, writeJSON, ensureDir, run, warn } from "./util.mjs";
 
 import { musicProblems } from "./speaker-music.mjs";
 import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
+import { cardOptionProblems } from "./speaker-cards.mjs";
 
 const ROLES = ["opening", "identity", "proof", "core", "room", "testimonial", "close", "booking", "montage"];
 const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic", "keyword"];
@@ -21,7 +22,7 @@ const seconds = (frame, fps) => frame / fps;
 
 /** Used proof includes testimonial excerpts and all card references, not just full-screen cards. */
 export function planUsage(plan, manifest) {
-  const sourceIds = new Set([...plan.items.filter((i) => i.kind === "clip").map((i) => i.sourceId), ...(plan.cutaways || []).map((x) => x.sourceId)]);
+  const sourceIds = new Set([...plan.items.filter((i) => i.kind === "clip").map((i) => i.sourceId), ...plan.items.filter((i) => i.audioCarry).map((i) => i.audioCarry.sourceId), ...(plan.cutaways || []).map((x) => x.sourceId)]);
   const proofIds = new Set();
   for (const entry of [...plan.items, ...(plan.overlays || [])]) {
     if (entry.proofId) proofIds.add(entry.proofId);
@@ -69,6 +70,10 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   const text = (id, value, expected, field) => { if (value != null && value !== expected) add(id, `card ${field} must match supplied manifest/proof text exactly`); };
   const card = (id, c) => {
     if (!c || !CARD_TYPES.includes(c.type)) { add(id, `invalid card.type: ${c?.type}`); return; }
+    const mode = overlays.some((o) => o?.id === id) ? "overlay" : "insert";
+    for (const p of cardOptionProblems(c, mode)) add(id, p.message);
+    const entry = [...items, ...overlays].find((i) => i?.id === id);
+    if (c.type === "topic" && c.layout === "compact" && entry?.duration > 3) add(id, "compact topic must hold at most 3s");
     const proof = c.proofId ? proofs.get(c.proofId) : null;
     if (c.proofId && !proof) add(id, `unknown proofId: ${c.proofId}`);
     if (c.type === "booking" || c.type === "title" && items.some((i) => i.id === id && i.kind === "card")) {
@@ -100,6 +105,8 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     if (c.type === "topic") {
       const allowed = [...Object.entries(identity).filter(([key, v]) => !["headshot", "headshotRights"].includes(key) && typeof v === "string").map(([, v]) => v), ...(manifest.proof || []).map((p) => p.text)];
       if (!c.text || !allowed.includes(c.text)) add(id, "topic text must come from manifest identity or proof");
+      // Same count as the card renderer, so --plan-only catches it instead of a render failing minutes in.
+      if (c.text && String(c.text).trim().split(/\s+/u).filter(Boolean).length > 7) add(id, "topic must have 1 to 7 words");
     }
     if (c.type === "logo-wall") {
       if (!LOGO_RELATIONSHIPS.includes(c.relationship)) add(id, "logo-wall relationship is invalid");
@@ -143,6 +150,21 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     } else if (i.kind === "card") {
       if (!finite(i.duration) || i.duration <= 0) add(i.id, "card duration must be positive seconds");
       card(i.id, i.card);
+    }
+    if (i.audioCarry != null) {
+      const carry = i.audioCarry, preceding = items[items.indexOf(i) - 1];
+      if (!carry || typeof carry !== "object" || Array.isArray(carry)) add(i.id, "audioCarry must be an object");
+      else {
+        if (i.kind !== "card") add(i.id, "audioCarry requires a card item");
+        if (!preceding || preceding.kind !== "clip" || carry.preceding !== preceding.id) add(i.id, "audioCarry.preceding must name the immediately preceding clip");
+        if (!preceding || carry.sourceId !== preceding.sourceId) add(i.id, "audioCarry must use the same source as the preceding clip");
+        range({ ...carry, id: i.id });
+        if (!finite(carry.in) || !finite(preceding?.out) || Math.abs(carry.in - preceding.out) > 1 / 30 + 1e-7) add(i.id, "audioCarry.in must be contiguous with the preceding clip out (within one frame)");
+        const start = preceding?.in + Math.round((preceding?.out - preceding?.in) * 30) / 30;
+        const frames = Math.round((carry.out - start) * 30);
+        if (frames < 1 || frames > Math.round(i.duration * 30)) add(i.id, "audioCarry must fit inside the card duration and last at least one frame");
+        if (sources.get(carry.sourceId)?.audio !== "ok" || sourceRow(index, carry.sourceId)?.hasAudio === false || preceding?.audio === "mute") add(i.id, "audioCarry needs usable source audio and an audible preceding clip");
+      }
     }
     if (finite(duration(i)) && Math.round(duration(i) * 30) < 1) add(i.id, "item is shorter than one output frame");
     for (const field of ["speed", "rate"]) if (i[field] != null && i[field] !== 1) add(i.id, "speaker clips must stay at speed 1.0");
@@ -214,6 +236,12 @@ export function resolvePlan(plan, options) {
     frame += frames;
     return resolved;
   });
+  for (const [n, item] of items.entries()) if (item.audioCarry) {
+    const preceding = items[n - 1];
+    // Use the actual end of the frame-rounded dialogue, so rounding never repeats or skips source sound.
+    const start = preceding.in + preceding.frames / fps;
+    item.audioCarry = { ...item.audioCarry, in: start, frames: Math.round((item.audioCarry.out - start) * fps) };
+  }
   const byId = new Map(items.map((i) => [i.id, i]));
   const overlays = (plan.overlays || []).map((o) => ({ ...o, ...timing(byId.get(o.at).startFrame + Math.round(o.offset * fps), Math.round(o.duration * fps)) }));
   const cutaways = (plan.cutaways || []).map((x) => ({ ...x, fit: x.fit || defaultFit(sourceRow(options.index, x.sourceId), plan.canvas), push: x.push ?? (x.out - x.in > 1.5 ? 1.06 : 1), stabilize: x.stabilize ?? (options.manifest.sources.find((s) => s.id === x.sourceId)?.handheld === true), ...timing(byId.get(x.over).startFrame + Math.round(x.offset * fps), Math.round((x.out - x.in) * fps)) }));
@@ -314,9 +342,10 @@ export function dialogueLevel(loudness, { limit = false } = {}) {
   return { gain, limiter: limit && gain > 0 ? "alimiter=limit=0.794:attack=5:release=50:level=false:latency=true" : "" };
 }
 
-async function preparedAudio(file, source, meta, item, dir) {
+async function preparedAudio(file, source, meta, item, dir, { preparation = null, savePreparation = () => {}, carry = false, continues = false } = {}) {
   const output = path.join(dir, `${item.id}.wav`), raw = path.join(dir, `${item.id}.f32`);
   const duration = item.frames / 30, samples = item.frames * 1600;
+  const audibleDuration = carry ? item.audioCarry.frames / 30 : duration;
   if (source.audio !== "ok" || item.audio === "mute" || !meta.hasAudio) {
     await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", String(duration), "-c:a", "pcm_s16le", output], { capture: true });
     return output;
@@ -325,14 +354,17 @@ async function preparedAudio(file, source, meta, item, dir) {
   if (stream == null) throw new Error(`${item.id}: audio stream is missing`);
   try {
     // Preserve packet offsets relative to the source origin, then lock samples to video frames.
-    await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(item.in), "-i", file, "-map", `0:${stream}`, "-vn", "-t", String(duration), "-af", `aresample=48000:async=1:first_pts=0,apad,atrim=end_sample=${samples}`, "-ac", "2", "-f", "f32le", raw], { capture: true });
-    const mono = safeMonoFilter(stereoStats(raw));
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(item.in), "-i", file, "-map", `0:${stream}`, "-vn", "-t", String(audibleDuration), "-af", `aresample=48000:async=1:first_pts=0,apad,atrim=end_sample=${samples}`, "-ac", "2", "-f", "f32le", raw], { capture: true });
+    const mono = preparation?.mono ?? safeMonoFilter(stereoStats(raw));
     if (!mono.includes("0.5")) warn(`${item.id}: stereo cancellation detected; using the louder channel`);
     const common = ["-y", "-loglevel", "error", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", raw];
     await run("ffmpeg", [...common, "-af", `${mono},pan=stereo|c0=c0|c1=c0`, "-c:a", "pcm_s16le", output], { capture: true });
-    const loudness = await measureLoudness(output);
-    const { gain, limiter } = dialogueLevel(loudness, { limit: item.limit === true });
-    await run("ffmpeg", [...common, "-af", `${mono},volume=${gain}dB,${limiter ? `${limiter},` : ""}pan=stereo|c0=c0|c1=c0,apad,atrim=end_sample=${samples},afade=t=in:d=0.01,afade=t=out:st=${Math.max(0, duration - 0.01)}:d=0.01`, "-c:a", "pcm_s16le", output], { capture: true });
+    const { gain, limiter } = preparation ?? dialogueLevel(await measureLoudness(output), { limit: item.limit === true });
+    savePreparation({ mono, gain, limiter });
+    const fades = carry
+      ? `atrim=end_sample=${item.audioCarry.frames * 1600},afade=t=out:st=${Math.max(0, audibleDuration - 0.25)}:d=${Math.min(0.25, audibleDuration)},apad,atrim=end_sample=${samples}`
+      : `apad,atrim=end_sample=${samples},afade=t=in:d=0.01${continues ? "" : `,afade=t=out:st=${Math.max(0, duration - 0.01)}:d=0.01`}`;
+    await run("ffmpeg", [...common, "-af", `${mono},volume=${gain}dB,${limiter ? `${limiter},` : ""}pan=stereo|c0=c0|c1=c0,${fades}`, "-c:a", "pcm_s16le", output], { capture: true });
     return output;
   } finally { fs.rmSync(raw, { force: true }); }
 }
@@ -351,6 +383,15 @@ async function verifyStreams(file, frames, id) {
   const meta = await probeSource(file), expected = frames / 30;
   const audio = meta.audioStreams?.[0];
   if (Math.abs(meta.videoDuration - expected) > 1 / 30 + 0.0001 || !audio || Math.abs(audio.duration - meta.videoDuration) > 1 / 30 + 0.0001) throw new Error(`${id}: A/V duration mismatch (video ${meta.videoDuration}s, audio ${audio?.duration}s, expected ${expected}s)`);
+}
+
+/** Overlay n is the zero-based main frame. Both pictures and shifted PTS use integer 1/30 ticks. */
+export function cutawayGraph(base, cut, output, start, end, shifted = "shift") {
+  return [
+    `[${base}]settb=expr=1/30,setpts=N[${shifted}_base]`,
+    `[${cut}]settb=expr=1/30,setpts=N+${start}[${shifted}]`,
+    `[${shifted}_base][${shifted}]overlay=0:0:eof_action=pass:repeatlast=0:enable='gte(n,${start})*lt(n,${end})',settb=expr=1/30,setpts=N[${output}]`,
+  ];
 }
 
 /** Each item is encoded once after rotation, SDR conversion and one scale. Cutaways share its dialogue stem. */
@@ -387,7 +428,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
     normalized.set(id, result);
     return result;
   };
-  const files = [];
+  const files = [], audioPreparations = new Map();
   for (const [number, item] of resolved.items.entries()) {
     if (!/^[a-zA-Z0-9_-]+$/.test(item.id)) throw new Error(`${item.id}: item id must use letters, numbers, underscores or hyphens`);
     const duration = item.frames / 30;
@@ -428,24 +469,31 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
       const raw = `${label}_raw`, fitted = `${label}_fitted`;
       filters.push(`[${inputCount++}:v]setpts=PTS-STARTPTS,${[normalization, "fps=30:start_time=0:round=near", grade?.filter, "tpad=stop_mode=clone:stop_duration=1", `trim=end_frame=${frames}`, "setpts=N/(30*TB)"].filter(Boolean).join(",")}[${raw}]`);
       filters.push(...fitGraph(raw, fitted, g, { fit: entry.fit, background: bg, frames, push: entry.push, active: resolved.activeBox }));
-      filters.push(`[${fitted}]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709[${label}]`);
+      filters.push(`[${fitted}]settb=expr=1/30,setpts=N,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709[${label}]`);
     };
     if (picture) await addPicture(item, item.frames, "picture0");
     else {
       args.push("-f", "lavfi", "-i", `color=c=${bg}:s=1920x1080:r=30:d=${duration}`);
-      filters.push(`[${inputCount++}:v]setsar=1[picture0]`);
+      filters.push(`[${inputCount++}:v]setsar=1,settb=expr=1/30,setpts=N[picture0]`);
     }
     const cuts = resolved.cutaways.filter((x) => x.over === item.id).sort((a, b) => a.startFrame - b.startFrame);
     let label = "picture0";
     for (const [n, x] of cuts.entries()) {
       await addPicture(x, x.frames, `cut${n}`);
-      const start = (x.startFrame - item.startFrame) / 30, end = (x.endFrame - item.startFrame) / 30;
-      filters.push(`[cut${n}]setpts=PTS+${start}/TB[shift${n}]`);
-      filters.push(`[${label}][shift${n}]overlay=0:0:eof_action=pass:repeatlast=0:enable='gte(t,${start})*lt(t,${end})'[picture${n + 1}]`);
+      const start = x.startFrame - item.startFrame, end = x.endFrame - item.startFrame;
+      filters.push(...cutawayGraph(label, `cut${n}`, `picture${n + 1}`, start, end, `shift${n}`));
       label = `picture${n + 1}`;
     }
-    const audio = picture ? await preparedAudio(assetPath(folder, picture.source.path), picture.source, picture.meta, item, scratch)
-      : await preparedAudio(null, { audio: "none" }, {}, item, scratch);
+    let audio;
+    if (picture) audio = await preparedAudio(assetPath(folder, picture.source.path), picture.source, picture.meta, item, scratch, {
+      savePreparation: (settings) => audioPreparations.set(item.id, settings), continues: resolved.items[number + 1]?.audioCarry?.preceding === item.id,
+    });
+    else if (item.audioCarry) {
+      const data = await input(item.audioCarry.sourceId);
+      audio = await preparedAudio(assetPath(folder, data.source.path), data.source, data.meta, { ...item, in: item.audioCarry.in }, scratch, {
+        preparation: audioPreparations.get(item.audioCarry.preceding), carry: true,
+      });
+    } else audio = await preparedAudio(null, { audio: "none" }, {}, item, scratch);
     args.push("-i", audio);
     const output = path.join(scratch, `${String(number).padStart(4, "0")}.mov`);
     chosenEncoder = await encode([...args, "-filter_complex", filters.join(";"), "-map", `[${label}]`, "-map", `${inputCount}:a:0`, "-r", "30", "-fps_mode", "cfr", "-frames:v", String(item.frames)], ["-pix_fmt", "yuv420p", ...SDR_TAGS, "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", output], chosenEncoder);
@@ -459,7 +507,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   await encode(["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", list, "-map", "0:v:0", "-map", "0:a:0", "-vf", "setpts=N/(30*TB),setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709", "-af", `aresample=48000:async=1:first_pts=0,apad,atrim=end_sample=${resolved.frames * 1600}`, "-r", "30", "-fps_mode", "cfr", "-frames:v", String(resolved.frames)], ["-pix_fmt", "yuv420p", ...SDR_TAGS, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", temporary], chosenEncoder);
   await verifyStreams(temporary, resolved.frames, resolved.version);
   fs.renameSync(temporary, base);
-  const map = [...resolved.items.map((i) => ({ itemId: i.id, kind: i.kind, sourceId: i.sourceId ?? null, in: i.in ?? null, out: i.out ?? null, start: i.start, end: i.end, outputStart: i.start, outputEnd: i.end, role: i.role })),
+  const map = [...resolved.items.map((i) => ({ itemId: i.id, kind: i.kind, sourceId: i.sourceId ?? null, in: i.in ?? null, out: i.out ?? null, start: i.start, end: i.end, outputStart: i.start, outputEnd: i.end, role: i.role, ...(i.audioCarry ? { audioCarry: i.audioCarry } : {}) })),
     ...resolved.cutaways.map((x) => ({ itemId: x.over, cutawayId: x.id, kind: "cutaway", sourceId: x.sourceId, in: x.in, out: x.out, start: x.start, end: x.end, outputStart: x.start, outputEnd: x.end, role: resolved.items.find((i) => i.id === x.over).role, pictureOnly: true }))];
   const words = timelineWords(resolved, index), captions = captionFiles(words, resolved.duration);
   writeJSON(path.join(lookDir, "look.json"), { schemaVersion: 1, look: resolved.look, activeBox: resolved.activeBox, sources: Object.fromEntries([...grades].map(([id, grade]) => [id, { key: grade.key, settings: grade.settings, fallback: grade.fallback || false }])) });
