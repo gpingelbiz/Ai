@@ -22,11 +22,16 @@ import { writeStarterPlan } from "./speaker-plan.mjs";
 import { measureSpeakerQuality, measurePlanAudio } from "./speaker-audio-quality.mjs";
 import { speakerStatus } from "../scripts/speaker-status.mjs";
 
+// Story comparisons have their own versioned cache; they never touch transcription or plans.
+import { groupCandidateFile } from "./speaker-stories.mjs";
+import { rankCandidates } from "./speaker-moments.mjs";
+
 export const SPEAKER_HELP = `reel speaker: build and review a client's landscape speaker reel
 
   reel speaker init <folder> [--add-new]
   reel speaker index <folder> [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model name] [--language en]
   reel speaker candidates <folder> [--source id]
+  reel speaker stories <folder>
   reel speaker reactions <folder> [--source id]
   reel speaker quality <folder> [--source id]
   reel speaker plan <folder> --version full|short|teaser [--replan]
@@ -42,6 +47,7 @@ Clean video is default. --captions (or plan.captions:true) burns verbatim captio
 --plan-only validates without ASR/rendering. --render-only reuses a fresh saved index.
 --draft permits visibly warned pending/unknown rights; final delivery requires approved rights.
 Plans in work/plans/ stay editable. Nothing publishes automatically.
+Candidates also compare repeated stories. stories re-groups saved candidates without ASR; BEST needs review.
 `;
 
 function errors(problems) {
@@ -154,7 +160,7 @@ export function parseSpeakerArgs(argv) {
     engine: { type: "string" }, language: { type: "string" }, model: { type: "string" }, source: { type: "string" }, replan: { type: "boolean" }, by: { type: "string" },
   } });
   if (values.help || !positionals.length) return { help: true };
-  const commands = ["init", "index", "candidates", "reactions", "quality", "plan", "draft", "comments", "approve", "deliver", "status"];
+  const commands = ["init", "index", "candidates", "reactions", "quality", "stories", "plan", "draft", "comments", "approve", "deliver", "status"];
   // "reel speaker plan" with no other argument is the client folder ./plan when it exists, not the command.
   const explicit = commands.includes(positionals[0]) && !(positionals.length === 1 && fs.existsSync(positionals[0]));
   const command = explicit ? positionals.shift() : "draft";
@@ -194,7 +200,9 @@ export async function analyzeSpeaker(folder, { source, reactionsOnly = false } =
     sources.push({ ...s, duration: row.duration, rightsStatus: rights.get(s.rights) });
   }
   if (reactionsOnly) return reactions;
-  const list = await candidates({ sources, words, lines, envelope, reactions, brief: manifest.brief, ...(ask ? { ask } : {}) });
+  // Source quality is optional. Missing measurement stays unknown, never bad.
+  for (const s of sources) if (index.sources[s.id]?.audioQuality) s.audioQuality = index.sources[s.id].audioQuality;
+  const list = await candidates({ sources, words, lines, envelope, reactions, brief: manifest.brief, options: { deferStoryGrouping: true }, ...(ask ? { ask } : {}) });
   for (const c of list) for (const entry of [c, ...(c.alternates || [])]) {
     entry.shots = (sourceShots[entry.sourceId] || []).filter((shot) => shot.start < entry.out && shot.end > entry.in);
   }
@@ -205,9 +213,24 @@ export async function analyzeSpeaker(folder, { source, reactionsOnly = false } =
   if (list.length) print(describeCandidates(list));
   print(`${list.length} candidates saved: ${file}`);
   // Optional, independently cached analysis never re-transcribes or blocks candidate discovery.
+  // Quality runs before story grouping so the best telling of a repeated story can prefer clean audio.
   try { await quality(folder, { source, manifest, index, print }); }
   catch (e) { print(`speaker audio quality unavailable (${e.message.split("\n")[0]})`); }
-  return list;
+  // Group the combined inventory once, including saved talks during a --source refresh.
+  const grouped = await regroupSpeakerStories(folder, { ask, print, limits: {} });
+  return grouped.candidates;
+}
+
+/** Saved candidates only. Keep every family when re-grouping an existing shortlist. */
+export async function regroupSpeakerStories(folder, deps = {}) {
+  folder = path.resolve(folder);
+  const result = await groupCandidateFile(folder, deps);
+  const list = result.groups.flatMap((g) => g.members);
+  const limit = list.length;
+  const limits = deps.limits ?? { stories: limit, oneLiners: limit, interactions: limit, testimonials: limit };
+  const ranked = rankCandidates(list, { ...limits, storyFamilies: result.groups });
+  writeCandidates(folder, ranked);
+  return { ...result, candidates: ranked };
 }
 
 export async function speakerMain(argv, deps = {}) {
@@ -220,6 +243,7 @@ export async function speakerMain(argv, deps = {}) {
   }
   if (command === "status") { const result = (deps.status || speakerStatus)(path.resolve(folder)); print(result); return result; }
   if (command === "quality") return (deps.quality || measureSpeakerQuality)(path.resolve(folder), { source: options.source, print });
+  if (command === "stories") return (deps.stories || regroupSpeakerStories)(folder, deps);
   if (command === "candidates" || command === "reactions") return (deps.analyze || analyzeSpeaker)(folder, { source: options.source, reactionsOnly: command === "reactions" }, deps);
   if (command === "plan") {
     const { manifest, problems } = loadManifest(folder); errors(problems); assertNoGreg(manifest, "manifest");
