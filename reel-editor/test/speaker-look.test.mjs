@@ -133,7 +133,10 @@ test("lavfi: blur keeps portrait sharp over visible background; small source, pu
   assert.ok(edge.some((v) => v > 20), `blur background visible: ${edge}`); assert.ok(center[0] > edge[0] + 35, `foreground opaque and sharp: ${center}, ${edge}`);
   const stabDir = path.join(dir, "Jane's : [stable], picture");
   const logs = [], stable = await stabilizeRange(file, { in: 0.2, out: 0.6, duration: 2 }, { sourceKey: "lavfi", cacheDir: stabDir, print: (s) => logs.push(s) });
-  assert.equal(stable.stabilized, true, logs.join("\n")); assert.ok((await probeSource(stable.file)).duration >= 1.5);
+  // Homebrew's ffmpeg ships without libvidstab (the Mini's does); there the fallback keeps the original picture.
+  const vidstab = /vidstabdetect/.test((await run("ffmpeg", ["-hide_banner", "-filters"], { capture: true })).out);
+  if (vidstab) { assert.equal(stable.stabilized, true, logs.join("\n")); assert.ok((await probeSource(stable.file)).duration >= 1.5); }
+  else { assert.equal(stable.stabilized, false); assert.equal(stable.file, file); assert.match(logs.join("\n"), /stabilisation unavailable/); }
   assert.equal(await lookReviewFrames(file, { at: 0.2, afterFilter: grade.filter, dir, name: "test" }), true); assert.ok(fs.existsSync(path.join(dir, "test-after.jpg")));
 });
 
