@@ -333,6 +333,35 @@ Booking and inserted title text is vertically centred. With a headshot, text occ
 
 `bookingUrlDisplay()` removes `https://`, `http://`, leading `www.`, query strings, fragments and trailing slashes for display only: `https://www.site.com/speaking/?campaign=reel` displays as `site.com/speaking`. The full approved URL remains in resolved card data and review text. The route uses the brand accent when it meets 4.5:1 contrast on the card surface, otherwise the card text colour. Headshot paths and permission ids cannot serve as topic copy.
 
+### Optional compact and premium cards
+
+All options below are opt-in. Omitted `layout` (or `layout: "standard"`) keeps the existing design. Copy still comes from the manifest, exact proof or, for keywords, the target transcript. Arbitrary coordinates, fonts and copy overrides remain unsupported.
+
+| Card | Options | Behaviour at 1920×1080 |
+| --- | --- | --- |
+| title | `reveal: "mask"` (default) or `"cut"` | Cut makes the complete title visible on its first frame, bypassing both the parent fade and the 0.6-second name mask. It cuts out at the end. |
+| title | `layout: "compact"`, optional `showRole: false` | Lower-left, 760 px maximum width, x96 with a 54 px bottom margin inside the active picture. Name 72–84 px; role 40 px. No rule or tagline. `showRole: false` displays only the manifest name and permits an absent role line. |
+| keyword | `layout: "compact"` | Lower-left, 620 px maximum width, same margins; 60–84 px display type. Six-frame entrance moves upward 24 px. Existing one-to-three-word, transcript, spacing and duration rules still apply. |
+| topic | `layout: "compact"` | Lower-left, 620 px maximum width, same margins; 44 px body type. Defaults to three seconds and cannot exceed three seconds. Existing one-to-seven-word and exact identity/proof rules still apply. |
+| quote | `layout: "premium"` | Pull quote at x216, width 1488 px, 92 px type with 1.12 line height; attribution name 44 px, descriptor/organization 36 px. Hard cut in/out, with at least five fully readable seconds; default five seconds, maximum eight. |
+| testimonial-name | `layout: "premium"` | For a portrait using `wash`, put the 60/40/36 px attribution in the left side space, at most 536 px wide. Use the target item's resolved fit, or `defaultFit` with indexed source geometry. Other fits and landscape sources retain their current placement. |
+| booking | `layout: "premium"` | 112 px name, 40 px role/instruction and 88 px bold booking URL or bureau name. The real headshot occupies a 560×840 portrait window at x1240/y120 without bars. The card, route and photo are visible on entry; supporting elements move into place over at most 0.30 seconds. Hold through the final frame. Reserve 6.3 seconds for six settled seconds; 6.6 seconds remains a good ending. |
+
+For example, these are card objects within the existing overlay/insert entries:
+
+```json
+{ "type": "title", "layout": "compact", "showRole": false, "reveal": "cut" }
+{ "type": "keyword", "layout": "compact", "text": "Taking action" }
+{ "type": "topic", "layout": "compact", "text": "TV host · FX sitcom star" }
+{ "type": "quote", "layout": "premium", "proofId": "approved-quote" }
+{ "type": "testimonial-name", "layout": "premium", "proofId": "approved-testimonial" }
+{ "type": "booking", "layout": "premium" }
+```
+
+The example text must already exist in the appropriate transcript or manifest/proof record. Compact title, keyword and topic layouts are overlays only. The new boxes reflow within the active picture for either supported letterbox without reducing type. Premium booking photos retain their fixed width and use the active picture's height. Oversize copy fails preflight instead of clipping or shrinking below these sizes. Collision checks use actual rectangles when client tokens are supplied; without them they reserve conservative boxes. Standard-only plans keep their historical collision rules.
+
+Composition passes the existing source index to card layout. Portrait side placement reserves the foreground's maximum wash width, including its push allowance; if dimensions are unavailable but the resolved fit is `wash`, it reserves the widest portrait. Low-resolution footage can leave more space than the card uses. These fixed layouts cannot detect a face or hand in landscape footage or a different picture cut over the target: inspect the finished reel. Review both five-second quotes at normal playback speed, and confirm the full approved booking destination remains correct.
+
 ## Index and compiled output
 
 Each source is probed for duration, dimensions, rotation, frame rates, sample aspect ratio, HDR, audio streams, channel layout and stream timing. Cache keys hash the file size, first 8 MiB and last 8 MiB, plus engine, model, language, selected stream and prompt. Renaming identical content reuses ASR; changed sampled bytes or settings invalidate it. This bounded fingerprint does not detect a same-size edit confined to the unsampled middle of a file larger than 16 MiB.
@@ -467,7 +496,7 @@ A keyword is an overlay with one to three verbatim, ordered words from the targe
 
 `position` is `center` (default) or `lower-third`; `motion` is `scale` (default) or `slide`. The entry takes six frames, then the card holds until its end. The overlay window is 1.2–2.5 seconds; use at least 1.4 seconds to retain 1.2 seconds fully settled. Keywords use only the client's display font, ink, surface and radius. Unknown/reordered words, words from another item/source, testimonials and keyword starts less than 20 seconds apart fail. Plan-only runs without transcripts warn that indexed-word validation is still required; rendering refuses ungrounded text. Speaker identification within a shared microphone source still requires operator review.
 
-Title and booking names reveal with a 0.6-second mask on the absolute GSAP timeline and then hold. Reserve at least **6.6 seconds** for a booking card to retain six fully readable seconds after its reveal; historical six-second plans remain accepted for compatibility.
+Standard title and booking names reveal with a 0.6-second mask on the absolute GSAP timeline and then hold. Reserve at least **6.6 seconds** for a standard booking card to retain six fully readable seconds after its reveal; historical six-second plans remain accepted for compatibility. Title `reveal: "cut"` and booking `layout: "premium"` use the entry behaviour described in the cards section above.
 
 `transition` on an incoming item is `cut` (default), `dip` (eight frames to the brand surface), `flash` (four frames, white at 60%) or `whip` (six frames of directional blur/slide). A reel may have at most four decorative transitions. Neither side of a decorative boundary may touch protected footage or the core; transitions never add time. Effects remain opt-in:
 

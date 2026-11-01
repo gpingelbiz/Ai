@@ -205,6 +205,10 @@ export function letterboxCards(fragment, box, plan) {
     const i = ids.indexOf(row.id);
     if (i < 0) throw new Error(`speaker card ${row.id}: missing from letterbox plan`);
     const l = row.layout, overlay = row.mode === "overlay", identity = ["title", "booking"].includes(row.type) && !overlay;
+    if (l.activeAware) {
+      if (l.y < 0 || l.y + l.h > box.height) throw new Error(`speaker card ${row.id}: cannot fit inside letterbox active area`);
+      return { ...row, activeBox: box, layout: { ...l, y: l.y + box.y } };
+    }
     const inset = l.inset || l.x;
     // Insert cards keep their content height; a card whose content is taller than the reduced box cannot fit.
     const content = l.contentHeight || l.h;

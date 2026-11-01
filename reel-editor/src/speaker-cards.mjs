@@ -7,6 +7,7 @@ import { identityLeaks } from "./speaker-guard.mjs";
 import { assetPath, headshotProblems } from "./speaker-intake.mjs";
 import { existsSync } from "node:fs";
 import { PKG_ROOT, run } from "./util.mjs";
+import { activeBox, defaultFit } from "./speaker-look.mjs";
 
 const TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "topic", "keyword"];
 const HEADINGS = { "spoke-at": "Spoke at", client: "Hired by", "featured-in": "Featured in", "available-at": "Available at" };
@@ -20,6 +21,17 @@ const rectOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + 
 
 // Home-folder names in file paths are masked by speaker-guard.mjs; all copy is still inspected.
 const identityLeak = (value) => identityLeaks(value).length > 0;
+
+/** Shared by plan and card validation. Omitted options retain the original design. */
+export function cardOptionProblems(card, mode = "insert") {
+  const problems = [], add = (message) => problems.push(problem("card-option", message));
+  const layouts = { title: "compact", keyword: "compact", topic: "compact", quote: "premium", booking: "premium", "testimonial-name": "premium" };
+  if (Object.hasOwn(card, "layout") && !["standard", layouts[card.type]].filter(Boolean).includes(card.layout)) add(`${card.type}: invalid layout`);
+  if (card.layout === "compact" && mode !== "overlay") add(`${card.type}: compact layout must be an overlay`);
+  if (Object.hasOwn(card, "reveal") && (card.type !== "title" || !["mask", "cut"].includes(card.reveal))) add("title reveal must be mask or cut");
+  if (Object.hasOwn(card, "showRole") && (card.type !== "title" || typeof card.showRole !== "boolean")) add("title showRole must be true or false");
+  return problems;
+}
 
 function rightsProblems(proof, manifest, final) {
   const right = (manifest.rights || []).find((r) => r.id === proof.rights);
@@ -62,13 +74,20 @@ export function resolveCard(input, { manifest = {}, final = false, clientDir, mo
   };
   const allowed = new Set(["type"]);
   const allow = (...keys) => keys.forEach((key) => allowed.add(key));
+  allow("layout");
+  if (supplied("layout")) card.layout = source.layout;
+  if (type === "title") {
+    allow("reveal", "showRole");
+    for (const key of ["reveal", "showRole"]) if (supplied(key)) card[key] = source[key];
+  }
+  problems.push(...cardOptionProblems(source, mode));
 
   if (type === "title" || type === "booking") {
     allow("name", "roleLine");
     field("name", identity.name);
     field("roleLine", identity.roleLine);
     if (!card.name) add("card-name", "manifest.identity.name is missing");
-    if (!card.roleLine) add("card-role", "manifest.identity.roleLine is missing");
+    if (!card.roleLine && card.showRole !== false) add("card-role", "manifest.identity.roleLine is missing");
     if (type === "booking" || mode === "insert") {
       if (identity.headshot != null) card.headshot = identity.headshot;
       problems.push(...headshotProblems(clientDir, manifest, { final }).map((p) => ({ ...p, code: "card-headshot" })));
@@ -162,8 +181,10 @@ export function resolveCard(input, { manifest = {}, final = false, clientDir, mo
   return { card, problems };
 }
 
-/** Reading time is rounded up to complete frames. A 25-word excerpt uses the maximum eight seconds. */
+/** Standard reading time rounds up to frames; premium pull quotes reserve five static seconds. */
 export function cardDuration(card, { fps = 30 } = {}) {
+  if (card.type === "quote" && card.layout === "premium") return 5;
+  if (card.type === "topic" && card.layout === "compact") return 3;
   if (card.type === "quote") return ceilFrame(Math.max(5, Math.min(8, words(card.text) / 3 + 1.5)), fps);
   return ({ title: 4, booking: 6, "testimonial-name": 4, "logo-wall": 5, topic: 4, keyword: 2 })[card.type] || 4;
 }
@@ -224,6 +245,54 @@ function fitText(text, preferred, minimum, width, lineHeight) {
   return { fontSize, minimum, lines, height: Math.ceil(lines * fontSize * lineHeight) };
 }
 
+// New layouts use coordinates local to the active picture. The letterbox adapter only moves their parent.
+function optionLayout(card, canvas, context) {
+  const { width: W, height } = dimensions(canvas), H = canvas?.activeBox?.height ?? height;
+  const inset = 96, bottom = 54, pad = 24, gap = 12;
+  if (card.layout === "compact") {
+    const w = card.type === "title" ? 760 : 620, inner = w - pad * 2;
+    const name = card.type === "title" ? fitText(card.name, 84, 72, inner, 1.12) : null;
+    const role = name && card.showRole !== false ? fitText(card.roleLine, 40, 40, inner, 1.25) : null;
+    const text = !name ? fitText(card.text, card.type === "keyword" ? 84 : 44, card.type === "keyword" ? 60 : 44, inner, 1.12) : null;
+    const h = (name?.height || text?.height || 0) + (role ? role.height + gap : 0) + pad * 2;
+    return { x: inset, y: H - bottom - h, w, h, pad, gap, name, role, text, activeAware: true, fits: h <= H * 0.36 };
+  }
+  if (card.layout !== "premium") return null;
+  if (card.type === "booking") {
+    const w = 1000, photo = card.headshot ? { x: 1240, y: H / 9, w: 560, h: H * 7 / 9 } : null;
+    const name = fitText(card.name, 112, 112, w, 1.12), role = fitText(card.roleLine, 40, 40, w, 1.25);
+    const text = fitText(card.text, 40, 40, w, 1.25);
+    const route = fitText(card.mode === "bureau" ? card.bureauName : bookingUrlDisplay(card.url), 88, 88, w, 1.25);
+    const gap = 32, h = [name, role, text, route].reduce((sum, f) => sum + f.height, 0) + gap * 3;
+    return { x: 120, y: (H - h) / 2, w, h, inset: 54, gap, name, role, text, route, photo, activeAware: true, fits: h <= H - 108 };
+  }
+  if (card.type === "quote") {
+    const w = 1488, quote = fitText(card.text, 92, 92, w, 1.12);
+    const name = fitText(card.name, 44, 44, w, 1.25);
+    const title = card.title ? fitText(card.title, 36, 36, w, 1.25) : null;
+    const org = card.org ? fitText(card.org, 36, 36, w, 1.25) : null;
+    const h = 102 + quote.height + name.height + (title?.height || 0) + (org?.height || 0) + 48 + [title, org].filter(Boolean).length * 8;
+    return { x: 216, y: (H - h) / 2, w, h, quote, name, title, org, activeAware: true, fits: h <= H - 108 };
+  }
+  if (card.type === "testimonial-name") {
+    const item = context?.item, meta = context?.meta || {};
+    const fit = item?.fit || defaultFit(meta, canvas);
+    // Without dimensions, reserve the widest possible portrait; explicit non-wash fits stay unchanged.
+    const sar = String(meta.sampleAspectRatio || "1:1").split(":").map(Number);
+    const pixelAspect = sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1;
+    const aspect = meta.width > 0 && meta.height > 0 ? meta.width / meta.height * (meta.rotationCw % 180 === 90 ? 1 / pixelAspect : pixelAspect) : 1;
+    if (fit !== "wash" || meta.width > 0 && meta.height > 0 && aspect >= 1) return null;
+    const portraitWidth = H * 0.9 * aspect;
+    const w = Math.min(536, Math.floor((W - portraitWidth) / 2 - inset - 48)), inner = w - pad * 2;
+    const name = fitText(card.name, 60, 60, inner, 1.25);
+    const title = card.title ? fitText(card.title, 40, 40, inner, 1.25) : null;
+    const org = card.org ? fitText(card.org, 36, 36, inner, 1.25) : null;
+    const h = name.height + (title?.height || 0) + (org?.height || 0) + [title, org].filter(Boolean).length * gap + pad * 2;
+    return { x: inset, y: H - bottom - h, w, h, pad, gap, name, title, org, portrait: { x: (W - portraitWidth) / 2, w: portraitWidth }, activeAware: true, fits: w > pad * 2 && h <= H - 108 };
+  }
+  return null;
+}
+
 // Identity inserts share one text/photo grid. Overlay titles keep their compact footprint over footage.
 function identityLayout(card, { tokens, canvas } = {}) {
   const t = brandTokens(tokens), { width: W, height: H } = dimensions(canvas);
@@ -231,18 +300,21 @@ function identityLayout(card, { tokens, canvas } = {}) {
   const photo = card.headshot ? { x: W - inset - W * 0.43, y: H * 0.1, w: W * 0.43, h: H * 0.8 } : null;
   const w = photo ? photo.x - inset - t.spacing.lg : W - inset * 2;
   const name = fitText(card.name, Math.max(84, t.typeScale.xl), 84, w, Math.max(1.1, t.type.display.lineHeight));
-  const role = fitText(card.roleLine, Math.max(40, t.typeScale.md), 40, w, t.type.body.lineHeight);
+  const role = card.showRole === false ? null : fitText(card.roleLine, Math.max(40, t.typeScale.md), 40, w, t.type.body.lineHeight);
   const text = card.type === "booking" ? fitText(card.text, Math.max(40, t.typeScale.md), 40, w, t.type.body.lineHeight) : null;
   const route = card.type === "booking" ? fitText(card.mode === "bureau" ? card.bureauName : bookingUrlDisplay(card.url), Math.max(52, t.typeScale.lg), 52, w, t.type.body.lineHeight) : null;
   const tagline = card.type === "title" && card.tagline ? fitText(card.tagline, Math.max(30, t.typeScale.sm), 30, w, t.type.body.lineHeight) : null;
   const fields = [name, role, text, route, tagline].filter(Boolean);
-  const ruleHeight = card.type === "title" ? t.spacing.xs / 2 : 0;
+  const ruleHeight = card.type === "title" && card.showRole !== false ? t.spacing.xs / 2 : 0;
   const h = fields.reduce((sum, field) => sum + field.height, 0) + gap * (fields.length - 1 + (ruleHeight ? 1 : 0)) + ruleHeight;
   return { x: inset, y: (H - h) / 2, w, h, inset, gap, name, role, text, route, tagline, photo, fits: w > 0 && h <= H - inset * 2 };
 }
 
 /** Shrink to the minimum, then wrap. Very long copy fails preflight instead of shrinking below readable sizes. */
-export function bookingLayout(card, options) { return identityLayout({ ...card, type: "booking" }, options); }
+export function bookingLayout(card, options = {}) {
+  card = { ...card, type: "booking" };
+  return optionLayout(card, options.canvas) || identityLayout(card, options);
+}
 
 /** A single evenly spaced row; every logo receives the same height and contain box. */
 export function logoWallLayout(count, { tokens, canvas } = {}) {
@@ -281,7 +353,9 @@ function cssRules(t, colors) {
 `;
 }
 
-function baseLayout(card, t, canvas, mode) {
+function baseLayout(card, t, canvas, mode, context) {
+  const option = optionLayout(card, canvas, context);
+  if (option) return option;
   const { width: W, height: H } = dimensions(canvas), inset = Math.max(W * 0.05, t.spacing.xxl);
   const body = Math.max(30, t.typeScale.sm);
   if (card.type === "keyword") {
@@ -308,7 +382,7 @@ function baseLayout(card, t, canvas, mode) {
   const titleName = fitText(card.name, Math.max(72, mode === "overlay" ? t.typeScale.xl : t.typeScale.display), 72, innerWidth, t.type.display.lineHeight);
   let contentHeight = 0, quote = null;
   if (card.type === "title") {
-    contentHeight = titleName.height + fitText(card.roleLine, Math.max(40, t.typeScale.md), 40, innerWidth, t.type.body.lineHeight).height
+    contentHeight = titleName.height + (card.showRole === false ? 0 : fitText(card.roleLine, Math.max(40, t.typeScale.md), 40, innerWidth, t.type.body.lineHeight).height)
       + (card.tagline ? fitText(card.tagline, Math.max(30, t.typeScale.sm), 30, innerWidth, t.type.body.lineHeight).height : 0)
       + t.spacing.md * (card.tagline ? 3 : 2) + t.spacing.xs / 2;
   } else if (card.type === "quote") {
@@ -327,17 +401,22 @@ function attribution(card, t) {
 }
 
 /** One resolved card. Pure output; callers validate provenance with resolveCard before calling a renderer. */
-function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert", start = 0, end, manifest = {}, clientDir } = {}) {
+function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert", start = 0, end, manifest = {}, clientDir, context } = {}) {
   if (identityLeak(card)) throw new Error(`speaker card ${id}: contains Greg's identity`);
-  const t = brandTokens(tokens), size = dimensions(canvas), colors = palette(t), layout = baseLayout(card, t, size, mode);
+  const t = brandTokens(tokens), size = dimensions(canvas), colors = palette(t), layout = baseLayout(card, t, canvas, mode, context);
   const duration = cardDuration(card, size);
   const stop = roundFrame(end ?? start + duration, size.fps);
   start = roundFrame(start, size.fps);
   if (!Number.isFinite(start) || !Number.isFinite(stop) || start < 0 || stop <= start) throw new Error(`speaker card ${id}: invalid output start/end`);
   const minHold = card.type === "booking" ? 6 : ["testimonial-name", "logo-wall"].includes(card.type) ? 4 : card.type === "quote" ? duration : 3;
   const slack = Math.max(0, Math.round((stop - start - minHold) * size.fps));
-  const enterFrames = Math.min(9, Math.max(0, Math.floor(t.motion.enterMs * size.fps / 1000)), Math.floor(slack / 2));
-  const exitFrames = Math.min(6, Math.max(0, Math.floor(t.motion.exitMs * size.fps / 1000)), slack - enterFrames);
+  let enterFrames = Math.min(9, Math.max(0, Math.floor(t.motion.enterMs * size.fps / 1000)), Math.floor(slack / 2));
+  let exitFrames = Math.min(6, Math.max(0, Math.floor(t.motion.exitMs * size.fps / 1000)), slack - enterFrames);
+  if (card.type === "title" && card.reveal === "cut") { enterFrames = 0; exitFrames = 0; }
+  if (card.type === "quote" && card.layout === "premium") { enterFrames = 0; exitFrames = 0; }
+  if (card.type === "booking" && card.layout === "premium") { enterFrames = Math.min(9, slack); exitFrames = 0; }
+  if (card.type === "topic" && card.layout === "compact" && stop - start > 3 + 1e-7) throw new Error(`speaker card ${id}: compact topic must hold at most 3s`);
+  if (card.type === "quote" && card.layout === "premium" && stop - start < 5 - 1e-7) throw new Error(`speaker card ${id}: premium quote needs five fully readable seconds`);
   const assets = [];
   const fields = [];
   const display = (value, className, fontSize) => `<div class="${className}" style="font-size:${fontSize}px">${esc(value)}</div>`;
@@ -345,9 +424,10 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
   const copyStyle = `left:${x}px;top:${y}px;width:${w}px;height:${h}px`;
   let content = "";
   if (card.type === "title") {
-    const pad = mode === "overlay" ? t.spacing.sm : 0;
-    content = `<div class="sc-copy" style="${mode === "overlay" ? `inset:${pad}px` : copyStyle}">${display(card.name, "sc-name", layout.name.fontSize)}<div class="sc-rule"></div>${display(card.roleLine, "sc-body", layout.role?.fontSize ?? Math.max(40, t.typeScale.md))}${card.tagline ? display(card.tagline, "sc-body", layout.tagline?.fontSize ?? Math.max(30, t.typeScale.sm)) : ""}</div>`;
-    fields.push(card.name, card.roleLine, card.tagline);
+    const compact = card.layout === "compact", pad = compact ? layout.pad : mode === "overlay" ? t.spacing.sm : 0;
+    const nameClass = compact ? "sc-name sc-compact-name" : "sc-name";
+    content = `<div class="sc-copy" style="${mode === "overlay" ? `inset:${pad}px` : copyStyle}${compact ? `;gap:${layout.gap}px` : ""}">${display(card.name, nameClass, layout.name.fontSize)}${!compact && card.showRole !== false ? '<div class="sc-rule"></div>' : ""}${card.showRole !== false ? display(card.roleLine, compact ? "sc-body sc-compact-role" : "sc-body", layout.role?.fontSize ?? Math.max(40, t.typeScale.md)) : ""}${!compact && card.tagline ? display(card.tagline, "sc-body", layout.tagline?.fontSize ?? Math.max(30, t.typeScale.sm)) : ""}</div>`;
+    fields.push(card.name, ...(card.showRole !== false ? [card.roleLine] : []), ...(!compact ? [card.tagline] : []));
   } else if (card.type === "booking") {
     const routeColor = contrast(t.colors.accent, colors.surface) >= 4.5 ? t.colors.accent : colors.ink;
     content = `<div class="sc-copy" style="${copyStyle};gap:${layout.gap}px">${display(card.name, "sc-name", layout.name.fontSize)}${display(card.roleLine, "sc-body", layout.role.fontSize)}${display(card.text, "sc-body", layout.text.fontSize)}<div class="sc-body sc-route" style="font-size:${layout.route.fontSize}px;color:${routeColor}">${esc(card.mode === "bureau" ? card.bureauName : bookingUrlDisplay(card.url))}</div></div>`;
@@ -356,7 +436,9 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
     content = `<div class="sc-copy sc-attribution" style="inset:${layout.pad}px;gap:${layout.gap}px">${display(card.name, "sc-body sc-route", layout.name.fontSize)}${card.title ? display(card.title, "sc-body", layout.title.fontSize) : ""}${card.org ? display(card.org, "sc-body", layout.org.fontSize) : ""}</div>`;
     fields.push(card.name, card.title, card.org);
   } else if (card.type === "quote") {
-    content = `<div class="sc-copy" style="${copyStyle}"><div class="sc-mark" aria-hidden="true" style="font-size:${Math.round(layout.quote.fontSize * 2.4)}px;height:${Math.ceil(layout.quote.fontSize * 1.1)}px">&#8220;</div><blockquote class="sc-quote" style="font-size:${layout.quote.fontSize}px;max-width:80%">${esc(card.text)}</blockquote>${attribution(card, t)}</div>`;
+    const premium = card.layout === "premium";
+    const credit = premium ? `<div class="sc-attribution sc-body" style="font-size:36px;line-height:1.25;gap:8px"><strong style="font-size:44px">${esc(card.name)}</strong>${card.title ? `<span>${esc(card.title)}</span>` : ""}${card.org ? `<span>${esc(card.org)}</span>` : ""}</div>` : attribution(card, t);
+    content = `<div class="sc-copy" style="${copyStyle}${premium ? ";gap:24px" : ""}"><div class="sc-mark" aria-hidden="true" style="font-size:${Math.round(layout.quote.fontSize * 2.4)}px;height:${Math.ceil(layout.quote.fontSize * 1.1)}px">&#8220;</div><blockquote class="sc-quote" style="font-size:${layout.quote.fontSize}px;max-width:${premium ? "100%;line-height:1.12" : "80%"}">${esc(card.text)}</blockquote>${credit}</div>`;
     fields.push(card.text, card.name, card.title, card.org);
   } else if (card.type === "logo-wall") {
     const boxes = logoWallLayout(card.logos.length, { tokens: t, canvas: size });
@@ -374,10 +456,10 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
     }).join("");
     fields.push(card.heading);
   } else if (card.type === "keyword") {
-    content = `<div class="sc-copy sc-name" style="inset:0;font-size:${layout.text.fontSize}px">${esc(card.text)}</div>`;
+    content = `<div class="sc-copy sc-name" style="inset:0;font-size:${layout.text.fontSize}px${card.layout === "compact" ? `;padding:${layout.pad}px;line-height:1.12;align-items:flex-start;text-align:left` : ""}">${esc(card.text)}</div>`;
     fields.push(card.text);
   } else if (card.type === "topic") {
-    content = `<div class="sc-copy sc-body" style="inset:${t.spacing.md}px;font-size:${layout.text.fontSize}px">${esc(card.text)}</div>`;
+    content = `<div class="sc-copy sc-body" style="inset:${card.layout === "compact" ? layout.pad : t.spacing.md}px;font-size:${layout.text.fontSize}px${card.layout === "compact" ? ";line-height:1.12" : ""}">${esc(card.text)}</div>`;
     fields.push(card.text);
   } else throw new Error(`speaker card ${id}: unknown type ${card.type}`);
   if (layout.photo) {
@@ -390,15 +472,24 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
   }
   const overlay = mode === "overlay" || ["testimonial-name", "topic"].includes(card.type);
   const bold = Math.max(700, ...t.type.body.weights);
+  const optionCSS = card.layout === "compact" && card.type === "title" ? `\n#${id} .sc-compact-name{line-height:1.12}#${id} .sc-compact-role{line-height:1.25}` : "";
+  const premiumCSS = card.layout === "premium" && ["booking", "testimonial-name"].includes(card.type) && layout.activeAware ? `\n#${id} .sc-name{line-height:1.12}#${id} .sc-body{line-height:1.25}` : "";
   const html = `<div id="${esc(id)}" class="speaker-card clip sc-${overlay ? "overlay" : "insert"} sc-${card.type}" style="--sc-bold:${bold};${overlay ? copyStyle : ""}" data-start="${start}" data-duration="${stop - start}" data-track-index="4">${content}</div>`;
-  const enter = enterFrames / size.fps, exit = exitFrames / size.fps;
+  const enter = card.type === "keyword" && card.layout === "compact" ? 6 / size.fps : enterFrames / size.fps, exit = exitFrames / size.fps;
   let timeline = `tl.fromTo(${js(`#${id}`)}, {autoAlpha:0}, {autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false}, ${start});\ntl.fromTo(${js(`#${id}`)}, {autoAlpha:1}, {autoAlpha:0,duration:${exit},ease:${js(t.motion.exitEase)},immediateRender:false}, ${stop - exit});`;
+  if (card.type === "title" && card.reveal === "cut" || card.type === "quote" && card.layout === "premium") {
+    timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
+  }
+  if (card.type === "booking" && card.layout === "premium") {
+    // The real portrait and route are present on the entry frame; only supporting elements move into place.
+    timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.fromTo(${js(`#${id} .sc-copy > :not(.sc-route)`)},{y:12},{y:0,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
+  }
   if (card.type === "keyword") {
     const target = js(`#${id} .sc-copy`), enter = 6 / size.fps;
-    timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.fromTo(${target},${card.motion === "slide" ? "{y:48,autoAlpha:0}" : "{scale:0.82,autoAlpha:0}"},{y:0,scale:1,autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
+    timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.fromTo(${target},${card.layout === "compact" ? "{y:24,autoAlpha:0}" : card.motion === "slide" ? "{y:48,autoAlpha:0}" : "{scale:0.82,autoAlpha:0}"},{y:0,scale:1,autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
   }
-  return { html, css: cssRules(t, colors), timeline, layout, assets, warnings: colors.warnings,
-    durationHints: { min: card.type === "keyword" ? 1.2 : card.type === "booking" ? 6 : card.type === "testimonial-name" ? 4 : card.type === "quote" ? duration : card.type === "logo-wall" ? 4 : 3, recommended: duration, max: card.type === "keyword" ? 2.5 : card.type === "quote" ? 8 : card.type === "logo-wall" ? 6 : null, enter, exit, fullyLegible: stop - start - enter - exit },
+  return { html, css: cssRules(t, colors) + optionCSS + premiumCSS, timeline, layout, assets, warnings: colors.warnings,
+    durationHints: { min: card.type === "keyword" ? 1.2 : card.type === "booking" ? 6 : card.type === "testimonial-name" ? 4 : card.type === "quote" ? duration : card.type === "logo-wall" ? 4 : 3, recommended: duration, max: card.type === "keyword" ? 2.5 : card.type === "quote" ? 8 : card.type === "logo-wall" ? 6 : card.type === "topic" && card.layout === "compact" ? 3 : null, enter, exit, fullyLegible: stop - start - enter - exit },
     text: fields.filter(Boolean) };
 }
 
@@ -425,12 +516,22 @@ function cardEntries(plan) {
     ...(plan.overlays || []).map((entry) => ({ entry, mode: "overlay" }))];
 }
 
+function cardContext(plan, entry, index) {
+  const item = (plan.items || []).find((i) => i.id === entry.at);
+  return { item, meta: index?.sources?.[item?.sourceId] || index?.[item?.sourceId] };
+}
+
+function cardCanvas(plan, canvas = plan.canvas) {
+  return { ...canvas, activeBox: canvas?.activeBox || activeBox(plan.look?.letterbox, canvas) };
+}
+
 /** Fragment contract: html + css + timeline (statements on the caller's paused `tl`), assets and review entries.
  * Pass clientDir for manifest-relative logos, or provide absolute proof files. No files or JSON are written here.
  */
-export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas = resolvedPlan.canvas, clientDir, final = false, log = console.log } = {}) {
+export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas = resolvedPlan.canvas, clientDir, final = false, index, log = console.log } = {}) {
+  canvas = cardCanvas(resolvedPlan, canvas);
   const t = brandTokens(tokens), size = dimensions(canvas);
-  const problems = cardChecks(resolvedPlan, { manifest, final, tokens: t, clientDir });
+  const problems = cardChecks(resolvedPlan, { manifest, final, tokens: t, clientDir, index, canvas });
   if (identityLeak(resolvedPlan)) throw new Error("speaker cards: plan contains Greg's identity");
   if (final && problems.some((p) => p.level === "error")) throw new Error(`speaker cards final preflight: ${problems.filter((p) => p.level === "error").map((p) => p.message).join("; ")}`);
   // Structural review findings are returned; invalid card copy and unsafe layouts cannot be rendered.
@@ -440,7 +541,7 @@ export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas =
     const errors = resolved.problems.filter((p) => p.level === "error");
     if (errors.length) throw new Error(`speaker card ${entry.id}: ${errors.map((p) => p.message).join("; ")}`);
     const span = outputSpan(entry, size.fps);
-    const rendered = renderCard(resolved.card, { tokens: t, canvas: size, id: `speaker-card-${i}`, mode, ...span, manifest, clientDir });
+    const rendered = renderCard(resolved.card, { tokens: t, canvas, id: `speaker-card-${i}`, mode, ...span, manifest, clientDir, context: cardContext(resolvedPlan, entry, index) });
     if (!rendered.layout.fits) throw new Error(`speaker card ${entry.id}: text cannot fit at the minimum readable sizes`);
     for (const asset of rendered.assets) asset.itemId = entry.id;
     fragments.push(rendered);
@@ -456,7 +557,8 @@ export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas =
     if (assets.some((asset) => asset.source === source)) continue;
     assets.push({ ref: role.file, source, font: true });
   }
-  return { html: `<div class="speaker-cards">${fragments.map((f) => f.html).join("\n")}</div>`, css: cssRules(t, palette(t)), timeline: fragments.map((f) => f.timeline).join("\n"), assets, review: review.sort((a, b) => a.start - b.start), problems, warnings };
+  const baseCSS = cssRules(t, palette(t));
+  return { html: `<div class="speaker-cards">${fragments.map((f) => f.html).join("\n")}</div>`, css: baseCSS + fragments.map((f) => f.css.slice(baseCSS.length)).join(""), timeline: fragments.map((f) => f.timeline).join("\n"), assets, review: review.sort((a, b) => a.start - b.start), problems, warnings };
 }
 
 /** Copy only supplied local files; stable content hashes avoid basename collisions and preserve originals. */
@@ -493,7 +595,7 @@ export async function copyCardAssets(fragment, projectDir, { convertImage = run 
 }
 
 /** Card preflight returns findings only; an empty list means pass. Draft rights findings remain visible warnings. */
-export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, tokens, clientDir } = {}) {
+export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, tokens, clientDir, index, canvas = cardCanvas(resolvedPlan) } = {}) {
   const findings = [];
   const add = (code, message) => findings.push(problem(code, message));
   if (identityLeak(resolvedPlan)) add("card-identity", "speaker plan contains Greg's identity");
@@ -503,8 +605,9 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
     findings.push(...resolved.problems.map((p) => ({ ...p, itemId: entry.id, message: `${entry.id}: ${p.message}` })));
     let span = null;
     try { span = outputSpan(entry, fps); } catch (error) { add("card-time", error.message); }
-    if (tokens && TYPES.includes(resolved.card.type) && !baseLayout(resolved.card, brandTokens(tokens), resolvedPlan.canvas, mode).fits) add("card-text-fit", `${entry.id}: text cannot fit at the minimum readable sizes`);
-    return { ...resolved, entry, mode, span };
+    const layout = tokens && TYPES.includes(resolved.card.type) ? baseLayout(resolved.card, brandTokens(tokens), canvas, mode, cardContext(resolvedPlan, entry, index)) : null;
+    if (layout && !layout.fits) add("card-text-fit", `${entry.id}: text cannot fit at the minimum readable sizes`);
+    return { ...resolved, entry, mode, span, layout };
   });
   const bookings = cards.filter((c) => c.card.type === "booking");
   if (!bookings.length) add("card-booking-missing", "booking card is missing");
@@ -518,6 +621,7 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
     const duration = c.span.end - c.span.start;
     const minimum = c.card.type === "booking" ? 6 : c.card.type === "testimonial-name" ? 4 : c.card.type === "quote" ? cardDuration(c.card, { fps }) : c.card.type === "logo-wall" ? 4 : 0;
     if (duration < minimum - 1e-7) add("card-hold", `${c.entry.id}: ${c.card.type} holds ${duration}s; needs at least ${minimum}s`);
+    if (c.card.type === "topic" && c.card.layout === "compact" && duration > 3 + 1e-7) add("card-hold", `${c.entry.id}: compact topic must hold at most 3s`);
     if (["logo-wall", "quote"].includes(c.card.type) && duration > (c.card.type === "quote" ? 8 : 6) + 1e-7) add("card-hold", `${c.entry.id}: ${c.card.type} hold exceeds its reading window`);
     if (c.mode === "overlay" && ["booking", "quote", "logo-wall"].includes(c.card.type)) add("card-mode", `${c.entry.id}: ${c.card.type} must be an insert`);
     if (c.mode === "insert" && ["testimonial-name", "topic", "keyword"].includes(c.card.type)) add("card-mode", `${c.entry.id}: ${c.card.type} must be an overlay`);
@@ -533,7 +637,14 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
   }
   const overlays = cards.filter((c) => c.mode === "overlay" && c.span);
   // Without renderer geometry, use each family's reserved safe rectangle. Plans cannot override placement.
-  const box = (c) => c.card.type === "testimonial-name" ? { x: 0.05, y: 0.7, w: 0.6, h: 0.25 } : { x: 0.05, y: 0.05, w: 0.9, h: 0.25 };
+  const hasNewLayout = overlays.some((c) => ["compact", "premium"].includes(c.card.layout));
+  const box = (c) => {
+    if (!hasNewLayout) return c.card.type === "testimonial-name" ? { x: 0.05, y: 0.7, w: 0.6, h: 0.25 } : { x: 0.05, y: 0.05, w: 0.9, h: 0.25 };
+    if (c.layout) return c.layout;
+    // No font metrics were supplied: reserve the largest permitted compact footprint.
+    if (c.card.layout === "compact") return { x: 96, y: canvas.activeBox.height * 0.64 - 54, w: c.card.type === "title" ? 760 : 620, h: canvas.activeBox.height * 0.36 };
+    return c.card.type === "testimonial-name" ? { x: 96, y: canvas.activeBox.height * 0.7, w: 1152, h: canvas.activeBox.height * 0.25 } : { x: 96, y: 54, w: 1728, h: 270 };
+  };
   for (let i = 0; i < overlays.length; i++) for (let j = i + 1; j < overlays.length; j++) {
     const a = overlays[i], b = overlays[j];
     if (a.span.start < b.span.end && a.span.end > b.span.start && rectOverlap(box(a), box(b))) add("card-overlay-collision", `${a.entry.id} and ${b.entry.id}: overlays collide`);
