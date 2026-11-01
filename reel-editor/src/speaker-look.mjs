@@ -11,12 +11,34 @@ const hash = (value) => createHash("sha256").update(JSON.stringify(value)).diges
 // ffmpeg filter paths have two escaping layers; CLI arguments themselves never pass through a shell.
 export const filterPath = (file) => String(file).replace(/([\\':])/g, "\\$1").replace(/([\\'\[\],;\s])/g, "\\$1");
 
-export function lookOptions(look = {}) {
+/** Keep reviewed trims small, validated and in a stable order for cache identity. */
+export function gradeOverrides(value = {}, name = "grade") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object`);
+  const ranges = { ev: [-1, 1], saturation: [0.5, 1.5], contrast: [0, 0.1] };
+  for (const key of Object.keys(value)) if (!Object.hasOwn(ranges, key)) throw new Error(`${name}: unknown key ${key}`);
+  const result = {};
+  for (const [key, [lo, hi]] of Object.entries(ranges)) if (Object.hasOwn(value, key)) {
+    if (!Number.isFinite(value[key]) || value[key] < lo || value[key] > hi) throw new Error(`${name}.${key} must be between ${lo} and ${hi}`);
+    result[key] = value[key];
+  }
+  return result;
+}
+
+export function lookOptions(look = {}, { sourceIds, allowSources = true } = {}) {
   if (!look || typeof look !== "object" || Array.isArray(look)) throw new Error("look must be an object");
+  for (const key of Object.keys(look)) if (!["grade", "letterbox", ...(allowSources ? ["sources"] : [])].includes(key)) throw new Error(`look: unknown key ${key}`);
   const grade = look.grade ?? "auto", letterbox = look.letterbox ?? null;
   if (!["auto", "off"].includes(grade)) throw new Error("look.grade must be auto or off");
   if (![null, 2.35, 2.39].includes(letterbox)) throw new Error("look.letterbox must be null, 2.35 or 2.39");
-  return { ...look, grade, letterbox };
+  let sources;
+  if (Object.hasOwn(look, "sources")) {
+    if (!look.sources || typeof look.sources !== "object" || Array.isArray(look.sources)) throw new Error("look.sources must be an object");
+    sources = Object.fromEntries(Object.entries(look.sources).map(([id, trim]) => {
+      if (sourceIds && !sourceIds.includes(id)) throw new Error(`look.sources: unknown source id ${id}`);
+      return [id, gradeOverrides(trim, `look.sources.${id}`)];
+    }));
+  }
+  return { ...look, grade, letterbox, ...(sources ? { sources } : {}) };
 }
 
 export function activeBox(letterbox = null, { width = 1920, height = 1080 } = {}) {
@@ -98,7 +120,7 @@ export function skinWeight([r, g, b]) {
   return clamp((hue - 0) / 8, 0, 1) * clamp((65 - hue) / 10, 0, 1);
 }
 
-export function gradeSettings(stats = {}, neutral = null) {
+export function gradeSettings(stats = {}, neutral = null, overrides = {}) {
   const ev = Number.isFinite(stats.luma) && stats.luma > 0 ? clamp(Math.log2(0.42 / stats.luma), -0.3, 0.3) : 0;
   const coloredStage = stats.saturation > 0.55 || Math.abs(stats.warmth || 0) > 0.18;
   let balance = [0, 0, 0];
@@ -106,17 +128,22 @@ export function gradeSettings(stats = {}, neutral = null) {
     const mean = (neutral.r + neutral.g + neutral.b) / 3;
     balance = [neutral.r, neutral.g, neutral.b].map((v) => clamp((mean - v) * 0.25, -0.015, 0.015));
   }
-  return { ev: short(ev), balance: balance.map(short), contrast: 0.025, warmth: 0.003, coloredStage };
+  return { ev: short(ev), balance: balance.map(short), contrast: 0.025, warmth: 0.003, coloredStage, ...gradeOverrides(overrides) };
 }
 
 /** Luminance changes use one RGB multiplier. Skin gets no chromatic balance or warmth shift. */
 export function gradePixel(rgb, settings) {
   const y = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-  const exposed = clamp(y * 2 ** clamp(settings.ev, -0.3, 0.3), 0, 1);
+  const exposed = clamp(y * 2 ** clamp(settings.ev, -1, 1), 0, 1);
   const target = exposed + settings.contrast * (exposed - 0.5) * 4 * exposed * (1 - exposed);
   const gain = y > 0 ? Math.min(target / y, 1 / Math.max(...rgb)) : 1;
   const protect = 1 - skinWeight(rgb);
-  return rgb.map((v, i) => clamp(v * gain + protect * (settings.balance[i] + (i === 0 ? settings.warmth : i === 2 ? -settings.warmth : 0)) * 4 * y * (1 - y), 0, 1));
+  const graded = rgb.map((v, i) => clamp(v * gain + protect * (settings.balance[i] + (i === 0 ? settings.warmth : i === 2 ? -settings.warmth : 0)) * 4 * y * (1 - y), 0, 1));
+  const saturation = settings.saturation ?? 1;
+  if (saturation === 1) return graded;
+  // Reviewed saturation follows the existing grade, preserving its luminance until gamut clipping.
+  const luma = 0.2126 * graded[0] + 0.7152 * graded[1] + 0.0722 * graded[2];
+  return graded.map((v) => clamp(luma + saturation * (v - luma), 0, 1));
 }
 
 export function gradeCube(settings, size = 33) {
@@ -127,33 +154,46 @@ export function gradeCube(settings, size = 33) {
 }
 
 /** Measurements are held for a source, never chased frame by frame. HDR conversion happens before sampling. Frames are reached by seeking: a full keynote is 30+ minutes. */
-export async function prepareGrade(file, { sourceKey, meta, preFilter = "", cacheDir, execute = run, measure = measureClip, print = console.warn } = {}) {
-  const key = hash({ version: 1, sourceKey: sourceKey || sourceCacheKey(file), preFilter });
+export async function prepareGrade(file, { sourceKey, meta, preFilter = "", overrides = {}, cacheDir, execute = run, measure = measureClip, print = console.warn } = {}) {
+  const trim = gradeOverrides(overrides);
+  // Keep the original identity and LUT bytes when no trims are supplied. Measurements are shared by all trims.
+  const measurementKey = hash({ version: 1, sourceKey: sourceKey || sourceCacheKey(file), preFilter });
+  const key = Object.keys(trim).length ? hash({ version: 2, measurementKey, overrides: trim }) : measurementKey;
   const dir = ensureDir(cacheDir), facts = path.join(dir, `${key}.look.json`), lut = path.join(dir, `${key}.cube`);
+  const measurementFacts = path.join(dir, `${measurementKey}.look.json`);
   try {
     let data;
-    if (fs.existsSync(facts)) data = readJSON(facts);
+    const cached = fs.existsSync(facts);
+    if (cached) data = readJSON(facts);
     else {
-      const stats = await measure(file, { duration: meta.duration, preFilter, seek: true });
-      const raw = path.join(dir, `${key}.rgb`);
-      try {
-        const duration = meta.duration > 0 ? meta.duration : 1;
-        const chunks = [];
-        for (let frame = 0; frame < 12; frame++) {
-          await execute("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(duration / 24 + frame * duration / 12), "-i", file, "-an", "-vf", [preFilter, "scale=32:32:flags=area", "format=rgb24"].filter(Boolean).join(","), "-frames:v", "1", "-f", "rawvideo", raw], { capture: true });
-          chunks.push(fs.readFileSync(raw));
-        }
-        data = { schemaVersion: 1, key, stats, neutral: neutralStats(Buffer.concat(chunks)) };
-      } finally { fs.rmSync(raw, { force: true }); }
-      data.settings = gradeSettings(data.stats, data.neutral);
-      writeJSON(facts, data);
+      if (fs.existsSync(measurementFacts)) data = readJSON(measurementFacts);
+      else {
+        const stats = await measure(file, { duration: meta.duration, preFilter, seek: true });
+        const raw = path.join(dir, `${measurementKey}.rgb`);
+        try {
+          const duration = meta.duration > 0 ? meta.duration : 1;
+          const chunks = [];
+          for (let frame = 0; frame < 12; frame++) {
+            await execute("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(duration / 24 + frame * duration / 12), "-i", file, "-an", "-vf", [preFilter, "scale=32:32:flags=area", "format=rgb24"].filter(Boolean).join(","), "-frames:v", "1", "-f", "rawvideo", raw], { capture: true });
+            chunks.push(fs.readFileSync(raw));
+          }
+          data = { schemaVersion: 1, key: measurementKey, stats, neutral: neutralStats(Buffer.concat(chunks)) };
+        } finally { fs.rmSync(raw, { force: true }); }
+        data.settings = gradeSettings(data.stats, data.neutral);
+        writeJSON(measurementFacts, data);
+      }
+      if (key !== measurementKey) {
+        data = { ...data, key, overrides: trim, settings: gradeSettings(data.stats, data.neutral, trim) };
+        writeJSON(facts, data);
+      }
     }
-    if (!fs.existsSync(lut)) fs.writeFileSync(lut, gradeCube(data.settings));
+    // A successful retry must replace a fallback LUT that has no measured facts yet.
+    if (!cached || !fs.existsSync(lut)) fs.writeFileSync(lut, gradeCube(data.settings));
     return { ...data, filter: `lut3d=file=${filterPath(lut)}:interp=tetrahedral`, lut };
   } catch { print("speaker look: source colour measurement unavailable; using gentle house grade");
-    const settings = gradeSettings();
+    const settings = gradeSettings({}, null, trim);
     fs.writeFileSync(lut, gradeCube(settings));
-    return { key, settings, lut, filter: `lut3d=file=${filterPath(lut)}:interp=tetrahedral`, fallback: true };
+    return { key, settings, lut, filter: `lut3d=file=${filterPath(lut)}:interp=tetrahedral`, fallback: true, ...(Object.keys(trim).length ? { overrides: trim } : {}) };
   }
 }
 
