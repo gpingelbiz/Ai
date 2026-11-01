@@ -138,6 +138,8 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
       if ((i.audio || "source") === "source" && sources.get(i.sourceId)?.audio !== "ok") add(i.id, `source ${i.sourceId} has no usable audio; choose mute`);
       if ((i.audio || "source") === "source" && sourceRow(index, i.sourceId)?.hasAudio === false) add(i.id, `indexed source ${i.sourceId} has no audio stream; choose mute`);
       if (i.protect != null && typeof i.protect !== "boolean") add(i.id, "protect must be true or false");
+      if (i.limit != null && typeof i.limit !== "boolean") add(i.id, "limit must be true or false");
+      if (i.limit === true && i.audio === "mute") add(i.id, "limit needs source audio");
     } else if (i.kind === "card") {
       if (!finite(i.duration) || i.duration <= 0) add(i.id, "card duration must be positive seconds");
       card(i.id, i.card);
@@ -302,6 +304,16 @@ function stereoStats(file) {
   return { leftDb: db(left), rightDb: db(right), mixDb: db(mix) };
 }
 
+/** Fixed gain toward -16 LUFS preserves pauses and real reactions; no denoise, compression or silence cutting. The gain
+ * normally stops at -1.5 dBTP. An item with `limit: true` (a peaky phone testimonial) takes the full gain instead, and a
+ * delay-compensated lookahead limiter holds its sample peaks at -2 dBFS.
+ */
+export function dialogueLevel(loudness, { limit = false } = {}) {
+  if (!(loudness.i != null && loudness.i > -65)) return { gain: 0, limiter: "" };
+  const gain = Math.min(24, -16 - loudness.i, limit || loudness.tp == null ? 24 : -1.5 - loudness.tp);
+  return { gain, limiter: limit && gain > 0 ? "alimiter=limit=0.794:attack=5:release=50:level=false:latency=true" : "" };
+}
+
 async function preparedAudio(file, source, meta, item, dir) {
   const output = path.join(dir, `${item.id}.wav`), raw = path.join(dir, `${item.id}.f32`);
   const duration = item.frames / 30, samples = item.frames * 1600;
@@ -319,9 +331,8 @@ async function preparedAudio(file, source, meta, item, dir) {
     const common = ["-y", "-loglevel", "error", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", raw];
     await run("ffmpeg", [...common, "-af", `${mono},pan=stereo|c0=c0|c1=c0`, "-c:a", "pcm_s16le", output], { capture: true });
     const loudness = await measureLoudness(output);
-    // Fixed gain preserves pauses and real reactions; no denoise, compression or silence cutting.
-    const gain = loudness.i != null && loudness.i > -65 ? Math.min(24, -16 - loudness.i, loudness.tp == null ? 24 : -1.5 - loudness.tp) : 0;
-    await run("ffmpeg", [...common, "-af", `${mono},volume=${gain}dB,pan=stereo|c0=c0|c1=c0,apad,atrim=end_sample=${samples},afade=t=in:d=0.01,afade=t=out:st=${Math.max(0, duration - 0.01)}:d=0.01`, "-c:a", "pcm_s16le", output], { capture: true });
+    const { gain, limiter } = dialogueLevel(loudness, { limit: item.limit === true });
+    await run("ffmpeg", [...common, "-af", `${mono},volume=${gain}dB,${limiter ? `${limiter},` : ""}pan=stereo|c0=c0|c1=c0,apad,atrim=end_sample=${samples},afade=t=in:d=0.01,afade=t=out:st=${Math.max(0, duration - 0.01)}:d=0.01`, "-c:a", "pcm_s16le", output], { capture: true });
     return output;
   } finally { fs.rmSync(raw, { force: true }); }
 }
