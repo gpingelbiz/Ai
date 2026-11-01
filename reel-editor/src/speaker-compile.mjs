@@ -119,7 +119,7 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     if (!meta) add(i.id, `source ${i.sourceId} is not indexed`);
     if (!finite(i.in) || !finite(i.out) || i.in < 0 || i.in >= i.out) add(i.id, "source range requires 0 <= in < out");
     if (meta && s.kind !== "photo" && (!finite(meta.duration) || i.out > meta.duration + 0.000001)) add(i.id, `out ${i.out} is past source ${i.sourceId} duration ${meta.duration}`);
-    if (i.fit != null && !["contain", "cover", "blur"].includes(i.fit)) add(i.id, `invalid fit: ${i.fit}`);
+    if (i.fit != null && !["contain", "cover", "blur", "wash"].includes(i.fit)) add(i.id, `invalid fit: ${i.fit}`);
     if (i.fit === "cover" && meta && (!(meta.width > meta.height))) add(i.id, `cover requires a landscape source; ${i.sourceId} must use contain`);
   };
   for (const i of [...items, ...overlays, ...cutaways]) {
@@ -269,10 +269,10 @@ export function captionFiles(words, duration, { maxChars = 32, cps = 17 } = {}) 
   return { cues, srt: blocks(",") + "\n", vtt: "WEBVTT\n\n" + blocks(".") + "\n" };
 }
 
-/** Limit enlargement for contain/blur; cover is an explicit landscape-only crop and warns above the limit. */
+/** Limit enlargement for contain/blur/wash; cover is an explicit landscape-only crop and warns above the limit. */
 export function fitGeometry(meta, fit = "contain", { width = 1920, height = 1080, maxLinearScale = 1.5 } = {}) {
   if (!(meta.width > 0 && meta.height > 0)) return { width, height, scale: 1, warning: null, filter: `scale=${width}:${height},setsar=1` };
-  if (!["contain", "cover", "blur"].includes(fit)) throw new Error(`invalid fit: ${fit}`);
+  if (!["contain", "cover", "blur", "wash"].includes(fit)) throw new Error(`invalid fit: ${fit}`);
   if (fit === "cover" && meta.width <= meta.height) throw new Error("cover requires landscape footage");
   const sar = String(meta.sampleAspectRatio || "1:1").split(":").map(Number);
   const pixelAspect = sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1;
@@ -427,7 +427,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
       if (g.warning) { const message = `${entry.id}: ${g.warning}`; print(message); resolved.problems.push({ level: "warn", id: entry.id, message }); }
       const raw = `${label}_raw`, fitted = `${label}_fitted`;
       filters.push(`[${inputCount++}:v]setpts=PTS-STARTPTS,${[normalization, "fps=30:start_time=0:round=near", grade?.filter, "tpad=stop_mode=clone:stop_duration=1", `trim=end_frame=${frames}`, "setpts=N/(30*TB)"].filter(Boolean).join(",")}[${raw}]`);
-      filters.push(...fitGraph(raw, fitted, g, { fit: entry.fit, background: bg, frames, push: entry.push }));
+      filters.push(...fitGraph(raw, fitted, g, { fit: entry.fit, background: bg, frames, push: entry.push, active: resolved.activeBox }));
       filters.push(`[${fitted}]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709[${label}]`);
     };
     if (picture) await addPicture(item, item.frames, "picture0");
