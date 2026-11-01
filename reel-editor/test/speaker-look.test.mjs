@@ -22,18 +22,51 @@ function temp(t) { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-lo
 test("look defaults, automatic fit and explicit per-item choices resolve without mutating plans", () => {
   assert.deepEqual(lookOptions(), { grade: "auto", letterbox: null });
   for (const look of [{ grade: "wild" }, { letterbox: 2 }, null, []]) assert.throws(() => lookOptions(look), /look/);
-  assert.equal(defaultFit({ width: 720, height: 1280 }), "blur");
-  assert.equal(defaultFit({ width: 320, height: 180 }), "blur");
+  assert.equal(defaultFit({ width: 720, height: 1280 }), "wash");
+  assert.equal(defaultFit({ width: 320, height: 180 }), "wash");
+  assert.equal(defaultFit({ width: 640, height: 360 }, { height: 720 }), "wash");
   assert.equal(defaultFit({ width: 1920, height: 1080 }), "contain");
   assert.equal(defaultFit({ width: 1152, height: 648 }), "contain");
   const resolved = resolvePlan(plan, { manifest, index });
-  assert.equal(resolved.items[0].fit, "blur"); assert.equal(resolved.items[0].stabilize, true);
+  assert.equal(resolved.items[0].fit, "wash"); assert.equal(resolved.items[0].stabilize, true);
   assert.equal(resolved.items[0].push, 1); assert.equal(plan.items[0].fit, undefined);
   const p = structuredClone(plan); p.items[0].fit = "contain"; p.items[0].stabilize = false; p.items[0].look = { grade: "off" };
   p.cutaways = [{ id: "x", over: "a", offset: 0, sourceId: "phone", in: 0, out: 1.6, fit: "blur" }];
   const r = resolvePlan(p, { manifest, index }); assert.equal(r.items[0].fit, "contain"); assert.equal(r.items[0].stabilize, false); assert.equal(r.cutaways[0].push, 1.06);
+  assert.equal(r.cutaways[0].fit, "blur");
+  delete p.cutaways[0].fit; assert.equal(resolvePlan(p, { manifest, index }).cutaways[0].fit, "wash");
   p.cutaways[0].out = 1.5; assert.equal(resolvePlan(p, { manifest, index }).cutaways[0].push, 1);
   for (const [key, value] of [["push", 0.5], ["push", 2], ["stabilize", "yes"], ["look", { grade: "bad" }]]) { const bad = structuredClone(plan); bad.items[0][key] = value; assert.throws(() => resolvePlan(bad, { manifest, index }), /a:/); }
+});
+
+test("explicit blur retains the exact original filter graph, including with an active box", () => {
+  const graph = fitGraph("0:v", "pic", fitGeometry({ width: 720, height: 1280 }, "blur"), { fit: "blur", frames: 30, active: activeBox(2.35) });
+  assert.deepEqual(graph, [
+    "[0:v]split=2[pic_bg][pic_fg]",
+    "[pic_bg]scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080,setsar=1,gblur=sigma=40:steps=3,eq=saturation=0.8,lutyuv=y='16+(val-16)*0.65'[pic_back]",
+    "[pic_fg]scale=608:1080:flags=lanczos,setsar=1,format=yuva420p,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black@0[pic_front]",
+    "[pic_back][pic_front]overlay=0:0:shortest=1[pic_fit]", "[pic_fit]null[pic]",
+  ]);
+});
+
+test("wash blurs tiny same-frame colours, adds seeded grain and caches a soft card shadow", () => {
+  for (const letterbox of [null, 2.35, 2.39]) for (const push of [1, 1.06, 1.2]) {
+    const active = activeBox(letterbox), g = fitGeometry({ width: 1080, height: 1920 }, "wash");
+    const parts = fitGraph("0:v", "pic", g, { fit: "wash", frames: 30, push, active }), graph = parts.join(";");
+    assert.match(graph, /split=2/);
+    assert.match(graph, /scale=192:108:force_original_aspect_ratio=increase:flags=area,crop=192:108,setsar=1,gblur=sigma=20:steps=3/);
+    assert.match(graph, /saturation=1.2.*\*0.8.*vignette=.*dither=0,scale=1920:1080:flags=bicubic,noise=alls=2:allf=u:all_seed=42/);
+    const [, w, h] = parts[2].match(/scale=(\d+):(\d+)/).map(Number);
+    assert.ok(w * push <= 1920 * 0.9 && h * push <= active.height * 0.9);
+    assert.match(parts[3], new RegExp(`color=c=black@0.32:s=${w}x${h}`));
+    assert.match(parts[3], /trim=end_frame=1,.*gblur=sigma=16:steps=3:planes=8,loop=loop=-1:size=1:start=0/);
+    const [, x, y] = parts[5].match(/overlay=(\d+):(\d+)/).map(Number);
+    assert.ok(x > 0 && y > active.y && y + h < active.y + active.height);
+    assert.equal(parts.at(-1).includes("zoompan"), push > 1, "push moves the completed picture");
+  }
+  const g = fitGeometry({ width: 320, height: 180 }, "wash");
+  const graph = fitGraph("0:v", "pic", g, { fit: "wash", frames: 1 }).join(";");
+  assert.equal(g.scale, 1.5); assert.match(graph, /\[pic_fg\]scale=480:270:/, "small cards keep the enlargement ceiling");
 });
 
 test("blur graph preserves sharp portrait and small foregrounds with a blurred, darker frame", () => {
@@ -140,6 +173,69 @@ test("lavfi: blur keeps portrait sharp over visible background; small source, pu
   assert.equal(await lookReviewFrames(file, { at: 0.2, afterFilter: grade.filter, dir, name: "test" }), true); assert.ok(fs.existsSync(path.join(dir, "test-after.jpg")));
 });
 
+test("lavfi: wash keeps the card sharp, margins filled, background smooth and shadow soft", async (t) => {
+  const dir = temp(t), meta = { width: 360, height: 640 };
+  const source = "testsrc2=s=360x640:r=30:d=0.1,drawbox=x=116:y=256:w=128:h=128:color=white:t=fill,drawbox=x=148:y=288:w=64:h=64:color=black:t=fill";
+  const render = async (graph, name) => {
+    const file = path.join(dir, `${name}.rgb`);
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-filter_complex_threads", "1", "-f", "lavfi", "-i", source, "-filter_complex", graph, "-map", "[pic]", "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", file], { capture: true });
+    return fs.readFileSync(file);
+  };
+  const rgb = (data, x, y) => [...data.subarray((y * 1920 + x) * 3, (y * 1920 + x) * 3 + 3)];
+  const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
+  for (const letterbox of [null, 2.35]) {
+    const active = activeBox(letterbox), parts = fitGraph("0:v", "pic", fitGeometry(meta, "wash"), { fit: "wash", frames: 3, active });
+    const graph = parts.join(";"), data = await render(graph, `wash-${letterbox}`);
+    assert.equal(data.length, 1920 * 1080 * 3);
+    const [, w, h] = parts[2].match(/scale=(\d+):(\d+)/).map(Number);
+    const [, x, y] = parts[5].match(/overlay=(\d+):(\d+)/).map(Number);
+    const edge = 960 + Math.round(w * 32 / meta.width);
+    assert.ok(rgb(data, edge - 4, 540).every((v) => v < 10), "black box stays black up to its edge");
+    assert.ok(rgb(data, edge + 4, 540).every((v) => v > 240), "white box stays white beside the sharp edge");
+    for (const row of [y - 4, y + h + 4]) {
+      assert.ok(row >= active.y && row < active.y + active.height);
+      assert.ok(mean(rgb(data, 960, row)) > 25, `visible background outside card at y=${row}`);
+    }
+    const values = [], differences = [];
+    for (let row = 300; row < 364; row++) for (let col = 160; col < 224; col++) {
+      const a = rgb(data, col, row)[0]; values.push(a); differences.push(Math.abs(a - rgb(data, col + 1, row)[0]));
+    }
+    const average = mean(values), sd = Math.sqrt(mean(values.map((v) => (v - average) ** 2))), adjacent = mean(differences);
+    assert.ok(sd < 4 && adjacent < 2, `smooth background: sd=${sd}, adjacent=${adjacent}`);
+    if (letterbox) {
+      const top = Array.from({ length: 100 }, (_, n) => active.y + n).find((row) => {
+        const [r, g, b] = rgb(data, 960, row); return b > 200 && r < 50 && g < 50;
+      });
+      assert.equal(top, y); assert.ok(top > 131, "card starts below the 2.35 bar");
+      const clear = await render(graph.replace("color=c=black@0.32:", "color=c=black@0:"), "no-shadow");
+      const near = mean(rgb(clear, 960, y + h + 4)) - mean(rgb(data, 960, y + h + 4));
+      const far = mean(rgb(clear, 960, y + h + 36)) - mean(rgb(data, 960, y + h + 36));
+      assert.ok(near > 5 && far >= 0 && far < near / 2, `shadow fades away: near=${near}, far=${far}`);
+      assert.deepEqual(await render(graph, "repeat"), data, "fixed seeds give identical pixels on another run");
+      t.diagnostic(`2.35 card ${w}x${h} at ${x},${y}; background red sd=${sd.toFixed(3)}, adjacent=${adjacent.toFixed(3)}; shadow near=${near.toFixed(2)}, far=${far.toFixed(2)}`);
+    }
+  }
+});
+
+test("lavfi: wash push reaches its end without hiding the card inside the bars", async (t) => {
+  const dir = temp(t), width = 320, height = 180, active = activeBox(2.35, { width, height });
+  const parts = fitGraph("0:v", "pic", fitGeometry({ width: 160, height: 240 }, "wash", { width, height }), { fit: "wash", width, height, active, frames: 3, push: 1.2 });
+  const raw = path.join(dir, "push.rgb");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-filter_complex_threads", "1", "-f", "lavfi", "-i", "color=c=0x668899:s=160x240:r=30:d=0.1", "-filter_complex", parts.join(";"), "-map", "[pic]", "-frames:v", "3", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+  const data = fs.readFileSync(raw); assert.equal(data.length, width * height * 3 * 3);
+  const heights = [];
+  for (let frame = 0; frame < 3; frame++) {
+    const rows = [];
+    for (let y = 0; y < height; y++) {
+      const i = (frame * width * height + y * width + width / 2) * 3;
+      if (Math.abs(data[i] - 102) < 5 && Math.abs(data[i + 1] - 136) < 5 && Math.abs(data[i + 2] - 153) < 5) rows.push(y);
+    }
+    assert.ok(rows.length > 80); assert.ok(rows[0] > active.y && rows.at(-1) < active.y + active.height);
+    heights.push(rows.length);
+  }
+  assert.ok(heights[2] > heights[1] && heights[1] > heights[0], `card grows through push: ${heights}`);
+});
+
 test("lavfi colour bars and skin patch retain hue through the actual ffmpeg LUT", async (t) => {
   const dir = path.join(temp(t), "Jane's : [look], colour"); fs.mkdirSync(dir);
   const lut = path.join(dir, "grade.cube"), raw = path.join(dir, "patch.rgb");
@@ -153,7 +249,7 @@ test("lavfi colour bars and skin patch retain hue through the actual ffmpeg LUT"
 test("compiled look keeps cutaway and audio clocks exact, writes review evidence and composes active-area cards", { timeout: 120000 }, async (t) => {
   const dir = temp(t), file = path.join(dir, "phone.mp4");
   writeJSON(path.join(dir, "brand.json"), brand);
-  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=160x240:r=30:d=1", "-c:v", "libx264", "-preset", "ultrafast", file], { capture: true });
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=540x960:r=30:d=1", "-c:v", "libx264", "-preset", "ultrafast", file], { capture: true });
   const meta = await probeSource(file), p = structuredClone(plan), m = structuredClone(manifest);
   p.look = { grade: "auto", letterbox: 2.35 }; p.items[0].out = 0.4; p.items[0].stabilize = true;
   p.items.push({ id: "booking", kind: "card", duration: 6, role: "booking", card: { type: "booking" } });
@@ -161,6 +257,15 @@ test("compiled look keeps cutaway and audio clocks exact, writes review evidence
   const compiled = await compileVersion(dir, p, { manifest: m, index: { sources: { phone: { ...meta, words: [] } } }, tokens, encoder: "libx264", print: () => {} });
   const out = await probeSource(compiled.base); assert.ok(Math.abs(out.videoDuration - 6.4) < 1 / 30); assert.ok(Math.abs(out.videoDuration - out.audioStreams[0].duration) <= 1 / 30);
   assert.equal(compiled.resolvedPlan.cutaways[0].startFrame, 3); assert.equal(compiled.resolvedPlan.cutaways[0].endFrame, 9);
+  assert.equal(compiled.resolvedPlan.items[0].fit, "wash"); assert.equal(compiled.resolvedPlan.cutaways[0].fit, "wash");
+  // Check both the dialogue picture and the picture-only cutaway: their cards must honour the active box.
+  for (const at of [0, 0.15]) {
+    const raw = path.join(dir, `compiled-${at}.rgb`);
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(at), "-i", compiled.base, "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+    const data = fs.readFileSync(raw), rgb = (y) => [...data.subarray((y * 1920 + 960) * 3, (y * 1920 + 960) * 3 + 3)];
+    assert.ok(rgb(150).every((v) => v > 35 && v < 190), `wash above card at ${at}s: ${rgb(150)}`);
+    assert.ok(rgb(220)[2] > 150 && rgb(220)[0] < 50, `sharp blue source inside card at ${at}s: ${rgb(220)}`);
+  }
   const evidence = fs.readdirSync(path.join(compiled.workDir, "look")); assert.equal(evidence.filter((f) => f.endsWith(".jpg")).length, 4);
   assert.equal(JSON.parse(fs.readFileSync(path.join(compiled.workDir, "look", "look.json"))).sources.phone.fallback, false);
   assert.ok(compiled.resolvedPlan.problems.some((p) => /active image 1920x818/.test(p.message)));

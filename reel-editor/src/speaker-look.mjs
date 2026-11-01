@@ -26,7 +26,7 @@ export function activeBox(letterbox = null, { width = 1920, height = 1080 } = {}
 }
 
 export function defaultFit(meta = {}, canvas = {}) {
-  return meta.width < meta.height || meta.height < (canvas.height || 1080) * 0.6 ? "blur" : "contain";
+  return meta.width < meta.height || meta.height < (canvas.height || 1080) * 0.6 ? "wash" : "contain";
 }
 
 export function pushScale(frame, frames, push = 1) {
@@ -43,13 +43,31 @@ export function pushFilter(frames, push = 1, { width = 1920, height = 1080, fps 
 }
 
 /** Named pads make this usable for both the dialogue picture and picture-only cutaways. */
-export function fitGraph(input, output, geometry, { fit = "contain", background = "#111111", frames, push = 1, width = 1920, height = 1080, fps = 30 } = {}) {
+export function fitGraph(input, output, geometry, { fit = "contain", background = "#111111", frames, push = 1, width = 1920, height = 1080, fps = 30, active = { y: 0, height } } = {}) {
   const motion = pushFilter(frames, push, { width, height, fps });
   const name = (part) => `${output}_${part}`;
   // Reserve the push margin before scaling. Even its last frame respects the foreground enlargement ceiling.
   const even = (n) => Math.max(2, Math.floor(n / 2) * 2);
   const scale = push > 1 && fit !== "cover" ? `scale=${even(geometry.width / push)}:${even(geometry.height / push)}:flags=lanczos,setsar=1` : geometry.filter;
   const finish = (label) => motion ? `[${label}]${motion}[${output}]` : `[${label}]null[${output}]`;
+  if (fit === "wash") {
+    // Geometry already limits enlargement. Only shrink it here, leaving a margin inside the bars.
+    const inset = Math.min(1, width * 0.9 / geometry.width, active.height * 0.9 / geometry.height);
+    const w = even(geometry.width * inset / push), h = even(geometry.height * inset / push);
+    const x = even((width - w) / 2), y = even(active.y + (active.height - h) / 2);
+    const tinyW = even(width / 10), tinyH = even(height / 10);
+    const sigma = short(16 * height / 1080), pad = even(48 * height / 1080), offset = even(8 * height / 1080);
+    return [
+      `[${input}]split=2[${name("bg")}][${name("fg")}]`,
+      // Blur at one tenth size: colours survive, room details do not. Grain stays at output resolution.
+      `[${name("bg")}]scale=${tinyW}:${tinyH}:force_original_aspect_ratio=increase:flags=area,crop=${tinyW}:${tinyH},setsar=1,gblur=sigma=${short(20 * tinyH / 108)}:steps=3,eq=saturation=1.2,lutyuv=y='16+(val-16)*0.8',vignette=angle=PI/5:eval=init:dither=0,scale=${width}:${height}:flags=bicubic,noise=alls=2:allf=u:all_seed=42[${name("back")}]`,
+      `[${name("fg")}]scale=${w}:${h}:flags=lanczos,setsar=1[${name("front")}]`,
+      // Blur just one alpha rectangle, then repeat that frame for the entire shot.
+      `color=c=black@0.32:s=${w}x${h}:r=${fps},format=yuva420p,trim=end_frame=1,pad=${w + pad * 2}:${h + pad * 2}:${pad}:${pad}:color=black@0,gblur=sigma=${sigma}:steps=3:planes=8,loop=loop=-1:size=1:start=0,setpts=N/(${fps}*TB)[${name("shadow")}]`,
+      `[${name("back")}][${name("shadow")}]overlay=${x - pad}:${y - pad + offset}:shortest=1[${name("shaded")}]`,
+      `[${name("shaded")}][${name("front")}]overlay=${x}:${y}:shortest=1[${name("fit")}]`, finish(name("fit")),
+    ];
+  }
   if (fit !== "blur") return [`[${input}]${scale},${fit === "cover" ? `crop=${width}:${height}` : `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=${background}`}[${name("fit")}]`, finish(name("fit"))];
   return [
     `[${input}]split=2[${name("bg")}][${name("fg")}]`,

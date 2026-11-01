@@ -144,6 +144,17 @@ test("fitGeometry preserves portrait and weak footage, warns above 1.5x and perm
   assert.equal(cover.width, 1920); assert.equal(cover.height, 1080);
   assert.throws(() => fitGeometry({ width: 720, height: 1280 }, "cover"), /landscape/);
   assert.equal(fitGeometry({ width: 0, height: 0 }).width, 1920);
+  assert.deepEqual(fitGeometry({ width: 720, height: 1280 }, "wash"), fitGeometry({ width: 720, height: 1280 }, "blur"));
+  assert.equal(fitGeometry({ width: 320, height: 180 }, "wash").scale, 1.5);
+});
+
+test("wash is accepted for items and cutaways; unknown fits still fail", () => {
+  const p = structuredClone(plan); p.items[2].fit = "wash"; p.cutaways[0].fit = "wash";
+  assert.deepEqual(validatePlan(p, options), []);
+  const resolved = resolvePlan(p, options);
+  assert.equal(resolved.items[2].fit, "wash"); assert.equal(resolved.cutaways[0].fit, "wash");
+  p.items[2].fit = "unknown"; p.cutaways[0].fit = "unknown";
+  assert.deepEqual(validatePlan(p, options).filter((p) => /invalid fit/.test(p.message)).map((p) => p.id), ["c", "x1"]);
 });
 
 test("mono channel selection protects cancelling microphones and keeps healthy stereo averaging", () => {
@@ -166,7 +177,7 @@ test("real speaker compile joins landscape, a one-second card, portrait and pict
   const p = structuredClone(plan);
   p.items[0].in = 0; p.items[0].out = 1;
   p.items[2].in = 0; p.items[2].out = 1;
-  // The portrait default is now the blurred fill (speaker-look); this test checks the flat brand pad of "contain".
+  // The portrait default is wash; this test checks the flat brand pad of "contain".
   p.items[2].fit = "contain";
   p.overlays[0].offset = 0; p.overlays[0].duration = 1;
   p.cutaways[0].offset = 0.5; p.cutaways[0].in = 0; p.cutaways[0].out = 0.5;
