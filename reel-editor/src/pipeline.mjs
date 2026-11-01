@@ -29,6 +29,7 @@ import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from
 
 import { makeBroll, holdForSplit } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
+import { makeLibraryBroll } from "./broll-library.mjs";
 import { planBrollLayouts, planPersistentLayout } from "./layouts.mjs";
 import { isPersistentScene, makeGraphics, persistentDuckSchedule } from "./graphics.mjs";
 import { makeEvidence } from "./evidence.mjs";
@@ -545,8 +546,11 @@ export async function runEdit(input, opts = {}) {
   // Shared-frame layouts never sit under a card. The legacy full cutaway keeps the short-reel exception unchanged.
   const sharedBrollLayout = ["window", "split", "mix", "full-split"].includes(preset.broll?.layout);
   const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...transientCards, ...evidence] : evidence, tail };
+  // Three engines: Codex stills (the default), Runway video, or cuts from the speaker's own footage ("library").
   let broll = preset.broll?.enabled && shownGroups.length
-    ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
+    ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) })
+      : preset.broll.engine === "library" ? await makeLibraryBroll({ ...brollArgs, canvas: canvas0, fps: preset.render.fps || 30 })
+      : await makeBroll(brollArgs))
     : [];
   // "full-split": one cutaway with clear time after it is held longer, to become a split once the face is known.
   if (preset.broll?.layout === "full-split" && broll.length) broll = holdForSplit(broll, { duration, cta, busy: brollArgs.busy, tail, gap: preset.broll.gap ?? 4, hold: preset.broll.hold ?? 5, clipSeconds: preset.broll.videoSeconds ?? 5 });

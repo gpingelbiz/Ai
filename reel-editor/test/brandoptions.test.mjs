@@ -156,3 +156,32 @@ test("Runway: a client's reel gets the pingel-runway timing under its own look; 
     assert.deepEqual(pick(greg.broll), pick(runwayTiming()));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("brand.json brollLibrary: a client's own clips become the b-roll engine; without it the Codex stills stay", () => {
+  const { p, dir } = load({ ...julee, world: "her world", brollLibrary: "broll-library" });
+  try {
+    assert.equal(p.broll.engine, "library");
+    assert.equal(p.broll.library, path.join(dir, "broll-library"), "the folder sits in her reel folder, next to preset.json");
+    assert.equal(p.broll.world, "her world", "her world still steers the picks");
+    assert.equal(p.broll.layout, "full-split", "the rest of the b-roll settings stay");
+    assert.equal(p.broll.duration, 2, "about 2 seconds a cutaway");
+    const rw = mergeOverrides(p, { brollEngine: "runway", broll: true });
+    assert.equal(rw.broll.engine, "runway", "her Runway drop folder still means Runway");
+    assert.equal(rw.broll.duration, 4, "with the Runway timing");
+    const other = mergeOverrides(p, { brollLibrary: "/tmp/other clips" });
+    assert.deepEqual([other.broll.engine, other.broll.library], ["library", "/tmp/other clips"], "a one-off folder for one edit");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  const home = load({ ...julee, brollLibrary: "~/Clips/b-roll" });
+  try { assert.equal(home.p.broll.library, path.join(os.homedir(), "Clips/b-roll")); } finally { fs.rmSync(home.dir, { recursive: true, force: true }); }
+  const plain = load(julee);
+  try {
+    assert.equal(plain.p.broll.engine, "codex", "no folder: AI stills from her world, as before");
+    assert.equal(plain.p.broll.library, undefined);
+    assert.ok(!("engine" in brandPreset(julee).broll) && !("library" in brandPreset({ ...julee, brollLibrary: " " }).broll), "nothing written without a folder");
+  } finally { fs.rmSync(plain.dir, { recursive: true, force: true }); }
+  const greg = loadPreset("pingel-brand");
+  assert.deepEqual([greg.broll.engine, greg.broll.library], ["codex", undefined], "Greg's preset is unchanged");
+  assert.equal(mergeOverrides(greg, { brollLibrary: "/tmp/greg clips" }).broll.engine, "library", "Greg can point one edit at a folder too");
+  assert.deepEqual(checkBrand({ ...julee, brollLibrary: "broll-library" }), []);
+  assert.ok(checkBrand({ ...julee, brollLibrary: true }).some((m) => /brollLibrary is a folder/.test(m)));
+});

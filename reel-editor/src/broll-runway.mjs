@@ -56,7 +56,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
     const stillThere = (s) => candidates.some((c) => Math.abs(c.start - s.start) < 0.05 && c.text === s.text);
-    if ((saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
+    if (saved.engine !== "library" && (saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
       log(`b-roll: reusing ${saved.shots.length} Runway clip${saved.shots.length === 1 ? "" : "s"} from ${dir} (nothing bought)`);
       return saved.shots;
     }
