@@ -5,7 +5,9 @@ import { resolveBrandTokens, tokensCSS } from "./brandtokens.mjs";
 import { srtText } from "./chapters.mjs";
 import { outputSpan, planDuration, usedAssets, rightsChecks, identityProblems, speakerQC, writeQC } from "./speaker-qc.mjs";
 import { registerReview, recordRevision, reviewState } from "./speaker-deliver.mjs";
+import { measurePlanAudio } from "./speaker-audio-quality.mjs";
 import { resolveCard } from "./speaker-cards.mjs";
+import { loadInsertFlags, visibleInsertIntersections } from "./speaker-inserts.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const safeVersion = (v) => { if (!/^[a-z0-9][a-z0-9_-]*$/i.test(v || "")) throw new Error(`speaker version: invalid ${v}`); return v; };
@@ -53,7 +55,7 @@ export function reviewRows(plan, manifest, words = []) {
       rows.push({ id: item.id, code: codeFor(plan.version, item.id), kind: kind === "item" ? item.kind : kind, start, end,
         role: item.role || parent?.role || kind, sourceId: item.sourceId || proof?.sourceId || null,
         source: source ? path.basename(source.path) : "", sourceIn: item.in, sourceOut: item.out,
-        text: resolved ? cardText(resolved.card, manifest) : "", problems: cardProblems, transcript: item.kind === "clip" ? excerpt : "", rights: status });
+        audioQuality: item.audioQuality || null, text: resolved ? cardText(resolved.card, manifest) : "", problems: cardProblems, transcript: item.kind === "clip" ? excerpt : "", rights: status });
     }
   }
   if (new Set(rows.map((r) => r.code.toLowerCase())).size !== rows.length) throw new Error("speaker review: duplicate comment codes");
@@ -140,6 +142,8 @@ export async function buildReview(folder, { version, video, resolvedPlan, manife
   fs.mkdirSync(path.join(dir, "frames"), { recursive: true });
   fs.mkdirSync(work, { recursive: true });
   const planPath = path.join(work, "plan.resolved.json");
+  // Exact-range evidence includes manually edited passages; optional measurement fails open.
+  await measurePlanAudio(folder, plan, manifest);
   writeJSON(planPath, plan);
   const wordFile = path.join(work, "words.json"), wordData = fs.existsSync(wordFile) ? readJSON(wordFile) : [];
   const words = Array.isArray(wordData) ? wordData : wordData.words || [];
@@ -170,12 +174,14 @@ export async function buildReview(folder, { version, video, resolvedPlan, manife
   const poster = path.join(dir, "poster.jpg");
   await frameGrab({ video: primary, time: (rows[0].start + rows[0].end) / 2, file: poster, width: plan.canvas.width });
   files.push({ path: path.relative(folder, poster), kind: "poster", delivery: true });
-  const result = await qc(primary, { resolvedPlan: plan, manifest, captionFiles: { srt: path.join(dir, "captions.srt"), vtt: path.join(dir, "captions.vtt") } });
+  const result = await qc(primary, { resolvedPlan: plan, manifest, folder, captionFiles: { srt: path.join(dir, "captions.srt"), vtt: path.join(dir, "captions.vtt") } });
   writeQC(dir, result);
   const used = usedAssets(plan, manifest), roles = {};
   for (const item of plan.items) roles[item.role] = (roles[item.role] || 0) + 1;
   const warnings = [...(plan.problems || []).map((p) => ({ ...p, message: `${p.id}: ${p.message}` })), ...result.checks.filter((c) => c.level !== "pass"), ...rightsChecks(plan, manifest).filter((c) => c.level !== "pass")];
   const warningsUnique = [...new Set(warnings.map((c) => c.message))];
+  // Show only flags whose original picture remains visible, with exact source and output seconds.
+  const insertHits = visibleInsertIntersections(plan, loadInsertFlags(folder));
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(manifest.identity.name)} — ${esc(version)} review</title><style>
 ${css}
 *{box-sizing:border-box}body{margin:0;padding:20px;background:var(--brand-surface);color:var(--brand-ink);font:16px/1.5 var(--brand-body-font)}main{max-width:1100px;margin:auto}h1,h2{font-family:var(--brand-display-font)}a{color:var(--brand-accent)}video{width:100%;max-height:70vh}article{display:grid;grid-template-columns:minmax(200px,36%) 1fr;gap:20px;padding:22px 0;border-top:1px solid var(--brand-muted)}img{width:100%;height:auto}code{font-weight:bold;color:var(--brand-accent)}.flag{color:#ff6666;font-weight:bold}.meta{color:var(--brand-muted)}p{overflow-wrap:anywhere}li{margin-bottom:8px}@media(max-width:650px){body{padding:14px}article{grid-template-columns:1fr;gap:8px}}
@@ -184,7 +190,8 @@ ${css}
 ${files.filter((f) => f.kind === "video").map((f) => `<h2>${esc(f.variant)} captions</h2><video controls playsinline preload="metadata" poster="poster.jpg"><source src="${esc(path.basename(f.path))}" type="video/mp4"><track kind="captions" src="captions.vtt" srclang="en" label="English" default></video>`).join("\n")}
 <h2>Summary</h2><p>${reviewTime(planDuration(plan))} · ${plan.items.length} items · ${used.sourceIds.length} sources · ${used.proofIds.length} proof items · ${warningsUnique.length} warnings</p><p>${esc(Object.entries(roles).map(([r, n]) => `${r}: ${n}`).join(" · "))}</p><p>Sources: ${esc(used.sourceIds.join(", ") || "none")}<br>Proof: ${esc(used.proofIds.join(", ") || "none")}</p>
 ${warningsUnique.length ? `<ul class="flag">${warningsUnique.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
-<h2>Timeline</h2>${rows.map((row) => `<article id="${esc(row.code)}"><a href="${esc(row.frame)}"><img src="${esc(row.frame)}" loading="lazy" alt="Frame at ${reviewTime((row.start + row.end) / 2)}"></a><div><code>${esc(row.code)}</code><p>${reviewTime(row.start)}–${reviewTime(row.end)} · ${esc(row.role)} · ${esc(row.kind)}</p>${row.source ? `<p class="meta">${esc(row.source)} · source ${reviewTime(row.sourceIn)}–${reviewTime(row.sourceOut)}</p>` : ""}${row.text ? `<p>${esc(row.text)}</p>` : ""}${(row.problems || []).map((p) => `<p class="flag">Card problem: ${esc(p)}</p>`).join("")}${row.transcript ? `<p>${esc(row.transcript)}</p>` : ""}<p class="${row.rights === "approved" ? "meta" : "flag"}">Rights: ${esc(row.rights)}</p></div></article>`).join("\n")}
+${insertHits.length ? `<h2>Likely baked inserts — verify original picture</h2><ul>${insertHits.map((h) => `<li><code>${esc(codeFor(version, h.itemId))}</code> · ${esc(h.sourceId)} · source ${h.start}–${h.end}s · output ${h.outputStart}–${h.outputEnd}s · ${esc(h.kind)} (${esc(h.confidence)}): ${esc(h.reason)}</li>`).join("")}</ul>` : ""}
+<h2>Timeline</h2>${rows.map((row) => `<article id="${esc(row.code)}"><a href="${esc(row.frame)}"><img src="${esc(row.frame)}" loading="lazy" alt="Frame at ${reviewTime((row.start + row.end) / 2)}"></a><div><code>${esc(row.code)}</code><p>${reviewTime(row.start)}–${reviewTime(row.end)} · ${esc(row.role)} · ${esc(row.kind)}</p>${row.source ? `<p class="meta">${esc(row.source)} · source ${reviewTime(row.sourceIn)}–${reviewTime(row.sourceOut)}</p>` : ""}${row.kind === "clip" ? `<p class="meta">Audio: ${esc(row.audioQuality?.label || "unmeasured")} · contrast ${esc(row.audioQuality?.metrics?.contrastDb ?? "unmeasured")} dB</p>` : ""}${row.text ? `<p>${esc(row.text)}</p>` : ""}${(row.problems || []).map((p) => `<p class="flag">Card problem: ${esc(p)}</p>`).join("")}${row.transcript ? `<p>${esc(row.transcript)}</p>` : ""}<p class="${row.rights === "approved" ? "meta" : "flag"}">Rights: ${esc(row.rights)}</p></div></article>`).join("\n")}
 <h2>Quality checks — ${result.ok ? "passed" : "needs attention"}</h2><ul>${result.checks.map((c) => `<li class="${c.level === "fail" ? "flag" : ""}">${esc(c.level.toUpperCase())}: ${esc(c.message)}</li>`).join("")}</ul></main></body></html>`;
   const index = path.join(dir, "index.html");
   fs.writeFileSync(index, html);

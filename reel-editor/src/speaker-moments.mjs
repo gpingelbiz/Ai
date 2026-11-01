@@ -2,6 +2,7 @@ import path from "node:path";
 import { claudeText, firstJSON } from "./claude.mjs";
 import { sentenceLines, lineEnergy, cutPoints, edgeProblems } from "./moments.mjs";
 import { r3, sha1, writeJSON, warn } from "./util.mjs";
+import { storyGroups, lexicalStoryGroups, chooseTelling, flattenCandidates } from "./speaker-stories.mjs";
 
 const KINDS = new Set(["story", "origin", "demonstration", "teaching", "one_liner", "audience_prompt", "audience_response", "testimonial"]);
 const NARRATIVE = new Set(["story", "origin", "demonstration", "teaching"]);
@@ -44,15 +45,40 @@ export function validateWordSpan(words, startWord, endWord, { sourceId, wordIds 
   return { i0, i1, words: selected, text: selected.map((w) => w.text).join(" ") };
 }
 
+/** Original-source observations only. Overlap is positive; an exact end-boundary start is following. */
+export function reactionsFor(passage, reactions = []) {
+  const start = passage.in ?? passage.start, end = passage.out ?? passage.end;
+  const contained = [], following = [];
+  if (!Number.isFinite(end)) return { contained, following };
+  for (const r of reactions) {
+    if (sourceOf(passage) != null && sourceOf(r) !== sourceOf(passage)) continue;
+    if (!Number.isFinite(r.start) || !Number.isFinite(r.end) || r.start < 0 || r.end <= r.start) continue;
+    const overlapSeconds = Number.isFinite(start) ? Math.max(0, Math.min(end, r.end) - Math.max(start, r.start)) : 0;
+    if (overlapSeconds > 0) contained.push({ ...r, overlapSeconds: r3(overlapSeconds) });
+    else if (r.start >= end && r.start <= end + 2) following.push({ ...r, overlapSeconds: 0 });
+  }
+  return { contained, following };
+}
+
+/** Suggest a tail only across an indexed speech-free handle; never change the passage's out. */
+export function reactionTailOut(passage, reactions = [], words = []) {
+  const end = passage.out ?? passage.end;
+  const { contained, following } = reactionsFor(passage, reactions);
+  const tails = [...contained, ...following].filter((r) => r.end > end && (passage.duration == null || r.end <= passage.duration)
+    && !words.some((w) => (sourceOf(w) == null || sourceOf(w) === sourceOf(passage)) && w.end > end && w.start < r.end));
+  return tails.length ? r3(Math.max(...tails.map((r) => r.end))) : null;
+}
+
 /** Ratings are not a model-written score. A verified same-source response can contribute five points. */
-export function candidateScore(ratings, { sourceId, end, reactions = [] } = {}) {
+export function candidateScore(ratings, { sourceId, start, end, reactions = [] } = {}) {
   let score = 0;
   for (const [key, weight] of Object.entries(WEIGHTS)) {
     const n = ratings?.[key];
     if (!Number.isFinite(n) || n < 0 || n > 4) throw new Error(`invalid candidate rating ${key}: need 0-4`);
     score += n / 4 * weight;
   }
-  const response = sourceId != null && reactions.some((r) => r.verified === true && sourceOf(r) === sourceId && Number.isFinite(end) && r.start >= end && r.start <= end + 2 && r.end > r.start && ["applause", "laughter", "cheering", "audience_response"].includes(r.kind));
+  const associated = reactionsFor({ sourceId, start, end }, reactions);
+  const response = sourceId != null && [...associated.contained, ...associated.following].some((r) => r.verified === true && ["applause", "laughter", "cheering", "audience_response"].includes(r.kind));
   return r3(score + (response ? 5 : 0));
 }
 
@@ -124,10 +150,16 @@ export function resolveCandidate(raw, { source, words, lines = sentenceLines(wor
   // Only code-derived metadata survives the model boundary. The model's text, IDs, flags and score are discarded.
   const ratings = Object.fromEntries(Object.keys(WEIGHTS).map((k) => [k, raw.ratings?.[k]]));
   if (source.audio !== "ok") ratings.delivery = 0;
-  const reactionIds = reactions.filter((r) => sourceOf(r) === source.id && r.id != null && r.start >= picked.end && r.start <= picked.end + 2 && r.end > r.start).map((r) => r.id);
-  const score = candidateScore(ratings, { sourceId: source.id, end: picked.end, reactions });
+  const passage = { sourceId: source.id, start: picked.start, end: picked.end, duration: source.duration };
+  const reactionAssociations = reactionsFor(passage, reactions);
+  const ids = (rs) => [...new Set(rs.filter((r) => r.id != null).map((r) => r.id))];
+  const containedReactionIds = ids(reactionAssociations.contained), followingReactionIds = ids(reactionAssociations.following);
+  const reactionIds = [...new Set([...containedReactionIds, ...followingReactionIds])];
+  const reactionHints = ids([...reactionAssociations.contained, ...reactionAssociations.following].filter((r) => r.verified !== true));
+  const tail = reactionTailOut(passage, reactions, words);
+  const score = candidateScore(ratings, { sourceId: source.id, start: picked.start, end: picked.end, reactions });
   flags.push(score >= 75 ? "shortlist" : score >= 60 ? "review" : "low-score");
-  return { id: `c-${sha1(JSON.stringify([source.id, raw.kind, span.words[0].id, span.words.at(-1).id])).slice(0, 12)}`, kind: raw.kind, sourceId: source.id, startWord: span.words[0].id, endWord: span.words.at(-1).id, in: r3(picked.start), out: r3(picked.end), text: span.text, beats, score, ratings, reactionIds, flags, alternates: [] };
+  return { id: `c-${sha1(JSON.stringify([source.id, raw.kind, span.words[0].id, span.words.at(-1).id])).slice(0, 12)}`, kind: raw.kind, sourceId: source.id, ...(source.event ? { event: source.event } : {}), ...(source.audioQuality ? { sourceAudioQuality: source.audioQuality } : {}), startWord: span.words[0].id, endWord: span.words.at(-1).id, in: r3(picked.start), out: r3(picked.end), text: span.text, beats, score, ratings, reactionIds, containedReactionIds, followingReactionIds, reactionAssociationVersion: 1, reactionAssociations, reactionHints, reactionTailOut: tail, flags, alternates: [] };
 }
 
 /** Normalized five-word shingles; punctuation and case do not make a different performance. */
@@ -143,13 +175,18 @@ export function shingleSimilarity(a, b) {
 }
 
 /** Groups repeat performances and overlapping-window picks. Eligible durations win over alternate-only picks. */
-export function rankCandidates(list, { stories = 3, oneLiners = 12, interactions = 6, testimonials = 6 } = {}) {
+export function rankCandidates(list, { stories = 3, oneLiners = 12, interactions = 6, testimonials = 6, storyFamilies } = {}) {
   for (const n of [stories, oneLiners, interactions, testimonials]) if (!Number.isInteger(n) || n < 0) throw new Error("candidate limits must be nonnegative integers");
-  const sort = (a, b) => Number(a.flags.includes("alternate-only")) - Number(b.flags.includes("alternate-only")) || b.score - a.score || a.sourceId.localeCompare(b.sourceId) || a.in - b.in || a.id.localeCompare(b.id);
+  const sort = (a, b) => Number((a.flags || []).includes("alternate-only")) - Number((b.flags || []).includes("alternate-only")) || b.score - a.score || a.sourceId.localeCompare(b.sourceId) || a.in - b.in || a.id.localeCompare(b.id);
   const groups = [];
-  for (const c of [...list].sort(sort)) {
+  const flat = flattenCandidates(list);
+  const families = storyFamilies ?? lexicalStoryGroups(flat);
+  const familyOf = new Map(families.flatMap((g) => g.members.map((c) => [c.id, g])));
+  for (const c of flat.sort(sort)) {
     const category = (x) => NARRATIVE.has(x.kind) ? "stories" : x.kind === "one_liner" ? "oneLiners" : x.kind === "testimonial" ? "testimonials" : "interactions";
-    const matches = groups.filter((g) => category(g) === category(c) && [g, ...g.alternates].some((a) => shingleSimilarity(a.text, c.text) >= 0.60));
+    // A family can hold a story and a one-liner making the same point; only same-kind tellings become alternates,
+    // so a short line never displaces a complete story (or the reverse) from its shortlist.
+    const matches = groups.filter((g) => category(g) === category(c) && [g, ...g.alternates].some((a) => (familyOf.has(c.id) && familyOf.get(a.id)?.id === familyOf.get(c.id).id) || shingleSimilarity(a.text, c.text) >= 0.60));
     if (matches.length) {
       const group = matches[0];
       for (const alt of [c, ...c.alternates, ...matches.slice(1).flatMap((g) => [g, ...g.alternates])]) {
@@ -159,9 +196,19 @@ export function rankCandidates(list, { stories = 3, oneLiners = 12, interactions
       group.alternates.sort(sort);
     } else groups.push({ ...c, alternates: [...(c.alternates || [])] });
   }
+  // Audio chooses the telling within a family; editorial scores still rank different stories.
+  const preferred = groups.map((g) => {
+    const members = [g, ...g.alternates];
+    const eligible = members.filter((c) => !(c.flags || []).includes("alternate-only"));
+    const { best } = chooseTelling(eligible.length ? eligible : members);
+    const family = familyOf.get(best.id);
+    const alternates = chooseTelling(members.filter((c) => c.id !== best.id));
+    const annotate = (c) => ({ ...c, ...(family ? { storyGroupId: family.id, storyLabel: family.label, beatCoverage: familyOf.get(c.id)?.members.find((m) => m.id === c.id)?.beatCoverage || {} } : {}), alternates: [] });
+    return { ...annotate(best), alternates: [alternates.best, ...alternates.alternates].filter(Boolean).map(annotate) };
+  }).sort(sort);
   const counts = { stories: 0, oneLiners: 0, interactions: 0, testimonials: 0 };
   const limits = { stories, oneLiners, interactions, testimonials };
-  return groups.filter((c) => {
+  return preferred.filter((c) => {
     const key = NARRATIVE.has(c.kind) ? "stories" : c.kind === "one_liner" ? "oneLiners" : c.kind === "testimonial" ? "testimonials" : "interactions";
     return counts[key]++ < limits[key];
   });
@@ -224,14 +271,17 @@ export async function findCandidates({ sources, words, lines, envelope, reaction
     };
     for (const window of candidateWindows(duration)) await query(window);
   }
-  return rankCandidates(collected, options);
+  // The CLI combines refreshed and saved talks before its single semantic call and shortlist limit.
+  if (options.deferStoryGrouping) return rankCandidates(collected, { ...options, stories: collected.length, oneLiners: collected.length, interactions: collected.length, testimonials: collected.length });
+  const storyFamilies = await storyGroups(collected, { ask });
+  return rankCandidates(collected, { ...options, storyFamilies });
 }
 
 /** dir is the client folder. Per-source files retain alternate performances from other source groups. */
 export function writeCandidates(dir, list) {
   const bySource = new Map();
   for (const c of list) for (const item of [c, ...(c.alternates || [])]) {
-    if (typeof item.sourceId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(item.sourceId) || item.sourceId === "all") throw new Error(`unsafe candidate sourceId ${item.sourceId}`);
+    if (typeof item.sourceId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(item.sourceId) || ["all", "stories"].includes(item.sourceId)) throw new Error(`unsafe or reserved candidate sourceId ${item.sourceId}`);
     if (!bySource.has(item.sourceId)) bySource.set(item.sourceId, []);
     const bucket = bySource.get(item.sourceId);
     if (!bucket.some((x) => x.id === item.id)) bucket.push({ ...item, alternates: (item.alternates || []).filter((a) => a.sourceId === item.sourceId) });

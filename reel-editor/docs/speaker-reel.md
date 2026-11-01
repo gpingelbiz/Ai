@@ -51,6 +51,20 @@ open -e "$client/work/candidates/all.json"
 
 ### 4. Create and edit the plan
 
+#### Compare repeated stories before planning
+
+`reel speaker candidates "$client"` also compares repeated stories/points across events. To compare the saved inventory again without candidate finding or transcription, run:
+
+```bash
+reel speaker stories "$client"
+```
+
+`work/candidates/stories.json` (version 1) records labels and each telling's setup/turn/result coverage. One Claude call sees only candidate IDs, event names and transcript text; code drops unknown/duplicate IDs and accepts no model timestamps or quotes. Offline fallback uses content-word cosine (0.28 threshold, four shared words minimum, length check). Unchanged text reuses this separate cache; saved audio evidence and scores refresh without ASR.
+
+Comparisons show event, in/out, length, audio, reactions, score and BEST. `all.json` retains other tellings as `alternates`; leads prefer clean, usable, unknown, weak, reject, then score. Long `alternate-only` restrictions remain. Passage `audioQuality` takes precedence over the separately identified `sourceAudioQuality` fallback. No measurement means unknown. Source IDs `all` and `stories` are reserved for inventory files. Review every selection; grouping never edits a plan or combines performances.
+
+Reaction association version 1 adds `containedReactionIds`, `followingReactionIds`, their union `reactionIds`, and `reactionAssociations` with `overlapSeconds`. Unverified IDs are `reactionHints`; only `verified:true` earns the five-point bonus. `reactionTailOut` suggests a speech-free extension through a reaction without changing `out`. Listen before editing. Re-run `candidates` to refresh old reaction records; transcripts remain cached.
+
 ```bash
 reel speaker plan "$client" --version full
 open -e "$client/work/plans/full.json"
@@ -469,3 +483,21 @@ Title and booking names reveal with a 0.6-second mask on the absolute GSAP timel
 `at` names an item with a decorative incoming transition or a card/overlay entry. `start` selects the source offset; `duration` defaults to 0.6 seconds (maximum six). `gainDb` is explicit (−96 to 0). The complete audible interval must avoid every protected item, including a reaction beginning after the cue. The file must be registered as a licensed `kind:"sfx"` asset. No stock applause, reactions or automatic whooshes are inserted.
 
 `composition.json` records individual cue files, source offsets, output times, volume points and warnings. Composition multiplies each prepared cue by its gain lane and sums them into one `assets/music-bed.wav`, which the HTML references with no renderer automation. HyperFrames 0.8 rendered some separate cue elements silent. Existing daily-reel presets, composer and golden-frame fixtures are unchanged. Run `node --test test/speaker-motion.test.mjs` for the offline motion/audio checks, then `npm test`; golden/Chrome rendering still needs the normal render environment.
+
+## Audio quality
+
+`reel speaker quality <folder> [--source id]` measures permitted (`audio: "ok"`) originals and every saved candidate/alternate. It also runs after `candidates`. No ASR, model download or audio repair is involved. Source rows and candidates receive `audioQuality: {score, label, metrics, version: 1}`. Passage caches live independently in `work/index/<key>.quality.json`; source scores summarize up to five spread speech windows. A normal index refresh preserves these records when the content key is unchanged.
+
+Labels are `clean`, `usable`, `weak` and `reject` (floor contrast of at least 30, 20 and 3 dB; 2.5 score points per dB). Floor contrast (`contrastDb`) is the 90th minus the 5th percentile of 50 ms RMS windows: a board or lav feed's pauses fall to its noise floor, a phone in a noisy room never does. Julee's pilot: board feeds 43–58 dB, Audacious phone 31, Sonia 30, Madi 14, Florida phone 7–14. `gapContrastDb` (RMS during indexed words minus internal gaps of at least 250 ms, trimmed 60 ms) is kept as a diagnostic only: word gaps hold speech tails and breaths. Without measurable speech/pause spans, the visible `method` changes to `rms-percentiles-50ms`. Metrics also retain original-stream LUFS, true peak, per-channel RMS, imbalance and the percentage of samples at or above −0.1 dBFS. These are recording diagnostics, not intelligibility, isolated microphone noise or permission checks. Pause ambience can include breaths, music and genuine reactions. Thresholds are calibrated on Julee's pilot passages; inspect and audition new clients.
+
+The starter ranks audio labels before editorial scores and excludes measured rejects. Within a candidate's alternate performances, it prefers the best label among tellings within ten **editorial score** points of the best eligible telling. Missing measurements mean unmeasured, never bad. Weak selections add a plan note. Review measures exact clip ranges, displays label/contrast, and QC warns for weak core, room or testimonial sound, naming a cleaner candidate alternate when available. Suggestions still need human context and listening review; bad-audio sources never enter the mix and reactions never move.
+
+An optional injected `scoreDnsmos(file, {start, end, audioStream})` may return `{sig, bak, ovrl}` (1–5). It defaults to null, is stored separately in `metrics.dnsmos`, and does not override signal scores. Give the adapter a `.version` containing its model hash and implementation version for cache invalidation. A local implementation would need ONNX Runtime (e.g. `onnxruntime-node`), Microsoft's DNSMOS P.835 `sig_bak_ovr.onnx`, and verified code/model licences and attribution; none is installed or downloaded by this command.
+
+## Baked inserts and portrait shot observations
+
+`reel speaker inserts <folder> [--source id]` detects likely stock-picture inserts, slides and title cards already baked into stage, podcast, webinar and interview videos. Run `index` first. `candidates` runs this beside shot analysis and attaches overlapping `inserts` to each candidate and alternate. Portrait shot analysis now uses upright Vision geometry, including rotated phone recordings; its face-size thresholds account for taller frames. Shot labels are geometric suggestions, never speaker identity or audience provenance.
+
+Insert analysis compares each scene's centre frame with distant scenes in the same recording. Recurring room angles should match; short, unusual pictures receive extra weight. Local Apple Vision feature prints and text-area observations are preferred; ffmpeg 16×9 colour signatures and flat-colour/edge measures provide an automatic fallback. No npm package, model download or transcription is needed. Compilation uses the installed Swift/macOS SDK and caches the helper under `REEL_CACHE` (default `~/.cache/reel-editor`). Missing analysis fails open with a log line.
+
+Independent version-1 records live at `work/index/<source-cache-key>.inserts.json`: `{sourceId, version, inserts:[{start,end,kind,confidence,reason}]}`; all times are original-source seconds. Existing records are reused until their version or source key changes. Missing records mean unmeasured. Review lists the flags intersecting visible picture with source/output seconds and reasons; QC adds one WARN per intersection. Cutaways hide the underlying picture but their own pictures are checked too. Overlays do not clear a flag. No detector trims, covers, changes rights, or approves anything: inspect each original frame and make the editorial decision by hand. Similar-looking stock images, gradual edits and uncommon genuine room angles can fool this heuristic.

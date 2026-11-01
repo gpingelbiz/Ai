@@ -8,7 +8,10 @@ const boxes = (xs, floor) => (xs || []).filter((b) => [b.x, b.y, b.w, b.h].every
 
 /** Labels are geometric observations, never evidence that a crowd belongs to this speaker or moment. */
 export function classifyShot(sample) {
-  if (sample.width != null && sample.height != null && sample.width <= sample.height) return "unknown";
+  // width/height are DISPLAY geometry (probe already applies rotationCw; Vision applies the track transform).
+  // A portrait frame includes more vertical body at the same face width, so use smaller height fractions.
+  const portrait = sample.width < sample.height;
+  const medium = portrait ? 0.07 : 0.10, close = portrait ? 0.18 : 0.25;
   const faces = boxes(sample.faces, 0.5), bodies = boxes(sample.bodies, 0.3);
   // Two rows must each contain at least two faces, separated by a typical small face's height.
   const ys = faces.map((f) => f.y + f.h / 2).sort((a, b) => a - b);
@@ -20,9 +23,9 @@ export function classifyShot(sample) {
   // Prefer a confirmed track when supplied; otherwise a single face/body pair is only a wide observation.
   const face = sample.speaker?.face || (faces.length === 1 ? largest : null);
   const body = sample.speaker?.body || (faces.length === 1 && bodies.length === 1 ? bodies[0] : null);
-  if (face && body && boxes([face], 0.5).length && boxes([body], 0.3).length && face.h < 0.10 && body.h < 0.50) return "wide";
-  if (largest.h >= 0.25) return "close";
-  if (largest.h >= 0.10) return "medium";
+  if (face && body && boxes([face], 0.5).length && boxes([body], 0.3).length && face.h < medium && body.h < 0.50) return "wide";
+  if (largest.h >= close) return "close";
+  if (largest.h >= medium) return "medium";
   return "unknown";
 }
 
@@ -53,7 +56,7 @@ export function groupShots(samples, { fps = 2, minSamples = 2, duration = Infini
 }
 
 /**
- * Sample ORIGINAL landscape frames with the existing faces.swift adapter, without reframing.
+ * Sample ORIGINAL display-oriented frames with the existing faces.swift adapter, without reframing.
  * run(video, times) returns {width,height,frames:[{t,faces,bodies}]} like detectFaces; meta avoids a probe in tests.
  * The runner is batched to bound Vision memory and argument size on hour-long recordings.
  */
@@ -63,7 +66,6 @@ export async function shotCandidates(file, { fps = 2, run = detectFaces, meta, l
   const info = meta || await probe(file);
   if (!Number.isFinite(info.duration) || info.duration <= 0) throw new Error(`shots: invalid source duration: ${file}`);
   if (![info.width, info.height].every((v) => Number.isFinite(v) && v > 0)) throw new Error(`shots: invalid source geometry: ${file}`);
-  if (info.width <= info.height) return [];
   try {
     const samples = [];
     const count = Math.ceil(info.duration * fps);
@@ -71,8 +73,7 @@ export async function shotCandidates(file, { fps = 2, run = detectFaces, meta, l
       const times = Array.from({ length: Math.min(120, count - i) }, (_, j) => r3((i + j) / fps));
       const result = await run(file, times);
       if (!result || !Array.isArray(result.frames)) throw new Error("Vision face/body helper unavailable");
-      if (![result.width, result.height].every((v) => Number.isFinite(v) && v > 0)) throw new Error("Vision returned no landscape geometry");
-      if (result.width <= result.height) return [];
+      if (![result.width, result.height].every((v) => Number.isFinite(v) && v > 0)) throw new Error("Vision returned no display geometry");
       const frames = new Map(result.frames.map((s) => [r3(s.t), s]));
       // Keep failed decodes as unknown samples, so they cannot bridge two separate shots.
       for (const t of times) samples.push({ ...(frames.get(t) || { t, faces: [], bodies: [] }), width: result.width, height: result.height });
