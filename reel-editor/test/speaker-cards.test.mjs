@@ -597,8 +597,8 @@ test("all card types render at their readable font minimums and preflight flags 
     [titleCard, { type: "title" }, { nameFontSize: 84, roleFontSize: 40, taglineFontSize: 30 }, [84, 40, 30]],
     [bookingCard, { type: "booking" }, { nameFontSize: 84, roleFontSize: 40, textFontSize: 40, urlFontSize: 52 }, [84, 40, 40, 52]],
     [testimonialNameCard, { type: "testimonial-name", proofId: "t1" }, { nameFontSize: 60, titleFontSize: 40, orgFontSize: 36 }, [60, 40, 36]],
-    // Pull quote: accent mark at 1.6x, quote fitted from 84px to 80% of the width, never below 54px.
-    [quoteCard, { type: "quote", proofId: "q1" }, { fontSize: 54, nameFontSize: 30, titleFontSize: 30, orgFontSize: 30 }, [118, 74, 30]],
+    // Pull quote: accent mark at 2.4x; the quote is sized for about two lines from 84px, never below 54px.
+    [quoteCard, { type: "quote", proofId: "q1" }, { fontSize: 54, nameFontSize: 30, titleFontSize: 30, orgFontSize: 30 }, [202, 84, 30]],
     [logoWallCard, { type: "logo-wall", relationship: "spoke-at", logos: ["logo0", "logo1", "logo2"] }, { headingFontSize: 54 }, [54]],
     [topicCard, { type: "topic", text: "Sales confidence" }, { fontSize: 44 }, [44]],
   ];
