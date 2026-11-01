@@ -178,7 +178,7 @@ test("standalone inserts filters talk source kinds and --source without reaction
 
 test("candidates attach overlapping insert suggestions to primary and alternate entries", async (t) => {
   const folder = await clientFixture(t);
-  const list = await analyzeSpeaker(folder, { source: "stage" }, { print: () => {}, shots: async () => [], inserts: async () => [flag(60, 63), flag(90, 92)], candidates: async () => [{ id: "c1", kind: "one_liner", sourceId: "stage", in: 58, out: 65, text: "Exact source words", flags: [], score: 80, alternates: [{ id: "c2", sourceId: "stage", in: 90, out: 91 }] }] });
+  const list = await analyzeSpeaker(folder, { source: "stage" }, { print: () => {}, shots: async () => [], inserts: async () => [flag(60, 63), flag(90, 92)], candidates: async () => [{ id: "c1", kind: "one_liner", sourceId: "stage", in: 58, out: 65, text: "Exact source words", flags: [], score: 80, alternates: [{ id: "c2", kind: "one_liner", sourceId: "stage", in: 90, out: 91, text: "Exact source words", flags: [], score: 70 }] }] });
   assert.deepEqual(list[0].inserts, [flag(60, 63)]); assert.deepEqual(list[0].alternates[0].inserts, [flag(90, 92)]);
   assert.equal(JSON.parse(fs.readFileSync(path.join(folder, "work", "candidates", "all.json")))[0].inserts.length, 1);
 });

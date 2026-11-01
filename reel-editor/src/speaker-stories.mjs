@@ -84,7 +84,10 @@ export async function storyGroups(candidates, { ask = claudeText, log = warn } =
     if (!Array.isArray(reply?.groups)) throw new Error("reply had no groups[]");
     const byId = new Map(list.map((c) => [c.id, c])), used = new Set(), groups = [];
     for (const raw of reply.groups) {
-      if (!raw || typeof raw.label !== "string" || !raw.label.trim() || raw.label.length > 100 || /[\n\r\x00-\x1f"“”`$\d]/.test(raw.label) || !Array.isArray(raw.members)) { log("speaker stories: dropped malformed group label or members"); continue; }
+      if (!raw || !Array.isArray(raw.members)) { log("speaker stories: dropped a group with no members"); continue; }
+      // The label is review text only. Strip quotes, figures and control characters instead of losing the grouping
+      // ("Offering the top broker 50%" must still group the tellings).
+      const label = typeof raw.label === "string" ? raw.label.replace(/[\n\r\x00-\x1f"“”`$\d%]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 100) : "";
       const members = [];
       for (const m of raw.members) {
         if (!byId.has(m?.id) || used.has(m.id)) { log(`speaker stories: dropped unknown or duplicate id ${String(m?.id)}`); continue; }
@@ -92,7 +95,7 @@ export async function storyGroups(candidates, { ask = claudeText, log = warn } =
         used.add(m.id);
         members.push({ ...byId.get(m.id), beatCoverage: Object.fromEntries(BEATS.map((b) => [b, m.beats[b]])) });
       }
-      if (members.length) groups.push(family(members, raw.label.trim(), "model"));
+      if (members.length) groups.push(family(members, label || "Repeated story or point", "model"));
     }
     for (const c of list) if (!used.has(c.id)) groups.push(family([{ ...c, beatCoverage: coverage(c) }], "Single telling", "unmatched"));
     return groups;

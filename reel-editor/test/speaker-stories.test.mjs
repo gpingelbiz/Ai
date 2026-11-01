@@ -85,7 +85,11 @@ test("storyGroups drops unknown/duplicate IDs and malformed beats with warnings;
   assert.ok(warnings.some((w) => w.includes("fake")));
   assert.equal(warnings.filter((w) => w.includes("duplicate id a")).length, 2);
   assert.ok(warnings.some((w) => w.includes("beat coverage")));
-  assert.equal(groups.find((g) => g.members.some((c) => c.id === "c")).label, "Single telling");
+  // A messy label is cleaned, not a reason to lose the grouping; quotes and figures never survive into it.
+  assert.equal(groups.find((g) => g.members.some((c) => c.id === "c")).label, "Bad label");
+  assert.ok(warnings.some((w) => w.includes("duplicate id c")));
+  const figures = await storyGroups([a, b], { ask: async () => JSON.stringify({ groups: [{ label: 'Offering the top broker 50% "deal"', members: [{ id: "a", beats }, { id: "b", beats }] }] }) });
+  assert.equal(figures[0].members.length, 2); assert.equal(figures[0].label, "Offering the top broker deal");
 });
 
 for (const [name, ask] of [["failed call", async () => { throw new Error("offline"); }], ["unavailable adapter", null], ["malformed reply", async () => "{}"]]) {

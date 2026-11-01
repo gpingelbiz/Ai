@@ -177,7 +177,7 @@ export function shingleSimilarity(a, b) {
 /** Groups repeat performances and overlapping-window picks. Eligible durations win over alternate-only picks. */
 export function rankCandidates(list, { stories = 3, oneLiners = 12, interactions = 6, testimonials = 6, storyFamilies } = {}) {
   for (const n of [stories, oneLiners, interactions, testimonials]) if (!Number.isInteger(n) || n < 0) throw new Error("candidate limits must be nonnegative integers");
-  const sort = (a, b) => Number(a.flags.includes("alternate-only")) - Number(b.flags.includes("alternate-only")) || b.score - a.score || a.sourceId.localeCompare(b.sourceId) || a.in - b.in || a.id.localeCompare(b.id);
+  const sort = (a, b) => Number((a.flags || []).includes("alternate-only")) - Number((b.flags || []).includes("alternate-only")) || b.score - a.score || a.sourceId.localeCompare(b.sourceId) || a.in - b.in || a.id.localeCompare(b.id);
   const groups = [];
   const flat = flattenCandidates(list);
   const families = storyFamilies ?? lexicalStoryGroups(flat);
@@ -199,7 +199,7 @@ export function rankCandidates(list, { stories = 3, oneLiners = 12, interactions
   // Audio chooses the telling within a family; editorial scores still rank different stories.
   const preferred = groups.map((g) => {
     const members = [g, ...g.alternates];
-    const eligible = members.filter((c) => !c.flags.includes("alternate-only"));
+    const eligible = members.filter((c) => !(c.flags || []).includes("alternate-only"));
     const { best } = chooseTelling(eligible.length ? eligible : members);
     const family = familyOf.get(best.id);
     const alternates = chooseTelling(members.filter((c) => c.id !== best.id));

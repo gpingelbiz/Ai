@@ -42,7 +42,15 @@ for value in args.dropFirst(2) {
       space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
     context.interpolationQuality = .high
     context.draw(image, in: CGRect(x: 0, y: 0, width: 16, height: 9))
-    let thumbnail = (0..<(16 * 9)).flatMap { i in [Int(pixels[i * 4]), Int(pixels[i * 4 + 1]), Int(pixels[i * 4 + 2])] }
+    // Plain loop: the one-line flatMap made Swift 6.3's type checker give up.
+    var thumbnail: [Int] = []
+    thumbnail.reserveCapacity(16 * 9 * 3)
+    for i in 0..<(16 * 9) {
+      let base = i * 4
+      thumbnail.append(Int(pixels[base]))
+      thumbnail.append(Int(pixels[base + 1]))
+      thumbnail.append(Int(pixels[base + 2]))
+    }
     frames.append(["t": t, "width": image.width, "height": image.height, "signature": signature, "textArea": textArea, "thumbnail": thumbnail])
   }
 }

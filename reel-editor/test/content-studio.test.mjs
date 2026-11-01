@@ -719,7 +719,7 @@ test("reels: an edited reel is filed in Made and scheduled; one stranded in deli
   const s = loadStudio(dir);
   const clip = path.join(s.paths.rawReels, "clip.mov");
   fs.writeFileSync(clip, "video");
-  fs.utimesSync(clip, new Date(Date.now() - 600000), new Date(Date.now() - 600000));
+  fs.utimesSync(clip, new Date(NOW.getTime() - 3600000), new Date(NOW.getTime() - 3600000));
   const created = [];
   const deliver = (name) => {
     const folder = path.join(s.paths.reels, "delivered", name);
@@ -785,7 +785,7 @@ test("publish: a finished reel folder or a loose video with its caption is sched
   const dir = sampleCopy({ timezone: "America/Phoenix", publish: { mode: "schedule" } });
   const s = loadStudio(dir);
   fs.mkdirSync(s.paths.publish, { recursive: true });
-  const old = new Date(Date.now() - 600000);
+  const old = new Date(NOW.getTime() - 3600000); // relative to the fixed clock, so the test passes at any real time
   const reel = path.join(s.paths.publish, "2026-10-31 Reel 3");
   fs.mkdirSync(reel);
   fs.writeFileSync(path.join(reel, "Ask for the sale.mp4"), "mp4");
