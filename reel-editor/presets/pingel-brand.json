@@ -15,7 +15,7 @@
     "enabled": true,
     "wordsPerLine": 3,
     "position": 0.65,
-    "fontSizeFrac": 0.042,
+    "fontSizeFrac": 0.04,
     "uppercase": true,
     "animation": "pop",
     "style": "reveal",

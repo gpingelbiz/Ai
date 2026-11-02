@@ -22,7 +22,7 @@ function load(brand, { font = true } = {}) {
 }
 
 const GREG = {
-  "captions.uppercase": true, "captions.fontSizeFrac": 0.042, "captions.autoKeywords": true, "captions.keywordColorOnFootage": undefined,
+  "captions.uppercase": true, "captions.fontSizeFrac": 0.04, "captions.autoKeywords": true, "captions.keywordColorOnFootage": undefined,
   "captions.animation": "pop", "captions.style": "reveal", "captions.annotate": true, "captions.dimFuture": undefined,
   "captions.maxKeywordsPerLine": 1, "captions.placeMin": 0.58, "captions.placeMax": 0.79, "captions.minShow": 0.35, "captions.wordsPerLine": 3,
   "hook.uppercase": undefined, "hook.duration": 3, "hook.fontSizeFrac": 0.041, "hook.behind": false, "hook.plaque": true,
@@ -69,7 +69,7 @@ test("a client built from the kit template keeps its caption defaults and explic
     for (const [k, v] of Object.entries({ ...CLIENT, ...CLIENT_FAST, "captions.uppercase": true, "captions.annotate": true, "hook.behind": true, "hook.uppercase": true })) assert.equal(at(p, k), v, k);
     const greg = loadPreset("pingel-brand");
     assert.equal(p.captions.fontSizeFrac, 0.0355);
-    assert.equal(greg.captions.fontSizeFrac, 0.042);
+    assert.equal(greg.captions.fontSizeFrac, 0.04);
     assert.equal(p.captions.autoKeywords, false);
     assert.equal(greg.captions.autoKeywords, true);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }

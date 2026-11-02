@@ -92,7 +92,7 @@ test("client brand presets keep the October 30 captions and old punch-in spacing
   assert.equal(own.captions.annotate, true);
   assert.equal(own.zooms.minSpacing, 16);
   const greg = load("pingel-brand");
-  for (const [k, v] of Object.entries({ uppercase: true, fontSizeFrac: 0.042, animation: "pop", autoKeywords: true, annotate: true, placeMax: 0.79 })) assert.equal(greg.captions[k], v, k);
+  for (const [k, v] of Object.entries({ uppercase: true, fontSizeFrac: 0.04, animation: "pop", autoKeywords: true, annotate: true, placeMax: 0.79 })) assert.equal(greg.captions[k], v, k);
   assert.equal(greg.zooms.minSpacing, 6);
   // pingel-runway builds on Greg's own look, not a client's.
   assert.equal(load("pingel-runway").captions.uppercase, true);
