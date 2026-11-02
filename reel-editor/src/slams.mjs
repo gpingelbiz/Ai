@@ -11,6 +11,8 @@ import { norm } from "./text.mjs";
 const DISPLAY_MAX = 16;
 // Everyday gold words that are not worth a stamp on their own ("one thing", "first", "why").
 const WEAK = new Set("one two three four five six seven eight nine ten first last next why what that this thing things here there never always right okay yeah really actually just like".split(" "));
+// These can stay in spoken captions, but never become a giant word beside the speaker's head.
+export const SLAM_EXCLUDED_WORDS = new Set("kill killed killing die dead death murder gun guns shoot shot knife stab blood choke hang hanged suicide".split(" "));
 
 function rankWord(text, dict) {
   const t = norm(text);
@@ -34,9 +36,10 @@ export function slamCandidates(groups, dict = {}) {
       while (k + 1 < words.length && words[k + 1].key && k - j < 2) k++;
       const run = words.slice(j, k + 1);
       const text = run.map((w) => tidy(w.text)).join(" ").trim();
+      const excluded = run.some((w) => String(w.text).split(/[^\p{L}\p{N}]+/u).some((word) => SLAM_EXCLUDED_WORDS.has(norm(word))));
       const rank = Math.max(...run.map((w) => rankWord(w.text, dict)));
       const weak = (rank < 2 && (WEAK.has(norm(text)) || norm(text).length < 5)) || WEAK.has(norm(text)) || /^\d{1,2}:\d{2}$/.test(text);
-      if (text && text.length <= DISPLAY_MAX && !weak) out.push({ line: i, t: r3(run[0].start ?? g.start), end: r3(run[run.length - 1].end ?? g.end), text, rank });
+      if (text && text.length <= DISPLAY_MAX && !weak && !excluded) out.push({ line: i, t: r3(run[0].start ?? g.start), end: r3(run[run.length - 1].end ?? g.end), text, rank });
       j = k;
     }
   });
