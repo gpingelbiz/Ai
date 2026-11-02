@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { checkRunwayVideo, trimRunwayClip } from "./broll-runway.mjs";
 import { checkPick, subjectWords, brollTestCache } from "./broll.mjs";
-import { eventInPoint } from "./broll-qc.mjs";
+import { eventInPoint, momentInPoint } from "./broll-qc.mjs";
 import { ensureDir, readJSON, writeJSON, sha1, warn } from "./util.mjs";
 
 export const libraryDir = (env = process.env) => env.REEL_BROLL_LIBRARY || path.join(env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT ? brollTestCache() : env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-library");
@@ -44,10 +44,14 @@ export async function reviewMovingClip({ file, duration, pick, shot, groups, dir
   const inspected = await check({ file, pick, shot: { ...shot, duration }, groups, dir, deps });
   if (!inspected.ok || inspected.look !== "pass") return null;
   const timeline = pick.kind === "ambient" ? undefined : inspected;
-  if (timeline && eventInPoint(timeline, shot.duration, duration) === null) return null;
-  const trimmed = await (deps.trimRunwayClip || trimRunwayClip)(file, shot.duration, { dir, runFn: deps.runFn, timeline });
+  // Found footage rarely fits its whole event into a short cutaway; then the cut holds the key moment instead.
+  const whole = timeline ? eventInPoint(timeline, shot.duration, duration) : null;
+  const inPoint = timeline ? whole ?? momentInPoint(timeline, shot.duration, duration) : undefined;
+  if (timeline && inPoint === null) return null;
+  const trimmed = await (deps.trimRunwayClip || trimRunwayClip)(file, shot.duration, { dir, runFn: deps.runFn, timeline, inPoint });
   const moves = await check({ file, pick, shot, groups, dir, inPoint: trimmed.inPoint, deps });
-  if (!moves.ok || moves.look !== "pass" || timeline && eventInPoint(moves, shot.duration, shot.duration) === null) return null;
+  const landed = !timeline || (whole !== null ? eventInPoint(moves, shot.duration, shot.duration) !== null : timeline.contact == null || moves.contact !== null);
+  if (!moves.ok || moves.look !== "pass" || !landed) return null;
   return { ...shot, ...trimmed, file, sourceDuration: duration, video: true, move: "none", motion: "none", kind: pick.kind, action: pick.action, moves };
 }
 

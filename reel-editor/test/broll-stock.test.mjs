@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createStockSearch, normaliseStock, stockContactSheet, conformStockClip, makeStockClip, stockCacheDir } from "../src/broll-stock.mjs";
+import { createStockSearch, stockRelevance, normaliseStock, stockContactSheet, conformStockClip, makeStockClip, stockCacheDir } from "../src/broll-stock.mjs";
 import { libraryDir, readLibrary, saveLibraryClip, findLibraryClip, reviewMovingClip, writeBrollCredits } from "../src/broll-library.mjs";
 import { makeBroll, picksPrompt, recentFile, rememberScenes, readRecent } from "../src/broll.mjs";
 import { makeRunwayBroll, runwayPicksPrompt } from "../src/broll-runway.mjs";
@@ -57,22 +57,46 @@ function ageLibrary(f) {
 
 test("stock normalises documented variants, keeps film, filters duration/resolution and prefers portrait", () => {
   const [c] = normaliseStock("pexels", { videos: [pexel(), pexel(2, { duration: 2 }), pexel(3, { duration: 21 }), pexel(4, { video_files: [{ link: "small", width: 640, height: 1136, file_type: "video/mp4" }] })] });
-  assert.deepEqual(c, { provider: "pexels", id: 1, pageUrl: "https://pexels.test/video/1", creator: "Camera Person", duration: 6, width: 1080, height: 1920, thumb: "https://thumb.test/1.jpg", files: [{ url: "https://clip.test/1.mp4", width: 720, height: 1280, fps: 25 }, { url: "https://clip.test/1-hd.mp4", width: 1080, height: 1920, fps: 25 }] });
+  assert.deepEqual(c, { provider: "pexels", id: 1, pageUrl: "https://pexels.test/video/1", creator: "Camera Person", duration: 6, width: 1080, height: 1920, tags: "", thumb: "https://thumb.test/1.jpg", files: [{ url: "https://clip.test/1.mp4", width: 720, height: 1280, fps: 25 }, { url: "https://clip.test/1-hd.mp4", width: 1080, height: 1920, fps: 25 }] });
   const [p] = normaliseStock("pixabay", { hits: [pixabay(), pixabay({ type: "animation" })] });
   assert.equal(p.thumb, "https://thumb.test/9.jpg"); assert.equal(p.creator, "Filmmaker"); assert.equal(p.files[0].fps, null);
   assert.equal(normaliseStock("pixabay", { hits: [pixabay({ videos: { small: { url: "small", width: 640, height: 360 } } })] }).length, 0);
 });
 
-test("search uses portrait then any, film on Pixabay, query then subject, dedupes and stops at six", async () => {
+test("search uses portrait then any, film on Pixabay, subject then query, dedupes and stops at six", async () => {
   const f = fixture(), urls = [];
   const search = createStockSearch({ env: f.env, fetchFn: async (url, init) => { const u = new URL(url); urls.push(u); if (u.hostname === "api.pexels.com") { assert.equal(init.headers.Authorization, "secret"); return json({ videos: u.searchParams.get("orientation") ? [] : [pexel()] }); } assert.equal(u.searchParams.get("key"), "secret-two"); assert.equal(u.searchParams.get("video_type"), "film"); return json({ hits: [pixabay()] }); } });
   assert.equal((await search(pick)).length, 2);
   assert.deepEqual(urls.map((u) => u.searchParams.get("orientation")), ["portrait", null, null, "portrait", null, null]);
-  assert.deepEqual(urls.map((u) => u.searchParams.get("query") || u.searchParams.get("q")), ["coconut falling", "coconut falling", "coconut falling", "coconut", "coconut", "coconut"]);
+  assert.deepEqual(urls.map((u) => u.searchParams.get("query") || u.searchParams.get("q")), ["coconut", "coconut", "coconut", "coconut falling", "coconut falling", "coconut falling"]);
   assert.equal((await search({ stockQuery: "gorilla walking", shows: "gorilla" })).length, 0, "one request budget covers the entire reel");
   const g = fixture(); let requests = 0;
   const enough = createStockSearch({ env: g.env, fetchFn: async () => { requests++; return json({ videos: Array.from({ length: 8 }, (_, i) => pexel(i)) }); } });
   assert.equal((await enough(pick)).length, 6); assert.equal(requests, 1);
+});
+
+test("search drops clips tagged with another subject, ranks tagged matches first and reads Pexels slugs", async () => {
+  assert.equal(stockRelevance({ tags: "gorilla, ape, silverback" }, ["gorilla"]), "match");
+  assert.equal(stockRelevance({ tags: "gorillas, zoo" }, ["gorilla"]), "match");
+  assert.equal(stockRelevance({ tags: "shoes, walking, feet, crowd" }, ["gorilla"]), "miss");
+  assert.equal(stockRelevance({ tags: "" }, ["gorilla"]), "unknown");
+  assert.equal(normaliseStock("pexels", { videos: [pexel(5, { url: "https://www.pexels.com/video/a-gorilla-eating-leaves-5/" })] })[0].tags, "a gorilla eating leaves");
+  const f = fixture(), urls = [];
+  const hits = [pixabay({ id: 1, tags: "shoes, walking, feet" }), pixabay({ id: 2 }), pixabay({ id: 3, tags: "gorilla, ape" })];
+  const search = createStockSearch({ env: f.env, fetchFn: async (url) => { urls.push(new URL(url).searchParams.get("q")); return json({ hits }); } });
+  const found = await search({ stockQuery: "gorilla walking", shows: "gorilla", scene: "A silverback gorilla on a jungle path." }, ["pixabay"]);
+  assert.deepEqual(found.map((c) => c.id), [3, 2]);
+  assert.equal(urls[0], "gorilla");
+});
+
+test("stock checks the full clip for the event Claude saw in the chosen image", async () => {
+  const f = fixture();
+  f.deps.claudeLook = async (prompt) => { f.calls.looks.push(prompt); return prompt.includes('"seen":"..."') ? '{"seen":"a coconut on sand"}' : choose(1, { event: "The coconut rolls slowly across the sand." }); };
+  const out = await makeStockClip(f.args);
+  assert.ok(out);
+  assert.equal(f.calls.checks[0].pick.action, "The coconut rolls slowly across the sand.");
+  assert.equal(out.action, "The coconut rolls slowly across the sand.");
+  assert.match(f.calls.looks[1], /Name the harmless event this clip most likely shows/); assert.match(f.calls.looks[1], /a guide, not a requirement/);
 });
 
 test("search cache survives a new client for 24 hours and expires; disk never includes API keys", async () => {
@@ -116,9 +140,10 @@ test("contact sheet downloads thumbnails only, numbers tiles and supports one or
   }
 });
 
-test("stock conform centre-crops portrait, mutes audio and sets 30 fps with seekable keyframes", async () => {
+test("stock conform skips faded edges, centre-crops portrait, mutes audio and sets 30 fps with seekable keyframes", async () => {
   const f = fixture(); await conformStockClip("in.mp4", path.join(f.dir, "out.mp4"), { runFn: f.deps.runFn });
-  const args = f.calls.runs[0].args;
+  const args = f.calls.runs.find((r) => r.cmd === "ffmpeg").args;
+  assert.deepEqual(args.slice(3, 7), ["-ss", "0.5", "-t", "5"], "fade-in and fade-out edges are skipped");
   assert.ok(args.includes("scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280"));
   assert.ok(args.includes("-an")); assert.equal(args[args.indexOf("-r") + 1], "30"); assert.equal(args[args.indexOf("-g") + 1], "30");
 });
@@ -165,12 +190,22 @@ test("weapon, dark and wrong-subject picks never search stock or library", async
   }
 });
 
-test("review rejects incomplete events, unavailable checks and failed exact trims", async () => {
-  for (const results of [[{ ...verdict, completion: 4 }], [{ ok: true, look: "unavailable" }], [verdict, { ok: false }], [verdict, { ...verdict, completion: 1.6 }]]) {
+test("review rejects a cut that loses the contact, unavailable checks and failed exact trims", async () => {
+  for (const results of [[{ ...verdict, completion: 4 }, { ...verdict, contact: null }], [{ ok: true, look: "unavailable" }], [verdict, { ok: false }], [verdict, { ...verdict, completion: 1.6 }]]) {
     const f = fixture(), file = path.join(f.dir, "clip.mp4"); fs.writeFileSync(file, "motion"); let i = 0;
     f.deps.checkRunwayVideo = async () => results[i++] || verdict;
     assert.equal(await reviewMovingClip({ ...f.args, file, duration: 6 }), null);
   }
+});
+
+test("found footage whose event outlasts the cutaway is cut around the contact moment", async () => {
+  const f = fixture(), file = path.join(f.dir, "clip.mp4"); fs.writeFileSync(file, "motion");
+  f.deps.checkRunwayVideo = async (args) => { f.calls.checks.push(args); return args.inPoint === undefined ? { ...verdict, onset: 2.5, contact: 3, completion: 5 } : verdict; };
+  const out = await reviewMovingClip({ ...f.args, file, duration: 6 });
+  assert.ok(out); assert.equal(f.calls.trims[0].options.inPoint, 2.4);
+  const g = fixture(), whole = path.join(g.dir, "clip.mp4"); fs.writeFileSync(whole, "motion");
+  await reviewMovingClip({ ...g.args, file: whole, duration: 6 });
+  assert.equal(g.calls.trims[0].options.inPoint, 0.05, "an event that fits keeps the whole-event cut");
 });
 
 test("library paths honour overrides; only approved motion is saved and duplicate uses are idempotent", () => {

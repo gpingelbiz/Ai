@@ -3,26 +3,38 @@ import path from "node:path";
 import os from "node:os";
 import { claudeLook, firstJSON } from "./claude.mjs";
 import { timeLabel } from "./broll-qc.mjs";
-import { checkPick, brollStep } from "./broll.mjs";
+import { checkPick, brollStep, subjectWords } from "./broll.mjs";
 import { reviewMovingClip, saveLibraryClip, readLibrary, recentLibraryReels } from "./broll-library.mjs";
-import { readJSON, writeJSON, sha1, run, warn } from "./util.mjs";
+import { readJSON, writeJSON, sha1, run, warn, r3 } from "./util.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
 export const stockCacheDir = (env = process.env) => path.join(env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-stock");
 const suitableFile = (f) => f.url && (f.height > f.width ? f.width >= 720 : f.width >= 1280);
+// Pexels has no tags, but its page slug names the clip ("/video/a-gorilla-eating-123/").
+const slugWords = (url) => String(url || "").split("/").filter(Boolean).pop()?.replace(/-?\d+$/, "").replace(/-/g, " ") || "";
 export function normaliseStock(provider, body) {
   const clips = provider === "pexels" ? (body.videos || []).map((v) => ({
-    provider, id: v.id, pageUrl: v.url, creator: v.user?.name || "", duration: v.duration, width: v.width, height: v.height,
+    provider, id: v.id, pageUrl: v.url, creator: v.user?.name || "", duration: v.duration, width: v.width, height: v.height, tags: slugWords(v.url),
     files: (v.video_files || []).filter((f) => f.file_type === "video/mp4").map((f) => ({ url: f.link, width: f.width, height: f.height, fps: f.fps ?? null })), thumb: v.image,
   })) : (body.hits || []).filter((v) => v.type === "film").map((v) => {
     const variants = Object.values(v.videos || {}).filter((f) => f.url);
     const largest = [...variants].sort((a, b) => b.width - a.width)[0] || {};
-    return { provider, id: v.id, pageUrl: v.pageURL, creator: v.user || "", duration: v.duration, width: largest.width, height: largest.height,
+    return { provider, id: v.id, pageUrl: v.pageURL, creator: v.user || "", duration: v.duration, width: largest.width, height: largest.height, tags: v.tags || "",
       files: variants.map((f) => ({ url: f.url, width: f.width, height: f.height, fps: f.fps ?? null })), thumb: largest.thumbnail || variants.find((f) => f.thumbnail)?.thumbnail };
   });
   return clips.map((c) => ({ ...c, files: c.files.filter(suitableFile).sort((a, b) => Number(b.height > b.width) - Number(a.height > a.width) || a.width - b.width) }))
     .filter((c) => c.duration >= 3 && c.duration <= 20 && c.thumb && c.files.length)
     .sort((a, b) => Number(b.files[0].height > b.files[0].width) - Number(a.files[0].height > a.files[0].width));
+}
+
+/**
+ * Whether a clip's tags name every subject word (a plural or compound counts: gorilla matches gorillas). Untagged
+ * clips are unknown rather than wrong; the contact sheet check still has to see the subject.
+ */
+export function stockRelevance(clip, subject) {
+  const tags = String(clip.tags || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (!tags.length || !subject.length) return "unknown";
+  return subject.every((w) => tags.some((t) => t.startsWith(w) || w.startsWith(t) && t.length >= 4)) ? "match" : "miss";
 }
 
 /** A reel has one small search allowance; cache hits do not consume API requests. 429s defer future work. */
@@ -40,7 +52,7 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
     if (rate?.blockedUntil > now() || searches >= maxSearches) return [];
     const url = new URL(provider === "pexels" ? "https://api.pexels.com/videos/search" : "https://pixabay.com/api/videos/");
     url.searchParams.set(provider === "pexels" ? "query" : "q", query.slice(0, 100));
-    url.searchParams.set("per_page", "12");
+    url.searchParams.set("per_page", "20");
     if (provider === "pexels") { if (orientation) url.searchParams.set("orientation", orientation); }
     else { url.searchParams.set("key", key); url.searchParams.set("video_type", "film"); url.searchParams.set("safesearch", "true"); }
     searches++;
@@ -60,20 +72,23 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
       return normaliseStock(provider, body);
     } catch { warnFn(`b-roll: ${provider} search unavailable; skipped`); return []; }
   }
-  return async ({ stockQuery, shows }, providers = ["pexels", "pixabay"]) => {
-    const clips = [], seen = new Set();
-    for (const query of [...new Set([stockQuery, shows].map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
+  // The bare subject goes first: a longer query such as "gorilla walking" matches crowds walking before gorillas.
+  // Clips whose tags name a different subject are dropped; tagged matches rank ahead of untagged clips.
+  return async ({ stockQuery, shows, scene }, providers = ["pexels", "pixabay"]) => {
+    const subject = subjectWords(shows, scene || shows), clips = [], seen = new Set();
+    const ranked = () => [...clips.filter((c) => stockRelevance(c, subject) === "match"), ...clips.filter((c) => stockRelevance(c, subject) === "unknown")];
+    for (const query of [...new Set([subject.join(" "), shows, stockQuery].map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
       for (const provider of providers.filter((p) => ["pexels", "pixabay"].includes(p))) {
         for (const orientation of provider === "pexels" ? ["portrait", null] : [null]) {
           for (const c of await search(provider, query, orientation)) {
             const id = `${c.provider}:${c.id}`;
             if (!seen.has(id)) { seen.add(id); clips.push(c); }
           }
-          if (clips.length >= 6) return clips.slice(0, 6);
+          if (ranked().length >= 6) return ranked().slice(0, 6);
         }
       }
     }
-    return clips.slice(0, 6);
+    return ranked().slice(0, 6);
   };
 }
 
@@ -100,8 +115,12 @@ export async function stockContactSheet(candidates, { dir, deps = {} }) {
   return sheet;
 }
 
+/** Stock clips often fade in from or out to black, so a clip over 4 s loses its first and last half second. */
 export async function conformStockClip(input, file, { runFn = run } = {}) {
-  await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", input, "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280", "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-r", "30", "-g", "30", "-pix_fmt", "yuv420p", "-movflags", "+faststart", file], { quiet: true });
+  const probe = await runFn("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input], { capture: true });
+  const total = Number(probe?.out?.trim());
+  const edges = total > 4 ? ["-ss", "0.5", "-t", String(r3(total - 1))] : [];
+  await runFn("ffmpeg", ["-y", "-loglevel", "error", ...edges, "-i", input, "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280", "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-r", "30", "-g", "30", "-pix_fmt", "yuv420p", "-movflags", "+faststart", file], { quiet: true });
 }
 
 export async function makeStockClip({ pick, shot, groups, workDir, dir, settings = {}, search, deps = {} }) {
@@ -129,11 +148,11 @@ export async function makeStockClip({ pick, shot, groups, workDir, dir, settings
     for (let attempt = 0; attempt < 2; attempt++) {
       stage = "Claude choice";
       const result = firstJSON(await look(`Inspect ${JSON.stringify(path.basename(sheet))}. Your independent description: ${JSON.stringify(open.seen)}.
-Required subject: ${JSON.stringify(pick.shows)}. Required harmless event: ${JSON.stringify(pick.action)}.
+Required subject: ${JSON.stringify(pick.shows)}. Planned event (a guide, not a requirement): ${JSON.stringify(pick.action)}.
 Spoken context: ${JSON.stringify(groups.filter((g) => g.start >= shot.start - 3 && g.start <= shot.start + shot.duration + 3).map((g) => g.text).join(" "))}.
-Choose one image that unmistakably shows the named subject positioned for an action fitting those words. Prefer real filmed footage, natural colour, portrait framing, a large clear subject and the complete action area above captions. Reject human faces (animal faces are allowed), readable text, logos, watermarks, animation, harm, neck contact, hanging loops, threats and unsafe associations with those words. If uncertain, answer none.
+Choose the image that unmistakably shows the named subject, large and clear, doing something real and harmless. Stock footage rarely shows the planned event, so a different harmless event is fine when it does not contradict the spoken words; prefer one that fits them (for "coming after me", a walk or a stare toward the lens beats eating). Name the harmless event this clip most likely shows (for example "the gorilla stares into the lens and shifts its weight"); the full clip is then checked for it. Prefer real filmed footage, natural colour, portrait framing, a large clear subject and the complete action area above captions. Reject human faces (animal faces are allowed), readable text, logos, watermarks, animation, harm, neck contact, hanging loops, threats and unsafe associations with those words. If uncertain, answer none.
 Candidate numbers are 1 through ${candidates.length}, labelled as decimals. Excluded after failed clip checks: ${JSON.stringify(rejected)}.
-Reply JSON only: {"choice":N|"none","shows":true|false,"safe":true|false,"humanFaces":true|false,"readableText":true|false,"logos":true|false,"watermarks":true|false,"why":"..."}`, { cwd: evidence }));
+Reply JSON only: {"choice":N|"none","event":"...","shows":true|false,"safe":true|false,"humanFaces":true|false,"readableText":true|false,"logos":true|false,"watermarks":true|false,"why":"..."}`, { cwd: evidence }));
       selections.push(result); saveSelection();
       const candidate = Number.isInteger(result.choice) && candidates[result.choice - 1];
       const choice = candidate ? `${result.choice} (${candidate.provider}:${candidate.id})` : "none";
@@ -144,6 +163,7 @@ Reply JSON only: {"choice":N|"none","shows":true|false,"safe":true|false,"humanF
       }
       rejected.push(result.choice);
       const c = candidates[result.choice - 1], variant = c.files[0];
+      const event = typeof result.event === "string" && result.event.trim() ? result.event.trim() : pick.action, checked = { ...pick, action: event };
       try {
         const original = path.join(evidence, `${c.provider}-${c.id}.download.mp4`), file = path.join(evidence, `${c.provider}-${c.id}.mp4`);
         stage = "download";
@@ -155,13 +175,13 @@ Reply JSON only: {"choice":N|"none","shows":true|false,"safe":true|false,"humanF
         const duration = Number(probe.out?.trim());
         if (!(duration >= 3 && duration <= 20)) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: duration must be 3–20 seconds`, deps); continue; }
         stage = "full and trimmed clip inspection";
-        const accepted = await reviewMovingClip({ file, duration, pick, shot, groups, dir: evidence, deps });
-        if (!accepted) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: full or trimmed clip failed event/look inspection`, deps); continue; }
+        const accepted = await reviewMovingClip({ file, duration, pick: checked, shot, groups, dir: evidence, deps });
+        if (!accepted) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: full or trimmed clip failed event/look inspection (${JSON.stringify(event)})`, deps); continue; }
         const licence = { provider: c.provider, id: c.id, pageUrl: c.pageUrl, creator: c.creator, downloadedAt: new Date((deps.now || Date.now)()).toISOString() };
         const output = { ...accepted, source: c.provider, licence };
         if (settings.library) {
           try {
-            const saved = saveLibraryClip({ shot: output, pick, workDir, licence, env, now: (deps.now || Date.now)() });
+            const saved = saveLibraryClip({ shot: output, pick: checked, workDir, licence, env, now: (deps.now || Date.now)() });
             if (saved) output.libraryId = saved.id;
           } catch { warn("b-roll: approved stock clip could not be saved to the library"); }
         }

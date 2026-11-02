@@ -205,7 +205,8 @@ export function codexStillInstructions({ aspect = "9:16", style = "", file, assi
     `Use your image generation tool to draw each opening scene as a vertical ${aspect} (1080x1920) image. ${file ? `Save only ${file} in the current folder.` : assignedFiles ? "Save each image in the current folder using exactly the file name assigned in the picks below." : "Save broll-1.png, broll-2.png and so on in the current folder, in rank order."}`,
     `Look for every image: ${STILL_STYLE}${style ? ` ${style}` : ""}`,
     "Draw the named subject big, with the complete action area above captions. No faces, lettering, numbers or logos. Never draw a weapon, hanging rope, neck contact or harm.",
-    "Do not run commands or write any other files. Return the saved file name with each pick. An image tool failure drops that candidate.",
+    // Codex saves a generated image by copying it out of ~/.codex/generated_images, so it must be allowed that one command.
+    "Only run the copy command that saves each generated image under its file name; write no other files. Return the saved file name with each pick. An image tool failure drops that candidate.",
   ].join("\n");
 }
 

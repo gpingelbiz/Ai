@@ -257,7 +257,7 @@ export function actionInPoint(pixels, duration, clipDuration, { size = 64 * 64, 
 }
 
 /** Keep the full download and render/check the same selected action interval. */
-export async function trimRunwayClip(file, duration, { runFn = run, dir = path.dirname(file), timeline } = {}) {
+export async function trimRunwayClip(file, duration, { runFn = run, dir = path.dirname(file), timeline, inPoint: chosen } = {}) {
   const full = file.replace(/\.mp4$/i, ".full.mp4");
   if (!fs.existsSync(full)) fs.renameSync(file, full);
   const tmp = fs.mkdtempSync(path.join(dir, "action-"));
@@ -267,7 +267,7 @@ export async function trimRunwayClip(file, duration, { runFn = run, dir = path.d
     if (!(clipDuration > 0)) throw new Error("clip duration unavailable");
     const raw = path.join(tmp, "frames.gray");
     await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", full, "-vf", "fps=8,scale=64:64,format=gray", "-f", "rawvideo", raw], { quiet: true });
-    const inPoint = eventInPoint(timeline, duration, clipDuration, actionInPoint(fs.readFileSync(raw), duration, clipDuration));
+    const inPoint = chosen ?? eventInPoint(timeline, duration, clipDuration, actionInPoint(fs.readFileSync(raw), duration, clipDuration));
     if (inPoint === null) throw Object.assign(new Error("complete event cannot fit spoken interval"), { code: "EVENT_WINDOW" });
     await runFn("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(inPoint), "-i", full, "-t", String(duration), "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-r", "30", "-g", "30", "-pix_fmt", "yuv420p", "-movflags", "+faststart", file], { quiet: true });
     return { inPoint, full };
