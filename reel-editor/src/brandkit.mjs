@@ -122,7 +122,7 @@ export function brandPreset(b, { fonts = {} } = {}) {
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
     graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : { every: 10, max: 6 }), clearStart: 0 },
     // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
-    broll: { ...broll, engine: brollEngine, world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
+    broll: { ...broll, stock: compat.stock ?? [], library: compat.library === true, engine: brollEngine, world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
     carousel: { handle: identity.handle || "", style: String(compat.carouselStyle ?? b.carouselStyle ?? "").trim() },
     lowerThird: { name: identity.name, handle: identity.handle || "" },
   };

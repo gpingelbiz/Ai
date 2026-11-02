@@ -300,3 +300,19 @@ test("Greg's presets inherit matching moving settings and still-only brands can 
   assert.equal(loadPreset(own).broll.animate, false);
 
 });
+
+
+test("approved moving Codex/Runway output enters the library with source task IDs", async () => {
+  const f = fixture({ settings: { library: true } });
+  const env = { REEL_CACHE: folder() };
+  const [shot] = await f.run({ deps: { ...f.args.deps, env } });
+  const { readLibrary } = await import("../src/broll-library.mjs");
+  const [saved] = readLibrary(env).clips;
+  assert.equal(saved.id, shot.libraryId);
+  assert.equal(saved.source, "runway");
+  assert.deepEqual(saved.subjectWords, ["coconut"]);
+  assert.deepEqual(saved.licence.taskIds, ["video-1", "sound-1"]);
+  assert.equal(saved.duration, 3);
+  assert.ok(fs.existsSync(saved.file));
+  assert.equal(saved.usedIn.length, 1);
+});

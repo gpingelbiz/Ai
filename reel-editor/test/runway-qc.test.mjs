@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { subjectMotion, reviewTimes, contactSheet, validTimeline, eventInPoint, phonePreviews, localClipCheck, audioPeak, soundMix, verifySound } from "../src/broll-qc.mjs";
+import { subjectMotion, reviewTimes, contactSheet, validTimeline, eventInPoint, momentInPoint, phonePreviews, localClipCheck, audioPeak, soundMix, verifySound } from "../src/broll-qc.mjs";
 import { runwayTiming, rapidListPicks, placeRunwayBroll, planShotBudget, videoMotion, hasPhysicalSound, checkRunwayVideo } from "../src/broll-runway.mjs";
 import { generateTask, failurePolicy, waitForTask, makeStill } from "../src/runway.mjs";
 import { bakeoffOptions, runBakeoff } from "../scripts/runway-bakeoff.mjs";
@@ -36,7 +36,8 @@ test("background registration removes a camera pan while retaining independent s
 
 test("one timestamped sheet covers every quarter second, the last frame, and the peak-motion neighbourhood", async () => {
   const times = reviewTimes(2.4, 1.2);
-  for (const t of [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 1.167, 1.2, 1.233, 2.367]) assert.ok(times.includes(t), String(t));
+  for (const t of [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 1.167, 1.2, 1.233, 2.366]) assert.ok(times.includes(t), String(t));
+  assert.ok(reviewTimes(1.6, 1.6).every((t) => t <= 1.5666), "no sample seeks past the last frame");
   const dir = folder(), calls = [];
   const result = await contactSheet("clip.mp4", 2.4, { dir, peakTime: 1.2, inPoint: 0.3, runFn: async (cmd, args) => { calls.push(args); await fakeRun(cmd, args); } });
   assert.ok(fs.existsSync(result.sheet));
@@ -52,6 +53,10 @@ test("timeline fields must establish ordered contact and completion within the i
   assert.equal(eventInPoint({ ...pass, onset: 1.7, contact: 2, completion: 2.5 }, 1.2, 3), 1.55);
   assert.equal(eventInPoint({ ...pass, onset: 0.1, completion: 2.5 }, 1.2, 3), null, "cannot drop the beginning to save a late landing");
   assert.equal(eventInPoint(null, 1.2, 3, 0.85), 0.85, "the motion-rise fallback remains available");
+  assert.equal(momentInPoint({ onset: 0, contact: 1.25, completion: 3.75 }, 1.6, 16), 0.65, "a long wave is cut around the break");
+  assert.equal(momentInPoint({ onset: 4, contact: null, completion: 12 }, 1.6, 16), 3.85, "a continuous event starts at its onset");
+  assert.equal(momentInPoint({ onset: 0, contact: 15.9, completion: 16 }, 1.6, 16), 14.4);
+  assert.equal(momentInPoint({ onset: 0, contact: 1, completion: 2 }, 3, 2), null, "the clip must outlast the cutaway");
 });
 
 test("rings, upward hops, morphing, human faces and text each independently reject an otherwise moving clip", async () => {

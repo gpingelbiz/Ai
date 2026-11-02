@@ -371,7 +371,7 @@ test("saved plans survive a hook change: cards and stills follow their lines by 
   fs.writeFileSync(still, "x");
   fs.mkdirSync(path.join(wd, "broll"));
   fs.writeFileSync(path.join(wd, "broll", "broll.json"), JSON.stringify({ key: `${PROMPT_VERSION}|stale`, promptVersion: PROMPT_VERSION, shots: [{ line: 7, start: 25, duration: 2, text: "line 7", scene: "a desk", file: still, motion: "in" }] }));
-  const shots = await makeBroll({ workDir: wd, groups: hidden, duration: 40, hook, cta: null, settings: {}, deps: { hasCodex: () => false, codexExec: async () => { throw new Error("reuse must not launch Codex"); } } });
+  const shots = await makeBroll({ workDir: wd, groups: hidden, duration: 40, hook, cta: null, settings: {}, deps: { env: { REEL_CACHE: wd, REEL_BROLL_RECENT: path.join(wd, "recent.json"), REEL_BROLL_LIBRARY: path.join(wd, "library") }, hasCodex: () => false, codexExec: async () => { throw new Error("reuse must not launch Codex"); } } });
   assert.equal(shots.length, 1, "stills reused without a Codex session");
   assert.equal(shots[0].start, 25);
   fs.rmSync(wd, { recursive: true, force: true });

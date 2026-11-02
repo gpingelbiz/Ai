@@ -39,7 +39,8 @@ export function subjectMotion(pixels, { width = 64, height = 64, fps = 8, radius
 }
 
 export function reviewTimes(duration, peakTime = 0) {
-  const last = Math.max(0, duration - 1 / 30), times = [0, last];
+  // Floored: rounding 1.5667 up to 1.567 seeks past a 1.6 s clip's last frame and returns nothing.
+  const last = Math.max(0, Math.floor((duration - 1 / 30) * 1000) / 1000), times = [0, last];
   for (let t = 0.25; t < last; t += 0.25) times.push(t);
   for (const offset of [-0.125, -1 / 30, 0, 1 / 30, 0.125]) times.push(Math.max(0, Math.min(last, peakTime + offset)));
   return [...new Set(times.map(r3))].sort((a, b) => a - b);
@@ -90,6 +91,19 @@ export function eventInPoint(timeline, duration, clipDuration, fallback = 0) {
   const requiredEnd = timeline.completion + 0.2;
   if (start > timeline.onset || requiredEnd > start + duration + 0.000001 || duration > clipDuration) return null;
   return r3(start);
+}
+
+/**
+ * Where to cut found footage (stock or library) whose event runs longer than the cutaway: a window holding the
+ * contact moment after a short lead-in, or starting at the onset of a continuous event such as a wave or a walk.
+ * Generated clips keep eventInPoint, which needs the whole event inside the window.
+ */
+export function momentInPoint(timeline, duration, clipDuration) {
+  if (!timeline || duration > clipDuration) return null;
+  const key = timeline.contact ?? timeline.onset;
+  const lead = timeline.contact == null ? 0.15 : Math.min(0.6, duration * 0.4);
+  const start = Math.max(0, Math.min(key - lead, clipDuration - duration));
+  return key >= start && key <= start + duration && timeline.completion > start ? r3(start) : null;
 }
 
 /** Review the portrait crop at phone size, including each overlapping caption in its actual band. */

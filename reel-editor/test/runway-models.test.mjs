@@ -170,7 +170,7 @@ test("routing, stable shot seeds, planner fields and the five-shot preset budget
   assert.notEqual(shotSeed("/one/reel", 5), shotSeed("/one/reel", 6));
   assert.notEqual(shotSeed("/one/reel", 5), shotSeed("/one/other", 5));
   assert.ok(shotSeed("/one/reel", 5) >= 0 && shotSeed("/one/reel", 5) <= 4294967295);
-  assert.equal(PROMPT_VERSION, "literal-video-v5");
+  assert.equal(PROMPT_VERSION, "literal-video-v6");
   const prompt = runwayPicksPrompt({ candidates: [], count: 2 });
   for (const field of ["kind:", "endScene:", "sound:"]) assert.ok(prompt.includes(field));
 });

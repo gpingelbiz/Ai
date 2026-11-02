@@ -96,8 +96,15 @@ test("client b-roll uses its own world for life and work, preserves named images
   assert.match(jane, /only for lines about their own life and work; never use it to replace an image they name/);
   assert.doesNotMatch(jane, /truck tailgate|job-site step|Bible open/);
   assert.equal(brandPreset({ ...brand, world: "w" }).broll.worldInPrompt, true);
-  assert.equal(recentFile({ REEL_CACHE: "/c/jane" }), "/c/jane/broll-recent.json");
-  assert.match(recentFile({}), /\.cache\/reel-editor\/broll-recent\.json$/);
+  assert.equal(recentFile({ REEL_BROLL_RECENT: "/c/jane/recent.json" }), "/c/jane/recent.json");
+  assert.equal(recentFile({ REEL_CACHE: "/c/jane" }), recentFile({}), "tests always use the disposable scene history without an explicit override");
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const paths = spawnSync(process.execPath, ["--input-type=module", "-e", `import { recentFile } from ${JSON.stringify(new URL("../src/broll.mjs", import.meta.url).href)}; console.log(JSON.stringify([recentFile({ REEL_CACHE: "/c/jane" }), recentFile({})]));`], { env, encoding: "utf8" });
+  assert.equal(paths.status, 0, paths.stderr);
+  const [clientRecent, defaultRecent] = JSON.parse(paths.stdout);
+  assert.equal(clientRecent, "/c/jane/broll-recent.json");
+  assert.match(defaultRecent, /\.cache\/reel-editor\/broll-recent\.json$/);
 });
 
 test("client add: a new client gets your folders, a Content Studio with Publish, and a music folder pointing to Epidemic Sound, never Greg's tracks", () => {

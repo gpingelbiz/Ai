@@ -364,7 +364,7 @@ test("checkPick keeps a two-by-four weapon line on the speaker", async () => {
 test("codexExec's strictSchema makes every schema OpenAI-valid and strips the optional nulls again", async () => {
   // codex --output-schema rejected PICKS_SCHEMA and the carousel SLIDES_SCHEMA with a 400 on 2026-11-02.
   const { strictSchema, stripOptionalNulls } = await import("../src/codex.mjs");
-  const { PICKS_SCHEMA } = await import("../src/broll.mjs");
+  const { PICKS_SCHEMA, withoutNulls } = await import("../src/broll.mjs");
   const { SLIDES_SCHEMA } = await import("../src/carousel.mjs");
   const walk = (s, where) => {
     if (s?.properties) {
@@ -380,4 +380,5 @@ test("codexExec's strictSchema makes every schema OpenAI-valid and strips the op
   assert.ok(strict.soundRole.enum.includes(null));
   assert.equal(strict.line.type, "integer", "required fields keep their type");
   assert.deepEqual(stripOptionalNulls({ picks: [{ line: 3, sound: null, endScene: "x" }] }, PICKS_SCHEMA), { picks: [{ line: 3, endScene: "x" }] });
+  assert.deepEqual(withoutNulls([{ line: 3, sound: null }]), [{ line: 3 }]);
 });
