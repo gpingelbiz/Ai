@@ -473,6 +473,8 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
     if (!selectedRanges.has(entry.sourceId)) selectedRanges.set(entry.sourceId, []);
     selectedRanges.get(entry.sourceId).push({ in: entry.in, out: entry.out });
   }
+  // A held photo's item range is longer than its indexed duration: sample the whole still instead.
+  const stillSource = (id, meta) => sourceById.get(id)?.kind === "photo" || !(meta?.duration > 0.1);
   const normalized = new Map(), grades = new Map(), reviewed = new Set(), stabilized = new Map();
   const sourceGrades = new Map(), itemGrades = new Map();
   const gradeEvidence = (grade) => ({ key: grade.key, measurementKey: grade.measurementKey, measurement: grade.measurement, gradeVersion: grade.gradeVersion, settings: { saturation: 1, ...grade.settings }, fallback: grade.fallback || false });
@@ -521,7 +523,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
         const sourceTrim = gradeOverrides(sourceTrims.get(entry.sourceId));
         const prepared = async (overrides) => {
           const key = JSON.stringify([entry.sourceId, overrides]);
-          if (!grades.has(key)) grades.set(key, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, ranges: selectedRanges.get(entry.sourceId), overrides, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
+          if (!grades.has(key)) grades.set(key, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, ranges: stillSource(entry.sourceId, data.meta) ? undefined : selectedRanges.get(entry.sourceId), overrides, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
           return grades.get(key);
         };
         grade = await prepared(sourceTrim);
