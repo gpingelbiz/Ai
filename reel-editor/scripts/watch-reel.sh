@@ -99,9 +99,10 @@ fi
 notify() { local t m; t=$(printf '%s%s' "${REEL_CLIENT:+$REEL_CLIENT: }" "$1" | tr '"' "'"); m=$(printf '%s' "$2" | tr '"' "'"); osascript -e "display notification \"$m\" with title \"$t\"" >/dev/null 2>&1 || true; }
 
 # Publish metadata next to a delivered reel (read by the Publish folder, src/publish-folder.mjs): whether the reel
-# has AI pictures (Instagram's AI label), the preflight result and anything obvious the reviewer saw.
+# has AI pictures (Instagram's AI label; cuts from the speaker's own clips are real), the preflight result and anything
+# obvious the reviewer saw.
 reel_meta() { # $1 work dir, $2 output json
-  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{},tc=r("textcheck.json");const hi=(wt.issues||[]).find((i)=>i.severity==="high"),coverMs=Math.round(plan.cover&&Number.isFinite(plan.cover.frameTimeMs)?plan.cover.frameTimeMs:((plan.style&&plan.style.cover&&Number.isFinite(plan.style.cover.at)?plan.style.cover.at:.05)*1000));fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,textcheck:tc?{verdict:tc.verdict,notes:tc.notes||[]}:null,obvious:hi?hi.note:null,coverMs}))' "$1" "$2" 2>/dev/null || true
+  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{},tc=r("textcheck.json");const hi=(wt.issues||[]).find((i)=>i.severity==="high"),coverMs=Math.round(plan.cover&&Number.isFinite(plan.cover.frameTimeMs)?plan.cover.frameTimeMs:((plan.style&&plan.style.cover&&Number.isFinite(plan.style.cover.at)?plan.style.cover.at:.05)*1000));fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:(plan.broll||[]).some((b)=>!b.real),preflight:pf.status||null,textcheck:tc?{verdict:tc.verdict,notes:tc.notes||[]}:null,obvious:hi?hi.note:null,coverMs}))' "$1" "$2" 2>/dev/null || true
 }
 
 # Create and print a brand-new "<today> <kind> <n><suffix>" folder under $1 ("2026-10-21 Reel 3",
@@ -345,6 +346,10 @@ else
       printf 'No b-roll this time: the clip is under 8 seconds, too short for a still.\n' > "$work/No b-roll this time.txt"
     elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: no room after the hook"; then
       printf 'No b-roll this time: no room for a 2-second still between the hook and the end of this clip.\n' > "$work/No b-roll this time.txt"
+    elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "warning: b-roll library:"; then
+      # A brand with brollLibrary cuts to its own clips; say what the library step itself reported.
+      why="$(tail -n +"$run_start" "$log" 2>/dev/null | grep "warning: b-roll library:" | tail -1 | sed 's/.*warning: b-roll library: //')"
+      printf 'No b-roll this time from the clip library: %s\n' "$why" > "$work/No b-roll this time.txt"
     elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "rate-limited"; then
       printf 'No b-roll this time: Codex is rate-limited on the ChatGPT plan, so this reel came out without it.\nRename the clip in Raw - Reel with B-roll (any new name) and drop it again in 20 minutes.\n' > "$work/No b-roll this time.txt"
     else

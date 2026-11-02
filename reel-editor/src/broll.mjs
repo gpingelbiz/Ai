@@ -75,8 +75,8 @@ export function holdForSplit(shots = [], { duration, cta, busy = [], tail = 1, g
     const card = Math.min(...busy.filter((b) => b.start + b.duration > s.start).map((b) => b.start - clear), Infinity);
     return Math.min(until, next, card) - s.start;
   });
-  // A generated clip (Runway) is only so long; a still can be held any length.
-  const want = (s) => (/\.mp4$/i.test(String(s.file || "")) ? Math.min(hold, clipSeconds) : hold);
+  // A generated clip (Runway) is only so long, a library cut only as long as it was cut; a still can be held any length.
+  const want = (s) => (/\.mp4$/i.test(String(s.file || "")) ? Math.min(hold, s.clipSeconds ?? clipSeconds) : hold);
   const best = room.map((r, k) => ({ k, r })).filter(({ k, r }) => want(shots[k]) > shots[k].duration && r >= want(shots[k])).sort((a, b) => b.r - a.r || b.k - a.k)[0];
   if (!best) return shots;
   return shots.map((s, k) => (k === best.k ? { ...s, hold: true, baseDuration: s.duration, duration: r3(want(s)) } : s));
@@ -150,7 +150,8 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
     // Reuse while the lines the stills were drawn for are still there (a new hook hides different caption lines,
     // which must not cost another Codex session).
     const stillThere = (s) => candidates.some((c) => Math.abs(c.start - s.start) < 0.05 && c.text === s.text);
-    if ((saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
+    // A plan from the library engine is real footage, not stills drawn for this engine.
+    if (saved.engine !== "library" && (saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
       log(`b-roll: reusing ${saved.shots.length} still${saved.shots.length === 1 ? "" : "s"} from ${dir}`);
       return saved.shots;
     }
