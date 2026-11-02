@@ -1,11 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import { codexExec, hasCodex, codexPausedUntil, imageInstructions, savedImage } from "./codex.mjs";
+import { codexExec, hasCodex, codexPausedUntil, savedImage } from "./codex.mjs";
 import os from "node:os";
 import { log, warn, writeJSON, readJSON, ensureDir, r3 } from "./util.mjs";
 import { norm } from "./text.mjs";
+import { makeRunwayBroll, runwayPicksPrompt, runwayTiming, validateBrollPicks, placePlannedBroll, STILL_STYLE, PICKS_REPLY } from "./broll-runway.mjs";
+import { conformStill, hasRunway } from "./runway.mjs";
 
-export const PROMPT_VERSION = "literal-stills-v2";
+export const PROMPT_VERSION = "literal-codex-v3";
 
 /** Scenes drawn for recent reels, so the next reel does not get the same empty conference room again. */
 // REEL_CACHE gives a client its own scene history, so its b-roll never steers off (or into) Greg's scenes.
@@ -20,11 +22,7 @@ export function rememberScenes(scenes, file = recentFile(), keep = 24) {
   return list;
 }
 
-/**
- * B-roll: Codex reads the finished transcript, picks the lines a picture would land on, and draws a still for each.
- * The render cuts to each still for a couple of seconds with slow motion while the voice keeps playing and the
- * captions stay on top. Never during the hook, never in the last second, never over the CTA.
- */
+/** Codex chooses literal scenes and draws their first frames; moving shots share the Runway pipeline. */
 
 /** How many cutaways a reel of this length gets: about one per 12 seconds after the hook, 1 to `max`. A short
  *  reel (8 s and up) still gets one, so a 10-second clip in the b-roll folder does not come back plain. */
@@ -111,23 +109,14 @@ export function checkPick(pick, candidate, groups, { len = 2.4 } = {}) {
   // Split the scene on any non-letter so "a wooden two-by-four" names "four".
   const sceneWords = String(pick.scene || "").split(/[^\p{L}\p{N}']+/u).map(norm).filter(Boolean);
   if (!sceneWords.includes(noun)) return `scene does not contain ${noun}`;
-  const dark = String(pick.scene || "").match(/\b(rope|cord|strap|noose|lasso|cable|chain)s?\b/i);
+  const description = [pick.scene, pick.action, pick.motion, pick.endScene].filter(Boolean).join(" ");
+  const dark = description.match(/\b(rope|cord|strap|noose|lasso|cable|chain)s?\b/i);
   if (dark) return `dark-read word: ${dark[0]}`;
   // A weapon line ("bring a knife, kill the snake") stays on the speaker: no cutaway of the weapon at all.
-  const weapon = `${shows.join(" ")} ${pick.scene || ""}`.match(/\b(knife|knives|gun|guns|pistol|rifle|sword|swords|machete|blade|blades|axe|dagger)\b/i);
+  const weapon = `${shows.join(" ")} ${description}`.match(/\b(knife|knives|gun|guns|pistol|rifle|sword|swords|machete|blade|blades|axe|dagger|two[ -]by[ -]four|2x4)\b/i);
   if (weapon) return `weapon stays on the speaker: ${weapon[0]}`;
   return null;
 }
-
-export const PICTURE_RULES = [
-  "The picture is what the words say. Pick lines whose spoken words name something a viewer can see: an animal, an object, a place or an action. Show THAT thing big and unmistakable; a cold viewer with the caption under it must get it in under one second.",
-  "When the speaker paints an image (an analogy, a joke, a story: a jungle, a snake, a coconut, quicksand), show the named subject literally with harmless behaviour: a green snake sliding down a broad jungle rock. Never swap it for a stand-in from the speaker's world: never a rope for a snake, never tape for a coconut, never a box cutter for a knife.",
-  "Clip-art symbols the speaker never said are banned (a lightbulb for 'idea'); an image the speaker names is not clip art.",
-  "A quick spoken list of images (a snake, an ape, a lion) can get one short shot per item if they are far enough apart.",
-  "Dark-read rule: never a rope, cord, strap, cable or chain hanging or looped, nothing at a neck or throat, nothing that could read as a noose, self-harm, death or someone in danger, even with the caption under it.",
-  "Moderation: no weapon used on or pointed at anyone, no attack, no injury; a tool can lie on a surface or be held in a hand (a knife in a leather sheath on a log, a hand gripping a plank of wood).",
-  "Each pick needs `shows`: one to three words copied exactly from the spoken words of that line or the next caption line, naming the thing the picture shows. The `scene` must name the same thing.",
-];
 
 /**
  * The "full-split" layout's longer beat: with two or more cutaways, the one with the most clear time after it is
@@ -150,6 +139,16 @@ export function holdForSplit(shots = [], { duration, cta, busy = [], tail = 1, g
   return shots.map((s, k) => (k === best.k ? { ...s, hold: true, baseDuration: s.duration, duration: r3(want(s)) } : s));
 }
 
+/** Moving-only reels also omit the still held under a cold-open hook. */
+export function planBrollOpen(shots, duration, { enabled = false, duration: hold = 0.6 } = {}, { animate = false } = {}) {
+  if (!enabled || animate || !shots.length) return null;
+  return { duration: r3(Math.min(hold || 0.6, Math.max(0.3, duration / 20))), src: shots[0].src, file: shots[0].file };
+}
+
+const WORD_REF_SCHEMA = {
+  type: "object", properties: { line: { type: "integer" }, wordIndex: { type: "integer" }, text: { type: "string" } },
+  required: ["line", "wordIndex", "text"], additionalProperties: false,
+};
 export const PICKS_SCHEMA = {
   type: "object",
   properties: {
@@ -157,8 +156,14 @@ export const PICKS_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        properties: { line: { type: "integer" }, scene: { type: "string" }, shows: { type: "string" }, file: { type: "string" } },
-        required: ["line", "scene", "shows", "file"],
+        properties: {
+          line: { type: "integer" }, scene: { type: "string" }, shows: { type: "string" }, file: { type: "string" },
+          duration: { type: "number" }, kind: { type: "string", enum: ["action", "ambient"] },
+          action: { type: "string" }, motion: { type: "string" }, endScene: { type: "string" },
+          sound: { type: "string" }, soundRole: { type: "string", enum: ["impact", "movement", "none"] },
+          sequenceGroup: { type: "string" }, endsAt: WORD_REF_SCHEMA, endsBefore: WORD_REF_SCHEMA,
+        },
+        required: ["line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
         additionalProperties: false,
       },
     },
@@ -167,54 +172,80 @@ export const PICKS_SCHEMA = {
   additionalProperties: false,
 };
 
-export function picksPrompt({ candidates, transcript, hook, count, spacing = 6.4, style = "", recent = [], aspect = "9:16", world = "" }) {
+/** Drawing instructions use the daylight opening-frame rules, without the older documentary finish. */
+export function codexStillInstructions({ aspect = "9:16", style = "", file } = {}) {
   return [
-    "You are a reel editor adding b-roll to a talking-head Instagram reel.",
-    `First pick ${count} caption lines where cutting away to a still image would make the point land harder, spread across the reel, at least ${spacing} seconds apart.`,
-    ...PICTURE_RULES,
-    "For each, describe the image in one or two sentences, close and specific. Say what the light is and where it comes from.",
-    world ? `The speaker's world (only for lines about their own life and work; never use it to replace an image they name): ${world}` : "",
-    "Never: empty conference rooms, dinner tables, skylines, empty offices, generic desks (they read as stock photos); faces or anyone who could read as the speaker; readable text, numbers, logos or brands.",
-    "Skip lines where the speaker is talking about themself in a way only their face can carry.",
-    recent.length ? `Recent reels already used these scenes; pick something clearly different (another object, place or moment):\n${uniqueScenes(recent).slice(-12).map((s) => `- ${s}`).join("\n")}` : "",
-    `Name the images broll-1.png, broll-2.png and so on, in time order.`,
-    imageInstructions({ aspect, style }),
-    "",
-    `Hook on screen at the start: ${hook || "(none)"}`,
-    "",
-    "Whole transcript for context:",
-    transcript,
-    "",
-    "Lines you may pick from (number: start time, text):",
-    ...candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
-    "",
-    'When the images are saved, reply with JSON: {"picks":[{"line":<number from the list>,"scene":"...","shows":"...","file":"broll-1.png"}]}',
+    `Use your image generation tool to draw each opening scene as a vertical ${aspect} (1080x1920) image. ${file ? `Save only ${file} in the current folder.` : "Save broll-1.png, broll-2.png and so on in the current folder, in rank order."}`,
+    `Look for every image: ${STILL_STYLE}${style ? ` ${style}` : ""}`,
+    "Draw the named subject big, with the complete action area above captions. No faces, lettering, numbers or logos. Never draw a weapon, hanging rope, neck contact or harm.",
+    "Do not run commands or write any other files. Return the saved file name with each pick. An image tool failure drops that candidate.",
   ].join("\n");
 }
 
-/**
- * Plan and draw the b-roll for one reel in ONE Codex session. Writes <workDir>/broll/broll.json and
- * broll-<n>.png and returns the shots with `file` set. Reuses the saved stills when the transcript lines are
- * unchanged. Never throws: any failure returns [] and the reel renders without b-roll.
- */
-export async function makeBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [], tail = 1, deps = {} }) {
+export function picksPrompt(options) {
+  return runwayPicksPrompt({ ...options, instructions: codexStillInstructions(options), reply: PICKS_REPLY.replace('"line":N,"shows"', '"file":"broll-1.png","line":N,"shows"') });
+}
+
+/** Codex supplies first frames; the shared engine owns checks, spending, animation, recovery and sound. */
+async function makeAnimatedBroll(args) {
+  const { settings = {}, deps = {} } = args;
+  if (!(deps.hasRunway || hasRunway)()) { warn("Codex moving b-roll needs RUNWAY_API_KEY; rendering without b-roll"); return []; }
+  const exec = deps.codexExec || codexExec;
+  const ready = () => {
+    if (!(deps.hasCodex || hasCodex)()) throw new Error("Codex CLI is not signed in");
+    if ((deps.codexPausedUntil || codexPausedUntil)()) throw new Error("Codex is paused after a rate limit");
+  };
+  return makeRunwayBroll({ ...args, stillSource: "codex", settings: { ...settings, codexPromptVersion: PROMPT_VERSION }, deps: {
+    ...deps,
+    planPicks: async (request, dir) => {
+      ready();
+      for (const file of fs.readdirSync(dir)) if (/^broll-\d+\.(png|jpe?g|webp)$/i.test(file)) fs.rmSync(path.join(dir, file), { force: true });
+      return JSON.parse(await exec(picksPrompt({ ...request, aspect: settings.aspect || "9:16" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 })).picks || [];
+    },
+    drawStill: async ({ file, prompt, pick, reason, attempt, kind }) => {
+      const dir = path.dirname(file);
+      let source = savedImage(dir, path.basename(String(pick.file || "")));
+      if (attempt || kind === "endImage") {
+        ready();
+        const name = path.basename(file);
+        const fields = Object.fromEntries(Object.entries(pick).filter(([key]) => Object.hasOwn(PICKS_SCHEMA.properties.picks.items.properties, key)));
+        const reply = JSON.parse(await exec([
+          codexStillInstructions({ aspect: settings.aspect || "9:16", style: settings.style, file: name }),
+          `Redraw only this opening frame: ${prompt}`,
+          `Required subject: ${pick.shows}. Required event: ${pick.action}.`,
+          `The previous still failed inspection: ${reason || "end frame required"}. Correct that defect and preserve the named subject.`,
+          `Save the new image as ${name}. Reply with the same pick fields and this new file name.`,
+          JSON.stringify({ picks: [{ ...fields, file: name }] }),
+        ].join("\n"), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 }));
+        source = savedImage(dir, path.basename(String(reply.picks?.[0]?.file || "")));
+        if (source !== file) throw Object.assign(new Error("Codex redraw did not save the requested image"), { code: "DRAW" });
+      }
+      if (!source) throw Object.assign(new Error("Codex opening image missing"), { code: "DRAW" });
+      if (source !== file) fs.copyFileSync(source, file);
+      return { png: file, jpg: await conformStill(file, { runFn: deps.runFn }), items: [] };
+    },
+  } });
+}
+
+/** Plan and draw in one Codex session. Animation shares Runway recovery; still-only brands keep photo moves. */
+export async function makeBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [], tail = 1, footage, caption = {}, deps = {} }) {
+  if (settings.animate === true) return makeAnimatedBroll({ workDir, groups, duration, hook, cta, settings, force, busy, tail, footage, caption, deps });
   const dir = ensureDir(path.join(workDir, "broll"));
   const planPath = path.join(dir, "broll.json");
-  const len = Math.max(1.6, Math.min(2.4, settings.duration ?? 2));
-  const gap = settings.gap ?? 4;
+  const len = Math.max(1.2, Math.min(2.5, settings.duration ?? 2.4));
+  const gap = settings.gap ?? 6;
   // With graphic cards in the reel, photos are an accent: fewer of them, in the gaps.
   const max = brollCount(duration, { max: busy.length ? settings.maxWithGraphics ?? 2 : settings.max ?? 3, every: settings.every ?? 12 });
   if (!max) { log("b-roll: reel too short, skipped"); return []; }
-  const candidates = brollCandidates(groups, duration, { hook, cta, len, busy, tail, clearStart: settings.clearStart ?? 0 });
+  const candidates = brollCandidates(groups, duration, { hook, cta, len: settings.rapidLists === false ? 1.2 : 0.8, busy, tail, clearStart: settings.clearStart ?? 0 });
   if (!candidates.length) { log("b-roll: no room after the hook, skipped"); return []; }
-  const key = `${PROMPT_VERSION}|${candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|")}`;
+  const timing = (p, c) => runwayTiming(p, c, groups, { len, until: Math.min(duration - tail, cta?.start ?? Infinity), busy });
+  const key = `${PROMPT_VERSION}|${JSON.stringify({ candidates, groups, settings, hook, cta, duration, busy, tail })}`;
 
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
-    // Reuse while the lines the stills were drawn for are still there (a new hook hides different caption lines,
-    // which must not cost another Codex session).
     const stillThere = (s) => candidates.some((c) => Math.abs(c.start - s.start) < 0.05 && c.text === s.text);
-    if (saved.promptVersion === PROMPT_VERSION && (saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
+    if (saved.promptVersion === PROMPT_VERSION && (saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && !/\.mp4$/i.test(s.file) && fs.existsSync(s.file))) {
       log(`b-roll: reusing ${saved.shots.length} still${saved.shots.length === 1 ? "" : "s"} from ${dir}`);
       return saved.shots;
     }
@@ -230,21 +261,17 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   try {
     log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"} and drawing the stills…`);
     const transcript = groups.map((g) => g.text).join(" ");
-    const reply = await exec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: len + gap, style: settings.style || "", recent: readRecent(), aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
+    const reply = await exec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: gap, duration: len, style: settings.style || "", recent: readRecent(), aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
     picks = JSON.parse(reply).picks || [];
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);
     return [];
   }
-  // Keep the picks whose image exists, then place them (real lines, in order, spaced).
-  const drawn = picks.filter((p) => {
-    const why = checkPick(p, candidates.find((c) => c.i === p.line), groups, { len });
-    if (why) warn(`b-roll: rejected line ${p.line}: ${why}`);
-    return !why;
-  }).map((p) => ({ ...p, path: savedImage(dir, path.basename(String(p.file || ""))) })).filter((p) => p.path);
+  const drawn = validateBrollPicks(picks, candidates, groups, timing, settings)
+    .map((p) => ({ ...p, path: savedImage(dir, path.basename(String(p.file || ""))) })).filter((p) => p.path);
   const files = new Map(drawn.map((p) => [p.line, p.path]));
-  const shots = placeBroll(drawn, candidates, { len, gap, max }).map((s) => ({ ...s, file: files.get(s.line) }));
-  if (shots.length) { writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, shots }); rememberScenes(shots.map((s) => s.scene)); }
+  const shots = placePlannedBroll(drawn, candidates, { gap, max, timing }).map((s, k) => ({ ...s, motion: ["in", "left", "out", "right"][k % 4], file: files.get(s.line), stillSource: "codex" }));
+  if (shots.length) { writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, stillSource: "codex", shots }); rememberScenes(shots.map((s) => s.scene)); }
   if (shots.length < picks.length) warn(`b-roll: ${picks.length - shots.length} of ${picks.length} picks had no image or no room`);
   log(`b-roll: ${shots.length} still${shots.length === 1 ? "" : "s"} ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
   return shots;

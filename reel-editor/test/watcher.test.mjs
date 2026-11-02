@@ -139,7 +139,7 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   assert.equal(JSON.parse(fs.readFileSync(path.join(r.done, `${r.day} Reel 1`, ".reel.json"), "utf8")).coverMs, 1733, "the scored frame time reaches publishing metadata");
   // The plain reel never asks for b-roll; the carousel never renders a reel.
   const lines = r.calls.trim().split("\n");
-  assert.doesNotMatch(r.calls, /--broll-engine/, "Greg's folders keep the engine from their preset");
+  assert.match(lines.find((l) => l.includes("raw-broll/clip.mov")), /--broll-engine codex/, "Greg's B-roll folder draws with Codex");
   assert.ok(lines.some((l) => /^edit .*\/raw\/clip\.mov .*--no-graphics --caption-style pop/.test(l) && !/--broll/.test(l)), "plain reel: classic captions, no cards");
   assert.ok(lines.some((l) => /^edit .*raw-broll\/clip\.mov .*--broll --graphics --caption-style reveal/.test(l)), "b-roll reel: the full look");
   assert.ok(lines.some((l) => /^edit .*raw-carousel\/clip\.mov .*--no-render/.test(l)));
@@ -147,7 +147,7 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   assert.deepEqual(r.seen.map((m) => m.replace(/@.*(\.done|\.failed)$/, "$1")).filter((m) => !m.startsWith(".")), ["broll-clip.mov.done", "carousel-clip.mov.done", "clip.mov.done"]);
 });
 
-test("the b-roll drop passes the configured engine to the CLI; other modes keep their own settings", () => {
+test("the b-roll drop uses the configured engine, Codex when none is set; other modes keep their settings", () => {
   const cli = fs.readFileSync(new URL("../src/cli.mjs", import.meta.url), "utf8");
   assert.match(cli, /"broll-engine": \{ type: "string" \}/);
   for (const brollEngine of ["runway", "codex", ""]) {
@@ -156,8 +156,8 @@ test("the b-roll drop passes the configured engine to the CLI; other modes keep 
       const lines = r.calls.trim().split("\n");
       const broll = lines.find((l) => /^edit .*raw-broll\/cutaway.mov /.test(l));
       assert.ok(broll);
-      if (brollEngine) assert.match(broll, new RegExp(`--broll-engine ${brollEngine}( |$)`));
-      else assert.doesNotMatch(broll, /--broll-engine/, "empty means no override");
+      // A client's configured engine wins (Julee: runway); unset or empty means Codex draws the first frames.
+      assert.match(broll, new RegExp(`--broll-engine ${brollEngine || "codex"}( |$)`));
       assert.ok(lines.filter((l) => l !== broll).every((l) => !l.includes("--broll-engine")), "plain reels, carousels and long clips are unchanged");
     } finally { fs.rmSync(r.home, { recursive: true, force: true }); }
   }

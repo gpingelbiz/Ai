@@ -245,7 +245,7 @@ test("pingel-v2 builds on pingel-brand: same colours and b-roll world, plus the 
   assert.equal(brand.captions.keywordColorOnFootage, undefined);
   assert.equal(brand.hook.behind, false);
   assert.equal(brand.hook.plaque, true);
-  assert.deepEqual(brand.looks, { lockHook: true, lockCaptions: true });
+  assert.deepEqual(brand.looks, { lockHook: true, lockCaptions: true, lockBrollGrade: true });
   assert.equal(brand.cover.style, "archetypes");
   assert.equal(brand.finish.enabled, true);
 });

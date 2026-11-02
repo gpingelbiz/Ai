@@ -104,6 +104,8 @@ test("legacy render snapshots: no signature and no house list keep every existin
   for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_")).sort()) {
     const name = file.slice(0, -5);
     const style = loadPreset(name);
+    // Freeze the legacy still finish; moving presets now omit the focus blur.
+    if (name === "pingel-brand" || name === "pingel-v2") style.broll.focusPull = 0.3;
     style.brand.signature = { ...style.brand.signature, kind: "none" };
     style.brand.houseLooks = [];
     style.brand.modes = {};

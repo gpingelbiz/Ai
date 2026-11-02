@@ -90,7 +90,7 @@ test("client b-roll uses its own world for life and work, preserves named images
   const { picksPrompt, recentFile } = await import("../src/broll.mjs");
   const base = { candidates: [{ i: 1, start: 1, text: "x" }], transcript: "x", hook: "", count: 1 };
   const greg = picksPrompt(base);
-  assert.match(greg, /The picture is what the words say/);
+  assert.match(greg, /Every scene comes from this reel's words or its own established setting/);
   const jane = picksPrompt({ ...base, world: "a Tesla interior in Scottsdale" });
   assert.match(jane, /speaker's world .*a Tesla interior in Scottsdale/);
   assert.match(jane, /only for lines about their own life and work; never use it to replace an image they name/);

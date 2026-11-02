@@ -27,7 +27,7 @@ import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
 
-import { makeBroll, holdForSplit } from "./broll.mjs";
+import { makeBroll, holdForSplit, planBrollOpen } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { planBrollLayouts, planPersistentLayout } from "./layouts.mjs";
 import { isPersistentScene, makeGraphics, persistentDuckSchedule } from "./graphics.mjs";
@@ -544,9 +544,9 @@ export async function runEdit(input, opts = {}) {
   allGraphics.schema = graphicsSchema;
   // Shared-frame layouts never sit under a card. The legacy full cutaway keeps the short-reel exception unchanged.
   const sharedBrollLayout = ["window", "split", "mix", "full-split"].includes(preset.broll?.layout);
-  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...transientCards, ...evidence] : evidence, tail };
+  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...transientCards, ...evidence] : evidence, tail, footage: videoSrc, caption: { top: preset.captions.position - 0.6 * preset.captions.fontSizeFrac, height: 0.18, fontSizeFrac: preset.captions.fontSizeFrac, uppercase: preset.captions.uppercase } };
   let broll = preset.broll?.enabled && shownGroups.length
-    ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, footage: videoSrc, caption: { top: preset.captions.position - 0.6 * preset.captions.fontSizeFrac, height: 0.18, fontSizeFrac: preset.captions.fontSizeFrac, uppercase: preset.captions.uppercase }, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
+    ? (preset.broll.engine === "runway" ? await makeRunwayBroll(brollArgs) : await makeBroll(brollArgs))
     : [];
   // "full-split": one cutaway with clear time after it is held longer, to become a split once the face is known.
   if (preset.broll?.layout === "full-split" && broll.length) broll = holdForSplit(broll, { duration, cta, busy: brollArgs.busy, tail, gap: preset.broll.gap ?? 4, hold: preset.broll.hold ?? 5, clipSeconds: preset.broll.videoSeconds ?? 5 });
@@ -624,8 +624,8 @@ export async function runEdit(input, opts = {}) {
     if (head) { hook.headTop = r3(head.top); hook.headBottom = r3(head.bottom); }
   }
   // Cold open: the first b-roll still holds under the hook for a beat before the speaker appears.
-  const coldOpen = preset.coldOpen?.enabled && broll.length ? { duration: r3(Math.min(preset.coldOpen.duration || 0.6, Math.max(0.3, duration / 20))), src: broll[0].src, file: broll[0].file } : null;
-  if (preset.coldOpen?.enabled) log(coldOpen ? `cold open: ${coldOpen.duration}s on the first still` : "cold open: no still to open on");
+  const coldOpen = planBrollOpen(broll, duration, preset.coldOpen, preset.broll);
+  if (preset.coldOpen?.enabled) log(coldOpen ? `cold open: ${coldOpen.duration}s on the first still` : "cold open: moving-only b-roll or no still to open on");
   // Climax words: the strongest gold words stamp in big as they are said, clear of the cards and cutaways.
   // The rail's visible pulses count as busy too: a slam word stamping in at the top would land on the rail.
   const railPulses = progress.flatMap((g) => (g.pulses || []).filter((p) => !p.hidden).map((p) => ({ start: p.at, duration: 1.4 })));

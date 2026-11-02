@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { brollCount, brollCandidates, placeBroll, picksPrompt, holdForSplit, checkPick, PICKS_SCHEMA, readRecent, rememberScenes } from "../src/broll.mjs";
+import { PICKS_RULES } from "../src/broll-runway.mjs";
 import { codexModels, isModelRefusal, imageInstructions, savedImage } from "../src/codex.mjs";
 import { renderHTML } from "../src/compose.mjs";
 import { applyTheme } from "../src/looks.mjs";
@@ -58,12 +59,12 @@ test("placement keeps real lines, in order, spaced apart", () => {
 test("one prompt picks the lines and draws the stills; faces and text are banned", () => {
   const cands = brollCandidates(groups.slice(0, 6), 14, { hook: { start: 0, duration: 3 } });
   const p = picksPrompt({ candidates: cands, transcript: "x", hook: "Hook", count: 1, spacing: 6.4, style: "moody" });
-  assert.match(p, /^2: 4\.0s line 2$/m);
+  assert.match(p, /^2: 4\.0s line 2 \| words:/m);
   assert.doesNotMatch(p, /^0: /m);
-  assert.match(p, /at least 6\.4 seconds apart/);
+  assert.match(p, /6\.4 seconds from one shot's END to the next START/);
   assert.match(p, /broll-1\.png/);
   assert.match(p, /vertical 9:16 \(1080x1920\) image/);
-  assert.match(p, /Look for every image: moody/);
+  assert.match(p, /Look for every image: Natural daylight and colour.*moody/);
   assert.match(imageInstructions(), /No people/);
   assert.match(imageInstructions(), /No text, letters/);
   assert.match(imageInstructions(), /Candid documentary photograph/);
@@ -134,7 +135,7 @@ test("recent scenes are remembered (last 24) and shown to Codex as things to avo
   rememberScenes(Array.from({ length: 30 }, (_, i) => `scene ${i}`), f);
   assert.equal(readRecent(f).length, 24);
   const cands = brollCandidates(groups.slice(0, 6), 14, { hook: { start: 0, duration: 3 } });
-  assert.match(picksPrompt({ candidates: cands, transcript: "x", hook: "h", count: 1, recent: ["an empty conference room"] }), /already used these scenes[\s\S]*- an empty conference room/);
+  assert.match(picksPrompt({ candidates: cands, transcript: "x", hook: "h", count: 1, recent: ["an empty conference room"] }), /Recent scenes[\s\S]*- an empty conference room/);
 });
 
 test("render: the b-roll cut is hard by default, flash adds the wash layer, blur fades through the grade", () => {
@@ -214,15 +215,13 @@ test("ranked placement keeps the best spaced picks, then returns time order", ()
 
 test("stills prompt requires the named image, permits literal analogies and limits recent scenes", () => {
   const p = picksPrompt({ candidates: [], count: 2, world: "a garage", recent: [...Array.from({ length: 16 }, (_, i) => `scene-${i}`), "scene-4"] });
-  assert.match(p, /The picture is what the words say/);
-  assert.match(p, /an analogy, a joke, a story/);
-  assert.match(p, /snake sliding down a broad jungle rock/);
-  assert.doesNotMatch(p, /toward the camera|dropping on them|hitting their head/);
-  assert.match(p, /never a rope for a snake, never tape for a coconut, never a box cutter for a knife/);
-  assert.match(p, /Dark-read rule:.*noose, self-harm/);
+  assert.ok(p.includes(PICKS_RULES.replace("MAX_DURATION", "2.4")));
+  assert.match(p, /Show named objects, animals and places literally, including analogies/);
+  assert.match(p, /A jungle stays a jungle; a snake stays a snake; a coconut stays a coconut/);
+  assert.match(p, /neck contact, noose-like compositions/);
   assert.match(p, /only for lines about their own life and work; never use it to replace an image they name/);
-  assert.match(p, /an image the speaker names is not clip art/);
-  assert.doesNotMatch(p, /the report, the number/);
+  assert.match(p, /the named thing wins/);
+  assert.doesNotMatch(p, /deep shadows|muted, desaturated|worn, scuffed|plain and dark/);
   assert.equal((p.match(/^- scene-/gm) || []).length, 12);
   assert.equal((p.match(/^- scene-4$/gm) || []).length, 1);
   assert.ok(PICKS_SCHEMA.properties.picks.items.required.includes("shows"));
@@ -254,14 +253,21 @@ test("pingel-runway disables creative grade and focus blur through merge, theme 
   assert.match(html, /"focusPull":0/);
 });
 
+const timed = (groups) => groups.map((g) => ({ ...g, words: g.text.split(" ").map((text, i) => ({ text, start: g.start + i * 0.3, end: g.start + i * 0.3 + 1.8 })) }));
+const bounded = (picks, groups) => picks.map((p) => ({ ...p, kind: "action", action: `The ${p.shows} moves.`, motion: "Locked camera.", duration: 2,
+  endsAt: { line: p.line, wordIndex: groups[p.line].words.length - 1, text: groups[p.line].words.at(-1).text },
+  endsBefore: { line: p.line + 1, wordIndex: 0, text: groups[p.line + 1].words[0].text },
+}));
+
 test("Codex stills validate picks before placement and persist shows", async () => {
   const { makeBroll } = await import("../src/broll.mjs");
   const workDir = fs.mkdtempSync(path.join(cache, "stills-"));
-  const picks = [
+  const source = timed([{ start: 6, text: "a coconut" }, { start: 14, text: "a snake" }, { start: 22, text: "keep walking" }]);
+  const picks = bounded([
     { line: 0, scene: "packing tape on a shelf", shows: "coconut", file: "broll-1.png" },
     { line: 1, scene: "a green snake on a jungle branch", shows: "snake", file: "broll-2.png" },
-  ];
-  const shots = await makeBroll({ workDir, duration: 30, groups: [{ start: 6, text: "a coconut" }, { start: 14, text: "a snake" }], deps: {
+  ], source);
+  const shots = await makeBroll({ workDir, duration: 30, groups: source, settings: { animate: false }, deps: {
     hasCodex: () => true, codexPausedUntil: () => 0,
     codexExec: async (prompt, { cwd, schema }) => {
       assert.equal(schema, PICKS_SCHEMA);
@@ -277,14 +283,14 @@ test("Codex stills validate picks before placement and persist shows", async () 
 test("stills keep world opt-in and never reuse a plan from an older prompt", async () => {
   const { makeBroll, PROMPT_VERSION } = await import("../src/broll.mjs");
   const workDir = fs.mkdtempSync(path.join(cache, "versioned-stills-"));
-  const groups = [{ start: 6, text: "a snake" }, { start: 14, text: "a coconut" }];
+  const groups = timed([{ start: 6, text: "a snake" }, { start: 14, text: "a coconut" }, { start: 22, text: "keep walking" }]);
   const prompts = [];
   const deps = {
     hasCodex: () => true, codexPausedUntil: () => 0,
     codexExec: async (prompt, { cwd }) => {
       prompts.push(prompt);
       fs.writeFileSync(path.join(cwd, "broll-1.png"), Buffer.alloc(2000));
-      return JSON.stringify({ picks: [{ line: 0, shows: "snake", scene: "a green snake on a branch", file: "broll-1.png" }] });
+      return JSON.stringify({ picks: bounded([{ line: 0, shows: "snake", scene: "a green snake on a branch", file: "broll-1.png" }], groups) });
     },
   };
   const run = (settings = {}) => makeBroll({ workDir, duration: 30, groups, settings: { world: "OPT-IN WORLD", ...settings }, deps });
@@ -305,8 +311,8 @@ test("stills keep world opt-in and never reuse a plan from an older prompt", asy
   await makeBroll({ workDir, duration: 30, groups, force: true, settings: { world: "OPT-IN WORLD", worldInPrompt: true }, deps });
   assert.match(prompts.at(-1), /OPT-IN WORLD/);
   assert.match(prompts.at(-1), /never use it to replace an image they name/);
-  assert.match(prompts.at(-1), /Kill test/);
-  assert.match(prompts.at(-1), /bottom third stays plain and dark/);
+  assert.match(prompts.at(-1), /Natural daylight and colour/);
+  assert.doesNotMatch(prompts.at(-1), /Kill test|bottom third stays plain and dark/);
 });
 
 test("candidates retain word timing and a checked video cannot be held beyond its checked interval", () => {
@@ -349,8 +355,8 @@ test("checkPick keeps weapon lines on the speaker", async () => {
   assert.match(checkPick({ shows: "knife", scene: "A hunting knife in a leather sheath on a jungle log." }, { i: 0, ...groups[0] }, groups, { len: 1.6 }), /weapon stays on the speaker: knife/);
 });
 
-test("checkPick reads a hyphenated scene (two-by-four) as separate words", async () => {
+test("checkPick keeps a two-by-four weapon line on the speaker", async () => {
   const { checkPick } = await import("../src/broll.mjs");
   const groups = [{ start: 51.66, end: 52.06, text: "Bring a two" }, { start: 52.06, end: 52.6, text: "by four" }];
-  assert.equal(checkPick({ shows: "two by four", scene: "Cropped hands lower a wooden two-by-four over wet sand." }, { i: 0, ...groups[0] }, groups, { len: 2 }), null);
+  assert.match(checkPick({ shows: "two by four", scene: "Cropped hands lower a wooden two-by-four over wet sand." }, { i: 0, ...groups[0] }, groups, { len: 2 }), /weapon stays on the speaker/);
 });

@@ -304,17 +304,18 @@ export async function conformClip(file, { fps = 30, runFn = run } = {}) {
   return file;
 }
 
-export async function makeClip({ scene, endScene, motion, dir, name, seconds = 5, imageRatio, imageModel = "gen4_image", videoModel = "gen4_turbo", seed, audio = false, fps = 30, fetchFn, sleepFn, runFn, check, beforeBuy, journal, referenceImages } = {}) {
+export async function makeClip({ scene, endScene, motion, dir, name, seconds = 5, imageRatio, imageModel = "gen4_image", videoModel = "gen4_turbo", seed, audio = false, fps = 30, fetchFn, sleepFn, runFn, check, beforeBuy, journal, referenceImages, drawStill } = {}) {
   estimateClip({ seconds, imageModel, imageRatio, videoModel, audio, lastFrame: !!endScene });
   const items = [], png = `${dir}/${name}.png`, mp4 = `${dir}/${name}.mp4`;
   let last;
   try {
-    const first = await makeStill({ prompt: scene, file: png, imageModel, imageRatio, seed, referenceImages, items, fetchFn, sleepFn, runFn, journal, beforeBuy });
+    const draw = drawStill || makeStill;
+    const first = await draw({ prompt: scene, file: png, imageModel, imageRatio, seed, referenceImages, items, fetchFn, sleepFn, runFn, journal, beforeBuy });
     const result = check ? await check(first.jpg) : null;
     if (result?.ok === false) throw Object.assign(new Error(result.why || "still check failed"), { code: result.unavailable ? "CHECK_UNAVAILABLE" : "CHECK" });
     if (endScene && modelInfo(videoModel, "video").fields.lastFrame) {
       try {
-        const end = await makeStill({ prompt: fitPrompt(`The same subject and setting as @firstframe. ${endScene}`), file: `${dir}/${name}.end.png`, imageModel, imageRatio, seed, referenceImages: [{ uri: dataURI(first.jpg, "image/jpeg"), tag: "firstframe" }], items, fetchFn, sleepFn, runFn, journal, beforeBuy, kind: "endImage" });
+        const end = await draw({ prompt: fitPrompt(`The same subject and setting as @firstframe. ${endScene}`), file: `${dir}/${name}.end.png`, imageModel, imageRatio, seed, referenceImages: [{ uri: dataURI(first.jpg, "image/jpeg"), tag: "firstframe" }], items, fetchFn, sleepFn, runFn, journal, beforeBuy, kind: "endImage" });
         const checked = check ? await check(end.jpg, { end: true, first: first.jpg }) : null;
         if (checked?.ok !== false) last = end.png;
         else warn(`runway: end still rejected (${checked.why}); using first frame only`);
