@@ -14,22 +14,27 @@ export const filterPath = (file) => String(file).replace(/([\\':])/g, "\\$1").re
 /** Keep reviewed trims small, validated and in a stable order for cache identity. */
 export function gradeOverrides(value = {}, name = "grade") {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object`);
-  const ranges = { ev: [-1, 1], saturation: [0.5, 1.5], contrast: [0, 0.1] };
-  for (const key of Object.keys(value)) if (!Object.hasOwn(ranges, key)) throw new Error(`${name}: unknown key ${key}`);
+  const ranges = { ev: [-1, 1], saturation: [0.5, 1.5], contrast: [0, 0.1], warmth: [-0.01, 0.01] };
+  for (const key of Object.keys(value)) if (!Object.hasOwn(ranges, key) && key !== "balance") throw new Error(`${name}: unknown key ${key}`);
   const result = {};
   for (const [key, [lo, hi]] of Object.entries(ranges)) if (Object.hasOwn(value, key)) {
     if (!Number.isFinite(value[key]) || value[key] < lo || value[key] > hi) throw new Error(`${name}.${key} must be between ${lo} and ${hi}`);
     result[key] = value[key];
+  }
+  if (Object.hasOwn(value, "balance")) {
+    if (!Array.isArray(value.balance) || value.balance.length !== 3 || Array.from(value.balance).some((v) => !Number.isFinite(v) || v < -0.03 || v > 0.03)) throw new Error(`${name}.balance must have three values between -0.03 and 0.03`);
+    result.balance = [...value.balance];
   }
   return result;
 }
 
 export function lookOptions(look = {}, { sourceIds, allowSources = true } = {}) {
   if (!look || typeof look !== "object" || Array.isArray(look)) throw new Error("look must be an object");
-  for (const key of Object.keys(look)) if (!["grade", "letterbox", ...(allowSources ? ["sources"] : [])].includes(key)) throw new Error(`look: unknown key ${key}`);
+  for (const key of Object.keys(look)) if (!["grade", "letterbox", ...(allowSources ? ["sources", "hlg"] : [])].includes(key)) throw new Error(`look: unknown key ${key}`);
   const grade = look.grade ?? "auto", letterbox = look.letterbox ?? null;
   if (!["auto", "off"].includes(grade)) throw new Error("look.grade must be auto or off");
   if (![null, 2.35, 2.39].includes(letterbox)) throw new Error("look.letterbox must be null, 2.35 or 2.39");
+  if (Object.hasOwn(look, "hlg") && !["legacy", "review"].includes(look.hlg)) throw new Error("look.hlg must be legacy or review");
   let sources;
   if (Object.hasOwn(look, "sources")) {
     if (!look.sources || typeof look.sources !== "object" || Array.isArray(look.sources)) throw new Error("look.sources must be an object");
@@ -121,7 +126,7 @@ export function skinWeight([r, g, b]) {
 }
 
 export function gradeSettings(stats = {}, neutral = null, overrides = {}) {
-  const ev = Number.isFinite(stats.luma) && stats.luma > 0 ? clamp(Math.log2(0.42 / stats.luma), -0.3, 0.3) : 0;
+  const ev = Number.isFinite(stats.luma) && stats.luma > 0 && stats.luma <= 1 ? clamp(Math.log2(0.42 / stats.luma), -0.3, 0.3) : 0;
   const coloredStage = stats.saturation > 0.55 || Math.abs(stats.warmth || 0) > 0.18;
   let balance = [0, 0, 0];
   if (!coloredStage && neutral?.fraction >= 0.05) {
@@ -137,9 +142,9 @@ export function gradePixel(rgb, settings) {
   const exposed = clamp(y * 2 ** clamp(settings.ev, -1, 1), 0, 1);
   const target = exposed + settings.contrast * (exposed - 0.5) * 4 * exposed * (1 - exposed);
   const gain = y > 0 ? Math.min(target / y, 1 / Math.max(...rgb)) : 1;
-  const protect = 1 - skinWeight(rgb);
+  const skin = skinWeight(rgb), protect = 1 - skin;
   const graded = rgb.map((v, i) => clamp(v * gain + protect * (settings.balance[i] + (i === 0 ? settings.warmth : i === 2 ? -settings.warmth : 0)) * 4 * y * (1 - y), 0, 1));
-  const saturation = settings.saturation ?? 1;
+  const saturation = 1 + ((settings.saturation ?? 1) - 1) * (1 - 0.75 * skin);
   if (saturation === 1) return graded;
   // Reviewed saturation follows the existing grade, preserving its luminance until gamut clipping.
   const luma = 0.2126 * graded[0] + 0.7152 * graded[1] + 0.0722 * graded[2];
@@ -153,47 +158,86 @@ export function gradeCube(settings, size = 33) {
   return rows.join("\n") + "\n";
 }
 
-/** Measurements are held for a source, never chased frame by frame. HDR conversion happens before sampling. Frames are reached by seeking: a full keynote is 30+ minutes. */
-export async function prepareGrade(file, { sourceKey, meta, preFilter = "", overrides = {}, cacheDir, execute = run, measure = measureClip, print = console.warn } = {}) {
+/** Merge selected source intervals so repeated or overlapping uses do not bias the source grade. */
+export function gradeRanges(ranges, duration) {
+  const selected = (ranges ?? [{ in: 0, out: duration > 0 ? duration : 1 }]).map(({ in: start, out: end }) => {
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || duration > 0 && end > duration + 1 / 30) throw new Error("invalid grade sample range");
+    if (duration > 0 && start >= duration) throw new Error("invalid grade sample range");
+    return { in: start, out: duration > 0 ? Math.min(end, duration) : end };
+  }).sort((a, b) => a.in - b.in || a.out - b.out);
+  if (!selected.length) throw new Error("grade sample ranges must not be empty");
+  const merged = [];
+  for (const range of selected) {
+    const last = merged.at(-1);
+    if (last && range.in <= last.out) last.out = Math.max(last.out, range.out);
+    else merged.push({ ...range });
+  }
+  return merged;
+}
+
+function validStats(stats) {
+  return stats && ["luma", "contrast", "saturation", "sharpness", "warmth"].every((key) =>
+    !Object.hasOwn(stats, key) || Number.isFinite(stats[key]) && stats[key] >= (key === "warmth" ? -1 : 0) && stats[key] <= 1)
+    && Number.isFinite(stats.luma);
+}
+
+/** Hold one grade across selected source ranges. Sample upright SDR foreground before fitting, wash, bars or cards. */
+export async function prepareGrade(file, { sourceKey, meta, preFilter = "", ranges, overrides = {}, cacheDir, execute = run, measure = measureClip, print = console.warn } = {}) {
   const trim = gradeOverrides(overrides);
-  // Keep the original identity and LUT bytes when no trims are supplied. Measurements are shared by all trims.
-  const measurementKey = hash({ version: 1, sourceKey: sourceKey || sourceCacheKey(file), preFilter });
-  const key = Object.keys(trim).length ? hash({ version: 2, measurementKey, overrides: trim }) : measurementKey;
+  const selected = gradeRanges(ranges, meta.duration);
+  const duration = selected.reduce((sum, range) => sum + range.out - range.in, 0);
+  const frameDuration = 1 / (meta.fps > 0 ? meta.fps : 30);
+  const sampleTimes = Array.from({ length: 12 }, (_, frame) => {
+    let offset = (frame + 0.5) * duration / 12;
+    for (const range of selected) {
+      // Seeking picks the next decoded frame. Stay one frame inside the exclusive out point.
+      if (offset < range.out - range.in) return Math.min(range.in + offset, Math.max(range.in, range.out - frameDuration - 0.000001));
+      offset -= range.out - range.in;
+    }
+    return selected.at(-1).out;
+  });
+  const measurement = { version: 2, colorDomain: "display-rgb24-rec709", region: "source-foreground", preFilter, ranges: selected, sampleTimes };
+  const measurementKey = hash({ ...measurement, sourceKey: sourceKey || sourceCacheKey(file) });
+  const key = hash({ version: 3, measurementKey, overrides: trim });
   const dir = ensureDir(cacheDir), facts = path.join(dir, `${key}.look.json`), lut = path.join(dir, `${key}.cube`);
   const measurementFacts = path.join(dir, `${measurementKey}.look.json`);
   try {
-    let data;
-    const cached = fs.existsSync(facts);
-    if (cached) data = readJSON(facts);
-    else {
-      if (fs.existsSync(measurementFacts)) data = readJSON(measurementFacts);
-      else {
-        const stats = await measure(file, { duration: meta.duration, preFilter, seek: true });
+    const cachedFacts = (file) => {
+      try {
+        const data = readJSON(file);
+        return data.schemaVersion === 2 && data.measurementKey === measurementKey && validStats(data.stats) ? data : null;
+      } catch { return null; }
+    };
+    let data = cachedFacts(facts);
+    const cached = Boolean(data);
+    if (!data) {
+      data = cachedFacts(measurementFacts);
+      if (!data) {
+        const stats = await measure(file, { duration: meta.duration || 1, preFilter, seek: true, sampleTimes, lumaMode: "rgb24", noAutorotate: true });
+        if (!validStats(stats)) throw new Error("invalid normalized source statistics");
         const raw = path.join(dir, `${measurementKey}.rgb`);
         try {
-          const duration = meta.duration > 0 ? meta.duration : 1;
           const chunks = [];
           for (let frame = 0; frame < 12; frame++) {
-            await execute("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(duration / 24 + frame * duration / 12), "-i", file, "-an", "-vf", [preFilter, "scale=32:32:flags=area", "format=rgb24"].filter(Boolean).join(","), "-frames:v", "1", "-f", "rawvideo", raw], { capture: true });
+            await execute("ffmpeg", ["-y", "-loglevel", "error", "-noautorotate", "-ss", String(sampleTimes[frame]), "-i", file, "-an", "-vf", [preFilter, "scale=32:32:flags=area", "format=rgb24"].filter(Boolean).join(","), "-frames:v", "1", "-f", "rawvideo", raw], { capture: true });
             chunks.push(fs.readFileSync(raw));
           }
-          data = { schemaVersion: 1, key: measurementKey, stats, neutral: neutralStats(Buffer.concat(chunks)) };
+          data = { schemaVersion: 2, measurement, measurementKey, gradeVersion: 3, key: measurementKey, stats, neutral: neutralStats(Buffer.concat(chunks)) };
         } finally { fs.rmSync(raw, { force: true }); }
         data.settings = gradeSettings(data.stats, data.neutral);
         writeJSON(measurementFacts, data);
       }
-      if (key !== measurementKey) {
-        data = { ...data, key, overrides: trim, settings: gradeSettings(data.stats, data.neutral, trim) };
-        writeJSON(facts, data);
-      }
+      data = { ...data, key, ...(Object.keys(trim).length ? { overrides: trim } : {}), settings: gradeSettings(data.stats, data.neutral, trim) };
+      writeJSON(facts, data);
     }
+    if (!validStats(data.stats)) throw new Error("invalid cached normalized source statistics");
     // A successful retry must replace a fallback LUT that has no measured facts yet.
     if (!cached || !fs.existsSync(lut)) fs.writeFileSync(lut, gradeCube(data.settings));
     return { ...data, filter: `lut3d=file=${filterPath(lut)}:interp=tetrahedral`, lut };
   } catch { print("speaker look: source colour measurement unavailable; using gentle house grade");
     const settings = gradeSettings({}, null, trim);
     fs.writeFileSync(lut, gradeCube(settings));
-    return { key, settings, lut, filter: `lut3d=file=${filterPath(lut)}:interp=tetrahedral`, fallback: true, ...(Object.keys(trim).length ? { overrides: trim } : {}) };
+    return { key, measurementKey, measurement, gradeVersion: 3, settings, lut, filter: `lut3d=file=${filterPath(lut)}:interp=tetrahedral`, fallback: true, ...(Object.keys(trim).length ? { overrides: trim } : {}) };
   }
 }
 

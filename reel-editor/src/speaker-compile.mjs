@@ -3,7 +3,7 @@ import path from "node:path";
 import { assetPath, assertNoGreg, LOGO_RELATIONSHIPS, headshotProblems } from "./speaker-intake.mjs";
 import { probeSource } from "./speaker-index.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
-import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr } from "./hdr.mjs";
+import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr, hlgToSdrFilter } from "./hdr.mjs";
 import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
 import { measureLoudness } from "./preflight.mjs";
 import { groupWords } from "./captions.mjs";
@@ -422,9 +422,14 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   const scratch = ensureDir(path.join(dir, "compile"));
   const sourceById = new Map(manifest.sources.map((s) => [s.id, s]));
   const sourceTrims = new Map(Object.entries(resolved.look.sources || {}));
+  const selectedRanges = new Map();
+  for (const entry of [...resolved.items, ...resolved.cutaways]) if (entry.sourceId) {
+    if (!selectedRanges.has(entry.sourceId)) selectedRanges.set(entry.sourceId, []);
+    selectedRanges.get(entry.sourceId).push({ in: entry.in, out: entry.out });
+  }
   const normalized = new Map(), grades = new Map(), reviewed = new Set(), stabilized = new Map();
   const sourceGrades = new Map(), itemGrades = new Map();
-  const gradeEvidence = (grade) => ({ key: grade.key, settings: { saturation: 1, ...grade.settings }, fallback: grade.fallback || false });
+  const gradeEvidence = (grade) => ({ key: grade.key, measurementKey: grade.measurementKey, measurement: grade.measurement, gradeVersion: grade.gradeVersion, settings: { saturation: 1, ...grade.settings }, fallback: grade.fallback || false });
   const lookDir = ensureDir(path.join(dir, "look")), lookIndex = ensureDir(path.join(folder, "work", "index", "look"));
   if (resolved.look.letterbox) resolved.problems.push({ level: "info", id: "look", message: `Cinematic ${resolved.look.letterbox}:1 letterbox; active image ${resolved.activeBox.width}x${resolved.activeBox.height}. Check heads, hands and slides in the crop.` });
   let chosenEncoder = encoder;
@@ -432,6 +437,10 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
     if (normalized.has(id)) return normalized.get(id);
     const s = sourceById.get(id), meta = sourceRow(index, id), original = assetPath(folder, s.path);
     let file = original, hdr = meta.hdr, rotation = meta.rotationCw || 0;
+    if (meta.hdrKind === "hlg" && resolved.look.hlg === "review") {
+      const message = `${id}: HLG review transform (-1.5 EV before grading); compare skin and highlights against the legacy render and re-evaluate reviewed trims`;
+      print(message); resolved.problems.push({ level: "warn", id, message });
+    }
     if (meta.hdrKind === "pq") {
       const mapped = path.join(scratch, `hdr-${normalized.size}.mp4`);
       if (await toneMapToSdr(original, mapped, meta)) { file = mapped; hdr = false; rotation = 0; }
@@ -459,13 +468,14 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
         args.push("-f", "lavfi", "-i", `color=c=${bg}:s=1920x1080:r=30:d=${frames / 30}`);
         filters.push(`[${inputCount++}:v]setsar=1[${label}]`); return;
       }
-      const preFilter = [...rotateFilters(data.rotation), data.hdr ? SDR_FILTER : ["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null].filter(Boolean).join(",");
+      const hdrFilter = data.meta.hdrKind === "hlg" && resolved.look.hlg === "review" ? hlgToSdrFilter() : data.hdr ? SDR_FILTER : null;
+      const preFilter = [...rotateFilters(data.rotation), hdrFilter || (["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null)].filter(Boolean).join(",");
       let grade = null;
       if ((entry.look?.grade ?? resolved.look.grade) === "auto") {
         const sourceTrim = gradeOverrides(sourceTrims.get(entry.sourceId));
         const prepared = async (overrides) => {
           const key = JSON.stringify([entry.sourceId, overrides]);
-          if (!grades.has(key)) grades.set(key, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, overrides, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
+          if (!grades.has(key)) grades.set(key, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, ranges: selectedRanges.get(entry.sourceId), overrides, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
           return grades.get(key);
         };
         grade = await prepared(sourceTrim);

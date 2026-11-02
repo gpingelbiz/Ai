@@ -192,7 +192,7 @@ test("source measurements are cached and optional review extraction fails open",
   assert.match(filterPath("/tmp/a:b.cube"), /\\\\:/);
 });
 
-test("grade cache identities include each reviewed value, reuse source measurements and preserve the legacy identity", async (t) => {
+test("grade cache identities include each reviewed value, reuse source measurements and invalidate the legacy identity", async (t) => {
   const dir = temp(t); let measures = 0, samples = 0;
   const options = { sourceKey: "reviewed", meta: { duration: 1 }, cacheDir: dir,
     measure: async () => { measures++; return { luma: 0.1 }; },
@@ -204,14 +204,14 @@ test("grade cache identities include each reviewed value, reuse source measureme
   assert.equal(again.key, first.key); assert.equal(again.lut, first.lut); assert.equal(fs.statSync(first.lut).mtimeMs, lutTime);
   assert.equal(first.settings.ev, 0.2);
   const keys = new Set([first.key]);
-  for (const change of [{ ev: 0.21 }, { saturation: 0.93 }, { contrast: 0.016 }]) {
+  for (const change of [{ ev: 0.21 }, { saturation: 0.93 }, { contrast: 0.016 }, { balance: [0, 0, 0] }, { warmth: 0 }]) {
     const other = await prepareGrade("source.mp4", { ...options, overrides: { ...trim, ...change } });
     assert.ok(!keys.has(other.key)); keys.add(other.key);
     assert.notEqual(fs.readFileSync(first.lut, "utf8"), fs.readFileSync(other.lut, "utf8"));
   }
   const automatic = await prepareGrade("source.mp4", options), empty = await prepareGrade("source.mp4", { ...options, overrides: {} });
   const legacyKey = createHash("sha256").update(JSON.stringify({ version: 1, sourceKey: "reviewed", preFilter: "" })).digest("hex");
-  assert.equal(automatic.key, legacyKey); assert.equal(empty.key, automatic.key); assert.equal(automatic.settings.ev, 0.3);
+  assert.notEqual(automatic.key, legacyKey); assert.equal(empty.key, automatic.key); assert.equal(automatic.settings.ev, 0.3);
   assert.equal(fs.readFileSync(automatic.lut, "utf8"), gradeCube(gradeSettings(automatic.stats, automatic.neutral)));
   assert.deepEqual(first.settings.balance, automatic.settings.balance);
   assert.equal(measures, 1); assert.equal(samples, 12);
@@ -261,7 +261,7 @@ test("compiled item trims have distinct LUTs and evidence, stay off cutaways and
   const meta = await probeSource(file), p = structuredClone(plan);
   const clip = { ...p.items[0], out: 0.2, fit: "contain", push: 1, stabilize: false };
   const itemTrim = { ev: -0.15, saturation: 0.92 };
-  p.look = { grade: "auto", sources: { phone: { ev: 0.1, saturation: 1, contrast: 0.015 } } };
+  p.look = { grade: "auto", sources: { phone: { ev: 0.1, saturation: 1, contrast: 0.015, balance: [0, 0, 0], warmth: 0 } } };
   p.items = [clip, { ...clip, id: "s5", grade: itemTrim }, { ...clip, id: "later" },
     { ...clip, id: "same", grade: { saturation: 0.92, ev: -0.15 } }, { ...clip, id: "off", look: { grade: "off" }, grade: { ev: 1 } }];
   p.cutaways = [{ id: "x", over: "s5", offset: 0, sourceId: "phone", in: 0, out: 0.1, fit: "contain", push: 1, stabilize: false }];
@@ -271,6 +271,9 @@ test("compiled item trims have distinct LUTs and evidence, stay off cutaways and
   const source = evidence.sources.phone, item = evidence.items.s5;
   assert.equal(source.settings.ev, 0.1); assert.equal(source.settings.saturation, 1); assert.equal(source.settings.contrast, 0.015);
   assert.equal(item.settings.ev, -0.15); assert.equal(item.settings.saturation, 0.92); assert.equal(item.settings.contrast, 0.015);
+  assert.deepEqual(source.settings.balance, [0, 0, 0]); assert.equal(item.settings.warmth, 0);
+  assert.deepEqual(source.measurement.ranges, [{ in: 0, out: 0.2 }]);
+  assert.equal(source.measurement.region, "source-foreground");
   assert.deepEqual(item.settings.balance, source.settings.balance); assert.equal(item.sourceId, "phone");
   assert.notEqual(item.key, source.key); assert.equal(item.key, evidence.items.same.key);
   assert.deepEqual(Object.keys(evidence.items).sort(), ["s5", "same"]);
