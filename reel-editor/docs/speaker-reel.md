@@ -424,6 +424,22 @@ Topic `text` and `eyebrow` must each exactly match manifest identity or proof te
 { "type": "keyword", "layout": "cinematic", "text": "Taking action", "motion": "rise" }
 ```
 
+**Plate-less testimonial names.** Opt a `testimonial-name` overlay into `layout: "cinematic"` for an editorial attribution beside the footage. Existing standard and premium plans retain their current output; premium remains the normal choice unless this layout is explicitly requested. Copy, proof matching, source attribution, permissions and the minimum four-second hold use the existing testimonial checks.
+
+```json
+{ "id": "who", "at": "testimonial-clip", "offset": 0.3, "duration": 4.5,
+  "card": { "type": "testimonial-name", "proofId": "approved-testimonial",
+    "layout": "cinematic", "motion": "rise" } }
+```
+
+The white name uses the client's display serif at 60 px with 1.12 line height. The supplied relationship/title and organization use the body font at 40 and 36 px with 2.4 px tracking and 1.25 line height. Empty fields are omitted. A 4×120 px brand-accent vertical rule sits at x96, with text starting 24 px to its right. The name and relationship retain their exact supplied spelling and casing. The same three text shadows as other cinematic cards support the type. There is no local background, rectangle, border or rounded plate. The rule appears by default; `accent:false` omits it.
+
+On a portrait `wash`, the caption uses the existing left-gutter reservation: maximum width 536 px, with at least 48 px between the entire caption's right edge and the largest sharp portrait window. This also accounts for square-pixel source crops and source pixel aspect. No scrim is added over a portrait wash. On landscape footage or explicit non-wash fits, the caption is lower-left, width 1152 px, with the shared full-width cinematic bottom-third scrim. Both placements settle 96 px above the active picture's bottom, including 2.35 and 2.39 letterboxes. Long copy wraps to at most two lines per field at the stated sizes, then fails preflight rather than shrinking or truncating. Preflight collision checks use the caption rectangle, including when brand tokens are unavailable.
+
+At 30 fps, the rule grows from the bottom over local frames **0–6** (`power2.out`). With `motion:"rise"`, the text rises 12 px and fades in over **frames 2–10** (`power2.out`), then holds. Omitting motion uses the same fade without translation. The whole overlay fades linearly over its final six frames and is hidden at its half-open endpoint. Thus a 135-frame / 4.5-second overlay exits at frames **129–135**, with 119 fully settled frames / 3.97 seconds before exit. All endpoints derive from absolute integer output frames; no scale entrance or sound effect is added.
+
+Run `node --test test/speaker-testimonial-cinematic.test.mjs` for safe margins, portrait separation, provenance, collision rectangles, plate-free markup, bundled-GSAP forward/backward frame seeks and tiny deterministic lavfi foreground measurements. This changes only HTML/CSS/GSAP composition; `compileVersion()` and `fitGraph()` are unchanged. Before choosing this layout for Sonia or Madi, Claude must render and inspect their actual names, relationship wrapping, installed display/body fonts, bright and dark footage contrast, face/hand clearance, entry/exit frames and phone-size readability. Inspect every intervening cutaway as well: placement follows the named host clip and cannot detect faces or a replacement picture. No browser glyph measurement or face tracking is performed by these tests.
+
 An inserted **event-list** provides text proof when real logo files are unavailable:
 
 ```json
