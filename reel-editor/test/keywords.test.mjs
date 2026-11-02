@@ -111,12 +111,13 @@ test("headline hook renders words, scrim and rule, and a legacy brand copy uses 
   assert.match(boxed, /id="hook-text"/, "older styles still work");
 });
 
-test("automatic gold skips weak words like almost, looking and -ly adverbs", () => {
+test("automatic gold skips weak words and suffixes while allowing shorter punch words", () => {
   const w = (s) => s.split(" ").map((text) => ({ text }));
-  assert.equal(autoKeyword(w("I spent almost")), null);
-  assert.equal(autoKeyword(w("start looking for")), null);
-  assert.equal(autoKeyword(w("it's honestly fine")), null, "-ly adverbs are weak");
-  assert.equal(autoKeyword(w("went sideways fast")).i, 1, "strong words still win");
+  assert.equal(autoKeyword(w("almost looking honestly")), null);
+  assert.equal(autoKeyword(w("I spent almost")).i, 1);
+  assert.equal(autoKeyword(w("start looking for")).i, 0);
+  assert.equal(autoKeyword(w("it's honestly fine")).i, 2, "fine now clears the four-letter minimum");
+  assert.equal(autoKeyword(w("went sideways fast")).i, 2, "the last eligible word wins");
   const g = [{ words: w("we're never really") }];
   markKeywords(g, dict, { auto: true });
   assert.deepEqual(g[0].words.map((x) => !!x.key), [false, true, false], "power words are unaffected");

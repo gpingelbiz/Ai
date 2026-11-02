@@ -14,7 +14,8 @@
     "dimFuture": false,
     "animation": "cut",
     "autoKeywords": false,
-    "annotate": false
+    "annotate": false,
+    "keywordColorOnFootage": false
   },
   "hook": {
     "fontSizeFrac": 0.041,
@@ -42,7 +43,9 @@
     "scales": [1.16, 1.22],
     "cadence": {
       "enabled": false
-    }
+    },
+    "minSpacing": 10,
+    "maxPer30": 3
   },
   "broll": {
     "max": 2,

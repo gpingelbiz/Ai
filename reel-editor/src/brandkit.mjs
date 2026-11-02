@@ -8,6 +8,8 @@ import { signupsHTML } from "./signups.mjs";
 import { deepMerge, readJSON } from "./util.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
 import { assertNoGreg } from "./speaker-intake.mjs";
+// Client captions keep the quieter October 30 look as Greg restores his bigger, gold captions.
+import { CLIENT_CAPTIONS } from "./presets.mjs";
 
 /**
  * Brand kits: one brand file (kit/brand-template.json) becomes a Reel Editor Kit zip for someone else, with their
@@ -55,7 +57,8 @@ export const CALM = { cuts: { silence: "medium" }, zooms: { minSpacing: 16, maxP
  * and cards and cutaways right after the hook. Greg's own preset moved to the one-take look on
  * 2026-10-31 (his uncut reels held viewers best), so client brands write this out instead of inheriting his.
  */
-export const FAST = { cuts: { silence: "fast" }, zooms: { cadence: { enabled: true } } };
+export const FAST = { cuts: { silence: "fast" }, zooms: { minSpacing: 10, maxPer30: 3, cadence: { enabled: true } } };
+
 
 /** The card looks a brand allows: everything but gregcard, or only `looks.only` (brand looks included). */
 export function lookChoice(b) {
@@ -89,8 +92,8 @@ export function brandPreset(b, { fonts = {} } = {}) {
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.displayItalic ? { displayItalic: fonts.displayItalic } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
     // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
     // serif: the same in their display serif (BossBabe's and Jasmine Star's podcast captions), a touch larger.
-    // Both turn the keyword colour back on: the accent box is the point, and Greg's preset has it off for his gold.
-    captions: { style: quietCaps ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(quietCaps ? { quiet: true, keywordColorOnFootage: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
+    // Both turn the keyword colour back on: the accent box is the point.
+    captions: { ...CLIENT_CAPTIONS, style: quietCaps ? "reveal" : look.captions || "reveal", ...(look.annotate != null ? { annotate: look.annotate !== false } : {}), ...(quietCaps ? { quiet: true, keywordColorOnFootage: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
     hook: {
       style: look.hook || "headline", behind: look.behind !== false,
       // looks.lockHook false lets each reel's look draw the hook; Greg's plaque would cover every one of them.

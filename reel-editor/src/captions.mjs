@@ -234,27 +234,35 @@ const STOP_WORDS = new Set(("a an the and or but so because if then than that th
   "know think mean said say says saying tell told want wanted need let let's make made take took come came look see feel " +
   "actually basically literally probably maybe right well now then much many more most some any all every each other another same").split(" "));
 
-// Long words that carry no weight on their own: soft adverbs and everyday -ing verbs. Any word ending in -ly
-// is treated the same way unless the dictionary lists it as a power word.
+// Words that carry little weight on their own. -ing verbs and -ly adverbs are skipped too, unless the
+// dictionary lists them as a power word.
 const WEAK_WORDS = new Set(("almost always already usually sometimes often enough little pretty rather quite somehow anyway anyways " +
+  "okay gonna wanna gotta really thing stuff something everything going every single " +
   "looking getting trying doing having making taking coming saying thinking talking working putting giving " +
   "sitting standing walking telling asking showing turning keeping letting starting moving playing " +
   "people person somebody whatever whenever wherever another around through without within between before behind " +
   "should've could've would've").split(" "));
 
-/** Best automatic pick in one line: a number + unit pair ("three minutes"), a number word, or a strong 6+ letter word. */
+/** Best automatic pick: a number + unit pair, a number word, then the last strong 4+ letter word (the punch). */
 export function autoKeyword(words) {
   const toks = words.map((w) => norm(w.text));
   let best = null;
+  let punch = null;
+  let pastTense = null;
   const consider = (i, len, score) => { if (!best || score > best.score) best = { i, len, score }; };
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i];
     if (!t) continue;
     if (NUM_WORDS.has(t) && UNIT_WORDS.has(toks[i + 1] || "")) consider(i, 2, 5);
     else if (NUM_WORDS.has(t)) consider(i, 1, 3);
-    else if (!STOP_WORDS.has(t) && !WEAK_WORDS.has(t) && !/ly$/.test(t) && t.replace(/'/g, "").length >= 6) consider(i, 1, 2 + Math.min(t.length, 10) / 100);
+    // -ing verbs and -ly adverbs rarely carry the point; "what's" and "something's" are judged without the 's.
+    // An -ed word is gold only when the line has nothing else ("be prepared"), never over a noun ("a snake attacked").
+    else if (!STOP_WORDS.has(t) && !STOP_WORDS.has(t.replace(/'s$/, "")) && !WEAK_WORDS.has(t.replace(/'s$/, "")) && !/(ing|ly)$/.test(t) && t.replace(/'/g, "").length >= 4) {
+      if (/ed$/.test(t)) pastTense = { i, len: 1, score: 2 + Math.min(t.length, 10) / 100 };
+      else punch = { i, len: 1, score: 2 + Math.min(t.length, 10) / 100 };
+    }
   }
-  return best;
+  return best || punch || pastTense;
 }
 
 /** Gold keywords: dictionary terms first, then numbers and power words, then (auto) the autoKeyword pick.

@@ -22,12 +22,19 @@ function load(brand, { font = true } = {}) {
 }
 
 const GREG = {
-  "captions.uppercase": false, "captions.fontSizeFrac": 0.0355, "captions.autoKeywords": false, "captions.keywordColorOnFootage": false,
+  "captions.uppercase": true, "captions.fontSizeFrac": 0.042, "captions.autoKeywords": true, "captions.keywordColorOnFootage": undefined,
+  "captions.animation": "pop", "captions.style": "reveal", "captions.annotate": true, "captions.dimFuture": undefined,
+  "captions.maxKeywordsPerLine": 1, "captions.placeMin": 0.58, "captions.placeMax": 0.79, "captions.minShow": 0.35, "captions.wordsPerLine": 3,
   "hook.uppercase": undefined, "hook.duration": 3, "hook.fontSizeFrac": 0.041, "hook.behind": false, "hook.plaque": true,
-  "zooms.minSpacing": undefined, "zooms.maxPer30": undefined,
+  "zooms.minSpacing": 6, "zooms.maxPer30": 4,
   "looks.lockHook": true, "looks.lockCaptions": true, "cover.style": "archetypes", "finish.enabled": true,
   // Off since 2026-10-29: the opening still put b-roll behind Greg, which no top reel in the b-roll study did.
   "coldOpen.enabled": false,
+};
+const CLIENT = {
+  ...GREG, "captions.uppercase": false, "captions.fontSizeFrac": 0.0355, "captions.autoKeywords": false, "captions.keywordColorOnFootage": false,
+  "captions.animation": "cut", "captions.annotate": false, "captions.dimFuture": false, "captions.placeMax": 0.72,
+  "zooms.minSpacing": 10, "zooms.maxPer30": 3,
 };
 const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
 
@@ -35,24 +42,36 @@ const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
 const ONE_TAKE = { "cuts.silence": "medium", "zooms.cadence.enabled": false, "graphics.clearStart": 5, "graphics.max": 3, "broll.clearStart": 5, "broll.max": 2 };
 const CLIENT_FAST = { "cuts.silence": "fast", "zooms.cadence.enabled": true, "graphics.clearStart": 0, "graphics.max": 6, "broll.clearStart": 0, "broll.max": 3 };
 
-test("Greg's preset keeps today's case and hook time, with the one-take pacing", () => {
-  // Greg 2026-10-30: pingel-v2 text direction is his default
+test("Greg's preset restores big gold captions and punch-ins, with the one-take pacing", () => {
   const g = loadPreset("pingel-brand");
   for (const [k, v] of Object.entries({ ...GREG, ...ONE_TAKE })) assert.equal(at(g, k), v, k);
   assert.doesNotMatch(g.broll.world, /wife/i, "never his wife, not even in a b-roll brief");
   assert.equal(ownDisplay(g), false, "pingel-brand has no display font: Anton and DM Serif stay");
 });
 
-test("a brand file without the new fields inherits Greg's new defaults and keeps its legacy behind hook", () => {
-  // Greg 2026-10-30: pingel-v2 text direction is his default
+test("a brand file without caption overrides keeps the quieter client captions and legacy behind hook", () => {
   const { p, dir } = load(julee);
   try {
-    for (const [k, v] of Object.entries({ ...GREG, ...CLIENT_FAST, "hook.behind": true })) assert.equal(at(p, k), v, k);
+    for (const [k, v] of Object.entries({ ...CLIENT, ...CLIENT_FAST, "hook.behind": true })) assert.equal(at(p, k), v, k);
     const raw = brandPreset(julee);
     assert.ok(!("coldOpen" in raw), "coldOpen not written");
     assert.deepEqual(raw.cuts, { silence: "fast" }, "client brands write the fast pacing instead of inheriting Greg's one-take look");
-    assert.ok(!("uppercase" in raw.captions) && !("uppercase" in raw.hook) && !("duration" in raw.hook));
+    assert.equal(raw.captions.uppercase, false, "client caption case is written explicitly");
+    assert.ok(!("uppercase" in raw.hook) && !("duration" in raw.hook));
     assert.equal(raw.hook.behind, true, "generic brands still request their legacy behind hook");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a client built from the kit template keeps its caption defaults and explicit case and marker choices", () => {
+  const template = JSON.parse(fs.readFileSync(new URL("../kit/brand-template.json", import.meta.url), "utf8"));
+  const { p, dir } = load(template);
+  try {
+    for (const [k, v] of Object.entries({ ...CLIENT, ...CLIENT_FAST, "captions.uppercase": true, "captions.annotate": true, "hook.behind": true, "hook.uppercase": true })) assert.equal(at(p, k), v, k);
+    const greg = loadPreset("pingel-brand");
+    assert.equal(p.captions.fontSizeFrac, 0.0355);
+    assert.equal(greg.captions.fontSizeFrac, 0.042);
+    assert.equal(p.captions.autoKeywords, false);
+    assert.equal(greg.captions.autoKeywords, true);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

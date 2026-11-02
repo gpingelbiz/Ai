@@ -5,6 +5,44 @@ import { readFileSync } from "node:fs";
 
 const sample = JSON.parse(readFileSync(new URL("../examples/sample-words.json", import.meta.url))).words;
 
+test("Scribe hesitations keep the final take, including commas and article runs", () => {
+  const words = [
+    ["me,", 6.40, 6.48], ['"How,', 6.64, 7.02], ["how", 7.48, 7.58], ["was", 7.64, 7.74], ["your", 7.78, 7.84], ["day?", 7.90, 8.06], ["W-", 8.24, 8.28], ["tell", 8.52, 8.66],
+    ["be", 19.84, 19.94], ["coming", 20.00, 20.32], ["o-", 20.34, 20.38], ["out", 21.40, 21.50],
+    ["know,", 29.28, 29.38], ["an,", 29.48, 29.58], ["a,", 29.72, 29.76], ["a,", 29.76, 29.76], ["a,", 30.08, 30.12], ["an,", 30.34, 30.44], ["a", 30.58, 30.60], ["gorilla", 30.72, 31.16],
+    ["you.", 71.00, 71.08], ["It's,", 71.20, 71.36], ["it,", 71.52, 71.62], ["it's", 72.08, 72.28], ["guaranteed", 72.34, 72.90],
+  ].map(([text, start, end]) => ({ text, start, end }));
+  // The source's o- to out gap is 1.02 s (a breath), inside the 1.5 s fragment limit.
+  const dropped = [1, 6, 10, 13, 14, 15, 16, 17, 21, 22];
+  assert.deepEqual(findBadTakes(words), words.map((_, i) => dropped.includes(i) ? "stutter" : null));
+  const cuts = planCuts(words, 74, { fillers: false, signOff: false });
+  assert.deepEqual(cuts.words.filter((w) => w.drop).map((w) => [w.text, w.drop]), dropped.map((i) => [words[i].text, "stutter"]));
+  assert.deepEqual(remapWords(cuts.words, cuts.segments).map((w) => w.text), words.filter((_, i) => !dropped.includes(i)).map((w) => w.text));
+});
+
+test("stutters preserve emphasis, sentence boundaries and long pauses", () => {
+  const words = (texts, gap = 0.1) => texts.map((text, i) => ({ text, start: i * (0.2 + gap), end: i * (0.2 + gap) + 0.2 }));
+  for (const texts of [["very,", "very"], ["no,", "no,", "no"], ["How.", "how"], ["How?", "how"], ["How!", "how"], ['How?"', "how"], ["how;", "how"], ["how:", "how"], ["it's,", "it"]]) {
+    assert.deepEqual(findBadTakes(words(texts)), [null, ...texts.slice(1).map(() => null)], texts.join(" "));
+  }
+  assert.deepEqual(findBadTakes(words(["How,", "how"], 0.6)), [null, null]);
+  for (const word of ["how", "why", "where", "who", "there", "that", "I'm", "we're", "you're", "they're", "it's", "just", "like", "I’m"]) {
+    assert.deepEqual(findBadTakes(words([`${word},`, word])), ["stutter", null], word);
+  }
+  assert.deepEqual(findBadTakes(words(["a", "a", "a", "a", "a", "a"])), ["stutter", "stutter", "stutter", "stutter", "stutter", null]);
+  assert.deepEqual(findBadTakes(words(["it,", "it's"])), ["stutter", null]);
+});
+
+test("cut-off fragments include hyphen and both dashes, with a 1.5 s limit", () => {
+  for (const text of ["W-", "o–", "o—"]) {
+    const words = [{ text, start: 0, end: 0.1 }, { text: "out", start: 1.1, end: 1.3 }];
+    assert.deepEqual(findBadTakes(words), ["stutter", null]);
+    assert.deepEqual(findBadTakes([{ ...words[0] }, { ...words[1], start: 1.7 }]), [null, null]);
+    assert.deepEqual(findBadTakes([words[0]]), [null], "a final fragment has no second take");
+  }
+  assert.deepEqual(findBadTakes([{ text: "two-by-four", start: 0, end: 0.2 }, { text: "here", start: 0.3, end: 0.5 }]), [null, null]);
+});
+
 test("findRoomTone prefers clean room outside the speech over a longer pause", () => {
   const step = 0.02;
   const db = new Array(250).fill(-24);

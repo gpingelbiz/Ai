@@ -1,14 +1,76 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { groupWords, markKeywords, cleanText, keywordColorOnFootage } from "../src/captions.mjs";
+import { groupWords, markKeywords, cleanText, keywordColorOnFootage, autoKeyword, hookWords } from "../src/captions.mjs";
 import { applyCorrections } from "../src/transcribe.mjs";
 import { pickHook, pickCta } from "../src/hook.mjs";
 import { planZooms } from "../src/zooms.mjs";
 import { renderHTML } from "../src/compose.mjs";
+import { loadPreset } from "../src/presets.mjs";
+import { placeCaptions } from "../src/placement.mjs";
 
 const sample = JSON.parse(readFileSync(new URL("../examples/sample-words.json", import.meta.url))).words;
 const dict = JSON.parse(readFileSync(new URL("../dictionary.json", import.meta.url)));
+
+test("automatic gold lands on the last punch word instead of a long verb", () => {
+  const words = (s) => s.split(" ").map((text) => ({ text }));
+  for (const [line, want] of [
+    ["Going to work feels like entering a jungle", "jungle"], ["a snake coming", "snake"],
+    ["and a coconut", "coconut"], ["in the quicksand", "quicksand"], ["Bring a knife", "knife"],
+    ["I'm going to the jungle okay?", "jungle"], ["quicksand and sand", "sand"],
+    ["snake attacked quickly", "snake"], ["be prepared", "prepared"], ["it's guaranteed something's", "guaranteed"],
+    ["ever know what's", "ever"],
+  ]) {
+    const ws = words(line);
+    assert.equal(ws[autoKeyword(ws).i].text, want, line);
+  }
+  assert.deepEqual(hookWords("Going to work feels like entering a jungle").words.filter((w) => w.key).map((w) => w.text), ["jungle"]);
+  const weak = "okay gonna wanna gotta really thing stuff something everything going coming getting every single always little through entering quickly what's that's something's";
+  for (const text of weak.split(" ")) assert.equal(autoKeyword([{ text }]), null, text);
+  assert.deepEqual(autoKeyword(words("three minutes in the quicksand")), { i: 0, len: 2, score: 5 });
+  const power = markKeywords([{ words: words("attacked by a snake") }], { powerWords: ["attacked"] }, { auto: true });
+  assert.deepEqual(power[0].words.filter((w) => w.key).map((w) => w.text), ["attacked"]);
+});
+
+test("shorter punch words keep gold rare: once per clip and never on adjacent auto lines", () => {
+  const groups = ["a snake coming", "and a coconut", "Bring a knife", "a jungle", "a snake", "in the quicksand"].map((text) => ({ words: text.split(" ").map((text) => ({ text })) }));
+  markKeywords(groups, {}, { auto: true, maxPerLine: 1 });
+  assert.deepEqual(groups.map((g) => g.words.filter((w) => w.key).map((w) => w.text)), [["snake"], [], ["knife"], [], [], ["quicksand"]]);
+  assert.ok(groups.every((g) => g.words.filter((w) => w.key).length <= 1));
+});
+
+test("Greg's restored gold drives spaced punch-ins, pop, dimmed words and markers", () => {
+  const style = loadPreset("pingel-brand");
+  const groups = ["a snake coming", "and a coconut", "Bring a knife", "a jungle", "in the quicksand", "a truck", "a coconut"].map((text, i) => ({
+    text, start: 4 + i * 3, end: 6 + i * 3,
+    words: text.split(" ").map((text, j) => ({ text, start: 4 + i * 3 + j * 0.3, end: 4.3 + i * 3 + j * 0.3 })),
+  }));
+  markKeywords(groups, {}, { auto: style.captions.autoKeywords, maxPerLine: style.captions.maxKeywordsPerLine });
+  const ins = planZooms(groups, 30, style.zooms).filter((k) => k.scale > 1);
+  assert.deepEqual(ins.map((k) => k.t), [4, 10, 16, 22]);
+  assert.equal(style.zooms.cadence.enabled, false);
+  const html = renderHTML({ name: "pop", canvas: { width: 1080, height: 1920 }, style, video: { duration: 30, hasAudio: true }, captions: groups, zooms: [] }, "assets/footage.mp4");
+  assert.match(html, /"capCut":false/);
+  assert.match(html, /"capDim":true/);
+  assert.match(html, /<svg class="an /);
+  assert.match(html, /\.cap \.w\.k \{ color: #C8A24B;/);
+  assert.match(html, /text-transform: uppercase; color: #F5F1E8/);
+});
+
+test("Greg's captions clear a close selfie chin and keep two wrapped rows above the bottom UI", () => {
+  const cap = loadPreset("pingel-brand").captions;
+  const opts = { fontSizeFrac: cap.fontSizeFrac, gap: cap.placeGap, min: cap.placeMin, max: cap.placeMax, defaultPosition: cap.position };
+  assert.equal(cap.placeMax, 0.79);
+  for (const bottom of [0.71, 0.72, 0.73, 0.80]) {
+    const spot = placeCaptions({ top: 0.2, bottom }, opts);
+    const top = spot.position - 0.6 * cap.fontSizeFrac;
+    const blockBottom = top + cap.fontSizeFrac * (2 * 1.04 + 0.02);
+    assert.ok(blockBottom <= 0.84, `${blockBottom} crosses the bottom UI`);
+    if (bottom <= 0.73) assert.ok(top > bottom, `${top} overlaps chin at ${bottom}`);
+  }
+  const fallback = placeCaptions(null, { ...opts, defaultPosition: 0.9 });
+  assert.ok(fallback.position + cap.fontSizeFrac * (2 * 1.08 + 0.02 - 0.6) <= 0.84);
+});
 
 test("keyword color over footage keeps today's default and supports a weight-only guard", () => {
   assert.equal(keywordColorOnFootage({}), true);
@@ -178,9 +240,9 @@ test("pingel-v2 builds on pingel-brand: same colours and b-roll world, plus the 
   assert.deepEqual(v2.brand.modes, { authority: "gregcard", editorial: "press", proof: "receipts" });
   assert.equal(brand.brand.signature.kind, "none");
   assert.deepEqual(brand.brand.houseLooks, []);
-  assert.equal(brand.captions.uppercase, false);
-  assert.equal(brand.captions.autoKeywords, false);
-  assert.equal(brand.captions.keywordColorOnFootage, false);
+  assert.equal(brand.captions.uppercase, true);
+  assert.equal(brand.captions.autoKeywords, true);
+  assert.equal(brand.captions.keywordColorOnFootage, undefined);
   assert.equal(brand.hook.behind, false);
   assert.equal(brand.hook.plaque, true);
   assert.deepEqual(brand.looks, { lockHook: true, lockCaptions: true });
