@@ -15,12 +15,12 @@
     "videoSeconds": 3,
     "maxCreditsPerReel": 260,
     "grade": false,
-    "retryVideoModel": "gen4.5",
+    "retryVideoModel": "kling3.0_standard",
     "focusPull": 0,
-    "imageModel": "gen4_image",
-    "videoModel": "gen4_turbo",
-    "actionVideoModel": "kling3.0_standard",
-    "lastFrame": true,
+    "imageModel": "nano_banana_2.1",
+    "videoModel": "gen4.5",
+    "actionVideoModel": "gen4.5",
+    "lastFrame": false,
     "sfx": true,
     "sfxVolume": 0.35
   }

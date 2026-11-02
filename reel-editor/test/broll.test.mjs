@@ -247,7 +247,7 @@ test("pingel-runway disables creative grade and focus blur through merge, theme 
   assert.deepEqual([preset.broll.duration, preset.broll.gap, preset.broll.max, preset.broll.every, preset.broll.maxCreditsPerReel], [2.5, 3, 5, 10, 260]);
   assert.equal(preset.broll.grade, false, "applyTheme does not mutate the preset");
   assert.equal(preset.broll.videoSeconds, 3);
-  assert.equal(preset.broll.retryVideoModel, "gen4.5");
+  assert.equal(preset.broll.retryVideoModel, "kling3.0_standard");
   assert.equal(preset.broll.focusPull, 0);
   const html = renderHTML({ name: "test", canvas: { width: 1080, height: 1920 }, video: { duration: 20, hasAudio: true }, captions: [], style: themed, broll: [{ start: 6, duration: 2, src: "assets/broll/broll-1.mp4", move: "none" }] }, "assets/footage.mp4");
   assert.doesNotMatch(html, /data-color-grading=/);

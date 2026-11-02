@@ -147,7 +147,7 @@ test("Runway: a client's reel gets the pingel-runway timing under its own look; 
     const pick = (b) => ({ duration: b.duration, gap: b.gap, max: b.max, maxWithGraphics: b.maxWithGraphics, every: b.every, videoSeconds: b.videoSeconds, maxCreditsPerReel: b.maxCreditsPerReel });
     assert.equal(p.broll.engine, "runway");
     assert.deepEqual(pick(p.broll), { duration: 2.5, gap: 3, max: 5, maxWithGraphics: 2, every: 10, videoSeconds: 3, maxCreditsPerReel: 260 });
-    assert.equal(p.broll.retryVideoModel, "gen4.5");
+    assert.equal(p.broll.retryVideoModel, "kling3.0_standard");
     assert.equal(p.broll.grade, false);
     assert.equal(p.broll.focusPull, 0);
     assert.equal(p.broll.world, "her world", "the client's world stays");

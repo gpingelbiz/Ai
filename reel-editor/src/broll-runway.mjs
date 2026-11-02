@@ -85,7 +85,7 @@ scene: A compact opening-image prompt using this house order:
 photographic framing and angle; named subject and literal setting;
 opening physical position and space for the event; light and colour;
 useful focus and portrait composition.
-The named subject is recognizable in the opening frame.
+The named subject is recognizable in the opening frame and big: it fills at least a third of the frame height.
 Stage it ready for the event.
 For this daylight reel, use natural daylight, believable colour,
 readable shadows and ordinary phone-camera perspective.

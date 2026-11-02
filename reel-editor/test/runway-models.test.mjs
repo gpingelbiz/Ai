@@ -149,13 +149,20 @@ test("end stills use first-frame references, check identity, and fall back on re
 test("routing, stable shot seeds, planner fields and the five-shot preset budget", () => {
   const settings = JSON.parse(fs.readFileSync(new URL("../presets/pingel-runway.json", import.meta.url))).broll;
   assert.equal(settings.maxCreditsPerReel, 260);
-  const action = shotModels({ kind: "action", endScene: "Landed" }, settings), ambient = shotModels({ kind: "ambient", endScene: "Landed" }, settings);
+  // Routing itself, with Kling on action shots and a last frame (a brand can still choose this).
+  const routed = { ...settings, imageModel: "gen4_image", videoModel: "gen4_turbo", actionVideoModel: "kling3.0_standard", lastFrame: true };
+  const action = shotModels({ kind: "action", endScene: "Landed" }, routed), ambient = shotModels({ kind: "ambient", endScene: "Landed" }, routed);
   assert.equal(action.videoModel, "kling3.0_standard"); assert.equal(action.lastFrame, true); assert.equal(action.audio, false);
   assert.equal(ambient.videoModel, "gen4_turbo"); assert.equal(ambient.lastFrame, false);
-  assert.equal(shotModels({ kind: "action" }, { ...settings, videoSeconds: 2 }).seconds, 3);
-  const worst = 5 * (5 + 5 + 3 * 9 + 2.5 * 2);
-  assert.equal(worst, 210);
-  assert.equal(5 * estimateClip({ ...action, sfxSeconds: settings.duration }).credits, worst);
+  assert.equal(shotModels({ kind: "action" }, { ...routed, videoSeconds: 2 }).seconds, 3);
+  // Greg's defaults from the 2026-11-02 bake-off: Nano Banana stills, Gen-4.5 for every shot, no end frame, Kling as the retry.
+  assert.deepEqual([settings.imageModel, settings.videoModel, settings.actionVideoModel, settings.retryVideoModel, settings.lastFrame], ["nano_banana_2.1", "gen4.5", "gen4.5", "kling3.0_standard", false]);
+  const shot = shotModels({ kind: "action", endScene: "Landed" }, settings);
+  assert.equal(shot.videoModel, "gen4.5"); assert.equal(shot.lastFrame, false);
+  // Worst case per shot: a 1K Nano still, 3 s of Gen-4.5, 2.5 s of synced sound.
+  const worst = 5 * (4 + 3 * 12 + 2.5 * 2);
+  assert.equal(worst, 225);
+  assert.equal(5 * estimateClip({ ...shot, sfxSeconds: settings.duration }).credits, worst);
   assert.ok(worst <= settings.maxCreditsPerReel);
   assert.equal(settings.sfx, true); assert.equal(settings.sfxVolume, 0.35);
   assert.equal(shotSeed("/one/reel", 5), shotSeed("/two/reel", 5));
