@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { assetPath } from "./speaker-intake.mjs";
 import { activeBox, sourceCropOptions, prepareGrade } from "./speaker-look.mjs";
-import { SDR_FILTER, SDR_TAGS, rotateFilters, hlgToSdrFilter, hasZscale, toneMapToSdr } from "./hdr.mjs";
+import { SDR_FILTER, SDR_TAGS, rotateFilters, evenFilters, hlgToSdrFilter, hasZscale, toneMapToSdr } from "./hdr.mjs";
 import { personBinary } from "./cover.mjs";
 import { probeSource } from "./speaker-index.mjs";
 import { run, ensureDir } from "./util.mjs";
@@ -319,7 +319,7 @@ export async function prepareIntroAssets(plan, { manifest, index, clientDir, pro
       const hlg = hdr && meta.hdrKind === "hlg" && plan.look?.hlg === "review";
       const review = hlg && await zscaleImpl();
       if (hlg && !review) { const warning = `${entry.id}/${l.id}: zscale unavailable; using legacy HLG conversion`; warnings.push(warning); print(`WARNING ${warning}`); }
-      preFilter = [...rotateFilters(rotation), hdr ? review ? hlgToSdrFilter() : SDR_FILTER : ["smpte170m", "bt470bg"].includes(meta.colorSpace) ? `colorspace=iall=${meta.colorSpace}:all=bt709:format=yuv420p` : ""].filter(Boolean).join(",");
+      preFilter = [...rotateFilters(rotation), ...evenFilters(meta.width, meta.height), hdr ? review ? hlgToSdrFilter() : SDR_FILTER : ["smpte170m", "bt470bg"].includes(meta.colorSpace) ? `colorspace=iall=${meta.colorSpace}:all=bt709:format=yuv420p` : ""].filter(Boolean).join(",");
       if ((plan.look?.grade ?? "auto") === "auto") {
         const g = await gradeImpl(file, { sourceKey: sourceHash, meta, preFilter, ranges: l.kind === "video" ? [{ in: l.in, out: l.out }] : undefined, overrides: plan.look?.sources?.[l.sourceId] || {}, cacheDir: path.join(dir, "grade"), print });
         grade = g.filter || "";
