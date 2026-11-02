@@ -103,8 +103,57 @@ async function blackGaps(file) {
   return [...err.matchAll(/black_start:([\d.]+)\s+black_end:([\d.]+)/g)].map((m) => ({ start: +m[1], end: +m[2] }));
 }
 
+/** Indexed timings are evidence for a listening check, not permission to rewrite the transcript. */
+export function wordBoundaryProblems(item, words, { fps = 30 } = {}) {
+  if (item.kind !== "clip" || item.audio === "mute") return [];
+  const checks = [];
+  for (const [n, word] of words.entries()) {
+    if (![word.start, word.end].every(Number.isFinite) || word.end <= word.start) continue;
+    for (const boundary of ["in", "out"]) {
+      const at = item[boundary], excluded = boundary === "in" ? at - word.start : word.end - at;
+      if (!(at > word.start && at < word.end && excluded > 0.05 + 1e-7)) continue;
+      // Choose the nearest frame boundary that retains the whole indexed word, without adding a handle.
+      const before = Math.max(0, Math.floor(word.start * fps + 1e-7) / fps);
+      const after = Math.ceil(word.end * fps - 1e-7) / fps;
+      const safeIn = before >= (words[n - 1]?.end ?? 0) ? before : word.start;
+      const safeOut = after <= (words[n + 1]?.start ?? Infinity) ? after : word.end;
+      checks.push({ code: "word-boundary", level: "warn", itemId: item.id, sourceId: item.sourceId, boundary, at,
+        word: word.text, sourceStart: word.start, sourceEnd: word.end, safeIn, safeOut,
+        message: `${item.id}: source ${boundary} ${at}s cuts inside “${word.text}” (${word.start}-${word.end}s); safe ${boundary} ${(boundary === "in" ? safeIn : safeOut).toFixed(3)}s; safe out ${safeOut.toFixed(3)}s — audition the indexed word` });
+    }
+  }
+  return checks;
+}
+
+/** Adjacent frames must agree: scene cuts and sustained lighting changes are not isolated flashes. */
+export function brightnessFlashes(frames, { minDelta = 18, maxNeighborDelta = 8, ignoreFrameRanges = [] } = {}) {
+  const flashes = [];
+  for (let i = 1; i < frames.length - 1; i++) {
+    const a = frames[i - 1], b = frames[i], c = frames[i + 1];
+    if (![a.luma, b.luma, c.luma, b.time].every(Number.isFinite) || b.frame !== a.frame + 1 || c.frame !== b.frame + 1) continue;
+    if (ignoreFrameRanges.some((r) => b.frame >= r.start && b.frame < r.end)) continue;
+    const delta = b.luma - (a.luma + c.luma) / 2;
+    if (Math.abs(a.luma - c.luma) > maxNeighborDelta || Math.abs(b.luma - a.luma) < minDelta || Math.abs(b.luma - c.luma) < minDelta || (b.luma - a.luma) * (b.luma - c.luma) <= 0) continue;
+    flashes.push({ code: "brightness-flash", level: "warn", frame: b.frame, time: b.time, luma: b.luma, delta,
+      message: `isolated ${delta > 0 ? "bright" : "dark"} frame at ${b.time.toFixed(3)}s (frame ${b.frame}, YAVG ${b.luma.toFixed(2)}, neighbor delta ${delta.toFixed(2)}); review picture` });
+  }
+  return flashes;
+}
+
+export const FRAME_INTEGRITY_FILTER = "scale=160:90:flags=area,format=yuv420p,signalstats,metadata=mode=print:key=lavfi.signalstats.YAVG:file=-";
+
+/** Decode every frame, including cards. Small full-frame luma measurements keep the scan inexpensive. */
+export async function frameIntegrityChecks(file, options = {}) {
+  const { out } = await run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-nostats", "-i", file, "-map", "0:v:0", "-an", "-vf", FRAME_INTEGRITY_FILTER, "-fps_mode", "passthrough", "-f", "null", "-"], { capture: true });
+  // Metadata prints one header followed by the requested key, at the original decoded timestamp.
+  const measured = [...out.matchAll(/frame:\s*(\d+)[^\n]*pts_time:([\d.eE+-]+)\s*\nlavfi\.signalstats\.YAVG=([\d.eE+-]+)/g)]
+    .map((m) => ({ frame: +m[1], time: +m[2], luma: +m[3] }));
+  if (!measured.length) throw new Error("no decoded frame luminance measurements");
+  return brightnessFlashes(measured, options);
+}
+
 /** Strict speaker delivery QC. deps makes media measurements replaceable in offline tests. */
-export async function speakerQC(video, { resolvedPlan, manifest, final = false, captionFiles, folder, candidates = null, deps = {} } = {}) {
+export async function speakerQC(video, { resolvedPlan, manifest, final = false, captionFiles, folder, candidates = null, index = null, frameIntegrityExclusions = [], deps = {} } = {}) {
   const plan = typeof resolvedPlan === "string" ? JSON.parse(fs.readFileSync(resolvedPlan, "utf8")) : resolvedPlan;
   const checks = [], duration = planDuration(plan), canvas = plan.canvas || { width: 1920, height: 1080, fps: 30 };
   const add = (code, ok, message) => checks.push({ code, level: ok ? "pass" : "fail", message });
@@ -133,6 +182,22 @@ export async function speakerQC(video, { resolvedPlan, manifest, final = false, 
       add(`captions-${ext}`, (end != null && end < meta.duration) || empty, `${path.basename(file)}: ${end != null ? `last cue ${end}s; video ${meta.duration}s` : empty ? "no spoken cues" : "missing or invalid captions"}`);
     }
   } catch (error) { add("media", false, `cannot check ${video}: ${error.message}`); }
+  try {
+    const flashes = await (deps.frameIntegrityChecks || frameIntegrityChecks)(video, { ignoreFrameRanges: frameIntegrityExclusions });
+    checks.push(...flashes);
+    if (!flashes.length) checks.push({ code: "brightness-flash", level: "pass", message: "no isolated full-frame brightness excursions" });
+  } catch (error) { checks.push({ code: "brightness-flash", level: "warn", message: `frame integrity scan unavailable: ${error.message.split("\n")[0]}` }); }
+  const clientFolder = folder || path.resolve(path.dirname(typeof resolvedPlan === "string" ? resolvedPlan : video), "../..");
+  try {
+    const indexFile = path.join(clientFolder, "work", "index", "sources.json");
+    const sourceIndex = index || (fs.existsSync(indexFile) ? JSON.parse(fs.readFileSync(indexFile, "utf8")) : null);
+    for (const item of plan.items || []) {
+      if (item.kind !== "clip" || item.audio === "mute" || ["none", "bad"].includes(manifest.sources?.find((s) => s.id === item.sourceId)?.audio)) continue;
+      const words = (sourceIndex?.sources?.[item.sourceId] || sourceIndex?.[item.sourceId])?.words;
+      if (Array.isArray(words)) checks.push(...wordBoundaryProblems(item, words, { fps: canvas.fps || 30 }));
+      else checks.push({ code: "word-boundary", level: "warn", itemId: item.id, message: `${item.id}: indexed words unavailable; word boundaries not checked` });
+    }
+  } catch (error) { checks.push({ code: "word-boundary", level: "warn", message: `word boundary check unavailable: ${error.message}` }); }
   // Quality is advisory; final byte/rights checks still control approval.
   let audioCandidates = candidates || [];
   const candidateFile = path.join(folder || path.resolve(path.dirname(video), "../.."), "work", "candidates", "all.json");
@@ -142,7 +207,6 @@ export async function speakerQC(video, { resolvedPlan, manifest, final = false, 
   }
   checks.push(...audioQualityWarnings(plan, audioCandidates, manifest));
   // Optional original-picture flags: subtract cutaways, then inspect their own picture sources too.
-  const clientFolder = folder || path.resolve(path.dirname(typeof resolvedPlan === "string" ? resolvedPlan : video), "../..");
   checks.push(...insertWarnings(plan, deps.inserts || loadInsertFlags(clientFolder)));
   checks.push(...rightsChecks(plan, manifest, final));
   for (const p of plan.composition?.cardProblems || []) checks.push({ code: p.code, level: p.level === "error" ? "fail" : "warn", message: p.message });

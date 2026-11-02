@@ -192,7 +192,13 @@ export function motionProblems(plan, manifest = {}) {
     if (byId.get(o.at)?.role === "testimonial" || manifest.sources?.find((s) => s.id === byId.get(o.at)?.sourceId)?.kind === "testimonial") add(o.id, "keyword cannot cover a testimonial");
     if (o.duration < 1.2 || o.duration > 2.5) add(o.id, "keyword duration must be 1.2 to 2.5 seconds");
     const tokens = String(o.card.text || "").trim().split(/\s+/u).filter(Boolean);
-    if (tokens.length < 1 || tokens.length > 3) add(o.id, "keyword needs one to three transcript words");
+    const phrase = o.card.variant === "phrase" && o.card.layout === "cinematic";
+    if (o.card.variant != null && !phrase) add(o.id, "variant: phrase needs a cinematic keyword overlay");
+    if (tokens.length < 1 || tokens.length > (phrase ? 4 : 3)) add(o.id, phrase ? "keyword phrase needs one to four transcript words" : "keyword needs one to three transcript words");
+    if (o.sourceWordRange != null) {
+      const range = o.sourceWordRange;
+      if (!range || Array.isArray(range) || !Number.isInteger(range.start) || !Number.isInteger(range.end) || range.start < 0 || range.end < range.start) add(o.id, "sourceWordRange needs inclusive source word indices {start, end}");
+    }
     if (o.card.position != null && !["center", "lower-third"].includes(o.card.position)) add(o.id, "keyword position must be center or lower-third");
     if (o.card.motion != null && !(o.card.layout === "cinematic" ? ["rise"] : ["scale", "slide"]).includes(o.card.motion)) add(o.id, o.card.layout === "cinematic" ? "cinematic motion must be rise" : "keyword motion must be scale or slide");
   }
@@ -232,10 +238,23 @@ export function validateKeywords(plan, words, manifest = {}) {
   const problems = motionProblems(plan, manifest).filter((p) => (plan.overlays || []).some((o) => o.id === p.id && o.card?.type === "keyword"));
   const normalize = (text) => String(text).toLocaleLowerCase("en-US").match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) || [];
   const overlays = (plan.overlays || []).filter((o) => o.card?.type === "keyword").sort((a, b) => a.start - b.start);
-  for (const [n, o] of overlays.entries()) {
+  for (const o of overlays) {
     const item = plan.items.find((i) => i.id === o.at), wanted = normalize(o.card.text);
-    const spoken = words.filter((w) => item && w.sourceId === item.sourceId && (w.itemId == null || w.itemId === item.id) && w.start >= item.start && w.end <= item.end + 1e-7).sort((a, b) => a.start - b.start).flatMap((w) => normalize(w.text));
-    if (!wanted.length || !spoken.some((_, at) => wanted.every((word, i) => spoken[at + i] === word))) problems.push({ level: "error", id: o.id, message: "keyword words must occur in order in this speaker item's output transcript" });
+    let selected = words.filter((w) => item && w.sourceId === item.sourceId && (w.itemId == null || w.itemId === item.id) && w.start >= item.start && w.end <= item.end + 1e-7).sort((a, b) => a.start - b.start);
+    if (o.sourceWordRange != null) {
+      const range = o.sourceWordRange;
+      if (!range || Array.isArray(range) || !Number.isInteger(range.start) || !Number.isInteger(range.end) || range.start < 0 || range.end < range.start) continue;
+      selected = selected.filter((w) => w.sourceWordIndex >= range.start && w.sourceWordIndex <= range.end);
+      const start = o.start, end = start + o.duration, sourceEnd = item ? Math.min(item.out, item.in + item.end - item.start) : 0;
+      // An anchor names the complete utterance, never words borrowed from another cut or another time.
+      if (!selected.length || selected.length !== range.end - range.start + 1 || selected.some((w, i) => w.sourceWordIndex !== range.start + i || !Number.isFinite(w.sourceStart) || !Number.isFinite(w.sourceEnd) || w.sourceStart < item.in - 1e-7 || w.sourceEnd > sourceEnd + 1e-7) || selected.at(-1).end <= start || selected[0].start >= end) {
+        problems.push({ level: "error", id: o.id, message: "sourceWordRange must name complete retained words in the target item and overlap the keyword window" });
+        continue;
+      }
+    }
+    const spoken = selected.flatMap((w) => normalize(w.text));
+    const matches = o.sourceWordRange != null ? spoken.length === wanted.length && wanted.every((word, i) => spoken[i] === word) : spoken.some((_, at) => wanted.every((word, i) => spoken[at + i] === word));
+    if (!wanted.length || !matches) problems.push({ level: "error", id: o.id, message: "keyword words must occur in order in this speaker item's output transcript" });
   }
   return problems;
 }

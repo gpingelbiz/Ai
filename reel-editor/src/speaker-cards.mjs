@@ -33,6 +33,7 @@ export function cardOptionProblems(card, mode = "insert") {
   if (Object.hasOwn(card, "eyebrow") && (card.type !== "topic" || card.layout !== "cinematic" || typeof card.eyebrow !== "string" || !clean(card.eyebrow))) add("eyebrow needs a cinematic topic and nonempty text");
   if (Object.hasOwn(card, "motion") && card.type !== "keyword" && (card.layout !== "cinematic" || card.motion !== "rise")) add("cinematic motion must be rise");
   if (card.type === "keyword" && card.layout === "cinematic" && Object.hasOwn(card, "motion") && card.motion !== "rise") add("cinematic motion must be rise");
+  if (Object.hasOwn(card, "variant") && (card.type !== "keyword" || card.layout !== "cinematic" || mode !== "overlay" || card.variant !== "phrase")) add("variant: phrase needs a cinematic keyword overlay");
   if (Object.hasOwn(card, "accent") && (card.layout !== "cinematic" || typeof card.accent !== "boolean")) add("cinematic accent must be true or false");
   if (card.type === "event-list" && mode === "overlay" && card.layout !== "cinematic") add("event-list overlay requires layout: cinematic; other layouts must be an insert");
   if (Object.hasOwn(card, "mergeYears") && (card.type !== "event-list" || typeof card.mergeYears !== "boolean")) add("mergeYears needs an event-list and must be true or false");
@@ -221,12 +222,14 @@ export function resolveCard(input, { manifest = {}, final = false, clientDir, mo
     if (!card.text || words([card.eyebrow, card.text].filter(Boolean).join(" ")) >= 8) add("card-topic-length", "topic and eyebrow must have 1 to 7 words combined");
   }
   if (type === "keyword") {
-    allow("text", "position", "motion");
+    allow("text", "position", "motion", "variant");
+    if (supplied("variant")) card.variant = source.variant;
     card.text = clean(source.text);
     card.position = source.position || (source.layout === "cinematic" ? "lower-third" : "center");
     if (source.layout !== "cinematic") card.motion = source.motion || "scale";
     if (mode !== "overlay") add("card-mode", "keyword must be an overlay");
-    if (words(card.text) < 1 || words(card.text) > 3) add("card-keyword", "keyword needs one to three transcript words");
+    const phrase = card.layout === "cinematic" && card.variant === "phrase" && mode === "overlay";
+    if (words(card.text) < 1 || words(card.text) > (phrase ? 4 : 3)) add("card-keyword", phrase ? "keyword phrase needs one to four transcript words" : "keyword needs one to three transcript words");
     if (!["center", "lower-third"].includes(card.position) || (source.layout !== "cinematic" && !["scale", "slide"].includes(card.motion))) add("card-keyword", "invalid keyword position or motion");
     // Full transcript provenance is checked by validateKeywords at compilation and composition.
   }
@@ -632,7 +635,8 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
 #${id} .sc-event-line{line-height:1.12;white-space:nowrap;flex-shrink:0;opacity:0;visibility:hidden}` : "";
   const eventCSS = card.type === "event-list" ? `\n#${id} .sc-name{line-height:1.12}` : "";
   const html = `<div id="${esc(id)}" class="speaker-card clip sc-${overlay ? "overlay" : "insert"} sc-${card.type}${cinematic ? " sc-cinematic" : ""}" style="--sc-bold:${bold};${overlay && !cinematic ? copyStyle : ""}" data-start="${start}" data-duration="${stop - start}" data-track-index="4">${content}</div>`;
-  const enter = eventWall ? (4 * card.events.length + 9) / size.fps : cinematic ? (card.reveal === "cut" ? 0 : 9 / size.fps) : card.type === "keyword" && card.layout === "compact" ? 6 / size.fps : enterFrames / size.fps, exit = cinematic ? 6 / size.fps : exitFrames / size.fps;
+  const cinematicKeyword = cinematic && card.type === "keyword" && card.variant === "phrase" && card.motion === "rise";
+  const enter = eventWall ? (4 * card.events.length + 9) / size.fps : cinematic ? (cinematicKeyword ? 6 / size.fps : card.reveal === "cut" ? 0 : 9 / size.fps) : card.type === "keyword" && card.layout === "compact" ? 6 / size.fps : enterFrames / size.fps, exit = cinematic ? (cinematicKeyword ? 4 : 6) / size.fps : exitFrames / size.fps;
   let timeline = `tl.fromTo(${js(`#${id}`)}, {autoAlpha:0}, {autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false}, ${start});\ntl.fromTo(${js(`#${id}`)}, {autoAlpha:1}, {autoAlpha:0,duration:${exit},ease:${js(t.motion.exitEase)},immediateRender:false}, ${stop - exit});`;
   if (card.type === "title" && card.reveal === "cut" || card.type === "quote" && card.layout === "premium") {
     timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
@@ -641,7 +645,7 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
     // The real portrait and route are present on the entry frame; only supporting elements move into place.
     timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.fromTo(${js(`#${id} .sc-copy > :not(.sc-route)`)},{y:12},{y:0,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
   }
-  if (card.type === "keyword") {
+  if (card.type === "keyword" && !cinematic) {
     const target = js(`#${id} .sc-copy`), enter = 6 / size.fps;
     timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.fromTo(${target},${card.layout === "compact" ? "{y:24,autoAlpha:0}" : card.motion === "slide" ? "{y:48,autoAlpha:0}" : "{scale:0.82,autoAlpha:0}"},{y:0,scale:1,autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
   }
@@ -650,8 +654,10 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
     // Integer absolute frame endpoints make seeking and sequential playback agree at every boundary.
     const startFrame = Math.round(start * size.fps), endFrame = Math.round(stop * size.fps), target = js(`#${id} .sc-cinematic-copy`);
     timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${startFrame / size.fps});\n`;
-    timeline += enter ? `tl.fromTo(${target},{autoAlpha:0,y:${card.motion === "rise" ? 32 : 0}},{autoAlpha:1,y:0,duration:${enter},ease:"power2.out",immediateRender:false},${startFrame / size.fps});\n` : `tl.set(${target},{autoAlpha:1,y:0},${startFrame / size.fps});\n`;
-    timeline += `tl.fromTo(${js(`#${id}`)},{autoAlpha:1},{autoAlpha:0,duration:${exit},ease:"none",immediateRender:false},${(endFrame - 6) / size.fps});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${endFrame / size.fps});`;
+    const rise = card.motion === "rise" ? (cinematicKeyword ? 24 : 32) : 0;
+    const scale = cinematicKeyword ? ",scale:1" : "";
+    timeline += enter ? `tl.fromTo(${target},{autoAlpha:0,y:${rise}${scale}},{autoAlpha:1,y:0${scale},duration:${enter},ease:"power2.out",immediateRender:false},${startFrame / size.fps});\n` : `tl.set(${target},{autoAlpha:1,y:0},${startFrame / size.fps});\n`;
+    timeline += `tl.fromTo(${js(`#${id}`)},{autoAlpha:1},{autoAlpha:0,duration:${exit},ease:"none",immediateRender:false},${(endFrame - Math.round(exit * size.fps)) / size.fps});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${endFrame / size.fps});`;
   }
   if (eventWall) timeline = eventWallTimeline(id, card.events.length, Math.round(start * size.fps), Math.round(stop * size.fps), size.fps);
   const fullyLegible = cinematic ? (Math.round((stop - start) * size.fps) - Math.round((enter + exit) * size.fps)) / size.fps : stop - start - enter - exit;
