@@ -356,7 +356,7 @@ test("saved plans survive a hook change: cards and stills follow their lines by 
   const os = await import("node:os");
   const path = await import("node:path");
   const { makeGraphics } = await import("../src/graphics.mjs");
-  const { makeBroll } = await import("../src/broll.mjs");
+  const { makeBroll, PROMPT_VERSION } = await import("../src/broll.mjs");
   const wd = fs.mkdtempSync(path.join(os.tmpdir(), "reuse-"));
   const lines = Array.from({ length: 12 }, (_, i) => ({ start: 4 + i * 3, end: 6 + i * 3, text: `line ${i}`, words: [] }));
   const hook = { start: 0, duration: 3 };
@@ -370,8 +370,8 @@ test("saved plans survive a hook change: cards and stills follow their lines by 
   const still = path.join(wd, "still.png");
   fs.writeFileSync(still, "x");
   fs.mkdirSync(path.join(wd, "broll"));
-  fs.writeFileSync(path.join(wd, "broll", "broll.json"), JSON.stringify({ key: "stale", shots: [{ line: 7, start: 25, duration: 2, text: "line 7", scene: "a desk", file: still, motion: "in" }] }));
-  const shots = await makeBroll({ workDir: wd, groups: hidden, duration: 40, hook, cta: null, settings: {} });
+  fs.writeFileSync(path.join(wd, "broll", "broll.json"), JSON.stringify({ key: `${PROMPT_VERSION}|stale`, promptVersion: PROMPT_VERSION, shots: [{ line: 7, start: 25, duration: 2, text: "line 7", scene: "a desk", file: still, motion: "in" }] }));
+  const shots = await makeBroll({ workDir: wd, groups: hidden, duration: 40, hook, cta: null, settings: {}, deps: { hasCodex: () => false, codexExec: async () => { throw new Error("reuse must not launch Codex"); } } });
   assert.equal(shots.length, 1, "stills reused without a Codex session");
   assert.equal(shots[0].start, 25);
   fs.rmSync(wd, { recursive: true, force: true });

@@ -5,6 +5,8 @@ import os from "node:os";
 import { log, warn, writeJSON, readJSON, ensureDir, r3 } from "./util.mjs";
 import { norm } from "./text.mjs";
 
+export const PROMPT_VERSION = "literal-stills-v2";
+
 /** Scenes drawn for recent reels, so the next reel does not get the same empty conference room again. */
 // REEL_CACHE gives a client its own scene history, so its b-roll never steers off (or into) Greg's scenes.
 export const recentFile = (env = process.env) => env.REEL_BROLL_RECENT || path.join(env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-recent.json");
@@ -40,13 +42,13 @@ export function brollCandidates(groups, duration, { hook, cta, len = 2.4, lead =
   const from = Math.max(hook ? hook.start + hook.duration + lead : 2.5, clearStart || 0);
   const until = Math.min(duration - tail, cta ? cta.start : Infinity);
   return groups
-    .map((g, i) => ({ i, start: g.start, text: g.text }))
+    .map((g, i) => ({ i, start: g.start, text: g.text, ...(g.words?.length ? { words: g.words } : {}) }))
     .filter((c) => c.start >= from && c.start + len <= until)
     .filter((c) => !busy.some((b) => c.start < b.start + b.duration + clear && c.start + len > b.start - clear));
 }
 
 /** Choose spaced picks in time order (or rank order), then return timed shots in time order. */
-export function placeBroll(picks, candidates, { len = 2.4, gap = 4, max = 3, ranked = false } = {}) {
+export function placeBroll(picks, candidates, { len = 2.4, gap = 4, max = 3, ranked = false, timing } = {}) {
   if (max <= 0) return [];
   const byLine = new Map(candidates.map((c) => [c.i, c]));
   const shots = [];
@@ -55,8 +57,10 @@ export function placeBroll(picks, candidates, { len = 2.4, gap = 4, max = 3, ran
   if (!ranked) sorted.sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start);
   for (const p of sorted) {
     const c = byLine.get(p.line);
-    if (shots.some((s) => c.start < s.start + s.duration + gap && c.start + len + gap > s.start)) continue;
-    shots.push({ line: p.line, start: r3(c.start), duration: len, text: c.text, scene: String(p.scene).trim(), ...(p.shows ? { shows: p.shows } : {}) });
+    const t = timing ? timing(p, c) : { start: c.start, duration: len };
+    if (!t || !(t.duration > 0)) continue;
+    if (shots.some((s) => t.start < s.start + s.duration + gap && t.start + t.duration + gap > s.start)) continue;
+    shots.push({ line: p.line, start: r3(t.start), duration: r3(t.duration), text: c.text, scene: String(p.scene).trim(), ...(p.shows ? { shows: p.shows } : {}), ...(p.rank ? { rank: p.rank } : {}) });
     if (shots.length >= max) break;
   }
   const motions = ["in", "left", "out", "right"];
@@ -111,7 +115,7 @@ export function holdForSplit(shots = [], { duration, cta, busy = [], tail = 1, g
     return Math.min(until, next, card) - s.start;
   });
   // A generated clip (Runway) is only so long; a still can be held any length.
-  const want = (s) => (/\.mp4$/i.test(String(s.file || "")) ? Math.min(hold, clipSeconds) : hold);
+  const want = (s) => (/\.mp4$/i.test(String(s.file || "")) ? Math.min(hold, clipSeconds, s.moves ? s.duration : Infinity) : hold);
   const best = room.map((r, k) => ({ k, r })).filter(({ k, r }) => want(shots[k]) > shots[k].duration && r >= want(shots[k])).sort((a, b) => b.r - a.r || b.k - a.k)[0];
   if (!best) return shots;
   return shots.map((s, k) => (k === best.k ? { ...s, hold: true, baseDuration: s.duration, duration: r3(want(s)) } : s));
@@ -174,14 +178,14 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   if (!max) { log("b-roll: reel too short, skipped"); return []; }
   const candidates = brollCandidates(groups, duration, { hook, cta, len, busy, tail, clearStart: settings.clearStart ?? 0 });
   if (!candidates.length) { log("b-roll: no room after the hook, skipped"); return []; }
-  const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
+  const key = `${PROMPT_VERSION}|${candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|")}`;
 
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
     // Reuse while the lines the stills were drawn for are still there (a new hook hides different caption lines,
     // which must not cost another Codex session).
     const stillThere = (s) => candidates.some((c) => Math.abs(c.start - s.start) < 0.05 && c.text === s.text);
-    if ((saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
+    if (saved.promptVersion === PROMPT_VERSION && (saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && fs.existsSync(s.file))) {
       log(`b-roll: reusing ${saved.shots.length} still${saved.shots.length === 1 ? "" : "s"} from ${dir}`);
       return saved.shots;
     }
@@ -211,7 +215,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   }).map((p) => ({ ...p, path: savedImage(dir, path.basename(String(p.file || ""))) })).filter((p) => p.path);
   const files = new Map(drawn.map((p) => [p.line, p.path]));
   const shots = placeBroll(drawn, candidates, { len, gap, max }).map((s) => ({ ...s, file: files.get(s.line) }));
-  if (shots.length) { writeJSON(planPath, { key, shots }); rememberScenes(shots.map((s) => s.scene)); }
+  if (shots.length) { writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, shots }); rememberScenes(shots.map((s) => s.scene)); }
   if (shots.length < picks.length) warn(`b-roll: ${picks.length - shots.length} of ${picks.length} picks had no image or no room`);
   log(`b-roll: ${shots.length} still${shots.length === 1 ? "" : "s"} ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
   return shots;

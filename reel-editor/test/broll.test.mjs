@@ -262,3 +262,58 @@ test("Codex stills validate picks before placement and persist shows", async () 
   assert.equal(shots[0].shows, "snake");
   assert.equal(JSON.parse(fs.readFileSync(path.join(workDir, "broll", "broll.json"))).shots[0].shows, "snake");
 });
+
+test("stills keep world opt-in and never reuse a plan from an older prompt", async () => {
+  const { makeBroll, PROMPT_VERSION } = await import("../src/broll.mjs");
+  const workDir = fs.mkdtempSync(path.join(cache, "versioned-stills-"));
+  const groups = [{ start: 6, text: "a snake" }, { start: 14, text: "a coconut" }];
+  const prompts = [];
+  const deps = {
+    hasCodex: () => true, codexPausedUntil: () => 0,
+    codexExec: async (prompt, { cwd }) => {
+      prompts.push(prompt);
+      fs.writeFileSync(path.join(cwd, "broll-1.png"), Buffer.alloc(2000));
+      return JSON.stringify({ picks: [{ line: 0, shows: "snake", scene: "a green snake on a branch", file: "broll-1.png" }] });
+    },
+  };
+  const run = (settings = {}) => makeBroll({ workDir, duration: 30, groups, settings: { world: "OPT-IN WORLD", ...settings }, deps });
+  await run();
+  assert.doesNotMatch(prompts[0], /OPT-IN WORLD/);
+  const planPath = path.join(workDir, "broll", "broll.json");
+  const saved = JSON.parse(fs.readFileSync(planPath));
+  assert.equal(saved.promptVersion, PROMPT_VERSION);
+  assert.ok(saved.key.startsWith(`${PROMPT_VERSION}|`));
+  await run();
+  assert.equal(prompts.length, 1, "the current prompt plan can be reused");
+  for (const version of [undefined, "older-prompt"]) {
+    fs.writeFileSync(planPath, JSON.stringify({ ...saved, promptVersion: version }));
+    const count = prompts.length;
+    await run();
+    assert.equal(prompts.length, count + 1, "matching caption lines cannot bypass a prompt-version change");
+  }
+  await makeBroll({ workDir, duration: 30, groups, force: true, settings: { world: "OPT-IN WORLD", worldInPrompt: true }, deps });
+  assert.match(prompts.at(-1), /OPT-IN WORLD/);
+  assert.match(prompts.at(-1), /never use it to replace an image they name/);
+  assert.match(prompts.at(-1), /Kill test/);
+  assert.match(prompts.at(-1), /bottom third stays plain and dark/);
+});
+
+test("candidates retain word timing and a checked video cannot be held beyond its checked interval", () => {
+  const words = [{ start: 6.3, text: "snake" }];
+  assert.deepEqual(brollCandidates([{ start: 6, text: "a snake", words }], 20)[0].words, words);
+  const shots = [{ start: 6, duration: 2, file: "a.mp4", moves: { ok: true } }, { start: 20, duration: 2, file: "b.mp4", moves: { ok: true } }];
+  assert.deepEqual(holdForSplit(shots, { duration: 40, hold: 5 }), shots);
+});
+
+
+test("video compositions use real playback with no editor push while preserving the sent prompt", () => {
+  const shot = { start: 6, duration: 1.8, motion: "The coconut rolls. Camera: locked camera.", move: "none", video: true, src: "assets/broll/broll-1.mp4" };
+  const html = renderHTML({ name: "animated", canvas: { width: 1080, height: 1920 }, video: { duration: 20, hasAudio: true }, captions: [], broll: [shot], style: {
+    colors: { text: "#fff", accent: "#fc0", stroke: "#000" },
+    captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72 },
+    hook: { fontSizeFrac: 0.05, position: 0.2 }, zooms: {}, cta: {},
+  } }, "assets/footage.mp4");
+  assert.match(html, /<video class="broll-media".*broll-1\.mp4/);
+  assert.match(html, /"broll":\[\{"start":6,"duration":1.8,"motion":"none","video":true\}\]/);
+  assert.equal(shot.motion, "The coconut rolls. Camera: locked camera.");
+});
