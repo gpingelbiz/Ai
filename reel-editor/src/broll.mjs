@@ -92,7 +92,7 @@ export function checkPick(pick, candidate, groups, { len = 2.4 } = {}) {
 
 export const PICTURE_RULES = [
   "The picture is what the words say. Pick lines whose spoken words name something a viewer can see: an animal, an object, a place or an action. Show THAT thing big and unmistakable; a cold viewer with the caption under it must get it in under one second.",
-  "When the speaker paints an image (an analogy, a joke, a story: a jungle, a snake dropping on them, a coconut hitting their head, quicksand), show that image literally: a green snake dropping from a jungle branch toward the camera. Never swap it for a stand-in from the speaker's world: never a rope for a snake, never tape for a coconut, never a box cutter for a knife.",
+  "When the speaker paints an image (an analogy, a joke, a story: a jungle, a snake, a coconut, quicksand), show the named subject literally with harmless behaviour: a green snake sliding down a broad jungle rock. Never swap it for a stand-in from the speaker's world: never a rope for a snake, never tape for a coconut, never a box cutter for a knife.",
   "Clip-art symbols the speaker never said are banned (a lightbulb for 'idea'); an image the speaker names is not clip art.",
   "A quick spoken list of images (a snake, an ape, a lion) can get one short shot per item if they are far enough apart.",
   "Dark-read rule: never a rope, cord, strap, cable or chain hanging or looped, nothing at a neck or throat, nothing that could read as a noose, self-harm, death or someone in danger, even with the caption under it.",

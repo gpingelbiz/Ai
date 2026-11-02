@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { r3 } from "./util.mjs";
 
 /**
@@ -52,4 +54,13 @@ export function describeCues(tracks) {
   const n = {};
   for (const t of tracks) { const k = t.id.split("-")[1]; n[k] = (n[k] || 0) + 1; }
   return Object.entries(n).map(([k, v]) => `${v} ${k}${v === 1 ? "" : "s"}`).join(", ");
+}
+
+/** Generated sound follows the accepted, trimmed shot and sits under the voice, on its own track (10) so it never shares one with the cut cues. */
+export function brollSoundTracks(broll, assets, { volume = 0.35 } = {}) {
+  return broll.filter((b) => b.sfx && fs.existsSync(b.sfx)).map((b, i) => {
+    const name = `broll-${i + 1}.sfx.wav`;
+    fs.copyFileSync(b.sfx, path.join(assets, name));
+    return { id: `sfx-broll-${i + 1}`, src: `assets/${name}`, start: b.start, duration: b.duration, volume, track: 10 };
+  });
 }

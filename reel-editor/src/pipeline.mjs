@@ -19,7 +19,7 @@ import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs
 import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
-import { soundCues, describeCues } from "./sounds.mjs";
+import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
 import { runTextcheck } from "./textcheck.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
@@ -849,7 +849,7 @@ function readVoice(plan) {
 
 async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], envelope = null, segments = [], transcript = "", cues = null }) {
   const assets = ensureDir(path.join(projectDir, "assets"));
-  const audio = { tracks: [], replaceAudio: !!opts.replaceAudio };
+  const audio = { tracks: brollSoundTracks(cues?.broll || [], assets, { volume: preset.broll?.sfxVolume ?? 0.35 }), replaceAudio: !!opts.replaceAudio };
 
   // The bed: a file (--music), or a pick from the music folder (--music-dir) by the mood of what is said.
   let src = preset.audio.music ? path.resolve(preset.audio.music) : null;
