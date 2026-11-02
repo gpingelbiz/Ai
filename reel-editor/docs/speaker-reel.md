@@ -746,3 +746,62 @@ aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo,pan=mono|c0=c
 It seeks to source 1.10 s, processes 521,600 samples including context/padding, then keeps enhanced samples `[24000,473600)`. Reaction blending runs on those aligned float samples. Existing fixed gain, optional limiter, dual-mono output and 10 ms clip-edge fades follow cleanup, with loudness measured after cleanup. No other filters are added.
 
 `work/index/enhance/<key>/` holds `original.wav`, `enhanced.wav`, `repair.wav` and `repair.json`. The key covers full streamed source content, source index key, exact stored range, frame sample count, original selected-channel PCM, stream, channel, context/padding, binary/model identity, settings, bypass ranges and adapter version. Original quality labels are retained; selected-original/repaired measurements appear separately in review. QC re-reads PCM for exact counts, finite samples, reaction nulls and strong evidence of displaced waveforms. Weak or uncorrelated audio cannot prove alignment; listening remains required. Review approval hashes guard these WAVs, provenance, source and reaction index, so changes require a new review.
+
+## Layered graphic intros
+
+`card.type: "intro"` is an opt-in overlay over the ordinary clip edit. It adds no time, never replaces transcript words, and never handles dialogue, music or effects. Each layer has a unique safe `id`, a `kind`, an output-pixel `rect:{x,y,w,h}`, and integer `from`/`to` frames relative to the overlay start. Intervals are half-open: `[from,to)`. Array order is the drawing order. There is no automatic intro selection and no new daily-reel preset behavior.
+
+An intro may name `spanTo`, the inclusive last item in a forward, contiguous sequence of clips. It cannot cross a card insert. Omit `duration` to derive the span through that item's last frame; if supplied it must end exactly at that boundary. `offset` remains seconds, rounded once to output frames, and must start inside the first item. Without `spanTo`, supply a duration that fits the one target clip. Other overlay families retain their existing single-item restriction.
+
+```json
+{ "id":"launch", "at":"bl1", "spanTo":"bl3", "offset":0,
+  "card": { "type":"intro", "layers":[
+    { "id":"author", "kind":"text", "from":0, "to":120,
+      "rect":{"x":144,"y":400,"w":760,"h":240},
+      "proofId":"book-highly-confident", "font":"display", "fontSize":88,
+      "lineBreaks":[2,3], "color":"ink",
+      "animations":[{"type":"rise","from":0,"to":11}] }
+  ] } }
+```
+
+Text has exactly one evidence selector: `identity:"name"` (a string key under manifest identity, excluding headshot paths/rights), `proofId` (the proof's exact `text`), or `itemId` plus inclusive, zero-based `sourceWordRange:{start,end}`. The latter requires complete words retained in an audible item; source timestamps determine their output frames. `wordByWord:true` reveals words at those frames, preserving their order and timing; the layer must include the utterance. `words:{start,end}` can select a contiguous fragment of identity/proof text, without rewriting it. `lineBreaks` are word indices before which to break; `accentWord` is the zero-based word to color in the brand accent. Literal `text`, HTML and CSS are rejected. Font roles are display/body; colors are ink/surface/accent/paper. Minimum sizes are 48px display and 32px body. A conservative deterministic width/height check refuses text that does not fit; browser glyph bounds still require review. Text layers have no plate, padding or background.
+
+Images name exactly one manifest `sourceId` of kind photo or a `proofId` with an image file. `fit` is contain/cover; `crop` is a normalized upright `{x,y,w,h}`. Multiple windows share the same normalized photo bytes. `cutout:true` runs the existing locally compiled Apple Vision helper in still-image mode after EXIF normalization and grading. Successful alpha PNGs are cached by full image content and helper source version under the project's `assets/speaker-intro/mattes/`. Failure logs a warning, records it in composition/review metadata and uses the intact rectangular photo; failed mattes are retried. No generated portrait or background reconstruction occurs.
+
+Videos name `sourceId`, `in` and `out` in source seconds. Their source duration must equal `(to-from)/30` within 0.001 source-frame units. They are prepared as silent 30fps SDR H.264 proxies with orientation applied before crop, using the existing HDR conversions, optional HLG review transform and grade helper. Source time is pre-trimmed; HTML always uses `data-media-start="0"`. Geometry moves on a wrapper, never the video element. `radius` optionally rounds the window. The proxy key includes the full source SHA-256, range and filter graph. A short EOF hold of at most one frame supports fractional source endings; short or audio-bearing proxies fail preparation.
+
+Shapes are `shape:"field"`, `"scrim"` or `"rule"`, with a brand `color`, optional `opacity` from 0 to 1, and a scrim `direction` of left/right/top/bottom. These are independent scene elements, not automatic text plates.
+
+All rectangles **and their animated bounds** must stay within 96px of the active picture edges. Letterbox coordinates are still absolute output pixels. There is no full-bleed exception. A protected audible item's `faceRects:[{x,y,w,h}]` may record operator-observed output-pixel face bounds covering its complete picture span, including cutaways. Missing, empty or malformed face bounds conservatively reserve the whole picture. A layer overlapping those bounds for more than **six frames in total** fails unless that layer has explicit `allowOverFace:true`. This is an operator contract, not a face tracker or a claim that source-camera coordinates describe compiled footage. Review moving faces, hands and replacement pictures before recording an exception.
+
+`animations` use only `rise`, `slam`, `wipe`, `drift`, `settle`, `fade`, `cut`. Each animation's integer `from`/`to` is relative to the overlay start and inside the layer. `cut` may have equal endpoints. Rise is y24→0 plus opacity, power2.out; slam is x80/y24/scale1.08→0/0/1, power3.out without bounce; wipe is a rectangular side mask, power3.out; drift is x0/y0→−8/0, linear; settle is scale1.04→1, power2.out; fade is linear opacity0→1, or 1→0 with `out:true`. Optional `dx`/`dy` (±160px) set slam/rise/drift offsets, and `side` chooses a wipe side. Motions that repeat a property are refused: use consecutive layers for a more elaborate sequence. Layer visibility and entrance geometry have separate wrappers so seeking backwards to an entrance is deterministic. There are no timers, callbacks, CSS keyframes, random seeds or extra playback controllers.
+
+### Worked Julee d14 example
+
+[examples/speaker-intro.json](examples/speaker-intro.json) is a complete **opening excerpt plan**, ending with the ordinary manifest booking card. It copies d14's first seven clip ranges and their existing picture-only cutaways. It is not a replacement for the client's full plan, and nothing has been written into the client folder. Claude should transplant its overlays into a review copy of d14, replacing `o-book` and `o-title` and any duplicate early identifier.
+
+The example combines the two research concepts without moving dialogue or the host's contiguous applause:
+
+- `opening-words` uses source words 2095–2099, including her original punctuation, and their real timestamps. It explicitly permits a graphic over the protected opening; omit this overlay for lane 04's clean opening treatment.
+- `book-launch` spans **bl1–bl3**, absolute **[101,273)**: Times Square window **[101,173)**, book photograph and its separate detail **[173,221)**, signing window **[221,273)**. All copy comes from proof `book-highly-confident`, split into `Author of` and `Highly / Confident`. Both crops of `photo-book-img-5959` share one photograph.
+- `hero-drop` starts **41 frames into op4**, absolute **413**, and ends at **485**. The Sarah Marie portrait slams in over six frames; the manifest name wipes in over eleven. The exact manifest proof ID is **`sarahmariephotographycopyright-8`**, file **`proof/photos/Sarah Marie Photography/SarahMariePhotographyCopyright-8.jpg`**. This protected-picture coverage is explicitly allowed per layer for operator review. The existing base hero cutaway remains below the design.
+
+Safe-area adaptations from the research are intentional: the artboard is inset, apertures start at y96 and end at y984, the portrait stays inside its animated safe bounds, and the optional signing picture is a window. For lane 04's full-frame signing payoff, remove the signing layer and let the unchanged `bl3` base picture show through. The example uses a settle on the photo detail instead of arbitrary rotation; the fixed animation vocabulary has no rotation or 3D book reconstruction. No music settings are changed; the principal cue must still land at **F413 = 13.7666667s**. Rights currently recorded as unknown/pending must be resolved for strict compile and delivery; the example grants no permissions.
+
+`composition.json` and the saved resolved plan include every layer's first/last output frame, original source hash, source range, crop, fit, face exception and prepared filter graph. The review page exposes these under the intro row. Nested proof/source rights flow through compile, card preflight, QC and delivery.
+
+Run `node --test test/speaker-intro.test.mjs` and `npm test`. No Chrome/HyperFrames render is part of these checks. On a real render, inspect F−1/F/F+1 around 101, 173, 221, 273, 413, 419, 424, 479 and 485, seek forward/backward, review the upright billboard crop at both endpoints, matte hair/hands, book/hand detail, fonts, bright/dark contrast and 640px readability. Listen for uninterrupted original speech/applause and a single dialogue/music path. Vision matte quality, actual browser text fit and moving face clearance remain visual review requirements.
+
+The exact grade-off, no-crop graph exercised by the 15-frame proxy check (source in 0.4s, out 0.9s, rectangle 480×300) is:
+
+```text
+setpts=PTS-STARTPTS,fps=30:start_time=0:round=near,scale=480:300:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,setsar=1,tpad=stop_mode=clone:stop_duration=0.034,trim=end_frame=15,settb=expr=1/30,setpts=N,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709
+```
+
+The upright rotation/crop check uses:
+
+```text
+setpts=PTS-STARTPTS,transpose=clock,fps=30:start_time=0:round=near,crop=90:80:0:40,scale=240:240:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,setsar=1,tpad=stop_mode=clone:stop_duration=0.034,trim=end_frame=9,settb=expr=1/30,setpts=N,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709
+```
+
+Both use `-map 0:v:0 -an`, software libx264 and exact `-frames:v`. Optional HDR normalization is inserted after the first setpts, grade after fps, and upright crop before scale. Image preparation uses native EXIF normalization followed by `[orientation/SDR,grade,]format=rgba`; photo windows use SVG viewBoxes over those shared upright pixel dimensions. The base `fitGraph()` and audio filter graphs are unchanged.

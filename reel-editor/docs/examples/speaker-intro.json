@@ -1,0 +1,631 @@
+{
+  "schemaVersion": 1,
+  "clientId": "julee-gracey",
+  "version": "intro-example",
+  "revision": 1,
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "look": {
+    "grade": "auto",
+    "letterbox": null,
+    "sources": {
+      "julee-speaking": {
+        "ev": -0.15,
+        "saturation": 0.95
+      },
+      "shaner-keynote-4-14-26": {
+        "ev": 0.05,
+        "saturation": 0.95
+      },
+      "phs-2025-presentation-julee": {
+        "ev": -0.3,
+        "saturation": 0.98
+      },
+      "powerhouse-2024-summit-julee-gracey": {
+        "ev": -0.25,
+        "saturation": 0.98
+      },
+      "nova-presentation-12-3-25": {
+        "ev": 0,
+        "saturation": 0.94,
+        "contrast": 0.015
+      },
+      "video-oct-15-2026-2-23-11-pm": {
+        "ev": -0.1,
+        "saturation": 0.94,
+        "contrast": 0.015,
+        "warmth": 0,
+        "balance": [
+          0,
+          0,
+          0
+        ]
+      },
+      "video-oct-15-2026-2-27-25-pm": {
+        "ev": -0.1,
+        "saturation": 0.94,
+        "contrast": 0.015,
+        "warmth": 0,
+        "balance": [
+          0,
+          0,
+          0
+        ]
+      },
+      "testimonial-sonia": {
+        "ev": 0,
+        "saturation": 1
+      },
+      "testimonial-madi": {
+        "ev": -0.1,
+        "saturation": 0.98
+      },
+      "no-audio-speaking-c5674": {
+        "ev": -0.15,
+        "saturation": 0.98
+      },
+      "mvi-6027": {
+        "ev": 0.15,
+        "saturation": 0.95
+      },
+      "broll-book-signing-c5678": {
+        "ev": 0,
+        "saturation": 0.95
+      },
+      "c5702": {
+        "ev": -0.1,
+        "saturation": 0.95
+      },
+      "book-time-square-billboard": {
+        "ev": -0.1,
+        "saturation": 1
+      },
+      "video-oct-15-2026-2-21-55-pm": {
+        "ev": -0.1,
+        "saturation": 0.94,
+        "contrast": 0.015,
+        "warmth": 0,
+        "balance": [
+          0,
+          0,
+          0
+        ]
+      },
+      "video-oct-15-2026-2-25-51-pm": {
+        "ev": -0.1,
+        "saturation": 0.94,
+        "contrast": 0.015,
+        "warmth": 0,
+        "balance": [
+          0,
+          0,
+          0
+        ]
+      },
+      "video-oct-15-2026-2-26-35-pm": {
+        "ev": -0.1,
+        "saturation": 0.94,
+        "contrast": 0.015,
+        "warmth": 0,
+        "balance": [
+          0,
+          0,
+          0
+        ]
+      },
+      "video-oct-15-2026-2-29-24-pm": {
+        "ev": -0.1,
+        "saturation": 0.94,
+        "contrast": 0.015,
+        "warmth": 0,
+        "balance": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "hlg": "review"
+  },
+  "items": [
+    {
+      "id": "g2",
+      "kind": "clip",
+      "sourceId": "phs-2025-presentation-julee",
+      "in": 646.97,
+      "out": 650.33,
+      "role": "opening",
+      "audio": "source",
+      "protect": true,
+      "note": "'We don't wish. We plan. Wish doesn't exist in my vocabulary.' (PowerHouse 2025)"
+    },
+    {
+      "id": "bl1",
+      "kind": "clip",
+      "sourceId": "book-time-square-billboard",
+      "in": 7,
+      "out": 9.4,
+      "role": "opening",
+      "audio": "mute",
+      "protect": false,
+      "note": "Book launch: Times Square billboard (hype open, Greg 11-01)"
+    },
+    {
+      "id": "bl2",
+      "kind": "clip",
+      "sourceId": "photo-book-img-5959",
+      "in": 0,
+      "out": 1.6,
+      "role": "opening",
+      "audio": "mute",
+      "protect": false,
+      "note": "Book launch: Julee with Highly Confident"
+    },
+    {
+      "id": "bl3",
+      "kind": "clip",
+      "sourceId": "broll-book-signing-c5678",
+      "in": 12,
+      "out": 13.7333,
+      "role": "opening",
+      "audio": "mute",
+      "protect": false,
+      "note": "Book launch: real signing"
+    },
+    {
+      "id": "op2",
+      "kind": "clip",
+      "sourceId": "julee-speaking",
+      "in": 56.84,
+      "out": 57.95,
+      "role": "opening",
+      "audio": "source",
+      "protect": false,
+      "note": "Host: 'Please welcome'",
+      "limit": true
+    },
+    {
+      "id": "op3",
+      "kind": "clip",
+      "sourceId": "julee-speaking",
+      "in": 59.94,
+      "out": 62.14,
+      "role": "opening",
+      "audio": "source",
+      "protect": false,
+      "note": "Host: 'our keynote speaker, Ms.'",
+      "limit": true
+    },
+    {
+      "id": "op4",
+      "kind": "clip",
+      "sourceId": "julee-speaking",
+      "in": 62.14,
+      "out": 69.34,
+      "role": "opening",
+      "audio": "source",
+      "protect": true,
+      "note": "Name and its own contiguous applause; exit after 7.20 seconds. Do not imply that the shortened excerpt shows her complete arrival.",
+      "limit": true
+    },
+    {
+      "id": "booking",
+      "kind": "card",
+      "role": "booking",
+      "duration": 6.6,
+      "card": {
+        "type": "booking"
+      }
+    }
+  ],
+  "cutaways": [
+    {
+      "id": "a01",
+      "over": "op4",
+      "offset": 0,
+      "sourceId": "shaner-keynote-4-14-26",
+      "in": 179.28,
+      "out": 180.6467,
+      "push": 1,
+      "note": "Tent wide synced (W = J + 117.14) while the host calls her name; picture only"
+    },
+    {
+      "id": "hero",
+      "over": "op4",
+      "offset": 1.3667,
+      "sourceId": "c5702",
+      "in": 3,
+      "out": 5.4,
+      "push": 1,
+      "note": "Hero portrait on the drop, under the name card (picture only; she is not speaking)"
+    },
+    {
+      "id": "a02",
+      "over": "op4",
+      "offset": 3.7667,
+      "sourceId": "shaner-keynote-4-14-26",
+      "in": 183.0467,
+      "out": 186.48,
+      "push": 1,
+      "note": "Tent wide synced: the applause and her walk to the stage; picture only"
+    },
+    {
+      "id": "welcome-fierce",
+      "over": "op2",
+      "offset": 0,
+      "sourceId": "mvi-6027",
+      "in": 3,
+      "out": 4.1,
+      "push": 1,
+      "note": "Opening stage montage context; picture only, no borrowed reaction sound."
+    },
+    {
+      "id": "welcome-phs",
+      "over": "op3",
+      "offset": 0,
+      "sourceId": "no-audio-speaking-c5674",
+      "in": 120,
+      "out": 122.2,
+      "push": 1,
+      "note": "Opening stage montage context; picture only."
+    }
+  ],
+  "overlays": [
+    {
+      "id": "opening-words",
+      "at": "g2",
+      "offset": 0,
+      "duration": 3.3666666666666667,
+      "card": {
+        "type": "intro",
+        "layers": [
+          {
+            "id": "quote",
+            "kind": "text",
+            "from": 1,
+            "to": 96,
+            "rect": {
+              "x": 144,
+              "y": 300,
+              "w": 1100,
+              "h": 300
+            },
+            "itemId": "g2",
+            "sourceWordRange": {
+              "start": 2095,
+              "end": 2099
+            },
+            "fontSize": 112,
+            "wordByWord": true,
+            "lineBreaks": [
+              3
+            ],
+            "accentWord": 4,
+            "allowOverFace": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "book-launch",
+      "at": "bl1",
+      "spanTo": "bl3",
+      "offset": 0,
+      "card": {
+        "type": "intro",
+        "layers": [
+          {
+            "id": "artboard",
+            "kind": "shape",
+            "shape": "field",
+            "color": "surface",
+            "from": 0,
+            "to": 120,
+            "rect": {
+              "x": 96,
+              "y": 96,
+              "w": 1728,
+              "h": 888
+            }
+          },
+          {
+            "id": "author",
+            "kind": "text",
+            "from": 0,
+            "to": 120,
+            "rect": {
+              "x": 144,
+              "y": 310,
+              "w": 760,
+              "h": 60
+            },
+            "proofId": "book-highly-confident",
+            "words": {
+              "start": 0,
+              "end": 1
+            },
+            "fontSize": 32,
+            "font": "body",
+            "animations": [
+              {
+                "type": "rise",
+                "from": 0,
+                "to": 11
+              },
+              {
+                "type": "fade",
+                "from": 109,
+                "to": 120,
+                "out": true
+              }
+            ]
+          },
+          {
+            "id": "book-title",
+            "kind": "text",
+            "from": 0,
+            "to": 120,
+            "rect": {
+              "x": 144,
+              "y": 400,
+              "w": 760,
+              "h": 240
+            },
+            "proofId": "book-highly-confident",
+            "words": {
+              "start": 2,
+              "end": 3
+            },
+            "fontSize": 88,
+            "lineBreaks": [
+              1
+            ],
+            "animations": [
+              {
+                "type": "rise",
+                "from": 0,
+                "to": 11
+              },
+              {
+                "type": "fade",
+                "from": 109,
+                "to": 120,
+                "out": true
+              }
+            ]
+          },
+          {
+            "id": "rule",
+            "kind": "shape",
+            "shape": "rule",
+            "color": "accent",
+            "from": 12,
+            "to": 120,
+            "rect": {
+              "x": 144,
+              "y": 660,
+              "w": 128,
+              "h": 3
+            },
+            "animations": [
+              {
+                "type": "fade",
+                "from": 109,
+                "to": 120,
+                "out": true
+              }
+            ]
+          },
+          {
+            "id": "billboard",
+            "kind": "video",
+            "from": 0,
+            "to": 72,
+            "sourceId": "book-time-square-billboard",
+            "in": 7,
+            "out": 9.4,
+            "fit": "contain",
+            "crop": {
+              "x": 0,
+              "y": 0.3,
+              "w": 1,
+              "h": 0.66
+            },
+            "rect": {
+              "x": 1020,
+              "y": 96,
+              "w": 804,
+              "h": 888
+            },
+            "animations": [
+              {
+                "type": "wipe",
+                "from": 0,
+                "to": 11,
+                "side": "left"
+              }
+            ]
+          },
+          {
+            "id": "book-photo",
+            "kind": "image",
+            "from": 72,
+            "to": 120,
+            "sourceId": "photo-book-img-5959",
+            "fit": "contain",
+            "crop": {
+              "x": 0,
+              "y": 0.15,
+              "w": 1,
+              "h": 0.75
+            },
+            "rect": {
+              "x": 1020,
+              "y": 96,
+              "w": 804,
+              "h": 888
+            },
+            "animations": [
+              {
+                "type": "wipe",
+                "from": 72,
+                "to": 79,
+                "side": "left"
+              },
+              {
+                "type": "drift",
+                "from": 80,
+                "to": 108,
+                "dx": -8
+              }
+            ]
+          },
+          {
+            "id": "detail",
+            "kind": "image",
+            "from": 80,
+            "to": 120,
+            "sourceId": "photo-book-img-5959",
+            "fit": "contain",
+            "crop": {
+              "x": 0.74,
+              "y": 0.39,
+              "w": 0.25,
+              "h": 0.23
+            },
+            "rect": {
+              "x": 752,
+              "y": 640,
+              "w": 240,
+              "h": 330
+            },
+            "animations": [
+              {
+                "type": "settle",
+                "from": 80,
+                "to": 108
+              },
+              {
+                "type": "fade",
+                "from": 109,
+                "to": 120,
+                "out": true
+              }
+            ]
+          },
+          {
+            "id": "signing",
+            "kind": "video",
+            "from": 120,
+            "to": 172,
+            "sourceId": "broll-book-signing-c5678",
+            "in": 12,
+            "out": 13.733333333333334,
+            "fit": "contain",
+            "rect": {
+              "x": 1020,
+              "y": 96,
+              "w": 804,
+              "h": 888
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "hero-drop",
+      "at": "op4",
+      "offset": 1.3666666666666667,
+      "duration": 2.4,
+      "card": {
+        "type": "intro",
+        "layers": [
+          {
+            "id": "portrait",
+            "kind": "image",
+            "from": 0,
+            "to": 72,
+            "proofId": "sarahmariephotographycopyright-8",
+            "cutout": true,
+            "fit": "contain",
+            "rect": {
+              "x": 1150,
+              "y": 160,
+              "w": 500,
+              "h": 740
+            },
+            "allowOverFace": true,
+            "animations": [
+              {
+                "type": "slam",
+                "from": 0,
+                "to": 6
+              },
+              {
+                "type": "fade",
+                "from": 66,
+                "to": 72,
+                "out": true
+              }
+            ]
+          },
+          {
+            "id": "name",
+            "kind": "text",
+            "from": 0,
+            "to": 72,
+            "rect": {
+              "x": 144,
+              "y": 720,
+              "w": 900,
+              "h": 150
+            },
+            "identity": "name",
+            "fontSize": 112,
+            "allowOverFace": true,
+            "animations": [
+              {
+                "type": "wipe",
+                "from": 0,
+                "to": 11,
+                "side": "left"
+              },
+              {
+                "type": "fade",
+                "from": 66,
+                "to": 72,
+                "out": true
+              }
+            ]
+          },
+          {
+            "id": "hero-rule",
+            "kind": "shape",
+            "shape": "rule",
+            "color": "accent",
+            "from": 12,
+            "to": 72,
+            "rect": {
+              "x": 144,
+              "y": 920,
+              "w": 128,
+              "h": 3
+            },
+            "allowOverFace": true,
+            "animations": [
+              {
+                "type": "fade",
+                "from": 66,
+                "to": 72,
+                "out": true
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

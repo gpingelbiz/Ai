@@ -318,6 +318,8 @@ export function letterboxCards(fragment, box, plan) {
   const css = [], review = fragment.review.map((row) => {
     const i = ids.indexOf(row.id);
     if (i < 0) throw new Error(`speaker card ${row.id}: missing from letterbox plan`);
+    // Intro geometry was already validated in output pixels and localized to this parent by its renderer.
+    if (row.type === "intro") return { ...row, activeBox: box };
     const l = row.layout, overlay = row.mode === "overlay", identity = ["title", "booking"].includes(row.type) && !overlay;
     if (l.activeAware) {
       if (l.y < 0 || l.y + l.h > box.height) throw new Error(`speaker card ${row.id}: cannot fit inside letterbox active area`);

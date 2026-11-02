@@ -209,3 +209,18 @@ test("review lists only visible baked-picture intersections with exact times and
   assert.match(html, /Cutaway contains a slide/);
   assert.doesNotMatch(html, /Covered flag must not appear/);
 });
+
+test("intro review exposes layer frames, crops, original hashes and fallback warnings with escaped evidence text", async (t) => {
+  const { plan, manifest, build } = fixture(t);
+  plan.overlays = [{ id: "intro", at: "i01", offset: 0, duration: 2, outputStart: 0, outputEnd: 2,
+    card: { type: "intro", layers: [{ id: "proof", kind: "text", from: 0, to: 60, rect: { x: 144, y: 300, w: 1000, h: 150 }, proofId: "quote", font: "body", fontSize: 40 }] },
+    introReview: [{ id: "proof", kind: "text", firstFrame: 0, lastFrame: 59, rect: { x: 144, y: 300, w: 1000, h: 150 }, proofId: "quote", crop: { x: 0, y: 0.25, w: 1, h: 0.5 }, sourceHash: "abc123", original: "proof.jpg", cutout: false, warning: "Vision <unavailable>", filter: "crop=160:80:0:40" }] }];
+  const result = await build(), html = fs.readFileSync(result.index, "utf8");
+  assert.match(html, /Intro layers — original assets and output frames/);
+  assert.match(html, /frames 0–59 inclusive/); assert.match(html, /SHA-256: abc123/); assert.match(html, /crop=160:80:0:40/); assert.match(html, /rectangular fallback/);
+  assert.match(html, /Real words &lt;exactly&gt;/); assert.match(html, /Vision &lt;unavailable&gt;/); assert.doesNotMatch(html, /Vision <unavailable>/);
+  assert.equal(result.rows.find(r => r.id === "intro").introLayers[0].lastFrame, 59);
+  delete plan.overlays[0].introReview;
+  const row = reviewRows(plan, manifest).find(r => r.id === "intro");
+  assert.equal(row.introLayers[0].firstFrame, 0); assert.equal(row.introLayers[0].lastFrame, 59);
+});

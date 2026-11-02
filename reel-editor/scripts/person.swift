@@ -16,9 +16,12 @@ func fail(_ msg: String) -> Never {
 var args = Array(CommandLine.arguments.dropFirst())
 var outPath = ""
 var framePath = ""
+let still = args.contains("--still")
+let normalizeOnly = args.contains("--normalize-only")
+args.removeAll { $0 == "--still" || $0 == "--normalize-only" }
 if let i = args.firstIndex(of: "--out") { outPath = args[i + 1]; args.removeSubrange(i...(i + 1)) }
 if let i = args.firstIndex(of: "--frame") { framePath = args[i + 1]; args.removeSubrange(i...(i + 1)) }
-if args.count < 2 || outPath.isEmpty { fail("usage: person <video> <t1> [t2 ...] --out <person.png> [--frame <frame.png>]") }
+if args.count < (still ? 1 : 2) || outPath.isEmpty { fail("usage: person <video> <t1> [t2 ...] --out <person.png>; or person <photo> --still [--normalize-only] --out <person.png>") }
 
 let asset = AVURLAsset(url: URL(fileURLWithPath: args[0]))
 let gen = AVAssetImageGenerator(asset: asset)
@@ -67,9 +70,21 @@ func eyeOpen(_ region: VNFaceLandmarkRegion2D?) -> Double {
   return width > 0 ? min(1, max(0, height / width / 0.24)) : 0.5
 }
 
-for ts in args.dropFirst() {
+for ts in (still ? ["0"] : Array(args.dropFirst())) {
   guard let t = Double(ts) else { continue }
-  guard let cg = try? gen.copyCGImage(at: CMTime(seconds: t, preferredTimescale: 600), actualTime: nil) else { continue }
+  let image: CGImage?
+  if still {
+    // Apply EXIF before Vision and before any caller-defined upright crop.
+    if let ci = CIImage(contentsOf: URL(fileURLWithPath: args[0]), options: [.applyOrientationProperty: true]) {
+      image = ctx.createCGImage(ci, from: ci.extent)
+    } else { image = nil }
+  } else { image = try? gen.copyCGImage(at: CMTime(seconds: t, preferredTimescale: 600), actualTime: nil) }
+  guard let cg = image else { continue }
+  if normalizeOnly {
+    guard let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { fail("png failed") }
+    do { try png.write(to: URL(fileURLWithPath: outPath)) } catch { fail("cannot write normalized image") }
+    exit(0)
+  }
   let W = Double(cg.width), H = Double(cg.height)
   let req = VNDetectFaceLandmarksRequest()
   let handler = VNImageRequestHandler(cgImage: cg, options: [:])

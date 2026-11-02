@@ -232,9 +232,9 @@ export function scoreFrameCandidates(candidates, { duration = Infinity, hookEnd 
   return (usable.length ? usable : scored).sort((a, b) => b.scores.total - a.scores.total || a.t - b.t);
 }
 
-export function personBinary() {
+export function personBinary({ cacheDir } = {}) {
   if (process.platform !== "darwin") return Promise.resolve(null);
-  const bin = path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "person");
+  const bin = path.join(cacheDir || process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "person");
   const src = path.join(PKG_ROOT, "scripts", "person.swift");
   try {
     if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(src).mtimeMs) {
