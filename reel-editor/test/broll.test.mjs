@@ -244,7 +244,7 @@ test("pingel-runway disables creative grade and focus blur through merge, theme 
   assert.equal(themed.look, "gregcard");
   assert.equal(themed.slams.style, "type");
   assert.equal(applyTheme({ ...preset, looks: {} }, "gregcard").broll.grade.preset, "mono-fade");
-  assert.deepEqual([preset.broll.duration, preset.broll.gap, preset.broll.max, preset.broll.every, preset.broll.maxCreditsPerReel], [2.5, 3, 5, 10, 180]);
+  assert.deepEqual([preset.broll.duration, preset.broll.gap, preset.broll.max, preset.broll.every, preset.broll.maxCreditsPerReel], [2.5, 3, 5, 10, 260]);
   assert.equal(preset.broll.grade, false, "applyTheme does not mutate the preset");
   assert.equal(preset.broll.videoSeconds, 3);
   assert.equal(preset.broll.retryVideoModel, "gen4.5");

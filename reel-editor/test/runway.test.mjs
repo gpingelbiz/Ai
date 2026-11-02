@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { estimateClip, waitForTask, createImage, createVideo, makeClip, animateStill, fitPrompt } from "../src/runway.mjs";
+import { estimateClip, waitForTask, createImage, createVideo, makeClip, animateStill, makeSound, fitPrompt } from "../src/runway.mjs";
 import { makeRunwayBroll, runwayPicksPrompt, runwayTiming, videoMotion, frameChange, measureMotion, checkRunwayVideo, stillPrompt, STILL_STYLE, actionInPoint, trimRunwayClip, placeRunwayBroll, PROMPT_VERSION } from "../src/broll-runway.mjs";
 import { recordUsage, readUsage, usageReport, reelUsageNote } from "../src/usage.mjs";
 
@@ -107,7 +107,7 @@ test("Runway planner uses the synthesis with ranked alternatives, literal subjec
 // Real orchestration and HTTP code, with every paid call, CLI and ffmpeg replaced.
 function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOpenChecks = [], motionLevels = [], actionLevels, picks = [{ line: 4, shows: "snake", scene: "a green snake dropping from a jungle branch" }], cap = 150, imageCredits = 5, failVideos = 0, reportCosts = true, settings = {}, balance = 1000, groups } = {}) {
   const workDir = fs.mkdtempSync(path.join(cache, "clips-"));
-  const images = [], videos = [], looked = [], openLooked = [], videoLooked = [], videoOpenLooked = [], runs = [], pickPrompts = [], tasks = new Map();
+  const images = [], videos = [], sounds = [], looked = [], openLooked = [], videoLooked = [], videoOpenLooked = [], runs = [], pickPrompts = [], tasks = new Map();
   const fetchFn = async (url, init) => {
     if (url.endsWith("/v1/text_to_image")) {
       images.push(JSON.parse(init.body));
@@ -121,6 +121,12 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
       tasks.set(id, videos.length <= failVideos
         ? { status: "FAILED", failureCode: "SAFETY.INPUT", failure: "refused", ...(reportCosts ? { cost: { credits: 25 } } : {}) }
         : { status: "SUCCEEDED", output: [`https://fake/${id}.mp4`], ...(reportCosts ? { cost: { credits: 25 } } : {}) });
+      return json({ id });
+    }
+    if (url.endsWith("/v1/video_to_audio")) {
+      sounds.push(JSON.parse(init.body));
+      const id = `sfx-${sounds.length}`;
+      tasks.set(id, { status: "SUCCEEDED", output: [`https://fake/${id}.wav`] });
       return json({ id });
     }
     if (url.includes("/v1/tasks/")) {
@@ -181,11 +187,12 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
     },
     makeClip: (args) => makeClip({ ...args, ...io }),
     animateStill: (args) => animateStill({ ...args, ...io }),
+    makeSound: (args) => makeSound({ ...args, ...io }),
     recordUsage: (args) => recordUsage({ ...args, file: path.join(workDir, "usage.json") }),
   };
   const run = () => makeRunwayBroll({ workDir, groups: groups ?? Array.from({ length: 20 }, (_, i) => ({ start: 4 + i * 2, text: "a snake a coconut a knife" })), duration: 50, voice: "UNRELATED PRIVATE VOICE", settings: { maxCreditsPerReel: cap, ...settings }, deps });
   const plan = () => JSON.parse(fs.readFileSync(path.join(workDir, "broll", "broll.json"), "utf8"));
-  return { run, plan, images, videos, looked, openLooked, videoLooked, videoOpenLooked, runs, pickPrompts, workDir, deps, io };
+  return { run, plan, images, videos, sounds, looked, openLooked, videoLooked, videoOpenLooked, runs, pickPrompts, workDir, deps, io };
 }
 
 test("makeClip CHECK error includes the downloaded still and image usage, with no video bought", async () => {
@@ -315,7 +322,7 @@ test("local download and conform failures preserve paid usage for the next budge
   const dir = fs.mkdtempSync(path.join(cache, "local-error-"));
   const cases = [
     { fetchFn: async (url, init) => url.endsWith(".png") ? json({}, false, 503) : f.io.fetchFn(url, init), credits: 5 },
-    { runFn: async () => { throw new Error("conform failed"); }, credits: 30 },
+    { runFn: async () => { throw new Error("conform failed"); }, credits: 5 },
   ];
   for (const { credits, ...overrides } of cases) {
     await assert.rejects(makeClip({ scene: "a snake", dir, name: "still", ...f.io, ...overrides }), (e) => {
@@ -325,7 +332,7 @@ test("local download and conform failures preserve paid usage for the next budge
   }
   const png = path.join(dir, "still.png");
   await assert.rejects(animateStill({ png, mp4: path.join(dir, "still.mp4"), ...f.io, runFn: async () => { throw new Error("conform failed"); } }), (e) => {
-    assert.equal(e.items[0].credits, 25);
+    assert.deepEqual(e.items, []);
     return true;
   });
 });
@@ -451,7 +458,7 @@ test("a frozen clip gets one re-animation from the same still, with charged usag
   const [shot] = await f.run();
   assert.equal(f.images.length, 1);
   assert.equal(f.videos.length, 2);
-  assert.match(f.videos[1].promptImage, /^data:image\/png;base64,/);
+  assert.match(f.videos[1].promptImage, /^data:image\/jpeg;base64,/);
   assert.match(f.videos[1].promptText, /Real-time movement beginning immediately.*Locked camera/);
   assert.equal(shot.motion, f.videos[1].promptText);
   assert.equal(shot.move, "none");
@@ -643,4 +650,72 @@ test("ranked placement caps at the next accepted shot with an end-to-start gap i
   }
   candidates[1].start = 14;
   assert.equal(placeRunwayBroll(picks, candidates, options).length, 1, "drop when the minimum duration and gap cannot fit");
+});
+
+
+test("action orchestration checks matching end identity, routes Kling and adds sound after the used interval passes", async () => {
+  const f = runwayFixture({ reportCosts: false, settings: { imageModel: "nano_banana_2.1", actionVideoModel: "kling3.0_standard", lastFrame: true, sfx: true, videoSeconds: 3 },
+    picks: [{ line: 0, shows: "coconut", kind: "action", scene: "A coconut above sand", endScene: "The same coconut on sand", action: "The coconut drops onto sand", sound: "A coconut thuds onto sand" }],
+  });
+  const shots = await f.run();
+  assert.equal(shots.length, 1);
+  assert.equal(f.images.length, 2);
+  assert.equal(f.videos[0].model, "kling3.0_standard");
+  assert.equal(f.videos[0].audio, false);
+  assert.equal(Array.isArray(f.videos[0].promptImage), true);
+  assert.equal(f.openLooked.length, 2);
+  assert.match(f.looked[1].prompt, /Compare with approved first frame/);
+  assert.match(f.looked[1].prompt, /same individual subject/);
+  assert.match(f.looked[1].prompt, /completed event/);
+  assert.equal(f.sounds[0].duration, shots[0].duration);
+  assert.equal(f.sounds[0].seed, shots[0].seed);
+  assert.equal(shots[0].kind, "action");
+  assert.ok(fs.existsSync(shots[0].sfx));
+  assert.deepEqual(f.plan().shots, shots);
+  assert.equal(f.plan().usage.reduce((s, i) => s + i.credits, 0), 4 + 4 + 27 + shots[0].duration * 2);
+  const soundProxy = f.runs.findIndex((r) => r.args.at(-1).endsWith(".sound.mp4"));
+  const clipCheck = f.runs.findLastIndex((r) => r.args.at(-1).includes("clip-check-"));
+  assert.ok(soundProxy > clipCheck);
+});
+
+test("ambient picks use the ambient model and never buy an end still or sound without a sound description", async () => {
+  const f = runwayFixture({ reportCosts: false, settings: { videoModel: "gen4_turbo", actionVideoModel: "kling3.0_standard", lastFrame: true, sfx: true, videoSeconds: 3 },
+    picks: [{ line: 0, shows: "snake", kind: "ambient", scene: "A snake resting on a branch", endScene: "The same snake resting", action: "The snake gently sways" }],
+  });
+  const shots = await f.run();
+  assert.equal(shots[0].kind, "ambient"); assert.equal(shots[0].videoModel, "gen4_turbo");
+  assert.equal(f.images.length, 1); assert.equal(f.sounds.length, 0);
+  assert.equal("sfx" in shots[0], false);
+  assert.match(f.videoLooked[0].prompt, /gentle continuous movement/);
+});
+
+test("end identity rejection uses only the approved first still; its credits stay in the reel cap", async () => {
+  const f = runwayFixture({ reportCosts: false, cap: 37, checks: [{ shows: true, dark: false }, { shows: false, dark: false, why: "different coconut" }], settings: { actionVideoModel: "kling3.0_standard", lastFrame: true, videoSeconds: 3 },
+    picks: [{ line: 0, shows: "coconut", kind: "action", scene: "A coconut above sand", endScene: "The same coconut on sand", action: "The coconut lands" }],
+  });
+  const shots = await f.run();
+  assert.equal(shots.length, 1); assert.equal(shots[0].check, "pass");
+  assert.equal(typeof f.videos[0].promptImage, "string");
+  assert.equal(f.plan().usage.reduce((s, i) => s + i.credits, 0), 37);
+});
+
+test("shot seeds survive redraws and re-animation, and failed synced sound warns but keeps the shot", async () => {
+  const f = runwayFixture({ reportCosts: false, checks: [{ shows: false, dark: false }, { shows: true, dark: false }], motionLevels: [0, 12],
+    settings: { sfx: true }, picks: [{ line: 0, shows: "coconut", scene: "A coconut above sand", action: "The coconut lands", sound: "A thud" }],
+  });
+  let called = false;
+  f.deps.makeSound = async ({ file, seconds, seed }) => { called = true; assert.ok(fs.existsSync(file)); assert.ok(seconds <= 2.5); assert.equal(seed, f.images[0].seed); throw Object.assign(new Error("sound task failed"), { items: [{ kind: "audio", credits: 2 * seconds, dollars: 0.02 * seconds, ok: false }] }); };
+  const shots = await f.run();
+  assert.equal(called, true); assert.equal(shots.length, 1); assert.equal("sfx" in shots[0], false);
+  assert.equal(f.images.length, 2); assert.equal(f.videos.length, 2);
+  assert.ok(f.images.every((i) => i.seed === shots[0].seed));
+  assert.ok(f.videos.every((v) => v.seed === shots[0].seed));
+  assert.equal(f.plan().usage.at(-1).ok, false);
+});
+
+test("reported video cost exhausting the remaining cap prevents a sound purchase", async () => {
+  const f = runwayFixture({ cap: 30, settings: { videoSeconds: 3, sfx: true }, picks: [{ line: 0, shows: "coconut", scene: "A coconut above sand", action: "The coconut lands", sound: "A thud" }] });
+  const shots = await f.run();
+  assert.equal(shots.length, 1); assert.equal(f.sounds.length, 0);
+  assert.equal(f.plan().usage.reduce((s, i) => s + i.credits, 0), 30);
 });

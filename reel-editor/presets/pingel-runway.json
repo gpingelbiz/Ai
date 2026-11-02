@@ -13,9 +13,15 @@
     "maxWithGraphics": 2,
     "every": 10,
     "videoSeconds": 3,
-    "maxCreditsPerReel": 180,
+    "maxCreditsPerReel": 260,
     "grade": false,
     "retryVideoModel": "gen4.5",
-    "focusPull": 0
+    "focusPull": 0,
+    "imageModel": "gen4_image",
+    "videoModel": "gen4_turbo",
+    "actionVideoModel": "kling3.0_standard",
+    "lastFrame": true,
+    "sfx": true,
+    "sfxVolume": 0.35
   }
 }

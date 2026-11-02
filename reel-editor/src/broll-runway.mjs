@@ -1,13 +1,28 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { claudeText, claudeLook, firstJSON, hasClaude } from "./claude.mjs";
 import { brollCount, brollCandidates, checkPick, spokenInShot, readRecent, rememberScenes, uniqueScenes } from "./broll.mjs";
 import { norm } from "./text.mjs";
-import { hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt } from "./runway.mjs";
+import { hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt, modelInfo, makeSound } from "./runway.mjs";
 import { recordUsage, reelUsageNote } from "./usage.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3 } from "./util.mjs";
 
-export const PROMPT_VERSION = "literal-video-v3";
+export const PROMPT_VERSION = "literal-video-v4";
+
+/** Stable across retries; a new prompt version intentionally starts a new comparison. */
+export function shotSeed(workDir, line) {
+  return createHash("sha256").update(`${path.basename(workDir)}|${line}|${PROMPT_VERSION}`).digest().readUInt32BE(0);
+}
+
+export function shotModels(pick, settings = {}) {
+  const kind = pick.kind === "ambient" ? "ambient" : "action";
+  const imageModel = settings.imageModel || "gen4_image";
+  const videoModel = kind === "action" ? settings.actionVideoModel || settings.videoModel || "gen4_turbo" : settings.videoModel || "gen4_turbo";
+  const info = modelInfo(videoModel, "video");
+  const seconds = Math.max(info.duration[0], Math.min(info.duration[1], Math.round(settings.videoSeconds ?? 5)));
+  return { kind, imageModel, videoModel, seconds, audio: false, lastFrame: !!(kind === "action" && settings.lastFrame && pick.endScene && info.fields.lastFrame) };
+}
 
 /**
  * B-roll as generated video: Claude picks the lines and writes each literal scene plus one line of camera
@@ -42,7 +57,19 @@ Skip abstract lines unless a specific picture makes them clearer.
 Read every word covered by the proposed shot and the neighbouring phrases.
 Start on the named word. End before an unrelated idea begins.
 
-Each candidate has exactly these fields:
+Each candidate has these fields:
+
+kind: "action" when the named thing must do something that finishes,
+such as a coconut dropping and landing. "ambient" for a place or gentle
+continuous movement, such as leaves swaying in a jungle clearing.
+
+endScene: For an action, describe the same subject and setting after the
+event finishes, such as the same coconut resting on the sand below the ledge.
+Preserve its appearance and identity from the opening scene.
+
+sound: Optional short positive description of a real physical sound,
+such as "a coconut thuds onto soft sand". Include only for an impact or
+clear physical sound. Ambient shots usually omit this field.
 
 line: An available caption-line number containing the first anchor word.
 
@@ -54,7 +81,7 @@ duration: This shot's useful screen time, independently chosen between
 1.2 and ${Math.min(2.5, duration)} seconds. Fit one readable event inside the relevant words.
 Never extend a picture merely to fill a standard slot.
 
-scene: A compact Gen-4 opening-image prompt using this house order:
+scene: A compact opening-image prompt using this house order:
 photographic framing and angle; named subject and literal setting;
 opening physical position and space for the event; light and colour;
 useful focus and portrait composition.
@@ -67,7 +94,7 @@ Keep the complete action area visible and important details above captions.
 action: One concrete, harmless physical event involving the named subject.
 It begins immediately and visibly happens within the first second.
 Describe direction and a readable result.
-Camera movement, changing light and drifting atmosphere alone do not count.
+For action picks, camera movement, changing light and drifting atmosphere alone do not count.
 
 motion: One simple camera instruction. Default: "Locked camera."
 Use a camera move only for a place reveal or travel.
@@ -101,7 +128,7 @@ Available caption lines and times:
 ${candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`).join("\n")}
 
 Reply exactly in this shape, ranked strongest first:
-{"picks":[{"line":N,"shows":"...","duration":S,"scene":"...","action":"...","motion":"..."}]}`;
+{"picks":[{"line":N,"shows":"...","duration":S,"kind":"action","scene":"...","endScene":"...","action":"...","motion":"...","sound":"..."}]}`;
 }
 
 /** Start on an exact subject phrase, which may finish in the next caption. */
@@ -267,6 +294,7 @@ Inspect these frames: ${frames.map((f) => JSON.stringify(f.file)).join(", ")}.
 Independent description: ${JSON.stringify(seen)}.
 Required subject: ${JSON.stringify(pick.shows)}.
 Required physical event: ${JSON.stringify(pick.action)}.
+Shot kind: ${pick.kind || "action"}. For ambient shots, gentle continuous movement establishes the event.
 Overlapping words and captions: ${JSON.stringify(spokenInShot(shot, groups, { len: shot.duration }))}.
 Neighbouring words: ${JSON.stringify(neighbouringWords(shot, groups))}.
 
@@ -342,19 +370,20 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   const key = `${PROMPT_VERSION}|${JSON.stringify({ candidates, groups, settings, hook, cta, duration, busy, tail })}`;
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
-    if (saved.promptVersion === PROMPT_VERSION && saved.key === key && saved.shots?.length && saved.shots.every((s) => /\.mp4$/i.test(s.file || "") && s.move === "none" && s.moves?.ok && fs.existsSync(s.file))) {
+    if (saved.promptVersion === PROMPT_VERSION && saved.key === key && saved.shots?.length && saved.shots.every((s) => /\.mp4$/i.test(s.file || "") && s.move === "none" && s.moves?.ok && fs.existsSync(s.file) && (!s.sfx || fs.existsSync(s.sfx)))) {
       log(`b-roll: reusing ${saved.shots.length} Runway clip${saved.shots.length === 1 ? "" : "s"} from ${dir} (nothing bought)`);
       return saved.shots;
     }
   }
-  const has = deps.hasRunway || hasRunway, claude = deps.claudeText || claudeText, look = deps.claudeLook || claudeLook, make = deps.makeClip || makeClip, animate = deps.animateStill || animateStill, org = deps.organization || organization, record = deps.recordUsage || recordUsage;
+  const has = deps.hasRunway || hasRunway, claude = deps.claudeText || claudeText, look = deps.claudeLook || claudeLook, make = deps.makeClip || makeClip, animate = deps.animateStill || animateStill, org = deps.organization || organization, record = deps.recordUsage || recordUsage, sound = deps.makeSound || makeSound;
   if (!has()) { warn("Runway b-roll needs RUNWAY_API_KEY; rendering without it"); return []; }
   if (!(deps.hasClaude || hasClaude)()) { warn("Runway b-roll needs the Claude Code CLI to pick the scenes; skipped"); return []; }
 
   // Budget before anything is bought: the per-reel cap and the account balance.
-  const est = estimateClip({ seconds, imageRatio: settings.imageRatio || "720:1280", videoModel: settings.videoModel || "gen4_turbo" });
-  const retryVideoModel = settings.retryVideoModel || settings.videoModel || "gen4_turbo";
-  const retryCredits = estimateClip({ seconds, videoModel: retryVideoModel }).video;
+  const baseModels = shotModels({ kind: "ambient" }, settings);
+  if (settings.actionVideoModel) modelInfo(settings.actionVideoModel, "video");
+  if (settings.retryVideoModel) modelInfo(settings.retryVideoModel, "video");
+  const est = estimateClip({ ...baseModels, imageRatio: settings.imageRatio });
   const cap = settings.maxCreditsPerReel ?? 150;
   const count = Math.max(0, Math.min(max, Math.floor(cap / est.credits)));
   if (!count) { warn(`b-roll: one Runway clip costs ${est.credits} credits, over the per-reel cap of ${cap}; rendering without it`); return []; }
@@ -384,7 +413,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   const placed = placeRunwayBroll(picks, candidates, { gap, max: affordable, timing });
   const byLine = new Map();
   for (const p of picks) if (!byLine.has(p.line)) byLine.set(p.line, p);
-  for (const f of fs.readdirSync(dir)) if (/^broll-\d+(?:\.full)?\.(png|mp4)$/i.test(f)) fs.rmSync(path.join(dir, f), { force: true });
+  for (const f of fs.readdirSync(dir)) if (/^broll-\d+(?:\.[\w.]+)?\.(png|jpg|mp4|wav)$/i.test(f)) fs.rmSync(path.join(dir, f), { force: true });
   const shots = [];
   const items = [];
   const budget = Math.min(cap, balance == null ? Infinity : Math.max(0, balance - (settings.keepCredits ?? 0)));
@@ -393,25 +422,33 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   for (let k = 0; k < placed.length; k++) {
     const s = placed[k];
     const p = byLine.get(s.line);
+    const models = shotModels(p, settings), seed = shotSeed(workDir, s.line);
+    const est = estimateClip({ ...models, imageRatio: settings.imageRatio, sfxSeconds: settings.sfx && p.sound ? s.duration : 0 });
+    const retryVideoModel = settings.retryVideoModel || models.videoModel;
+    const retryInfo = modelInfo(retryVideoModel, "video");
+    const retrySeconds = Math.max(retryInfo.duration[0], Math.min(retryInfo.duration[1], models.seconds));
+    const retryCredits = estimateClip({ seconds: retrySeconds, videoModel: retryVideoModel }).video;
     let checkResult = "skipped", seen = "", retryWhy = "";
     let clip = null, stillApproved = settings.check === false;
     let sentMotion;
     try { sentMotion = videoMotion(p); }
     catch (e) { warn(`b-roll: clip ${k + 1} skipped (${e.message})`); continue; }
-    const check = settings.check === false ? undefined : async (png) => {
+    const check = settings.check === false ? undefined : async (png, context = {}) => {
       try {
         // Ask open first in a separate call: the subject must not cue the picture's description.
-        seen = "";
+        if (!context.end) seen = "";
         const open = await lookJSON(stillOpenPrompt(path.basename(png)), hasSeen, look, dir);
-        seen = open.seen.trim().slice(0, 600);
-        const result = await lookJSON(stillCheckPrompt({ file: path.basename(png), seen, pick: p, shot: s, groups }), hasBools(["shows", "dark"]), look, dir);
+        const description = open.seen.trim().slice(0, 600);
+        if (!context.end) seen = description;
+        const identity = context.end ? `\nCompare with approved first frame "${path.basename(context.first)}". It must be the same individual subject, appearance and setting after the action: ${p.endScene}. This is the completed event, so opening-position requirements do not apply. Use shows:false if identity is uncertain.` : "";
+        const result = await lookJSON(stillCheckPrompt({ file: path.basename(png), seen: description, pick: p, shot: s, groups }) + identity, hasBools(["shows", "dark"]), look, dir);
         const ok = result.shows && !result.dark;
-        stillApproved = ok;
-        if (ok) checkResult = retryWhy ? "retry-pass" : "pass";
+        if (!context.end) stillApproved = ok;
+        if (ok && !context.end) checkResult = retryWhy ? "retry-pass" : "pass";
         return { ok, why: String(result.why || (result.dark ? "unsafe image" : "subject is not clear")).slice(0, 600) };
       } catch (e) {
         warn(`b-roll: still check unavailable (${String(e.message).split("\n")[0]}); skipping this shot`);
-        checkResult = "unavailable";
+        if (!context.end) checkResult = "unavailable";
         return { ok: false, unavailable: true, why: "still check unavailable after retry" };
       }
     };
@@ -421,8 +458,8 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
       try {
         stillApproved = settings.check === false;
         const still = stillPrompt(p);
-        clip = await make({ scene: still, motion: sentMotion, dir, name: `broll-${k + 1}`, seconds, ratio: settings.videoRatio || "720:1280", imageRatio: settings.imageRatio || "720:1280", videoModel: settings.videoModel || "gen4_turbo", runFn: deps.runFn, check, beforeBuy: (kind, pending) => {
-          if (!canSpend(kind === "image" ? est.image : est.video, pending)) throw Object.assign(new Error("per-reel or account budget exhausted"), { code: "BUDGET" });
+        clip = await make({ scene: still, endScene: models.lastFrame ? stillPrompt({ scene: p.endScene }) : undefined, motion: sentMotion, dir, name: `broll-${k + 1}`, ...models, seed, imageRatio: settings.imageRatio, runFn: deps.runFn, fetchFn: deps.fetchFn, sleepFn: deps.sleepFn, check, beforeBuy: (kind, pending) => {
+          if (!canSpend(kind === "image" || kind === "endImage" ? est.image : est.video, pending)) throw Object.assign(new Error("per-reel or account budget exhausted"), { code: "BUDGET" });
         } });
         items.push(...clip.items);
       } catch (e) {
@@ -433,7 +470,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
           continue;
         }
         if (e.code !== "CHECK" && e.code !== "CHECK_UNAVAILABLE" && e.code !== "BUDGET" && stillApproved && e.png && fs.existsSync(e.png)) {
-          clip = { png: e.png, failure: String(e.message).split("\n")[0] };
+          clip = { png: e.png, last: e.last, failure: String(e.message).split("\n")[0] };
         } else warn(`b-roll: clip ${k + 1} failed (${String(e.message).split("\n")[0]}); dropped`);
       }
       break;
@@ -444,11 +481,25 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
       if (clip.mp4) {
         try {
           Object.assign(clip, await trimRunwayClip(clip.mp4, s.duration, { runFn: deps.runFn, dir }));
-          moves = await checkRunwayVideo({ file: clip.mp4, shot: s, pick: p, groups, inPoint: clip.inPoint, dir, threshold: settings.motionThreshold ?? 1, deps: { runFn: deps.runFn, claudeLook: look } });
+          moves = await checkRunwayVideo({ file: clip.mp4, shot: s, pick: { ...p, kind: models.kind }, groups, inPoint: clip.inPoint, dir, threshold: settings.motionThreshold ?? 1, deps: { runFn: deps.runFn, claudeLook: look } });
         } catch (e) { moves = { ok: false, why: `clip selection failed: ${String(e.message).split("\n")[0]}` }; }
       }
       if (moves.ok) {
-        shots.push({ ...s, file: clip.mp4, full: clip.full, inPoint: clip.inPoint, still: clip.png, video: true, move: "none", motion: sentMotion, scene: p.scene, action: p.action || "the subject moves", check: checkResult, seen, moves });
+        let sfx;
+        if (settings.sfx && p.sound) {
+          try {
+            if (!canSpend(est.sound)) throw new Error("no remaining budget for synced sound");
+            const result = await sound({ file: clip.mp4, out: path.join(dir, `broll-${k + 1}.sfx.wav`), sound: p.sound, seconds: s.duration, seed, runFn: deps.runFn, fetchFn: deps.fetchFn, sleepFn: deps.sleepFn, beforeBuy: (_kind, pending) => {
+              if (!canSpend(est.sound, pending)) throw new Error("no remaining budget for synced sound");
+            } });
+            items.push(...result.items);
+            sfx = result.sfx;
+          } catch (e) {
+            if (e.items) items.push(...e.items);
+            warn(`b-roll: synced sound failed (${String(e.message).split("\n")[0]}); keeping the shot silent`);
+          }
+        }
+        shots.push({ ...s, kind: models.kind, seed, imageModel: models.imageModel, videoModel: clip.videoModel || models.videoModel, ...(clip.last ? { last: clip.last } : {}), ...(sfx ? { sfx } : {}), ...(p.sound ? { sound: p.sound } : {}), ...(p.endScene ? { endScene: p.endScene } : {}), file: clip.mp4, full: clip.full, inPoint: clip.inPoint, still: clip.png, video: true, move: "none", motion: sentMotion, scene: p.scene, action: p.action || "the subject moves", check: checkResult, seen, moves });
         break;
       }
       if (attempt || !canSpend(retryCredits)) {
@@ -458,9 +509,9 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
       warn(`b-roll: clip ${k + 1} failed (${moves.why}); one re-animation from the same still`);
       try {
         sentMotion = videoMotion(p, { retry: true });
-        const r = await animate({ png: clip.png, mp4: clip.png.replace(/\.png$/, ".mp4"), motion: sentMotion, seconds, ratio: settings.videoRatio || "720:1280", videoModel: retryVideoModel, runFn: deps.runFn });
+        const r = await animate({ png: clip.png, mp4: clip.png.replace(/\.png$/, ".mp4"), motion: sentMotion, last: clip.last, seed, audio: false, seconds: retrySeconds, videoModel: retryVideoModel, runFn: deps.runFn, fetchFn: deps.fetchFn, sleepFn: deps.sleepFn });
         items.push(...r.items);
-        clip = { ...r, png: clip.png };
+        clip = { ...r, png: clip.png, videoModel: retryVideoModel };
       } catch (e) {
         if (e.items) items.push(...e.items);
         warn(`b-roll: clip ${k + 1} re-animation failed (${String(e.message).split("\n")[0]}); dropped`);
