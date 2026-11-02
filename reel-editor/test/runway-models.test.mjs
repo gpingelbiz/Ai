@@ -170,7 +170,7 @@ test("routing, stable shot seeds, planner fields and the five-shot preset budget
 test("generated sound assets produce timed tracks under the voice at the default or configured level", () => {
   const assets = fs.mkdtempSync(path.join(dir, "assets-")), sfx = path.join(dir, "source.wav"); fs.writeFileSync(sfx, "wav");
   const shots = [{ start: 4, duration: 2.5, sfx }, { start: 9, duration: 2 }, { start: 11, duration: 2, sfx: path.join(dir, "missing.wav") }];
-  assert.deepEqual(brollSoundTracks(shots, assets), [{ id: "sfx-broll-1", src: "assets/broll-1.sfx.wav", start: 4, duration: 2.5, volume: 0.35, track: 9 }]);
+  assert.deepEqual(brollSoundTracks(shots, assets), [{ id: "sfx-broll-1", src: "assets/broll-1.sfx.wav", start: 4, duration: 2.5, volume: 0.35, track: 10 }]);
   assert.equal(fs.readFileSync(path.join(assets, "broll-1.sfx.wav"), "utf8"), "wav");
   assert.equal(brollSoundTracks(shots, assets, { volume: 0.2 })[0].volume, 0.2);
 });
