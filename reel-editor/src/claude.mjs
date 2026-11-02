@@ -14,10 +14,21 @@ export function hasClaude(env = process.env) {
 }
 
 export function claudeText(prompt, { timeoutMs = 240000, model } = {}) {
+  return claudeRun(["-p", prompt, "--tools", "", "--strict-mcp-config", "--output-format", "text"], { timeoutMs, model, cwd: os.tmpdir() });
+}
+
+/**
+ * The same, with only the Read tool, run inside `cwd`: for jobs that have to look at pictures there (frames of a
+ * b-roll clip). The prompt names the files to read.
+ */
+export function claudeLook(prompt, { cwd, timeoutMs = 180000, model } = {}) {
+  return claudeRun(["-p", prompt, "--tools", "Read", "--allowedTools", "Read", "--strict-mcp-config", "--output-format", "text"], { timeoutMs, model, cwd });
+}
+
+function claudeRun(args, { timeoutMs, model, cwd }) {
   return new Promise((resolve, reject) => {
-    const args = ["-p", prompt, "--tools", "", "--strict-mcp-config", "--output-format", "text"];
     if (model || process.env.REEL_CLAUDE_MODEL) args.push("--model", model || process.env.REEL_CLAUDE_MODEL);
-    const child = spawn(process.env.REEL_CLAUDE_BIN || "claude", args, { stdio: ["ignore", "pipe", "pipe"], cwd: os.tmpdir() });
+    const child = spawn(process.env.REEL_CLAUDE_BIN || "claude", args, { stdio: ["ignore", "pipe", "pipe"], cwd });
     let out = "", err = "";
     const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error(`claude timed out after ${Math.round(timeoutMs / 1000)}s`)); }, timeoutMs);
     child.stdout.on("data", (d) => (out += d));

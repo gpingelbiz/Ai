@@ -127,7 +127,7 @@ export function applyTheme(style, look, { keep = {} } = {}) {
   s.slams = { ...s.slams, style: t.slam };
   if (s.broll) {
     const base = s.broll.grade || {};
-    s.broll.grade = { preset: t.grade.preset, intensity: t.grade.intensity, adjust: {}, details: { ...(base.details || {}), ...(t.grade.details || {}) } };
+    if (s.looks?.lockBrollGrade !== true) s.broll.grade = { preset: t.grade.preset, intensity: t.grade.intensity, adjust: {}, details: { ...(base.details || {}), ...(t.grade.details || {}) } };
     if (!keep.brollCut) s.broll.cut = t.cut;
   }
   if (!keep.zoomStyle && s.zooms) s.zooms.style = t.zoom;

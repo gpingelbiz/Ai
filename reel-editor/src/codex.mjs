@@ -118,6 +118,7 @@ export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}
  * bottom third stays plain and dark for the captions.
  */
 export const IMAGE_STYLE = "Candid documentary photograph, 35mm feel, handheld, as if shot on a phone. One practical light source, named and placed (an overhead shop fluorescent, a dash light at dusk, a single window from camera left); mixed warm and cool colour temperatures; deep shadows that fall off naturally; muted, desaturated colour; worn, scuffed, slightly dusty surfaces; fine film grain; soft halation on the highlights; no retouching, no stylization.";
+export const RUNWAY_STYLE = "Photoreal, natural colour with real saturation, daylight or one clear practical light. The subject is sharp and big in frame, shallow depth of field, no text.";
 export const IMAGE_RULES = [
   "No people, no faces, no hands with visible fingers, no silhouettes, nobody who could read as the speaker.",
   "No text, letters, numbers, logos, signage or UI labels anywhere; screens and papers show only blurred or abstract shapes.",

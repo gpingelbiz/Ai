@@ -1,8 +1,23 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { brollCount, brollCandidates, placeBroll, picksPrompt, holdForSplit } from "../src/broll.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { brollCount, brollCandidates, placeBroll, picksPrompt, holdForSplit, checkPick, PICKS_SCHEMA, readRecent, rememberScenes } from "../src/broll.mjs";
 import { codexModels, isModelRefusal, imageInstructions, savedImage } from "../src/codex.mjs";
 import { renderHTML } from "../src/compose.mjs";
+import { applyTheme } from "../src/looks.mjs";
+
+const cache = fs.mkdtempSync(path.join(os.tmpdir(), "broll-test-"));
+process.env.REEL_BROLL_RECENT = path.join(cache, "recent.json");
+process.env.REEL_CACHE = cache;
+const realRecent = path.join(os.homedir(), ".cache", "reel-editor", "broll-recent.json");
+const snapshot = () => fs.existsSync(realRecent) ? { bytes: fs.readFileSync(realRecent).toString("base64"), mtime: fs.statSync(realRecent).mtimeMs } : null;
+const before = snapshot();
+after(() => {
+  assert.deepEqual(snapshot(), before, "the real recent-scene cache must stay untouched");
+  fs.rmSync(cache, { recursive: true, force: true });
+});
 
 const groups = Array.from({ length: 30 }, (_, i) => ({ start: i * 2, end: i * 2 + 1.8, text: `line ${i}`, words: [] }));
 
@@ -153,4 +168,152 @@ test("b-roll: clearStart keeps every cutaway off the first seconds", () => {
   const c = brollCandidates(groups, 30, { hook: { start: 0, duration: 3 }, clearStart: 5 });
   assert.ok(c.length && c.every((x) => x.start >= 5));
   assert.ok(brollCandidates(groups, 30, { hook: { start: 0, duration: 3 } }).some((x) => x.start < 5), "off by default");
+});
+
+test("checkPick rejects the jungle stand-ins and accepts the actual spoken subject", () => {
+  const candidate = { start: 20, text: "a snake coming" };
+  const lines = [
+    { start: 20, text: "a snake coming" },
+    { start: 22, text: "and a coconut" },
+    { start: 24, text: "Bring a knife" },
+  ];
+  assert.match(checkPick({ shows: "snake", scene: "a tow strap in a garage" }, candidate, lines, { len: 4 }), /scene does not contain snake/);
+  assert.match(checkPick({ shows: "coconut", scene: "packing tape on a shelf" }, candidate, lines, { len: 4 }), /scene does not contain coconut/);
+  assert.match(checkPick({ shows: "knife", scene: "a box cutter opening a box" }, candidate, lines, { len: 4 }), /scene does not contain knife/);
+  assert.equal(checkPick({ shows: "snake", scene: "a green snake dropping from a jungle branch" }, candidate, lines, { len: 2.4 }), null);
+  assert.match(checkPick({ scene: "a snake" }, candidate, lines, {}), /shows missing/);
+  assert.match(checkPick({ shows: "lion", scene: "a lion" }, candidate, lines, {}), /not spoken: lion/);
+  assert.match(checkPick({ shows: "snake", scene: "a snake" }, null, lines, {}), /not a candidate/);
+  for (const word of ["rope", "cord", "strap", "noose", "lasso", "cable", "chain", "ropes", "chain-link"]) {
+    assert.match(checkPick({ shows: "snake", scene: `a snake next to a ${word}` }, candidate, lines, {}), /dark-read word/);
+  }
+  assert.equal(checkPick({ shows: "SNAKE,", scene: "A green Snake." }, candidate, lines, {}), null, "case and punctuation normalise");
+  assert.match(checkPick({ shows: "snake", scene: "a snakeskin boot" }, candidate, lines, {}), /does not contain snake/, "the noun must be a whole word");
+  assert.match(checkPick({ shows: "a coconut", scene: "a round fruit" }, candidate, lines, {}), /does not contain coconut/, "the longest shows word is the noun");
+});
+
+test("checkPick uses words in the shot window, including the next caption and half-second allowance", () => {
+  const candidate = { start: 10 };
+  const lines = [{ start: 9.9, text: "snake coconut knife", words: [
+    { start: 9.99, text: "snake" }, { start: 12.9, text: "coconut!" }, { start: 12.91, text: "knife" },
+  ] }];
+  assert.equal(checkPick({ shows: "coconut", scene: "a coconut falling" }, candidate, lines, { len: 2.4 }), null);
+  assert.match(checkPick({ shows: "snake", scene: "a snake" }, candidate, lines, { len: 2.4 }), /not spoken/);
+  assert.match(checkPick({ shows: "knife", scene: "a knife" }, candidate, lines, { len: 2.4 }), /not spoken/);
+});
+
+test("ranked placement keeps the best spaced picks, then returns time order", () => {
+  const candidates = brollCandidates(groups, 60);
+  const picks = [10, 9, 3, 25].map((line) => ({ line, scene: "a snake", shows: "snake" }));
+  assert.deepEqual(placeBroll(picks, candidates, { ranked: true, len: 2.4, gap: 4, max: 2 }).map((s) => s.line), [3, 10]);
+  assert.deepEqual(placeBroll(picks, candidates, { len: 2.4, gap: 4, max: 2 }).map((s) => s.line), [3, 9], "default still chooses in time order");
+  assert.deepEqual(placeBroll(picks, candidates, { max: 0 }), []);
+});
+
+test("stills prompt requires the named image, permits literal analogies and limits recent scenes", () => {
+  const p = picksPrompt({ candidates: [], count: 2, world: "a garage", recent: [...Array.from({ length: 16 }, (_, i) => `scene-${i}`), "scene-4"] });
+  assert.match(p, /The picture is what the words say/);
+  assert.match(p, /an analogy, a joke, a story/);
+  assert.match(p, /never a rope for a snake, never tape for a coconut, never a box cutter for a knife/);
+  assert.match(p, /Dark-read rule:.*noose, self-harm/);
+  assert.match(p, /only for lines about their own life and work; never use it to replace an image they name/);
+  assert.match(p, /an image the speaker names is not clip art/);
+  assert.doesNotMatch(p, /the report, the number/);
+  assert.equal((p.match(/^- scene-/gm) || []).length, 12);
+  assert.equal((p.match(/^- scene-4$/gm) || []).length, 1);
+  assert.ok(PICKS_SCHEMA.properties.picks.items.required.includes("shows"));
+});
+
+test("recent scene dedupe keeps the newest occurrence and writes only the temp cache", () => {
+  fs.writeFileSync(process.env.REEL_BROLL_RECENT, JSON.stringify({ scenes: ["first", " second ", "first", "third"] }));
+  assert.deepEqual(readRecent(), ["second", "first", "third"]);
+  assert.deepEqual(rememberScenes(["second", "fourth", "first", " fourth "]), ["third", "second", "first", "fourth"]);
+  assert.deepEqual(readRecent(), ["third", "second", "first", "fourth"]);
+  assert.notEqual(process.env.REEL_BROLL_RECENT, realRecent);
+});
+
+test("lockBrollGrade preserves the preset colour grade while the rest of the theme applies", () => {
+  const preset = JSON.parse(fs.readFileSync(new URL("../presets/pingel-runway.json", import.meta.url), "utf8"));
+  const themed = applyTheme(preset, "gregcard");
+  assert.deepEqual(themed.broll.grade, { preset: "soft-boost", intensity: 0.35, details: { vignette: 0.08, grain: 0.05 } });
+  assert.equal(themed.look, "gregcard");
+  assert.ok(themed.hook.treat);
+  assert.equal(applyTheme({ ...preset, looks: {} }, "gregcard").broll.grade.preset, "mono-fade");
+  assert.deepEqual([preset.broll.duration, preset.broll.gap, preset.broll.max, preset.broll.every, preset.broll.maxCreditsPerReel], [2.4, 3, 5, 10, 180]);
+  assert.equal(preset.broll.grade.preset, "soft-boost", "applyTheme does not mutate the preset");
+});
+
+test("Codex stills validate picks before placement and persist shows", async () => {
+  const { makeBroll } = await import("../src/broll.mjs");
+  const workDir = fs.mkdtempSync(path.join(cache, "stills-"));
+  const picks = [
+    { line: 0, scene: "packing tape on a shelf", shows: "coconut", file: "broll-1.png" },
+    { line: 1, scene: "a green snake on a jungle branch", shows: "snake", file: "broll-2.png" },
+  ];
+  const shots = await makeBroll({ workDir, duration: 30, groups: [{ start: 6, text: "a coconut" }, { start: 14, text: "a snake" }], deps: {
+    hasCodex: () => true, codexPausedUntil: () => 0,
+    codexExec: async (prompt, { cwd, schema }) => {
+      assert.equal(schema, PICKS_SCHEMA);
+      for (const p of picks) fs.writeFileSync(path.join(cwd, p.file), Buffer.alloc(2000));
+      return JSON.stringify({ picks });
+    },
+  } });
+  assert.equal(shots.length, 1);
+  assert.equal(shots[0].shows, "snake");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(workDir, "broll", "broll.json"))).shots[0].shows, "snake");
+});
+
+test("stills keep world opt-in and never reuse a plan from an older prompt", async () => {
+  const { makeBroll, PROMPT_VERSION } = await import("../src/broll.mjs");
+  const workDir = fs.mkdtempSync(path.join(cache, "versioned-stills-"));
+  const groups = [{ start: 6, text: "a snake" }, { start: 14, text: "a coconut" }];
+  const prompts = [];
+  const deps = {
+    hasCodex: () => true, codexPausedUntil: () => 0,
+    codexExec: async (prompt, { cwd }) => {
+      prompts.push(prompt);
+      fs.writeFileSync(path.join(cwd, "broll-1.png"), Buffer.alloc(2000));
+      return JSON.stringify({ picks: [{ line: 0, shows: "snake", scene: "a green snake on a branch", file: "broll-1.png" }] });
+    },
+  };
+  const run = (settings = {}) => makeBroll({ workDir, duration: 30, groups, settings: { world: "OPT-IN WORLD", ...settings }, deps });
+  await run();
+  assert.doesNotMatch(prompts[0], /OPT-IN WORLD/);
+  const planPath = path.join(workDir, "broll", "broll.json");
+  const saved = JSON.parse(fs.readFileSync(planPath));
+  assert.equal(saved.promptVersion, PROMPT_VERSION);
+  assert.ok(saved.key.startsWith(`${PROMPT_VERSION}|`));
+  await run();
+  assert.equal(prompts.length, 1, "the current prompt plan can be reused");
+  for (const version of [undefined, "older-prompt"]) {
+    fs.writeFileSync(planPath, JSON.stringify({ ...saved, promptVersion: version }));
+    const count = prompts.length;
+    await run();
+    assert.equal(prompts.length, count + 1, "matching caption lines cannot bypass a prompt-version change");
+  }
+  await makeBroll({ workDir, duration: 30, groups, force: true, settings: { world: "OPT-IN WORLD", worldInPrompt: true }, deps });
+  assert.match(prompts.at(-1), /OPT-IN WORLD/);
+  assert.match(prompts.at(-1), /never use it to replace an image they name/);
+  assert.match(prompts.at(-1), /Kill test/);
+  assert.match(prompts.at(-1), /bottom third stays plain and dark/);
+});
+
+test("candidates retain word timing and a checked video cannot be held beyond its checked interval", () => {
+  const words = [{ start: 6.3, text: "snake" }];
+  assert.deepEqual(brollCandidates([{ start: 6, text: "a snake", words }], 20)[0].words, words);
+  const shots = [{ start: 6, duration: 2, file: "a.mp4", moves: { ok: true } }, { start: 20, duration: 2, file: "b.mp4", moves: { ok: true } }];
+  assert.deepEqual(holdForSplit(shots, { duration: 40, hold: 5 }), shots);
+});
+
+
+test("video compositions use real playback with no editor push while preserving the sent prompt", () => {
+  const shot = { start: 6, duration: 1.8, motion: "The coconut rolls. Camera: locked camera.", move: "none", video: true, src: "assets/broll/broll-1.mp4" };
+  const html = renderHTML({ name: "animated", canvas: { width: 1080, height: 1920 }, video: { duration: 20, hasAudio: true }, captions: [], broll: [shot], style: {
+    colors: { text: "#fff", accent: "#fc0", stroke: "#000" },
+    captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72 },
+    hook: { fontSizeFrac: 0.05, position: 0.2 }, zooms: {}, cta: {},
+  } }, "assets/footage.mp4");
+  assert.match(html, /<video class="broll-media".*broll-1\.mp4/);
+  assert.match(html, /"broll":\[\{"start":6,"duration":1.8,"motion":"none","video":true\}\]/);
+  assert.equal(shot.motion, "The coconut rolls. Camera: locked camera.");
 });
