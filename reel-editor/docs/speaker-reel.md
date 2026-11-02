@@ -292,7 +292,7 @@ Items play back to back. Overlays and cutaways add no time. Cutaway visibility u
 - `role`: opening, identity, proof, core, room, testimonial, close, booking or montage.
 - `fit`: `wash`, `blur`, `contain` or `cover`, on clips and picture-only cutaways (including montage shots). Omitted values resolve to `wash` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `wash` cover-scales the same frame to 192×108, blurs it there (sigma 20), adds 20% saturation, darkens luma to 0.8, and applies a soft vignette before smooth upscaling. Very light, static uniform grain (strength 2, seed 42) reduces 8-bit banding. The sharp picture floats above this colour field with a soft 32%-opacity shadow, offset 8 pixels down; the shadow is blurred once and repeated. The card fits within 90% of the visible width/height, including any letterbox, and never exceeds 1.5× source enlargement, so small sources can stay smaller. Explicit `blur` keeps the original graph: a full-frame blur, 35% darker and slightly desaturated, with no card margin or shadow. `contain` keeps the client-brand frame. These three preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources or landscape `sourceCrop` regions, warns above 1.5× and needs visual review. Explicit saved fits always win.
 - `audio`: source or mute. A source marked none/bad must use mute when selected as a timeline clip. A cutaway always supplies picture only.
-- `protect: true`: no internal trimming, retiming, denoise or silence cuts. All items already stay at speed 1.0. Meaningful pauses and real reactions remain intact. Normalization and 10 ms edge fades do not rearrange the passage.
+- `protect: true`: no internal trimming, retiming, denoise or silence cuts. The explicit `audioRepair.allowProtected:true` exception below permits only reviewed reaction-safe cleanup. All items already stay at speed 1.0. Meaningful pauses and real reactions remain intact. Normalization and 10 ms edge fades do not rearrange the passage.
 - `limit: true` (optional, source audio only): each clip normally receives fixed gain toward −16 LUFS, stopping at −1.5 dBTP. A peaky phone recording can stay several LU quiet that way. With `limit`, the clip takes the full gain, and a delay-compensated lookahead limiter holds its sample peaks at −2 dBFS. It never compresses between peaks and never cuts silence. Use it only where the review hears a quiet clip.
 - `in` and `out` are original source seconds, with `0 <= in < out`. Out cannot exceed the indexed duration. Photos can be held for the requested duration; audio-only sources use a plain brand frame.
 - Overlays target `at`; cutaways target `over`. Offset is relative to the target item. Entries must fit inside the target and cutaways must not overlap. Item durations, offsets and overlay durations resolve to integer frames using nearest-frame rounding.
@@ -696,3 +696,37 @@ An optional injected `scoreDnsmos(file, {start, end, audioStream})` may return `
 Insert analysis compares each scene's centre frame with distant scenes in the same recording. Recurring room angles should match; short, unusual pictures receive extra weight. Local Apple Vision feature prints and text-area observations are preferred; ffmpeg 16×9 colour signatures and flat-colour/edge measures provide an automatic fallback. No npm package, model download or transcription is needed. Compilation uses the installed Swift/macOS SDK and caches the helper under `REEL_CACHE` (default `~/.cache/reel-editor`). Missing analysis fails open with a log line.
 
 Independent version-1 records live at `work/index/<source-cache-key>.inserts.json`: `{sourceId, version, inserts:[{start,end,kind,confidence,reason}]}`; all times are original-source seconds. Existing records are reused until their version or source key changes. Missing records mean unmeasured. Review lists the flags intersecting visible picture with source/output seconds and reasons; QC adds one WARN per intersection. Cutaways hide the underlying picture but their own pictures are checked too. Overlays do not clear a flag. No detector trims, covers, changes rights, or approves anything: inspect each original frame and make the editorial decision by hand. Similar-looking stock images, gradual edits and uncommon genuine room angles can fool this heuristic.
+
+## Optional dialogue cleanup
+
+An individual audible dialogue clip can opt into native DeepFilterNet3. Run `reel speaker reactions <client>` first. Without a valid source reaction index or an executable binary, compilation logs one line for that item and uses the selected original channel. Music, effects, picture-only cutaways and card audio carries never enter this adapter. Nothing is installed or downloaded. The existing daily-reel studio chain is unchanged.
+
+For Julee's Madi testimonial, add this field to the existing item with `sourceId:"testimonial-madi"`, `in:1.60`, `out:10.95` (keep its existing ID, role and other fields):
+
+```json
+"audioRepair": {
+  "profile": "dfn3-6",
+  "channel": "left",
+  "allowProtected": true,
+  "dryRanges": [],
+  "rampMs": 150
+}
+```
+
+This is an audition setting. Compare the original channel selection and left channel at matched speech loudness, then compare `dfn3-6` and `dfn3-9` under the actual music. A protected item needs `allowProtected:true`; that allowance permits only this cleanup, without authorizing cuts or retiming. After listening, set `audioRepair.auditioned:true`, increment the plan revision and rebuild the reviewed draft. Final QC refuses a requested repair that failed, is missing, changed since preparation, or has no recorded audition. Draft QC warns and permits the original-audio fallback.
+
+Profiles select a 6 or 9 dB attenuation limit. Channels are `existing` (the compiler's safe mono selection), `left` or `right`. `dryRanges` contain `{start,end}` in **absolute source seconds**, augmenting indexed laughter, applause, cheering and audience responses, including unverified hints. All protected samples remain byte-identical to the selected original before common gain/fades. Smoothstep ramps run outside the dry intervals; `rampMs` defaults to 150 (allowed 1–1000). For a conservative closing bypass, for example, `{start:1047.45,end:1054.5}` begins its 150 ms ramp at 1047.30. Carry audio remains original and inherits the preceding dialogue's selected channel, fixed gain and limiter.
+
+The binary lookup reuses `REEL_DEEPFILTER`, then `${REEL_CACHE:-~/.cache/reel-editor}/bin/deep-filter`, then PATH. The verified local arm64 binary is `/Users/gregpingel/.cache/reel-editor/bin/deep-filter` (0.5.6, SHA-256 `4601e7f4e4c03e59a4c5b5000216ef3add3e808799cfccd95e14e83ea4611081`). Invocation is `deep-filter -D --atten-lim-db 6 -o WORK_OUTPUT INPUT_PADDED.wav`; postfilter is disabled. The binary embeds the model; its full hash identifies both runtime and model bytes.
+
+The adapter decodes only the selected interval with up to 0.50 s context at either end, clamped to source boundaries. It preserves stream selection and the existing source clock at 48 kHz, adds another 24,000 silent tail samples, uses native `-D` delay compensation, removes context by integer sample offsets, then blends `y = x + wet * (e - x)`. The selected interval inside the context buffer is copied from the compiler’s decoded PCM, so packet-seek rounding cannot change the dialogue clock. Context supplies only the handles. It never stretches a shortened output. Frame-rounded output remains authoritative: Madi is 281 frames / 449,600 samples (9.366667 s), with her stored source range unchanged.
+
+For Madi's left-channel audition, the preparation graph is exactly:
+
+```text
+aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo,pan=mono|c0=c0,apad,atrim=end_sample=497600,apad=pad_len=24000,atrim=end_sample=521600
+```
+
+It seeks to source 1.10 s, processes 521,600 samples including context/padding, then keeps enhanced samples `[24000,473600)`. Reaction blending runs on those aligned float samples. Existing fixed gain, optional limiter, dual-mono output and 10 ms clip-edge fades follow cleanup, with loudness measured after cleanup. No other filters are added.
+
+`work/index/enhance/<key>/` holds `original.wav`, `enhanced.wav`, `repair.wav` and `repair.json`. The key covers full streamed source content, source index key, exact stored range, frame sample count, original selected-channel PCM, stream, channel, context/padding, binary/model identity, settings, bypass ranges and adapter version. Original quality labels are retained; selected-original/repaired measurements appear separately in review. QC re-reads PCM for exact counts, finite samples, reaction nulls and strong evidence of displaced waveforms. Weak or uncorrelated audio cannot prove alignment; listening remains required. Review approval hashes guard these WAVs, provenance, source and reaction index, so changes require a new review.
