@@ -56,6 +56,32 @@ export function defaultFit(meta = {}, canvas = {}) {
   return meta.width < meta.height || meta.height < (canvas.height || 1080) * 0.6 ? "wash" : "contain";
 }
 
+/** Coordinates use the upright source. Round edges to even pixels for chroma alignment. */
+export function sourceCropOptions(crop, meta = {}) {
+  if (crop === undefined) return null;
+  if (!crop || typeof crop !== "object" || Array.isArray(crop)) throw new Error("sourceCrop must be an object with normalized x, y, w, h");
+  for (const key of Object.keys(crop)) if (!["x", "y", "w", "h"].includes(key)) throw new Error(`sourceCrop: unknown key ${key}`);
+  if (!["x", "y", "w", "h"].every((key) => Number.isFinite(crop[key])) || crop.x < 0 || crop.y < 0 || crop.w <= 0 || crop.h <= 0 || crop.x + crop.w > 1 + 1e-12 || crop.y + crop.h > 1 + 1e-12) throw new Error("sourceCrop requires 0 <= x, y and positive w, h inside the normalized source bounds (0–1)");
+  if (!(Number.isInteger(meta.width) && meta.width >= 2 && Number.isInteger(meta.height) && meta.height >= 2)) throw new Error("sourceCrop needs indexed upright source dimensions of at least 2x2 pixels");
+  const sar = String(meta.sampleAspectRatio || "1:1").split(":").map(Number);
+  if (!(sar.length === 2 && sar.every(Number.isFinite) && sar[0] > 0 && sar[0] === sar[1])) throw new Error("sourceCrop requires square source pixels");
+  const edge = (value, size) => Math.min(Math.floor(size / 2) * 2, Math.round(value * size / 2) * 2);
+  const x = edge(crop.x, meta.width), y = edge(crop.y, meta.height);
+  const width = edge(crop.x + crop.w, meta.width) - x, height = edge(crop.y + crop.h, meta.height) - y;
+  if (width < 2 || height < 2) throw new Error("sourceCrop must retain at least 2x2 pixels after even-pixel rounding");
+  return { x, y, width, height, filter: `crop=${width}:${height}:${x}:${y}`, meta: { ...meta, width, height, sampleAspectRatio: "1:1", rotationCw: 0 } };
+}
+
+/** Sharp picture size before push; share the exact rounding with resolved crop evidence. */
+export function foregroundSize(geometry, { fit = "contain", push = 1, width = 1920, height = 1080, active = { height } } = {}) {
+  const even = (n) => Math.max(2, Math.floor(n / 2) * 2);
+  if (fit === "wash") {
+    const inset = Math.min(1, width * 0.9 / geometry.width, active.height * 0.9 / geometry.height);
+    return { width: even(geometry.width * inset / push), height: even(geometry.height * inset / push) };
+  }
+  return push > 1 && fit !== "cover" ? { width: even(geometry.width / push), height: even(geometry.height / push) } : { width: geometry.width, height: geometry.height };
+}
+
 export function pushScale(frame, frames, push = 1) {
   if (!Number.isFinite(push) || push < 1 || push > 1.2) throw new Error("push must be between 1 and 1.2");
   const u = frames <= 1 ? 0 : clamp(frame / (frames - 1), 0, 1);
@@ -70,21 +96,24 @@ export function pushFilter(frames, push = 1, { width = 1920, height = 1080, fps 
 }
 
 /** Named pads make this usable for both the dialogue picture and picture-only cutaways. */
-export function fitGraph(input, output, geometry, { fit = "contain", background = "#111111", frames, push = 1, width = 1920, height = 1080, fps = 30, active = { y: 0, height } } = {}) {
+export function fitGraph(input, output, geometry, { fit = "contain", background = "#111111", frames, push = 1, width = 1920, height = 1080, fps = 30, active = { y: 0, height }, sourceCrop = null } = {}) {
   const motion = pushFilter(frames, push, { width, height, fps });
   const name = (part) => `${output}_${part}`;
+  const prefix = sourceCrop ? [`[${input}]${sourceCrop.filter}[${name("crop")}]`] : [];
+  if (sourceCrop) input = name("crop");
   // Reserve the push margin before scaling. Even its last frame respects the foreground enlargement ceiling.
   const even = (n) => Math.max(2, Math.floor(n / 2) * 2);
-  const scale = push > 1 && fit !== "cover" ? `scale=${even(geometry.width / push)}:${even(geometry.height / push)}:flags=lanczos,setsar=1` : geometry.filter;
+  const size = foregroundSize(geometry, { fit, push, width, height, active });
+  const scale = push > 1 && fit !== "cover" ? `scale=${size.width}:${size.height}:flags=lanczos,setsar=1` : geometry.filter;
   const finish = (label) => motion ? `[${label}]${motion}[${output}]` : `[${label}]null[${output}]`;
   if (fit === "wash") {
     // Geometry already limits enlargement. Only shrink it here, leaving a margin inside the bars.
-    const inset = Math.min(1, width * 0.9 / geometry.width, active.height * 0.9 / geometry.height);
-    const w = even(geometry.width * inset / push), h = even(geometry.height * inset / push);
+    const w = size.width, h = size.height;
     const x = even((width - w) / 2), y = even(active.y + (active.height - h) / 2);
     const tinyW = even(width / 10), tinyH = even(height / 10);
     const sigma = short(16 * height / 1080), pad = even(48 * height / 1080), offset = even(8 * height / 1080);
     return [
+      ...prefix,
       `[${input}]split=2[${name("bg")}][${name("fg")}]`,
       // Blur at one tenth size: colours survive, room details do not. Grain stays at output resolution.
       `[${name("bg")}]scale=${tinyW}:${tinyH}:force_original_aspect_ratio=increase:flags=area,crop=${tinyW}:${tinyH},setsar=1,gblur=sigma=${short(20 * tinyH / 108)}:steps=3,eq=saturation=1.2,lutyuv=y='16+(val-16)*0.8',vignette=angle=PI/5:eval=init:dither=0,scale=${width}:${height}:flags=bicubic,noise=alls=2:allf=u:all_seed=42[${name("back")}]`,
@@ -95,8 +124,9 @@ export function fitGraph(input, output, geometry, { fit = "contain", background 
       `[${name("shaded")}][${name("front")}]overlay=${x}:${y}:shortest=1[${name("fit")}]`, finish(name("fit")),
     ];
   }
-  if (fit !== "blur") return [`[${input}]${scale},${fit === "cover" ? `crop=${width}:${height}` : `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=${background}`}[${name("fit")}]`, finish(name("fit"))];
+  if (fit !== "blur") return [...prefix, `[${input}]${scale},${fit === "cover" ? `crop=${width}:${height}` : `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=${background}`}[${name("fit")}]`, finish(name("fit"))];
   return [
+    ...prefix,
     `[${input}]split=2[${name("bg")}][${name("fg")}]`,
     `[${name("bg")}]scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height},setsar=1,gblur=sigma=${short(40 * height / 1080)}:steps=3,eq=saturation=0.8,lutyuv=y='16+(val-16)*0.65'[${name("back")}]`,
     `[${name("fg")}]${scale},format=yuva420p,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black@0[${name("front")}]`,

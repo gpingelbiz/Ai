@@ -33,6 +33,90 @@ const plan = {
 };
 const options = { manifest, index };
 
+test("sourceCrop validates clip/cutaway geometry and resolves fit from the cropped region", () => {
+  const p = structuredClone(plan);
+  const crop = { x: 0, y: 0.25, w: 1, h: 0.3125 }; // 720x400 landscape region of a portrait source
+  p.items[2].sourceCrop = crop; p.items[2].fit = "cover";
+  p.cutaways[0].sourceCrop = crop; p.cutaways[0].fit = "cover";
+  assert.deepEqual(validatePlan(p, options), []);
+  const resolved = resolvePlan(p, options);
+  assert.deepEqual(resolved.items[2].framing.sourceCrop, { x: 0, y: 320, width: 720, height: 400 });
+  assert.equal(resolved.items[2].framing.fitScale, 2.7);
+  assert.equal(resolved.cutaways[0].framing.fitScale, 2.7);
+  assert.equal(resolved.items[2].in, plan.items[2].in);
+  assert.equal(resolved.items[2].out, plan.items[2].out);
+  assert.deepEqual(timelineWords(resolved, index), timelineWords(resolvePlan(plan, options), index));
+  assert.equal(p.items[2].framing, undefined);
+  delete p.items[2].fit;
+  assert.equal(resolvePlan(p, options).items[2].fit, "wash", "small cropped sources keep wash default");
+  const large = structuredClone(index); large.sources.phone.width = 2160; large.sources.phone.height = 3840;
+  assert.equal(resolvePlan(p, { manifest, index: large }).items[2].fit, "contain", "large landscape regions default to contain");
+  p.items[2].sourceCrop.h = 1;
+  assert.ok(validatePlan(p, options).some((e) => e.id === "c" && /sourceCrop/.test(e.message)));
+  p.items[2].sourceCrop = { x: 0, y: 0, w: 1, h: 1 }; p.items[2].fit = "cover";
+  assert.ok(validatePlan(p, options).some((e) => e.id === "c" && /landscape/.test(e.message)));
+  for (const target of [p.items[1], p.overlays[0]]) target.sourceCrop = crop;
+  assert.deepEqual(validatePlan(p, options).filter((e) => /sourceCrop requires a clip/.test(e.message)).map((e) => e.id), ["b", "o1"]);
+  p.items[2].sourceCrop = null; p.cutaways[0].sourceCrop = [];
+  assert.deepEqual(validatePlan(p, options).filter((e) => /sourceCrop must be an object/.test(e.message)).map((e) => e.id), ["c", "x1"]);
+});
+
+test("compiled rotated crops preserve same-moment cutaway frames, cap/warn and review evidence", { timeout: 120000 }, async (t) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-source-crop-"));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(folder, "footage")); writeJSON(path.join(folder, "brand.json"), brand);
+  const source = path.join(folder, "unrotated.mp4"), file = path.join(folder, "footage/phone.mp4");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "nullsrc=s=384x216:r=30:d=0.6,geq=lum='40+N*6+X/8+Y/8':cb=128:cr=128", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "0", source], { capture: true });
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-display_rotation", "90", "-i", source, "-c", "copy", file], { capture: true });
+  const meta = await probeSource(file);
+  assert.deepEqual([meta.width, meta.height], [216, 384]); assert.ok(meta.rotationCw % 180 === 90);
+  const m = structuredClone(manifest); m.sources = [m.sources[1]];
+  const idx = { sources: { phone: { ...meta, words: [] } } };
+  const crop = { x: 40 / 216, y: 154 / 384, w: 160 / 216, h: 90 / 384 };
+  const p = { ...structuredClone(plan), look: { grade: "off" }, overlays: [], items: [
+    { id: "a", kind: "clip", sourceId: "phone", in: 0, out: 0.6, role: "room", audio: "mute", fit: "contain", sourceCrop: crop, push: 1, stabilize: false },
+  ], cutaways: [{ id: "same", over: "a", offset: 0.1, sourceId: "phone", in: 0.1, out: 0.3, fit: "cover", sourceCrop: crop, push: 1, stabilize: false }] };
+  const messages = [];
+  const result = await compileVersion(folder, p, { manifest: m, index: idx, encoder: "libx264", print: (message) => messages.push(message) });
+  assert.ok(messages.some((s) => /a: requested 12.00x enlargement; limited to 1.5x/.test(s)));
+  assert.ok(messages.some((s) => /same: requested 12.00x enlargement; review the landscape crop/.test(s)));
+  const cut = result.resolvedPlan.cutaways[0];
+  assert.deepEqual([cut.startFrame, cut.endFrame], [3, 9]);
+  assert.deepEqual(result.resolvedPlan.items[0].framing.foreground, { width: 240, height: 136, scaleX: 1.5, scaleY: 136 / 90, endScaleX: 1.5, endScaleY: 136 / 90 });
+  assert.deepEqual(result.map.find((row) => row.kind === "cutaway").framing, cut.framing);
+  for (const entry of [result.resolvedPlan.items[0], cut]) {
+    assert.equal(entry.framing.reviewFrames.length, 2);
+    for (const name of entry.framing.reviewFrames) assert.ok(fs.statSync(path.join(result.workDir, name)).size > 0);
+  }
+  // Compare the centre against the manually rotated/cropped source on the original clock.
+  const actual = path.join(folder, "actual.rgb"), reference = path.join(folder, "reference.rgb");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-i", result.base, "-vf", "crop=2:2:960:540,format=rgb24", "-f", "rawvideo", actual], { capture: true });
+  const { rotateFilters } = await import("../src/hdr.mjs");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-noautorotate", "-i", file, "-vf", [...rotateFilters(meta.rotationCw), "crop=160:90:40:154", "crop=2:2:80:44", "format=rgb24"].join(","), "-f", "rawvideo", reference], { capture: true });
+  const pixels = fs.readFileSync(actual), expected = fs.readFileSync(reference);
+  assert.equal(pixels.length, 18 * 12); assert.equal(expected.length, pixels.length);
+  let maxError = 0;
+  for (let n = 0; n < pixels.length; n++) maxError = Math.max(maxError, Math.abs(pixels[n] - expected[n]));
+  assert.ok(maxError <= 4, `source-clock centre maximum RGB error ${maxError}`);
+  // On both sides of the half-open cutaway, the corner returns to the contain pad.
+  const edges = path.join(folder, "edges.rgb");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-i", result.base, "-vf", "crop=2:2:0:0,format=rgb24", "-f", "rawvideo", edges], { capture: true });
+  const edgePixels = fs.readFileSync(edges);
+  for (let frame = 0; frame < 18; frame++) assert.equal(edgePixels[frame * 12] > 35, frame >= 3 && frame < 9, `cutaway visible at frame ${frame}`);
+  const output = await probeSource(result.base);
+  assert.ok(Math.abs(output.videoDuration - 0.6) < 1 / 30);
+  assert.ok(Math.abs(output.videoDuration - output.audioStreams[0].duration) <= 1 / 30);
+  t.diagnostic(`18/18 source-clock centres aligned (max RGB error ${maxError}); cutaway visible exactly at frames 3–8; 4 fitted JPEGs; contain 1.5x, cover 12x warns`);
+  // Cover can begin below the ceiling and cross it only during the reviewed push.
+  const coverFile = path.join(folder, "cover.mp4");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=red:s=1500x900:r=30:d=0.1", "-c:v", "libx264", "-preset", "ultrafast", coverFile], { capture: true });
+  const coverManifest = structuredClone(m); coverManifest.sources[0].path = "cover.mp4";
+  const coverPlan = { ...p, version: "cover-push", cutaways: [], items: [{ ...p.items[0], out: 0.1, fit: "cover", push: 1.2, sourceCrop: { x: 0, y: 0, w: 1440 / 1500, h: 810 / 900 } }] };
+  const pushed = await compileVersion(folder, coverPlan, { manifest: coverManifest, index: { sources: { phone: await probeSource(coverFile) } }, encoder: "libx264", print: () => {} });
+  assert.equal(pushed.resolvedPlan.items[0].framing.fitScale, 4 / 3);
+  assert.ok(pushed.resolvedPlan.problems.some((problem) => /1.60x enlargement at end of push/.test(problem.message)));
+});
+
 test("plan validation and resolution leave protected source ranges intact and add no overlay time", () => {
   assert.deepEqual(validatePlan(plan, options), []);
   const resolved = resolvePlan(plan, options);
@@ -336,4 +420,78 @@ test("compiled card carries contiguous source audio with preceding gain, final 0
   assert.equal(rms(carry, 0.6, 1), 0);
   assert.deepEqual(result.words.map((w) => w.text), ["Close"]);
   t.diagnostic(`carry: ${crossings} cycles/0.1s; RMS ratio ${(rms(carry, 0.1, 0.2) / rms(clip, 0.1, 0.2)).toFixed(5)}; padding RMS 0`);
+});
+
+
+test("lavfi: upright sourceCrop keeps the same-moment cutaway on exact first/last source frames", { timeout: 120000 }, async (t) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-source-crop-"));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  writeJSON(path.join(folder, "brand.json"), brand);
+  const original = path.join(folder, "original.mp4"), file = path.join(folder, "rotated.mp4");
+  const source = "nullsrc=s=160x240:r=30:d=1,geq=lum='if(between(X,16,143)*between(Y,80,151),32+N*4,200)':cb=128:cr=128,transpose=clock";
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", source, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10", original], { capture: true });
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-display_rotation:v:0", "90", "-i", original, "-c", "copy", file], { capture: true });
+  const meta = await probeSource(file);
+  assert.deepEqual([meta.width, meta.height, meta.rotationCw], [160, 240, 270]);
+  const m = { ...manifest, sources: [{ id: "phone", path: "rotated.mp4", kind: "stage", audio: "none", rights: "r1" }], proof: [] };
+  const p = { ...plan, look: { grade: "off" }, items: [{ id: "s7", kind: "clip", sourceId: "phone", in: 0, out: 1, role: "core", audio: "mute", fit: "contain", push: 1, stabilize: false }], overlays: [], cutaways: [{ id: "payoff", over: "s7", offset: 8 / 30, sourceId: "phone", in: 8 / 30, out: 18 / 30, fit: "cover", push: 1, stabilize: false, sourceCrop: { x: 16 / 160, y: 80 / 240, w: 128 / 160, h: 72 / 240 } }] };
+  const messages = [], result = await compileVersion(folder, p, { manifest: m, index: { sources: { phone: meta } }, encoder: "libx264", print: (message) => messages.push(message) });
+  assert.ok(messages.some((message) => /payoff: requested 15.00x enlargement/.test(message)), messages.join("\n"));
+  const cut = result.resolvedPlan.cutaways[0];
+  assert.equal(cut.framing.fitScale, 15);
+  assert.deepEqual(cut.framing.sourceCrop, { x: 16, y: 80, width: 128, height: 72 });
+  assert.deepEqual(cut.framing.reviewFrames, ["look/crop-payoff-first.jpg", "look/crop-payoff-last.jpg"]);
+  for (const frame of cut.framing.reviewFrames) assert.ok(fs.statSync(path.join(result.workDir, frame)).size > 0);
+  assert.equal(result.map.find((row) => row.kind === "cutaway").framing.fitScale, 15);
+  const raw = path.join(folder, "frames.rgb");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-i", result.base, "-vf", "scale=192:108,format=rgb24", "-f", "rawvideo", raw], { capture: true });
+  const data = fs.readFileSync(raw), frameSize = 192 * 108 * 3;
+  assert.equal(data.length, frameSize * 30);
+  const red = (n, x, y) => data[n * frameSize + (y * 192 + x) * 3];
+  let maxError = 0;
+  for (let n = 0; n < 30; n++) {
+    const expected = (32 + n * 4 - 16) * 255 / 219;
+    maxError = Math.max(maxError, Math.abs(red(n, 96, 54) - expected));
+    assert.ok(Math.abs(red(n, 96, 54) - expected) <= 4, `source frame ${n}: ${red(n, 96, 54)} vs ${expected}`);
+    if (n >= 8 && n < 18) assert.ok(Math.abs(red(n, 4, 4) - expected) <= 4, `crop visible exactly on frame ${n}`);
+    else assert.ok(Math.abs(red(n, 4, 4) - 17) <= 4, `brand edge outside cutaway on frame ${n}`);
+  }
+  t.diagnostic(`rotated 160x240 source; crop 128x72 at 16,80; 30/30 source-frame centers match, cutaway visible on frames 8–17 only; maximum gray error ${maxError.toFixed(3)}`);
+});
+
+
+test("cropped foreground evidence includes wash margins, active area and actual push endpoints", () => {
+  const p = structuredClone(plan), idx = structuredClone(index);
+  p.look = { letterbox: 2.35 };
+  idx.sources.phone = { ...idx.sources.phone, width: 2160, height: 3840 };
+  p.items[2].sourceCrop = { x: 0, y: 650 / 3840, w: 1, h: 2400 / 3840 };
+  p.items[2].fit = "wash"; p.items[2].push = 1.2;
+  let r = resolvePlan(p, { manifest, index: idx }), f = r.items[2].framing.foreground;
+  assert.ok(f.height * 1.2 <= 818 * 0.9);
+  assert.ok(f.width * 1.2 <= 1920 * 0.9);
+  assert.equal(f.endScaleY, f.scaleY * 1.2);
+  assert.ok(f.endScaleX <= 1.5 && f.endScaleY <= 1.5);
+  p.items[2].out = p.items[2].in + 1 / 30;
+  r = resolvePlan(p, { manifest, index: idx }); f = r.items[2].framing.foreground;
+  assert.equal(f.endScaleX, f.scaleX); assert.equal(f.endScaleY, f.scaleY);
+});
+
+
+test("cropped cover warns when push alone exceeds 1.5x, while a single frame has no push", { timeout: 120000 }, async (t) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-crop-push-"));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  writeJSON(path.join(folder, "brand.json"), brand);
+  const file = path.join(folder, "source.mp4");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=red:s=1280x720:r=30:d=0.1", "-c:v", "libx264", "-preset", "ultrafast", file], { capture: true });
+  const m = { ...manifest, sources: [{ id: "phone", path: "source.mp4", kind: "broll", audio: "none", rights: "r1" }], proof: [] };
+  const idx = { sources: { phone: await probeSource(file) } };
+  const p = { ...plan, look: { grade: "off" }, overlays: [], cutaways: [], items: [{ id: "push", kind: "clip", sourceId: "phone", in: 0, out: 0.1, role: "room", audio: "mute", fit: "cover", push: 1.06, sourceCrop: { x: 0, y: 0, w: 1, h: 1 } }] };
+  const messages = [];
+  let result = await compileVersion(folder, p, { manifest: m, index: idx, encoder: "libx264", print: (message) => messages.push(message) });
+  assert.ok(messages.some((message) => /requested 1.59x enlargement at end of push/.test(message)));
+  assert.equal(result.resolvedPlan.items[0].framing.foreground.endScaleX, 1.59);
+  p.items[0].out = 1 / 30; messages.length = 0;
+  result = await compileVersion(folder, p, { manifest: m, index: idx, encoder: "libx264", print: (message) => messages.push(message) });
+  assert.equal(messages.some((message) => /enlargement/.test(message)), false);
+  assert.equal(result.resolvedPlan.items[0].framing.foreground.endScaleX, 1.5);
 });
