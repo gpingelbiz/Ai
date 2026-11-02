@@ -338,7 +338,7 @@ export async function prepareIntroAssets(plan, { manifest, index, clientDir, pro
           } finally { fs.rmSync(temp, { force: true }); }
         }
       }
-      prepared[entry.id][l.id] = { file: name, original, sourceHash, width: meta.width, height: meta.height, filter, ...(cutout ? { cutout: cutout.cutout, matteKey: cutout.key, warning: cutout.warning } : {}) };
+      prepared[entry.id][l.id] = { file: name, original, sourceHash, width: meta.width, height: meta.height, filter: filter && String(filter).replace(/\/(Users|home)\/[^/:,]+/g, "/$1/local"), ...(cutout ? { cutout: cutout.cutout, matteKey: cutout.key, warning: cutout.warning } : {}) };
     }
   }
   return { prepared, warnings };
