@@ -348,3 +348,9 @@ test("checkPick keeps weapon lines on the speaker", async () => {
   const groups = [{ start: 49.5, end: 50.1, text: "Bring a knife" }, { start: 50.1, end: 51.6, text: "kill the snake okay?" }];
   assert.match(checkPick({ shows: "knife", scene: "A hunting knife in a leather sheath on a jungle log." }, { i: 0, ...groups[0] }, groups, { len: 1.6 }), /weapon stays on the speaker: knife/);
 });
+
+test("checkPick reads a hyphenated scene (two-by-four) as separate words", async () => {
+  const { checkPick } = await import("../src/broll.mjs");
+  const groups = [{ start: 51.66, end: 52.06, text: "Bring a two" }, { start: 52.06, end: 52.6, text: "by four" }];
+  assert.equal(checkPick({ shows: "two by four", scene: "Cropped hands lower a wooden two-by-four over wet sand." }, { i: 0, ...groups[0] }, groups, { len: 2 }), null);
+});

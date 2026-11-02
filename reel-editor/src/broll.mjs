@@ -108,7 +108,9 @@ export function checkPick(pick, candidate, groups, { len = 2.4 } = {}) {
   const missing = shows.find((w) => !spoken.has(w));
   if (missing) return `shows word not spoken: ${missing}`;
   const noun = shows.reduce((a, b) => b.length > a.length ? b : a);
-  if (!words(pick.scene).includes(noun)) return `scene does not contain ${noun}`;
+  // Split the scene on any non-letter so "a wooden two-by-four" names "four".
+  const sceneWords = String(pick.scene || "").split(/[^\p{L}\p{N}']+/u).map(norm).filter(Boolean);
+  if (!sceneWords.includes(noun)) return `scene does not contain ${noun}`;
   const dark = String(pick.scene || "").match(/\b(rope|cord|strap|noose|lasso|cable|chain)s?\b/i);
   if (dark) return `dark-read word: ${dark[0]}`;
   // A weapon line ("bring a knife, kill the snake") stays on the speaker: no cutaway of the weapon at all.
