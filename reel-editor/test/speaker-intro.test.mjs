@@ -319,3 +319,15 @@ test('repeated animation properties, face observations outside the frame and lea
   const p = plan(); p.items[0].protect = true; p.items[0].faceRects = [{ x: 5000, y: 5000, w: 50, h: 50 }]; assert.ok(errors(resolve(p)).some(p => /protected speaking face/.test(p.message)));
   const m = structuredClone(manifest); m.identity.name = 'Greg Pingel'; assert.ok(errors(resolve(plan(), m)).some(p => /Greg/.test(p.message)));
 });
+
+test("intro sourceWordRange defers to composition when the index has no words (plan-only probe index)", async () => {
+  const { resolveIntro } = await import("../src/speaker-intro.mjs");
+  const plan = { canvas: { width: 1920, height: 1080, fps: 30 }, look: { letterbox: null },
+    items: [{ id: "a", kind: "clip", sourceId: "s", in: 0, out: 4, audio: "source" }],
+    overlays: [{ id: "o", at: "a", offset: 0, duration: 3, card: { type: "intro", layers: [{ id: "q", kind: "text", from: 1, to: 80, rect: { x: 144, y: 300, w: 1100, h: 300 }, itemId: "a", sourceWordRange: { start: 0, end: 1 }, fontSize: 112, wordByWord: true, allowOverFace: true }] } }] };
+  const manifest = { sources: [{ id: "s", kind: "stage", audio: "ok" }] };
+  const out = resolveIntro(plan.overlays[0].card, { plan, entry: plan.overlays[0], manifest, index: { sources: { s: { width: 1920, height: 1080 } } }, mode: "overlay" });
+  const problems = out.problems || [];
+  assert.ok(!problems.some((p) => p.level === "error" && /sourceWordRange|evidence|lineBreaks|accentWord|fit at the minimum/.test(p.message)), JSON.stringify(problems));
+  assert.ok(problems.some((p) => p.level === "warn" && /checked against indexed words/.test(p.message)));
+});

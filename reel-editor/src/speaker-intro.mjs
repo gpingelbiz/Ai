@@ -126,7 +126,7 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
     if (l.bounds.x < SAFE - 1e-7 || l.bounds.y < box.y + SAFE - 1e-7 || l.bounds.x + l.bounds.w > box.width - SAFE + 1e-7 || l.bounds.y + l.bounds.h > box.y + box.height - SAFE + 1e-7) fail("animated bounds leave the safe margin");
     if (l.kind === "text") {
       const evidence = [l.identity != null, l.proofId != null, l.sourceWordRange != null].filter(Boolean).length;
-      let text = "";
+      let text = "", deferred = false;
       if (evidence !== 1) fail("text needs exactly one identity, proofId or sourceWordRange provenance");
       if (l.identity != null) {
         if (["headshot", "headshotRights"].includes(l.identity) || typeof manifest.identity?.[l.identity] !== "string") fail("identity must name a manifest identity string");
@@ -136,7 +136,9 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
       if (l.sourceWordRange != null) {
         const item = introItems(plan).find((i) => i.id === l.itemId), range = l.sourceWordRange;
         const transcript = row(index, item?.sourceId)?.words;
-        if (!item || item.kind !== "clip" || item.audio === "mute" || manifest.sources?.find((s) => s.id === item.sourceId)?.audio !== "ok" || !Array.isArray(transcript)) fail("sourceWordRange needs an audible retained item and indexed words");
+        if (!item || item.kind !== "clip" || item.audio === "mute" || manifest.sources?.find((s) => s.id === item.sourceId)?.audio !== "ok") fail("sourceWordRange needs an audible retained item and indexed words");
+        // A probe-only index (--plan-only) has no words yet: defer the provenance check to composition, like keywords.
+        else if (!Array.isArray(transcript)) { deferred = true; add(`${label}: sourceWordRange is checked against indexed words at composition`, "warn"); }
         else if (!range || Object.keys(range).some((k) => !["start", "end"].includes(k)) || !Number.isInteger(range.start) || !Number.isInteger(range.end) || range.start < 0 || range.end < range.start || range.end >= transcript.length) fail("invalid inclusive sourceWordRange");
         else {
           const selected = transcript.slice(range.start, range.end + 1);
@@ -156,6 +158,8 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
         if (l.sourceWordRange || !Number.isInteger(range?.start) || !Number.isInteger(range?.end) || range.start < 0 || range.end < range.start || range.end >= list.length || Object.keys(range).some((k) => !["start", "end"].includes(k))) fail("words must select a contiguous identity/proof word range");
         else text = list.slice(range.start, range.end + 1).join(" ");
       }
+      if (deferred) { l.text = ""; l.deferred = true; l.font ??= "display"; l.color ??= "ink"; if (!Array.isArray(l.lineBreaks)) l.lineBreaks = []; }
+      else {
       if (!text.trim()) fail("missing evidence text");
       l.text = text;
       l.font ??= "display"; l.color ??= "ink";
@@ -165,6 +169,7 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
       if (l.accentWord != null && (!Number.isInteger(l.accentWord) || l.accentWord < 0 || l.accentWord >= words(text).length)) fail("accentWord must index an evidence word");
       l.layout = textLayout(l, text);
       if (!l.layout.fits) fail("text cannot fit at the minimum readable size (display 48px, body 32px)");
+      }
     }
     if (["image", "video"].includes(l.kind)) {
       const source = manifest.sources?.find((s) => s.id === l.sourceId), proof = manifest.proof?.find((p) => p.id === l.proofId);
