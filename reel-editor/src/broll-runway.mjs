@@ -10,7 +10,7 @@ import { recordUsage, reelUsageNote } from "./usage.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3 } from "./util.mjs";
 import { findLibraryClip, saveLibraryClip, writeBrollCredits } from "./broll-library.mjs";
 
-export const PROMPT_VERSION = "literal-video-v5";
+export const PROMPT_VERSION = "literal-video-v6";
 
 /** Stable across retries; a new prompt version intentionally starts a new comparison. */
 export function shotSeed(workDir, line) {
@@ -135,7 +135,7 @@ Accepted shots require ${spacing} seconds from one shot's END to the next START.
 ${PICKS_RULES.replace("MAX_DURATION", String(Math.min(2.5, duration)))}
 ${world ? `The speaker's world (only for lines about their own life and work; never use it to replace an image they name; the named thing wins): ${world}` : ""}
 ${style ? `Optional visual style: ${style}` : ""}
-${recent.length ? `Recent scenes; choose a different relevant event or leave Greg visible:\n${uniqueScenes(recent).slice(-12).map((s) => `- ${s}`).join("\n")}` : ""}
+${recent.length ? `Recent scenes are visual references only. Never skip a named subject because a recent reel showed it. Show the same subject from a different angle, setting or action. The library's 10-reel exclusion applies per clip, never per subject:\n${uniqueScenes(recent).slice(-12).map((s) => `- ${s}`).join("\n")}` : ""}
 
 Hook:
 ${hook || "(none)"}

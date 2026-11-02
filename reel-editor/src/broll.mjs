@@ -9,11 +9,32 @@ import { conformStill, hasRunway } from "./runway.mjs";
 import { createStockSearch, makeStockClip } from "./broll-stock.mjs";
 import { findLibraryClip, writeBrollCredits } from "./broll-library.mjs";
 
-export const PROMPT_VERSION = "literal-codex-v4";
+export const PROMPT_VERSION = "literal-codex-v5";
+
+let testCache;
+/** Tests get one disposable scene history and clip bank per worker, unless they supply explicit paths. */
+export function brollTestCache() {
+  if (!testCache) {
+    testCache = fs.mkdtempSync(path.join(os.tmpdir(), "reel-broll-test-"));
+    process.once("exit", () => fs.rmSync(testCache, { recursive: true, force: true }));
+  }
+  return testCache;
+}
+
+/** Keep each route step on one line, including CLI errors, without exposing credentials. */
+export function brollStep(pick, message, deps = {}) {
+  let safe = String(message);
+  for (const [name, value] of Object.entries({ ...process.env, ...deps.env })) {
+    if (/key|token|secret|password/i.test(name) && value) {
+      for (const secret of new Set([value, encodeURIComponent(value)])) safe = safe.replaceAll(secret, "[redacted]");
+    }
+  }
+  (deps.logFn || log)(`b-roll: line ${pick.line}: ${safe.replace(/\s+/g, " ").trim()}`);
+}
 
 /** Scenes drawn for recent reels, so the next reel does not get the same empty conference room again. */
 // REEL_CACHE gives a client its own scene history, so its b-roll never steers off (or into) Greg's scenes.
-export const recentFile = (env = process.env) => env.REEL_BROLL_RECENT || path.join(env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-recent.json");
+export const recentFile = (env = process.env) => env.REEL_BROLL_RECENT || path.join(env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT ? brollTestCache() : env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-recent.json");
 export function readRecent(file = recentFile()) {
   try { return uniqueScenes(JSON.parse(fs.readFileSync(file, "utf8")).scenes || []); } catch { return []; }
 }
@@ -179,9 +200,9 @@ export const PICKS_SCHEMA = {
 };
 
 /** Drawing instructions use the daylight opening-frame rules, without the older documentary finish. */
-export function codexStillInstructions({ aspect = "9:16", style = "", file } = {}) {
+export function codexStillInstructions({ aspect = "9:16", style = "", file, assignedFiles = false } = {}) {
   return [
-    `Use your image generation tool to draw each opening scene as a vertical ${aspect} (1080x1920) image. ${file ? `Save only ${file} in the current folder.` : "Save broll-1.png, broll-2.png and so on in the current folder, in rank order."}`,
+    `Use your image generation tool to draw each opening scene as a vertical ${aspect} (1080x1920) image. ${file ? `Save only ${file} in the current folder.` : assignedFiles ? "Save each image in the current folder using exactly the file name assigned in the picks below." : "Save broll-1.png, broll-2.png and so on in the current folder, in rank order."}`,
     `Look for every image: ${STILL_STYLE}${style ? ` ${style}` : ""}`,
     "Draw the named subject big, with the complete action area above captions. No faces, lettering, numbers or logos. Never draw a weapon, hanging rope, neck contact or harm.",
     "Do not run commands or write any other files. Return the saved file name with each pick. An image tool failure drops that candidate.",
@@ -278,27 +299,55 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
     return [];
   }
   const valid = validateBrollPicks(picks, candidates, groups, timing, settings);
-  const shots = [];
-  const planned = sourcesFirst ? valid : valid.filter((p) => savedImage(dir, path.basename(String(p.file || ""))));
+  const shots = [], fallbacks = [];
+  const imageFor = (p) => p.file ? savedImage(dir, path.basename(String(p.file))) : null;
+  const planned = sourcesFirst ? valid : valid.filter(imageFor);
+  for (const p of valid) if (!planned.includes(p)) brollStep(p, "dropped: Codex saved no opening image", deps);
   const search = createStockSearch({ env: deps.env, fetchFn: deps.fetchFn, now: deps.now, maxSearches: settings.stockMaxSearches ?? 6 });
-  for (const [k, shot] of placePlannedBroll(planned, candidates, { gap, max, timing }).entries()) {
-    const pick = valid.find((p) => p.line === shot.line);
+  const placed = placePlannedBroll(planned, candidates, { gap, max, timing });
+  for (const p of planned) if (!placed.some((s) => s.rank === p.rank)) brollStep(p, `dropped: no room within ${gap}s spacing and ${max}-shot limit before the next subject`, deps);
+  const placeStill = ({ pick, shot, k }, file) => {
+    shots.push({ ...shot, ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}), motion: ["in", "left", "out", "right"][k % 4], file, stillSource: "codex" });
+    brollStep(pick, `placed Codex still at ${shot.start}s for ${shot.duration}s`, deps);
+  };
+  for (const [k, shot] of placed.entries()) {
+    const pick = valid.find((p) => p.rank === shot.rank);
     let moving;
-    if (settings.library) moving = await findLibraryClip({ pick, shot, groups, workDir, dir, deps });
-    if (!moving && settings.stock?.length) moving = await makeStockClip({ pick, shot, groups, workDir, dir, settings, search, deps });
-    if (moving) { shots.push({ ...moving, ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}) }); continue; }
-    let file = savedImage(dir, path.basename(String(pick.file || "")));
-    if (sourcesFirst && !file) {
-      try {
-        const name = `broll-${k + 1}.png`;
-        await exec([codexStillInstructions({ aspect: settings.aspect || "9:16", style: settings.style, file: name }),
-          `Draw this approved scene only: ${pick.scene}. Required subject: ${pick.shows}. Harmless event: ${pick.action}.`,
-          `Reply with the same pick and file: ${JSON.stringify({ picks: [{ ...pick, file: name }] })}`].join("\n"), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
-        file = savedImage(dir, name);
-      } catch { warn("b-roll: fallback still unavailable; keeping the speaker"); }
+    if (settings.library) {
+      moving = await findLibraryClip({ pick, shot, groups, workDir, dir, deps });
+      brollStep(pick, moving ? `library hit ${moving.libraryId}` : "library miss: no eligible clip passed inspection", deps);
     }
-    if (file) shots.push({ ...shot, ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}), motion: ["in", "left", "out", "right"][k % 4], file, stillSource: "codex" });
+    if (!moving && settings.stock?.length) moving = await makeStockClip({ pick, shot, groups, workDir, dir, settings, search, deps });
+    if (moving) {
+      shots.push({ ...moving, ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}) });
+      brollStep(pick, `placed ${moving.source} clip at ${moving.start}s for ${moving.duration}s`, deps);
+      continue;
+    }
+    const file = imageFor(pick);
+    if (file) { brollStep(pick, "still drawn: opening image saved", deps); placeStill({ pick, shot, k }, file); }
+    else fallbacks.push({ pick, shot, k, name: `broll-${k + 1}.png` });
   }
+  // One image session for every footage miss; a failed image must not stop the other picks.
+  if (fallbacks.length) {
+    for (const { pick } of fallbacks) brollStep(pick, "still requested: footage unavailable", deps);
+    let failure;
+    try {
+      await exec([codexStillInstructions({ aspect: settings.aspect || "9:16", style: settings.style, assignedFiles: true }),
+        "Draw every approved scene below, one image per pick, using exactly its assigned file name. Keep the given order and file names, even when a pick fails. If one image fails, continue with the remaining picks. Do not reconsider the picks or search for footage.",
+        ...fallbacks.map(({ pick, name }) => `Draw this approved scene only: ${pick.scene}. Required subject: ${pick.shows}. Harmless event: ${pick.action}. Save as ${name}.`),
+        `Reply with these same picks and their saved file names: ${JSON.stringify({ picks: fallbacks.map(({ pick, name }) => ({ ...pick, file: name })) })}`,
+      ].join("\n"), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
+    } catch (e) { failure = String(e.message).split("\n")[0]; }
+    for (const item of fallbacks) {
+      const file = savedImage(dir, item.name);
+      if (file) { brollStep(item.pick, `still drawn: ${item.name}`, deps); placeStill(item, file); }
+      else {
+        brollStep(item.pick, `still failed: ${failure || `Codex did not save a usable ${item.name}`}`, deps);
+        brollStep(item.pick, "dropped: no usable image after footage miss", deps);
+      }
+    }
+  }
+  shots.sort((a, b) => a.start - b.start);
   writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, stillSource: "codex", shots });
   writeBrollCredits(workDir, shots);
   if (shots.length) rememberScenes(shots.map((s) => s.scene), recentFile(deps.env));

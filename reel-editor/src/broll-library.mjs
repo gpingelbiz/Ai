@@ -2,11 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { checkRunwayVideo, trimRunwayClip } from "./broll-runway.mjs";
-import { checkPick, subjectWords } from "./broll.mjs";
+import { checkPick, subjectWords, brollTestCache } from "./broll.mjs";
 import { eventInPoint } from "./broll-qc.mjs";
 import { ensureDir, readJSON, writeJSON, sha1, warn } from "./util.mjs";
 
-export const libraryDir = (env = process.env) => env.REEL_BROLL_LIBRARY || path.join(env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-library");
+export const libraryDir = (env = process.env) => env.REEL_BROLL_LIBRARY || path.join(env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT ? brollTestCache() : env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-library");
 const indexFile = (env) => path.join(libraryDir(env), "index.json");
 export function readLibrary(env = process.env) {
   try { const index = readJSON(indexFile(env)); if (!Array.isArray(index.clips) || !Array.isArray(index.reels)) throw new Error("invalid clip library"); return index; } catch { return { clips: [], reels: [] }; }

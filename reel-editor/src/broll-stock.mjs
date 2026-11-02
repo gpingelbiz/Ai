@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { claudeLook, firstJSON } from "./claude.mjs";
 import { timeLabel } from "./broll-qc.mjs";
-import { checkPick } from "./broll.mjs";
+import { checkPick, brollStep } from "./broll.mjs";
 import { reviewMovingClip, saveLibraryClip, readLibrary, recentLibraryReels } from "./broll-library.mjs";
 import { readJSON, writeJSON, sha1, run, warn } from "./util.mjs";
 
@@ -105,20 +105,29 @@ export async function conformStockClip(input, file, { runFn = run } = {}) {
 }
 
 export async function makeStockClip({ pick, shot, groups, workDir, dir, settings = {}, search, deps = {} }) {
-  if (checkPick(pick, shot, groups, { len: shot.duration })) return null;
+  const why = checkPick(pick, shot, groups, { len: shot.duration });
+  if (why) { brollStep(pick, `stock skipped: ${why}`, deps); return null; }
   const env = deps.env || process.env, look = deps.claudeLook || claudeLook;
+  let stage = "search";
   try {
     const bank = readLibrary(env), recent = recentLibraryReels(bank, workDir);
-    const candidates = (await search(pick, settings.stock)).filter((c) => !bank.clips.some((l) => l.licence?.provider === c.provider && String(l.licence.id) === String(c.id) && l.usedIn.some((use) => recent.has(use.reel)))).slice(0, 6);
-    if (!candidates.length) return null;
+    const found = await search(pick, settings.stock);
+    const candidates = found.filter((c) => !bank.clips.some((l) => l.licence?.provider === c.provider && String(l.licence.id) === String(c.id) && l.usedIn.some((use) => recent.has(use.reel)))).slice(0, 6);
+    for (const provider of new Set([...(settings.stock || ["pexels", "pixabay"]), ...found.map((c) => c.provider)])) {
+      brollStep(pick, `stock ${provider}: ${found.filter((c) => c.provider === provider).length} candidates found, ${candidates.filter((c) => c.provider === provider).length} eligible`, deps);
+    }
+    if (!candidates.length) { brollStep(pick, "stock choice none: no eligible candidates after search and recent-clip exclusion", deps); return null; }
     const evidence = fs.mkdtempSync(path.join(dir, "stock-"));
+    stage = "contact sheet";
     const sheet = await (deps.stockContactSheet || stockContactSheet)(candidates, { dir: evidence, deps });
+    stage = "Claude description";
     const open = firstJSON(await look(`Inspect the numbered contact sheet ${JSON.stringify(path.basename(sheet))}. Describe only what is visibly present in each numbered image: subject, position, surroundings and lighting. State uncertainty. Do not guess intended meaning. Reply JSON only: {"seen":"..."}`, { cwd: evidence }));
-    if (typeof open.seen !== "string" || !open.seen.trim()) return null;
+    if (typeof open.seen !== "string" || !open.seen.trim()) { brollStep(pick, "stock Claude choice none: missing independent description", deps); return null; }
     const rejected = [], selections = [];
     const saveSelection = () => writeJSON(path.join(evidence, "selection.json"), { candidates, seen: open.seen, selections });
     saveSelection();
     for (let attempt = 0; attempt < 2; attempt++) {
+      stage = "Claude choice";
       const result = firstJSON(await look(`Inspect ${JSON.stringify(path.basename(sheet))}. Your independent description: ${JSON.stringify(open.seen)}.
 Required subject: ${JSON.stringify(pick.shows)}. Required harmless event: ${JSON.stringify(pick.action)}.
 Spoken context: ${JSON.stringify(groups.filter((g) => g.start >= shot.start - 3 && g.start <= shot.start + shot.duration + 3).map((g) => g.text).join(" "))}.
@@ -126,18 +135,28 @@ Choose one image that unmistakably shows the named subject positioned for an act
 Candidate numbers are 1 through ${candidates.length}, labelled as decimals. Excluded after failed clip checks: ${JSON.stringify(rejected)}.
 Reply JSON only: {"choice":N|"none","shows":true|false,"safe":true|false,"humanFaces":true|false,"readableText":true|false,"logos":true|false,"watermarks":true|false,"why":"..."}`, { cwd: evidence }));
       selections.push(result); saveSelection();
-      if (!Number.isInteger(result.choice) || result.choice < 1 || result.choice > candidates.length || rejected.includes(result.choice) || result.shows !== true || result.safe !== true || ["humanFaces", "readableText", "logos", "watermarks"].some((f) => result[f] !== false)) return null;
+      const candidate = Number.isInteger(result.choice) && candidates[result.choice - 1];
+      const choice = candidate ? `${result.choice} (${candidate.provider}:${candidate.id})` : "none";
+      brollStep(pick, `stock Claude choice ${choice}: ${result.why || "no reason supplied"}`, deps);
+      if (!candidate || rejected.includes(result.choice) || result.shows !== true || result.safe !== true || ["humanFaces", "readableText", "logos", "watermarks"].some((f) => result[f] !== false)) {
+        brollStep(pick, "stock outcome none: Claude declined or the choice failed subject/safety checks", deps);
+        return null;
+      }
       rejected.push(result.choice);
       const c = candidates[result.choice - 1], variant = c.files[0];
       try {
         const original = path.join(evidence, `${c.provider}-${c.id}.download.mp4`), file = path.join(evidence, `${c.provider}-${c.id}.mp4`);
+        stage = "download";
         await download(variant.url, original, deps.fetchFn || fetch);
+        stage = "conform";
         await (deps.conformStockClip || conformStockClip)(original, file, { runFn: deps.runFn });
+        stage = "duration probe";
         const probe = await (deps.runFn || run)("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file], { capture: true });
         const duration = Number(probe.out?.trim());
-        if (!(duration >= 3 && duration <= 20)) continue;
+        if (!(duration >= 3 && duration <= 20)) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: duration must be 3–20 seconds`, deps); continue; }
+        stage = "full and trimmed clip inspection";
         const accepted = await reviewMovingClip({ file, duration, pick, shot, groups, dir: evidence, deps });
-        if (!accepted) continue;
+        if (!accepted) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: full or trimmed clip failed event/look inspection`, deps); continue; }
         const licence = { provider: c.provider, id: c.id, pageUrl: c.pageUrl, creator: c.creator, downloadedAt: new Date((deps.now || Date.now)()).toISOString() };
         const output = { ...accepted, source: c.provider, licence };
         if (settings.library) {
@@ -146,9 +165,11 @@ Reply JSON only: {"choice":N|"none","shows":true|false,"safe":true|false,"humanF
             if (saved) output.libraryId = saved.id;
           } catch { warn("b-roll: approved stock clip could not be saved to the library"); }
         }
+        brollStep(pick, `stock ${c.provider}:${c.id} accepted: full and trimmed clip passed`, deps);
         return output;
-      } catch { warn("b-roll: chosen stock clip unavailable or rejected; trying the next candidate"); }
+      } catch (e) { brollStep(pick, `stock ${c.provider}:${c.id} failed at ${stage}: ${String(e.message).split("\n")[0]}; trying the next candidate`, deps); }
     }
-  } catch { warn("b-roll: stock inspection unavailable; keeping the still fallback"); }
+    brollStep(pick, "stock outcome none: both chosen clips failed", deps);
+  } catch (e) { brollStep(pick, `stock choice none: ${stage} failed: ${String(e.message).split("\n")[0]}`, deps); }
   return null;
 }

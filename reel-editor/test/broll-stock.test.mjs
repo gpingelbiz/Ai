@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { createStockSearch, normaliseStock, stockContactSheet, conformStockClip, makeStockClip, stockCacheDir } from "../src/broll-stock.mjs";
 import { libraryDir, readLibrary, saveLibraryClip, findLibraryClip, reviewMovingClip, writeBrollCredits } from "../src/broll-library.mjs";
-import { makeBroll, picksPrompt } from "../src/broll.mjs";
-import { makeRunwayBroll } from "../src/broll-runway.mjs";
+import { makeBroll, picksPrompt, recentFile, rememberScenes, readRecent } from "../src/broll.mjs";
+import { makeRunwayBroll, runwayPicksPrompt } from "../src/broll-runway.mjs";
 import { loadPreset, CLIENT_BASE } from "../src/presets.mjs";
 import { brandPreset } from "../src/brandkit.mjs";
 import { writeJSON } from "../src/util.mjs";
@@ -31,9 +31,9 @@ const shot = { line: 1, start: 6.4, duration: 1.6, text: groups[1].text, shows: 
 const verdict = { ok: true, look: "pass", onset: 0.2, contact: 0.6, completion: 1.1 };
 const choose = (choice = 1, over = {}) => JSON.stringify({ choice, shows: true, safe: true, humanFaces: false, readableText: false, logos: false, watermarks: false, ...over });
 function fixture() {
-  const dir = folder(), calls = { checks: [], downloads: [], looks: [], trims: [], runs: [] }, env = { REEL_CACHE: dir, PEXELS_API_KEY: "secret", PIXABAY_API_KEY: "secret-two" };
+  const dir = folder(), calls = { checks: [], downloads: [], looks: [], trims: [], runs: [], logs: [] }, env = { REEL_CACHE: dir, REEL_BROLL_LIBRARY: path.join(dir, "broll-library"), REEL_BROLL_RECENT: path.join(dir, "recent.json"), PEXELS_API_KEY: "secret", PIXABAY_API_KEY: "secret-two" };
   const deps = {
-    env, now: () => 1800000000000, hasCodex: () => true, codexPausedUntil: () => 0, hasClaude: () => true, hasRunway: fail,
+    env, logFn: (s) => calls.logs.push(s), now: () => 1800000000000, hasCodex: () => true, codexPausedUntil: () => 0, hasClaude: () => true, hasRunway: fail,
     makeClip: fail, animateStill: fail, makeSound: fail, organization: fail, claudeText: fail,
     fetchFn: async (url) => { calls.downloads.push(url); return json({}); },
     runFn: async (cmd, args) => { calls.runs.push({ cmd, args }); if (cmd === "ffprobe") return { out: "6" }; fs.writeFileSync(args.at(-1), "frame"); return {}; },
@@ -211,6 +211,8 @@ test("Codex folder plans without drawing; library wins before stock and never ca
   const args = { workDir: f.dir, groups, duration: 20, settings: { animate: false, library: true, stock: ["pexels"] }, deps: f.deps };
   const [accepted] = await makeBroll(args);
   assert.equal(accepted.source, "library"); assert.equal(codex, 1); assert.equal(accepted.start, 6.4); assert.equal(accepted.duration, 1.6);
+  assert.ok(f.calls.logs.some((s) => /library hit/.test(s)));
+  assert.ok(f.calls.logs.some((s) => /placed library clip at 6.4s for 1.6s/.test(s)));
   assert.deepEqual(await makeBroll(args), [accepted]); assert.equal(codex, 1);
   assert.match(fs.readFileSync(path.join(f.dir, "broll", "broll.json"), "utf8"), /"licence"/);
 });
@@ -233,6 +235,140 @@ test("no keys or no stock fit draws today's Codex still as the last fallback", a
     assert.match(accepted.file, /broll-1.png$/); assert.equal(accepted.stillSource, "codex"); assert.equal(codex, 2);
     assert.equal(f.calls.checks.length, 0);
   }
+});
+
+test("all stock choices refused: quicksand and cream fall back together in one Codex image session", async () => {
+  const f = fixture(), sessions = [];
+  const source = [
+    { start: 6, text: "quicksand around my feet" }, { start: 9, text: "then keep walking" },
+    { start: 20, text: "cream on a rash" }, { start: 23, text: "be prepared for it" },
+  ].map((g) => ({ ...g, words: g.text.split(" ").map((text, i) => ({ text, start: g.start + i * 0.4, end: g.start + i * 0.4 + 0.4 })) }));
+  // Rank order differs from time order, as in a real planner response. Neither stock subject fits.
+  const picks = [2, 0].map((line) => ({ ...pick, line, shows: line === 2 ? "cream" : "quicksand", stockQuery: line === 2 ? "cream rash" : "quicksand",
+    scene: line === 2 ? "A tube of cream above reddened skin in daylight." : "A patch of quicksand in daylight.",
+    action: line === 2 ? "The tube squeezes cream onto skin." : "The quicksand shifts gently.",
+    endsAt: { line, wordIndex: 3, text: source[line].words[3].text }, endsBefore: { line: line + 1, wordIndex: 0, text: source[line + 1].words[0].text },
+  }));
+  f.deps.fetchFn = async (url) => { assert.ok(url.startsWith("https://pixabay.com/api/videos/")); return json({ hits: Array.from({ length: 6 }, (_, id) => pixabay({ id })) }); };
+  f.deps.claudeLook = async (prompt) => prompt.includes('"seen":"..."') ? '{"seen":"Desserts and ordinary wet sand, neither requested subject."}' : choose("none", { shows: false, why: "No panel shows the requested subject." });
+  f.deps.codexExec = async (prompt, { cwd }) => {
+    sessions.push(prompt);
+    if (sessions.length === 1) { assert.match(prompt, /Plan only/); return JSON.stringify({ picks }); }
+    assert.match(prompt, /Draw every approved scene/);
+    assert.match(prompt, /exactly the file name assigned/);
+    assert.doesNotMatch(prompt, /in rank order/);
+    for (const p of picks) assert.match(prompt, new RegExp(`Required subject: ${p.shows}`));
+    for (const name of ["broll-1.png", "broll-2.png"]) fs.writeFileSync(path.join(cwd, name), Buffer.alloc(2000));
+    return JSON.stringify({ picks: picks.map((p, i) => ({ ...p, file: `broll-${i + 1}.png` })) });
+  };
+  const shots = await makeBroll({ workDir: f.dir, groups: source, duration: 32, settings: { library: true, stock: ["pixabay"], gap: 3 }, deps: f.deps });
+  assert.equal(sessions.length, 2, "one planning session plus one session for all fallback images");
+  assert.deepEqual(shots.map((s) => s.shows), ["quicksand", "cream"]);
+  assert.ok(shots.every((s) => s.stillSource === "codex" && fs.statSync(s.file).isFile()));
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json"))).shots, shots);
+  assert.deepEqual(readRecent(recentFile(f.env)), shots.map((s) => s.scene));
+  assert.equal(f.calls.checks.length, 0, "no rejected stock clip is downloaded or reviewed");
+  for (const p of picks) {
+    const steps = f.calls.logs.filter((s) => s.includes(`line ${p.line}:`));
+    for (const pattern of [/library miss/, /stock pixabay: 6 candidates found, 6 eligible/, /stock Claude choice none: No panel/, /still requested/, /still drawn/, /placed Codex still/]) assert.ok(steps.some((s) => pattern.test(s)), String(pattern));
+  }
+  assert.doesNotMatch(f.calls.logs.join("\n"), /secret/);
+});
+
+test("fallback reports missing images and CLI errors, preserves partial output and redacts credentials", async () => {
+  for (const fails of [false, true]) {
+    const f = fixture(); let sessions = 0;
+    f.deps.fetchFn = async () => json({ videos: [] });
+    f.deps.codexExec = async () => {
+      if (++sessions === 1) return JSON.stringify({ picks: [pick] });
+      if (fails) throw new Error("image tool failed: secret-two\nextra detail");
+      return JSON.stringify({ picks: [pick] });
+    };
+    const shots = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { library: true, stock: ["pexels"] }, deps: f.deps });
+    assert.deepEqual(shots, []); assert.equal(sessions, 2);
+    const logs = f.calls.logs.join("\n");
+    assert.match(logs, /stock pexels: 0 candidates found, 0 eligible/);
+    assert.match(logs, fails ? /still failed: image tool failed: \[redacted\]/ : /still failed: Codex did not save a usable broll-1.png/);
+    assert.match(logs, /dropped: no usable image after footage miss/);
+    assert.doesNotMatch(logs, /secret|extra detail/);
+  }
+  const f = fixture(); let sessions = 0;
+  f.deps.fetchFn = async () => json({ videos: [] });
+  f.deps.codexExec = async (_prompt, { cwd }) => {
+    if (++sessions === 1) return JSON.stringify({ picks: [pick] });
+    fs.writeFileSync(path.join(cwd, "broll-1.png"), Buffer.alloc(2000));
+    throw new Error("session interrupted after drawing");
+  };
+  assert.equal((await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps })).length, 1);
+});
+
+test("unplaced alternatives log their drop and never request a fallback image", async () => {
+  const f = fixture(); let sessions = 0;
+  f.deps.fetchFn = async () => json({ videos: [] });
+  f.deps.codexExec = async (_prompt, { cwd }) => {
+    if (++sessions === 1) return JSON.stringify({ picks: [pick, { ...pick, scene: "Another coconut above sand in daylight." }] });
+    fs.writeFileSync(path.join(cwd, "broll-1.png"), Buffer.alloc(2000));
+    return JSON.stringify({ picks: [pick] });
+  };
+  const shots = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps });
+  assert.equal(shots.length, 1); assert.equal(sessions, 2);
+  assert.ok(f.calls.logs.some((s) => /dropped: no room within 6s spacing and 1-shot limit/.test(s)));
+  assert.equal(f.calls.logs.filter((s) => /still requested/.test(s)).length, 1);
+});
+
+test("stock logs accepted choices, rejection stages and inspection failures without leaking keys", async () => {
+  const f = fixture();
+  await makeStockClip(f.args);
+  assert.ok(f.calls.logs.some((s) => /stock Claude choice 1 \(pexels:1\)/.test(s)));
+  assert.ok(f.calls.logs.some((s) => /stock pexels:1 accepted/.test(s)));
+  for (const stage of ["look", "duration", "review", "download"]) {
+    const g = fixture(); let choices = 0;
+    g.deps.claudeLook = async (prompt) => {
+      if (stage === "look") throw new Error("vision failed secret-two");
+      return prompt.includes('"seen":"..."') ? '{"seen":"coconuts on sand"}' : choose(++choices);
+    };
+    if (stage === "duration") g.deps.runFn = async () => ({ out: "2" });
+    if (stage === "review") g.deps.checkRunwayVideo = async () => ({ ok: false });
+    if (stage === "download") g.deps.fetchFn = async () => { throw new Error("download failed secret-two"); };
+    assert.equal(await makeStockClip(g.args), null);
+    const logs = g.calls.logs.join("\n");
+    assert.match(logs, stage === "look" ? /Claude description failed/ : stage === "duration" ? /duration must be 3–20 seconds/ : stage === "review" ? /failed event\/look inspection/ : /failed at download/);
+    assert.doesNotMatch(logs, /secret/);
+    assert.ok(g.calls.logs.every((s) => !/[\r\n]/.test(s)));
+  }
+});
+
+test("both picks prompts preserve recent named subjects and vary only their presentation", () => {
+  const recent = ["A green snake on a branch", "A gorilla in ferns", "A coconut in a palm"];
+  for (const prompt of [picksPrompt, runwayPicksPrompt]) {
+    const text = prompt({ candidates: [], count: 3, recent });
+    assert.match(text, /Never skip a named subject because a recent reel showed it/);
+    assert.match(text, /same subject from a different angle, setting or action/);
+    assert.match(text, /10-reel exclusion applies per clip, never per subject/);
+    for (const scene of recent) assert.ok(text.includes(scene));
+    assert.doesNotMatch(text, /choose a different relevant event or leave Greg visible|pick something clearly different/);
+  }
+});
+
+test("node test runner isolates recent scenes and the library even with a non-test cache path", () => {
+  const f = fixture(), unsafeCache = path.join(os.homedir(), ".cache", "reel-editor");
+  const env = { NODE_TEST_CONTEXT: "child-v8", REEL_CACHE: unsafeCache };
+  const recent = recentFile(env), library = libraryDir(env);
+  assert.equal(recentFile(env), recent, "stable throughout this worker");
+  assert.equal(libraryDir(env), library);
+  assert.ok(path.relative(os.tmpdir(), recent).startsWith("reel-broll-test-"));
+  assert.equal(path.dirname(recent), path.dirname(library));
+  assert.notEqual(recent, path.join(unsafeCache, "broll-recent.json"));
+  assert.notEqual(library, path.join(unsafeCache, "broll-library"));
+  assert.equal(recentFile({}), recent, "injected env cannot hide the real runner context");
+  assert.equal(libraryDir({}), library);
+  assert.equal(recentFile(f.env), f.env.REEL_BROLL_RECENT, "explicit recent path wins");
+  assert.equal(libraryDir(f.env), f.env.REEL_BROLL_LIBRARY, "explicit library path wins");
+  rememberScenes(["a test subject"], recent);
+  assert.ok(readRecent(recent).includes("a test subject"));
+  const clip = seed({ ...f, env });
+  assert.equal(path.dirname(clip.file), library);
+  assert.ok(readLibrary(env).clips.some((c) => c.id === clip.id));
 });
 
 test("Runway folder reuses a library clip before credit checks, even without a Runway key", async () => {
