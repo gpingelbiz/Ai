@@ -40,6 +40,14 @@ export function rotateFilters(cw) {
 /** Legacy BT.2020 conversion, retained for existing plans and the daily pipeline. */
 export const SDR_FILTER = "colorspace=iall=bt2020:all=bt709:format=yuv420p";
 
+let zscaleProbe = null;
+/** The HLG review transform needs ffmpeg's zscale (libzimg); Homebrew's ffmpeg 8.1 on the Mini lacks it. Probed once. */
+export function hasZscale(execute = run) {
+  if (execute !== run) return execute("ffmpeg", ["-hide_banner", "-filters"], { capture: true, allowFail: true }).then((r) => /\bzscale\b/.test(String(r?.out ?? r ?? ""))).catch(() => false);
+  zscaleProbe ||= run("ffmpeg", ["-hide_banner", "-filters"], { capture: true, allowFail: true }).then((r) => /\bzscale\b/.test(String(r?.out ?? r ?? ""))).catch(() => false);
+  return zscaleProbe;
+}
+
 /** HLG/BT.2020 review transform. -1.5 EV is a fixed review starting point, not camera calibration. */
 export function hlgToSdrFilter() {
   return [

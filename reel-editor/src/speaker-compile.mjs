@@ -3,7 +3,7 @@ import path from "node:path";
 import { assetPath, assertNoGreg, LOGO_RELATIONSHIPS, headshotProblems } from "./speaker-intake.mjs";
 import { probeSource } from "./speaker-index.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
-import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr, hlgToSdrFilter } from "./hdr.mjs";
+import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr, hlgToSdrFilter, hasZscale } from "./hdr.mjs";
 import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, foregroundSize, sourceCropOptions, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
 import { measureLoudness } from "./preflight.mjs";
 import { repairOptions, prepareRepair, loadRepairReactions } from "./speaker-enhance.mjs";
@@ -480,12 +480,19 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   const gradeEvidence = (grade) => ({ key: grade.key, measurementKey: grade.measurementKey, measurement: grade.measurement, gradeVersion: grade.gradeVersion, settings: { saturation: 1, ...grade.settings }, fallback: grade.fallback || false });
   const lookDir = ensureDir(path.join(dir, "look")), lookIndex = ensureDir(path.join(folder, "work", "index", "look"));
   if (resolved.look.letterbox) resolved.problems.push({ level: "info", id: "look", message: `Cinematic ${resolved.look.letterbox}:1 letterbox; active image ${resolved.activeBox.width}x${resolved.activeBox.height}. Check heads, hands and slides in the crop.` });
+  // Fail open: without zscale the review transform cannot run, so HLG keeps the legacy conversion.
+  let hlgReview = resolved.look.hlg === "review";
+  if (hlgReview && !(await hasZscale())) {
+    hlgReview = false;
+    const message = "look.hlg review needs ffmpeg's zscale filter (libzimg), which this ffmpeg lacks; HLG sources use the legacy conversion";
+    print(message); resolved.problems.push({ level: "warn", id: "look", message });
+  }
   let chosenEncoder = encoder;
   const input = async (id) => {
     if (normalized.has(id)) return normalized.get(id);
     const s = sourceById.get(id), meta = sourceRow(index, id), original = assetPath(folder, s.path);
     let file = original, hdr = meta.hdr, rotation = meta.rotationCw || 0;
-    if (meta.hdrKind === "hlg" && resolved.look.hlg === "review") {
+    if (meta.hdrKind === "hlg" && hlgReview) {
       const message = `${id}: HLG review transform (-1.5 EV before grading); compare skin and highlights against the legacy render and re-evaluate reviewed trims`;
       print(message); resolved.problems.push({ level: "warn", id, message });
     }
@@ -516,7 +523,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
         args.push("-f", "lavfi", "-i", `color=c=${bg}:s=1920x1080:r=30:d=${frames / 30}`);
         filters.push(`[${inputCount++}:v]setsar=1[${label}]`); return;
       }
-      const hdrFilter = data.meta.hdrKind === "hlg" && resolved.look.hlg === "review" ? hlgToSdrFilter() : data.hdr ? SDR_FILTER : null;
+      const hdrFilter = data.meta.hdrKind === "hlg" && hlgReview ? hlgToSdrFilter() : data.hdr ? SDR_FILTER : null;
       const preFilter = [...rotateFilters(data.rotation), hdrFilter || (["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null)].filter(Boolean).join(",");
       let grade = null;
       if ((entry.look?.grade ?? resolved.look.grade) === "auto") {

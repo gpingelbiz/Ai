@@ -8,8 +8,12 @@ import { measureClip } from "../src/cuts.mjs";
 import { gradeOverrides, gradeSettings, gradePixel, gradeCube, gradeRanges, prepareGrade, lookOptions, fitGraph } from "../src/speaker-look.mjs";
 import { compileVersion, fitGeometry } from "../src/speaker-compile.mjs";
 import { hlgToSdrFilter, SDR_FILTER, SDR_TAGS } from "../src/hdr.mjs";
+import { hasZscale } from "../src/hdr.mjs";
 import { probeSource } from "../src/speaker-index.mjs";
 import { run, writeJSON } from "../src/util.mjs";
+
+// The HLG review transform needs zscale; machines without it fall back (tested below) instead of failing.
+const zscale = await hasZscale();
 
 function temp(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-color-"));
@@ -151,7 +155,7 @@ test("HLG review selection validates globally and leaves existing plans on their
   assert.match(hlgToSdrFilter(), /tin=arib-std-b67.*t=linear.*gbrpf32le.*exposure=-1.5.*tonemap=mobius.*dither=error_diffusion/);
 });
 
-test("10-bit HLG-tagged ramp converts deterministically to SDR with monotonic neutral highlights", async (t) => {
+test("10-bit HLG-tagged ramp converts deterministically to SDR with monotonic neutral highlights", { skip: !zscale && "ffmpeg has no zscale (libzimg)" }, async (t) => {
   const dir = temp(t), file = path.join(dir, "hlg.mkv"), output = path.join(dir, "sdr.mkv");
   await ff(["-f", "lavfi", "-i", "nullsrc=s=96x48:r=30:d=0.5,format=yuv420p10le,geq=lum='64+876*X/(W-1)':cb=512:cr=512,setparams=range=limited:color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc", "-c:v", "ffv1", file]);
   const meta = await probeSource(file); assert.equal(meta.hdrKind, "hlg"); assert.equal(meta.pixFmt, "yuv420p10le");
@@ -175,7 +179,7 @@ test("10-bit HLG-tagged ramp converts deterministically to SDR with monotonic ne
   t.diagnostic(`HLG ramp RGB at x=0/24/48/72/95: ${points.map((p) => p.join(",")).join("; ")}; repeat renders byte-identical; duration ${sdr.videoDuration}s`);
 });
 
-test("speaker compiler selects HLG review for clips and cutaways, preserves plain BT.2020 and the frame clock", { timeout: 120000 }, async (t) => {
+test("speaker compiler selects HLG review for clips and cutaways, preserves plain BT.2020 and the frame clock", { timeout: 120000, skip: !zscale && "ffmpeg has no zscale (libzimg)" }, async (t) => {
   const dir = temp(t), index = { sources: {} }, sources = [];
   const identity = { ev: 0, saturation: 1, contrast: 0, balance: [0, 0, 0], warmth: 0 };
   const brand = { name: "Jane Doe", fonts: { display: "Georgia", body: "Arial" }, colors: { text: "#FFFFFF", accent: "#FFB27D", bg: "#111111" } };
@@ -216,4 +220,10 @@ test("speaker compiler selects HLG review for clips and cutaways, preserves plai
   assert.ok(review.compiled.resolvedPlan.problems.some((p) => /HLG review transform/.test(p.message)));
   assert.equal(plan.look.hlg, undefined);
   t.diagnostic(`compiled HLG/plain/HLG-cutaway RGB: legacy ${legacy.pixels.map((p) => p.join(",")).join("; ")}; review ${review.pixels.map((p) => p.join(",")).join("; ")}; both 12 frames, 0.4s`);
+});
+
+test("zscale probe reads the filter list and treats a failed probe as missing", async () => {
+  assert.equal(await hasZscale(async () => ({ out: " .S zscale            V->V       Apply resizing, colorspace and bit depth conversion." })), true);
+  assert.equal(await hasZscale(async () => ({ out: " .S tonemap           V->V       Conversion to/from different dynamic ranges." })), false);
+  assert.equal(await hasZscale(async () => { throw new Error("no ffmpeg"); }), false);
 });
