@@ -8,6 +8,7 @@ import { norm } from "./text.mjs";
 import { CREDIT_USD, dataURI, failurePolicy, hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt, modelInfo, makeSound } from "./runway.mjs";
 import { recordUsage, reelUsageNote } from "./usage.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3 } from "./util.mjs";
+import { findLibraryClip, saveLibraryClip, writeBrollCredits } from "./broll-library.mjs";
 
 export const PROMPT_VERSION = "literal-video-v5";
 
@@ -457,11 +458,11 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   const key = `${PROMPT_VERSION}|${JSON.stringify({ candidates, groups, settings, hook, cta, duration, busy, tail, footage, caption, stillSource })}`;
   const previous = fs.existsSync(planPath) ? readJSON(planPath) : {};
   const reusable = (s) => /\.mp4$/i.test(s.file || "") && s.move === "none" && s.moves?.ok && s.moves.look === "pass" && !s.soundPending && fs.existsSync(s.file) && (!s.sfx || fs.existsSync(s.sfx));
-  if (!force && previous.key === key && previous.promptVersion === PROMPT_VERSION && previous.complete && previous.shots?.every(reusable)) return previous.shots;
+  if (!force && previous.key === key && previous.promptVersion === PROMPT_VERSION && previous.complete && previous.shots?.every(reusable)) { writeBrollCredits(workDir, previous.shots); return previous.shots; }
   const has = deps.hasRunway || hasRunway, claude = deps.claudeText || claudeText, look = deps.claudeLook || claudeLook;
   const make = deps.makeClip || makeClip, animate = deps.animateStill || animateStill, sound = deps.makeSound || makeSound;
   const org = deps.organization || organization, runner = deps.runFn || run;
-  if (!has() || !(deps.hasClaude || hasClaude)()) { warn("Runway b-roll needs Runway and Claude; skipped"); return []; }
+  if (!(deps.hasClaude || hasClaude)() || !settings.library && !has()) { warn("Runway b-roll needs Runway and Claude; skipped"); return []; }
   const cap = settings.maxCreditsPerReel ?? 300, hard = settings.hardCreditsPerReel ?? 450;
   if (!(cap >= 0) || !(hard >= cap)) throw new Error("Runway budgets require hardCreditsPerReel >= maxCreditsPerReel >= 0");
   const tasks = previous.tasks || [], items = [...(previous.usage || [])], shots = previous.key === key ? (previous.shots || []).filter(reusable) : [];
@@ -476,9 +477,13 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   const journal = { tasks, save };
   const merge = (lines = []) => { for (const line of lines) { const at = line.taskId ? items.findIndex((i) => i.taskId === line.taskId) : -1; if (at < 0) items.push(line); else items[at] = line; } save(); };
   const spent = () => items.filter((i) => !i.taskId || !tasks.some((t) => t.taskId === i.taskId)).reduce((sum, i) => sum + (i.credits || 0), 0) + tasks.reduce((sum, t) => sum + (t.credits ?? t.estimatedCredits ?? 0), 0);
-  let balance = null;
-  try { balance = (await org()).creditBalance; } catch (e) { warn(`runway: balance unavailable (${e.message})`); }
-  const accountLimit = balance == null ? Infinity : spent() + Math.max(0, balance - (settings.keepCredits ?? 0));
+  let balance = null, accountLimit = Infinity, balanceChecked = false;
+  const checkBalance = async () => {
+    if (balanceChecked) return;
+    balanceChecked = true;
+    try { balance = (await org()).creditBalance; } catch (e) { warn(`runway: balance unavailable (${e.message})`); }
+    accountLimit = balance == null ? Infinity : spent() + Math.max(0, balance - (settings.keepCredits ?? 0));
+  };
   const openReserve = (except) => Object.entries(reservations).filter(([id, r]) => id !== except && r.open).reduce((sum, [id, r]) => sum + Math.max(0, r.total - tasks.filter((t) => t.scope === id).reduce((n, t) => n + (t.credits ?? t.estimatedCredits ?? 0), 0)), 0);
   const io = { runFn: runner, fetchFn: deps.fetchFn, sleepFn: deps.sleepFn, journal };
   if (!picks) {
@@ -491,17 +496,23 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   }
   const placed = placePlannedBroll(picks, candidates, { gap, max, timing });
   let referenceImages;
-  if (stillSource === "runway" && footage && (settings.imageModel || "gen4_image") === "nano_banana_2.1") {
-    try {
-      const reference = path.join(dir, "daylight-reference.jpg");
-      await runner("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(placed[0]?.start ?? 0), "-i", footage, "-frames:v", "1", "-vf", "scale=360:-2", reference], { quiet: true });
-      referenceImages = [{ uri: dataURI(reference, "image/jpeg"), tag: "daylightlook" }];
-    } catch (e) { warn(`b-roll: daylight reference unavailable (${e.message}); keeping the speaker`); return shots; }
-  }
   for (const [k, s] of placed.entries()) {
     const p = picks.find((p) => p.line === s.line), models = shotModels(p, settings), seed = shotSeed(workDir, s.line);
     const id = `${namespace}-${s.line}`, name = `broll-${k + 1}-${id}`, budget = planShotBudget(p, s.duration, { ...settings, stillSource });
     if (shots.some((shot) => shot.line === s.line)) { if (reservations[id]) reservations[id].open = false; continue; }
+    if (settings.library) {
+      const reused = await findLibraryClip({ pick: p, shot: s, groups, workDir, dir, deps });
+      if (reused) { shots.push(reused); if (reservations[id]) reservations[id].open = false; save(); continue; }
+    }
+    if (!has()) { warn("b-roll: no library fit and Runway key missing; keeping the speaker"); continue; }
+    await checkBalance();
+    if (!referenceImages && stillSource === "runway" && footage && (settings.imageModel || "gen4_image") === "nano_banana_2.1") {
+      try {
+        const reference = path.join(dir, "daylight-reference.jpg");
+        await runner("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(placed[0]?.start ?? 0), "-i", footage, "-frames:v", "1", "-vf", "scale=360:-2", reference], { quiet: true });
+        referenceImages = [{ uri: dataURI(reference, "image/jpeg"), tag: "daylightlook" }];
+      } catch (e) { warn(`b-roll: daylight reference unavailable (${e.message}); keeping the speaker`); continue; }
+    }
     const state = attempts[id] ||= { stillAttempt: 0, videoAttempt: 0 };
     if (state.clip && previous.shots?.some((shot) => shot.line === s.line && !reusable(shot))) { state.done = false; reservations[id] = { ...reservations[id], open: true }; }
     const shotIO = { ...io, journal: { ...journal, scope: id } };
@@ -567,6 +578,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
           const full = fs.existsSync(fullFile) ? fullFile : clip.mp4;
           const probe = await runner("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", full], { capture: true });
           const clipDuration = Number(probe.out?.trim());
+          clip.sourceDuration = clipDuration;
           if (!(clipDuration > 0)) throw Object.assign(new Error("clip duration unavailable"), { code: "LOCAL_PROCESS" });
           const inspected = await checkRunwayVideo({ file: full, shot: { ...s, duration: clipDuration }, pick: { ...p, kind: models.kind }, groups, dir, threshold: settings.motionThreshold ?? 1, deps });
           if (inspected.unavailable) { state.review = inspected; throw Object.assign(new Error(inspected.why), { code: "CHECK_UNAVAILABLE" }); }
@@ -596,6 +608,15 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
             } catch (e) { merge(e.items); state.soundPending = ["TASK_PENDING", "UNKNOWN_SUBMISSION", "OUTPUT_UNAVAILABLE", "LOCAL_PROCESS"].includes(e.code); warn(`b-roll: sound dropped (${e.message})`); }
           }
           shots.push({ ...s, kind: models.kind, seed: state.seed ?? seed, stillSource, imageModel: stillSource === "codex" ? "codex" : models.imageModel, videoModel: clip.videoModel || models.videoModel, file: clip.mp4, full: clip.full, original: clip.original, inPoint: clip.inPoint, still: clip.png, video: true, move: "none", motion: state.motion || videoMotion(p), scene: p.scene, action: p.action || "the subject moves", check: state.stillAttempt ? "retry-pass" : "pass", seen: state.seen, moves, sourceTimeline: clip.sourceTimeline, endsAt: p.endsAt, endsBefore: p.endsBefore, ...(p.endScene ? { endScene: p.endScene } : {}), ...(p.sound ? { sound: p.sound, soundRole: p.soundRole } : {}), ...(clip.last ? { last: clip.last } : {}), ...(state.soundPending ? { soundPending: true } : {}), ...(sfx ? { sfx, sfxMix } : {}) });
+          if (settings.library) {
+            try {
+              const licence = { provider: "runway", taskIds: tasks.filter((t) => t.scope === id).map((t) => t.taskId).filter(Boolean) };
+              const accepted = shots.at(-1);
+              accepted.licence = licence;
+              const saved = saveLibraryClip({ shot: accepted, pick: p, workDir, source: "runway", licence, duration: clip.sourceDuration, env: deps.env, now: (deps.now || Date.now)() });
+              if (saved) accepted.libraryId = saved.id;
+            } catch { warn("b-roll: approved Runway clip could not be saved to the library"); }
+          }
           state.done = true; save(); break;
         }
         if (moves.dark || moves.humanFaces || moves.readableText || moves.local?.ok === false || state.videoAttempt >= (settings.retrySameModelFirst === false ? 1 : 2)) break;
@@ -637,10 +658,11 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   }
   complete = !Object.values(reservations).some((r) => r.open); save();
   let after = null;
-  try { after = (await org()).creditBalance; } catch {}
+  if (balanceChecked) try { after = (await org()).creditBalance; } catch {}
   const newItems = items.filter((i) => i.taskId || !(previous.usage || []).includes(i));
   try { (deps.recordUsage || recordUsage)({ reel: path.basename(workDir), items: newItems, balance: after }); } catch (e) { warn(`usage ledger: ${e.message}`); }
   fs.writeFileSync(path.join(workDir, "runway usage.txt"), reelUsageNote(items, { balance: after }));
+  writeBrollCredits(workDir, shots);
   if (shots.length) rememberScenes(shots.map((s) => s.scene));
   log(`b-roll: ${shots.length} accepted Runway clips, ${spent()} credits`);
   return shots.sort((a, b) => a.start - b.start);

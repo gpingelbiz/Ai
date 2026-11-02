@@ -6,8 +6,10 @@ import { log, warn, writeJSON, readJSON, ensureDir, r3 } from "./util.mjs";
 import { norm } from "./text.mjs";
 import { makeRunwayBroll, runwayPicksPrompt, runwayTiming, validateBrollPicks, placePlannedBroll, STILL_STYLE, PICKS_REPLY } from "./broll-runway.mjs";
 import { conformStill, hasRunway } from "./runway.mjs";
+import { createStockSearch, makeStockClip } from "./broll-stock.mjs";
+import { findLibraryClip, writeBrollCredits } from "./broll-library.mjs";
 
-export const PROMPT_VERSION = "literal-codex-v3";
+export const PROMPT_VERSION = "literal-codex-v4";
 
 /** Scenes drawn for recent reels, so the next reel does not get the same empty conference room again. */
 // REEL_CACHE gives a client its own scene history, so its b-roll never steers off (or into) Greg's scenes.
@@ -157,13 +159,13 @@ export const PICKS_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          line: { type: "integer" }, scene: { type: "string" }, shows: { type: "string" }, file: { type: "string" },
+          stockQuery: { type: "string" }, line: { type: "integer" }, scene: { type: "string" }, shows: { type: "string" }, file: { type: "string" },
           duration: { type: "number" }, kind: { type: "string", enum: ["action", "ambient"] },
           action: { type: "string" }, motion: { type: "string" }, endScene: { type: "string" },
           sound: { type: "string" }, soundRole: { type: "string", enum: ["impact", "movement", "none"] },
           sequenceGroup: { type: "string" }, endsAt: WORD_REF_SCHEMA, endsBefore: WORD_REF_SCHEMA,
         },
-        required: ["line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
+        required: ["stockQuery", "line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
         additionalProperties: false,
       },
     },
@@ -183,7 +185,9 @@ export function codexStillInstructions({ aspect = "9:16", style = "", file } = {
 }
 
 export function picksPrompt(options) {
-  return runwayPicksPrompt({ ...options, instructions: codexStillInstructions(options), reply: PICKS_REPLY.replace('"line":N,"shows"', '"file":"broll-1.png","line":N,"shows"') });
+  const file = options.sourcesFirst ? "" : "broll-1.png";
+  const instructions = options.sourcesFirst ? "Plan only. Do not draw images or use tools. Set file to an empty string; a still is drawn later only if footage is unavailable." : codexStillInstructions(options);
+  return runwayPicksPrompt({ ...options, instructions: `${instructions}\nstockQuery: 2-4 plain search words naming the same subject and its harmless action, such as snake on branch, coconut falling or gorilla walking.`, reply: PICKS_REPLY.replace('"line":N,"shows"', `"file":${JSON.stringify(file)},"stockQuery":"snake on branch","line":N,"shows"`) });
 }
 
 /** Codex supplies first frames; the shared engine owns checks, spending, animation, recovery and sound. */
@@ -227,9 +231,10 @@ async function makeAnimatedBroll(args) {
   } });
 }
 
-/** Plan and draw in one Codex session. Animation shares Runway recovery; still-only brands keep photo moves. */
+/** Free footage comes before a Codex still. Paid animation uses the shared Runway engine only when requested. */
 export async function makeBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [], tail = 1, footage, caption = {}, deps = {} }) {
   if (settings.animate === true) return makeAnimatedBroll({ workDir, groups, duration, hook, cta, settings, force, busy, tail, footage, caption, deps });
+  const sourcesFirst = settings.library === true || settings.stock?.length > 0;
   const dir = ensureDir(path.join(workDir, "broll"));
   const planPath = path.join(dir, "broll.json");
   const len = Math.max(1.2, Math.min(2.5, settings.duration ?? 2.4));
@@ -245,8 +250,9 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
     const stillThere = (s) => candidates.some((c) => Math.abs(c.start - s.start) < 0.05 && c.text === s.text);
-    if (saved.promptVersion === PROMPT_VERSION && (saved.key === key || saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && !/\.mp4$/i.test(s.file) && fs.existsSync(s.file))) {
-      log(`b-roll: reusing ${saved.shots.length} still${saved.shots.length === 1 ? "" : "s"} from ${dir}`);
+    if (saved.promptVersion === PROMPT_VERSION && (saved.key === key || !sourcesFirst && saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && (!/\.mp4$/i.test(s.file) || sourcesFirst && s.moves?.ok && s.moves.look === "pass") && fs.existsSync(s.file))) {
+      log(`b-roll: reusing ${saved.shots.length} shots from ${dir}`);
+      writeBrollCredits(workDir, saved.shots);
       return saved.shots;
     }
   }
@@ -259,20 +265,40 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   const t0 = Date.now();
   let picks;
   try {
-    log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"} and drawing the stills…`);
+    log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"}${sourcesFirst ? " for library and stock" : " and drawing the stills"}…`);
     const transcript = groups.map((g) => g.text).join(" ");
-    const reply = await exec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: gap, duration: len, style: settings.style || "", recent: readRecent(), aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
+    const reply = await exec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: gap, duration: len, style: settings.style || "", recent: readRecent(recentFile(deps.env)), sourcesFirst, aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
     picks = JSON.parse(reply).picks || [];
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);
     return [];
   }
-  const drawn = validateBrollPicks(picks, candidates, groups, timing, settings)
-    .map((p) => ({ ...p, path: savedImage(dir, path.basename(String(p.file || ""))) })).filter((p) => p.path);
-  const files = new Map(drawn.map((p) => [p.line, p.path]));
-  const shots = placePlannedBroll(drawn, candidates, { gap, max, timing }).map((s, k) => ({ ...s, motion: ["in", "left", "out", "right"][k % 4], file: files.get(s.line), stillSource: "codex" }));
-  if (shots.length) { writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, stillSource: "codex", shots }); rememberScenes(shots.map((s) => s.scene)); }
+  const valid = validateBrollPicks(picks, candidates, groups, timing, settings);
+  const shots = [];
+  const planned = sourcesFirst ? valid : valid.filter((p) => savedImage(dir, path.basename(String(p.file || ""))));
+  const search = createStockSearch({ env: deps.env, fetchFn: deps.fetchFn, now: deps.now, maxSearches: settings.stockMaxSearches ?? 6 });
+  for (const [k, shot] of placePlannedBroll(planned, candidates, { gap, max, timing }).entries()) {
+    const pick = valid.find((p) => p.line === shot.line);
+    let moving;
+    if (settings.library) moving = await findLibraryClip({ pick, shot, groups, workDir, dir, deps });
+    if (!moving && settings.stock?.length) moving = await makeStockClip({ pick, shot, groups, workDir, dir, settings, search, deps });
+    if (moving) { shots.push({ ...moving, ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}) }); continue; }
+    let file = savedImage(dir, path.basename(String(pick.file || "")));
+    if (sourcesFirst && !file) {
+      try {
+        const name = `broll-${k + 1}.png`;
+        await exec([codexStillInstructions({ aspect: settings.aspect || "9:16", style: settings.style, file: name }),
+          `Draw this approved scene only: ${pick.scene}. Required subject: ${pick.shows}. Harmless event: ${pick.action}.`,
+          `Reply with the same pick and file: ${JSON.stringify({ picks: [{ ...pick, file: name }] })}`].join("\n"), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
+        file = savedImage(dir, name);
+      } catch { warn("b-roll: fallback still unavailable; keeping the speaker"); }
+    }
+    if (file) shots.push({ ...shot, ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}), motion: ["in", "left", "out", "right"][k % 4], file, stillSource: "codex" });
+  }
+  writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, stillSource: "codex", shots });
+  writeBrollCredits(workDir, shots);
+  if (shots.length) rememberScenes(shots.map((s) => s.scene), recentFile(deps.env));
   if (shots.length < picks.length) warn(`b-roll: ${picks.length - shots.length} of ${picks.length} picks had no image or no room`);
-  log(`b-roll: ${shots.length} still${shots.length === 1 ? "" : "s"} ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
+  log(`b-roll: ${shots.length} shots ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
   return shots;
 }

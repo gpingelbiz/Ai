@@ -26,6 +26,8 @@
     "lastFrame": false,
     "sfx": true,
     "sfxUnderSpeechDb": 12,
+    "stock": [],
+    "library": true,
     "animate": true
   }
 }

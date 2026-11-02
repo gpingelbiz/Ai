@@ -48,7 +48,7 @@ if [ -f "$HOME/.zshrc" ]; then
       *'$('*|*'`'*|*'${('*) ;;
       *) eval "$line" || true;;
     esac
-  done < <(grep -E '^export (REEL_|ELEVENLABS_|RUNWAY_|PRODUCER_|PATH=)' "$HOME/.zshrc" 2>/dev/null || true)
+  done < <(grep -E '^export (REEL_|ELEVENLABS_|RUNWAY_|PEXELS_|PIXABAY_|PRODUCER_|PATH=)' "$HOME/.zshrc" 2>/dev/null || true)
 fi
 export PRODUCER_BROWSER_GPU_MODE="${PRODUCER_BROWSER_GPU_MODE:-hardware}"
 

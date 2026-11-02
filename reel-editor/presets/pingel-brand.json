@@ -105,6 +105,8 @@
     "lastFrame": false,
     "sfx": true,
     "sfxUnderSpeechDb": 12,
+    "stock": ["pexels", "pixabay"],
+    "library": true,
     "animate": false
   },
   "carousel": {

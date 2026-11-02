@@ -129,11 +129,11 @@ test("brand.json: b-roll defaults to Codex; Runway copies the current clip rules
   const codex = brandPreset(brand);
   assert.equal(codex.broll.engine, "codex");
   assert.deepEqual(codex, brandPreset({ ...brand, brollEngine: "codex" }));
-  assert.deepEqual(codex.broll, { engine: "codex", world: "Her car.", worldInPrompt: true, style: "Warm daylight.", max: 3, every: 12, clearStart: 0 });
+  assert.deepEqual(codex.broll, { engine: "codex", world: "Her car.", worldInPrompt: true, style: "Warm daylight.", max: 3, every: 12, clearStart: 0, stock: [], library: false });
   assert.equal(codex.looks.lockBrollGrade, undefined);
   for (const input of [brand, upgradeBrandV1(brand)]) {
     const built = brandPreset({ ...input, brollEngine: "runway" });
-    assert.deepEqual(built.broll, { ...rules, engine: "runway", world: "Her car.", worldInPrompt: true, style: "Warm daylight." });
+    assert.deepEqual(built.broll, { ...rules, stock: [], library: false, engine: "runway", world: "Her car.", worldInPrompt: true, style: "Warm daylight." });
     assert.deepEqual(built.looks, { lockHook: false, lockCaptions: true, lockBrollGrade: true });
     built.broll.max = 99;
     assert.deepEqual(brandPreset({ ...input, brollEngine: "runway" }).broll.max, rules.max, "each build reads fresh rules");
@@ -144,7 +144,9 @@ test("brand.json: b-roll defaults to Codex; Runway copies the current clip rules
     assert.equal(p.looks.lockHook, true, "no brand hook choice: keep the inherited lock");
     assert.equal(p.looks.lockCaptions, true, "no brand caption choice: keep the inherited lock");
     const greg = loadPreset("pingel-runway");
-    for (const key of Object.keys(rules)) assert.deepEqual(p.broll[key], greg.broll[key], key);
+    for (const key of Object.keys(rules).filter((key) => !["library", "stock"].includes(key))) assert.deepEqual(p.broll[key], greg.broll[key], key);
+    assert.deepEqual(p.broll.stock, []);
+    assert.equal(p.broll.library, false, "client library reuse is opt-in");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   for (const brollEngine of ["codex", "runway"]) assert.deepEqual(checkBrand({ ...julee, brollEngine }), []);
   for (const brollEngine of ["library", "unknown", ""]) assert.ok(checkBrand({ ...julee, brollEngine }).some((m) => /brollEngine/.test(m)));

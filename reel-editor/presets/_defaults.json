@@ -182,6 +182,9 @@
   },
   "broll": {
     "enabled": false,
+    "stock": [],
+    "library": false,
+    "stockMaxSearches": 6,
     "layout": "full",
     "max": 3,
     "maxWithGraphics": 2,
