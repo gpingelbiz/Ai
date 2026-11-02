@@ -42,7 +42,7 @@ const CLIENT = {
 const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
 
 // Greg 2026-10-31 ("Do all 7"): his own reels went to the one-take look; client brands keep the fast pacing.
-const ONE_TAKE = { "cuts.silence": "medium", "zooms.cadence.enabled": false, "graphics.clearStart": 5, "graphics.max": 3, "broll.clearStart": 5, "broll.max": 2 };
+const ONE_TAKE = { "cuts.silence": "medium", "zooms.cadence.enabled": false, "graphics.clearStart": 5, "graphics.max": 3, "broll.clearStart": 5, "broll.max": 5 };
 const CLIENT_FAST = { "cuts.silence": "fast", "zooms.cadence.enabled": true, "graphics.clearStart": 0, "graphics.max": 6, "broll.clearStart": 0, "broll.max": 3 };
 
 test("Greg's preset restores big gold captions and punch-ins, with the one-take pacing", () => {
@@ -230,7 +230,8 @@ test("briefing serif: DM Serif Display for Greg, the brand's display font when i
 test("Runway: a client's reel gets the pingel-runway timing under its own look; Greg's Runway preset is unchanged", () => {
   const { p: before, dir } = load({ ...julee, world: "her world" });
   try {
-    assert.equal(before.broll.duration, 2, "a brand preset alone keeps the still b-roll timing");
+    assert.equal(before.broll.duration, 2.5, "a brand inherits the shared moving-shot timing");
+    assert.equal(before.broll.animate, false, "a client's Codex stills stay stills unless their brand asks");
     const p = mergeOverrides(before, { brollEngine: "runway", broll: true });
     const pick = (b) => ({ duration: b.duration, gap: b.gap, max: b.max, maxWithGraphics: b.maxWithGraphics, every: b.every, videoSeconds: b.videoSeconds, maxCreditsPerReel: b.maxCreditsPerReel });
     assert.equal(p.broll.engine, "runway");
@@ -241,7 +242,7 @@ test("Runway: a client's reel gets the pingel-runway timing under its own look; 
     assert.equal(p.broll.world, "her world", "the client's world stays");
     assert.equal(p.colors.accent, "#FFB27D", "the client's brand stays");
     assert.equal(p.name, "brand-julee-gracey");
-    assert.equal(mergeOverrides(before, { brollEngine: "codex" }).broll.duration, 2, "the codex engine keeps its own timing");
+    assert.equal(mergeOverrides(before, { brollEngine: "codex" }).broll.duration, 2.5, "Codex uses the same moving-shot timing");
     const greg = loadPreset("pingel-runway");
     assert.deepEqual(mergeOverrides(greg, { broll: true }).broll, { ...greg.broll, enabled: true }, "Greg's Runway preset comes out as before");
     assert.deepEqual(pick(greg.broll), pick(runwayTiming()));

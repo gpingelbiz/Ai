@@ -619,22 +619,22 @@ test("unavailable clip vision retries once then holds the paid clip without anot
 
 test("cross-caption phrases anchor exact ordered words, with only the next caption eligible", async () => {
   const groups = [
-    { start: 10, text: "Bring a two", words: [{ start: 10, text: "Bring" }, { start: 10.1, text: "a" }, { start: 10.3, text: "two" }] },
-    { start: 10.7, text: "by four", words: [{ start: 10.7, text: "by" }, { start: 10.9, text: "four" }] },
+    { start: 10, text: "Bring a green", words: [{ start: 10, text: "Bring" }, { start: 10.1, text: "a" }, { start: 10.3, text: "green" }] },
+    { start: 10.7, text: "jungle snake", words: [{ start: 10.7, text: "jungle" }, { start: 10.9, text: "snake" }] },
     { start: 11.1, text: "and use it" },
   ];
-  const c = { ...groups[0], i: 0 }, pick = { line: 0, shows: "two by four", scene: "a wooden two by four", duration: 2.2 };
+  const c = { ...groups[0], i: 0 }, pick = { line: 0, shows: "green jungle snake", scene: "a green jungle snake", duration: 2.2 };
   assert.equal(runwayTiming(pick, c, groups).start, 10.3);
   assert.ok(Math.abs(runwayTiming(pick, c, groups).duration - 2.2) < 1e-9);
-  assert.equal(runwayTiming({ ...pick, shows: "four two" }, c, groups), null);
-  assert.equal(runwayTiming({ ...pick, shows: "by four" }, c, groups), null, "first word must be in candidate caption");
+  assert.equal(runwayTiming({ ...pick, shows: "snake green" }, c, groups), null);
+  assert.equal(runwayTiming({ ...pick, shows: "jungle snake" }, c, groups), null, "first word must be in candidate caption");
   assert.equal(runwayTiming(pick, c, [groups[0], groups[2], groups[1]]), null);
   groups[1].words[1].end = 12.5;
   groups[2].words = [{ text: "and", start: 13, end: 13.2 }, { text: "use", start: 13.2, end: 13.4 }];
-  const f = runwayFixture({ groups, picks: [{ ...pick, endsAt: { line: 1, wordIndex: 1, text: "four" } }] });
+  const f = runwayFixture({ groups, picks: [{ ...pick, endsAt: { line: 1, wordIndex: 1, text: "snake" } }] });
   const [shot] = await f.run();
   assert.equal(shot.start, 10.3);
-  assert.equal(shot.duration, 2.2, "later caption changes do not truncate the board");
+  assert.equal(shot.duration, 2.2, "later caption changes do not truncate the subject");
   const coconut = { i: 0, start: 31.465, text: "a coconut" };
   assert.ok(runwayTiming({ shows: "coconut", duration: 1.8 }, coconut, [coconut, { start: 32 }, { start: 32.415 }]).duration > 1.79);
 });

@@ -5,7 +5,7 @@ import { claudeText, claudeLook, firstJSON, hasClaude } from "./claude.mjs";
 import { brollCount, brollCandidates, checkPick, subjectWords, spokenInShot, readRecent, rememberScenes, uniqueScenes } from "./broll.mjs";
 import { subjectMotion, contactSheet, validTimeline, eventInPoint, phonePreviews, localClipCheck, verifySound } from "./broll-qc.mjs";
 import { norm } from "./text.mjs";
-import { dataURI, failurePolicy, hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt, modelInfo, makeSound } from "./runway.mjs";
+import { CREDIT_USD, dataURI, failurePolicy, hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt, modelInfo, makeSound } from "./runway.mjs";
 import { recordUsage, reelUsageNote } from "./usage.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3 } from "./util.mjs";
 
@@ -32,19 +32,8 @@ export function shotModels(pick, settings = {}) {
  * and the account balance are checked before anything is bought.
  */
 
-export function runwayPicksPrompt({ candidates, transcript, hook, count, spacing = 8, style = "", recent = [], duration = 2.4 }) {
-  return `You are choosing short moving cutaways for Greg's talking-head reel.
-Reply with JSON only. Use no tools.
-
-Read the whole passage first. Understand its story, setting, analogy,
-joke and lesson before choosing pictures.
-
-Return up to ${count + 2} useful candidates, ranked strongest first.
-The editor may use at most ${count}. Fewer candidates, including zero,
-are correct. Nearby alternatives may compete for one slot.
-Accepted shots require ${spacing} seconds from one shot's END to the next START.
-
-Choose only moments where a picture makes these exact words clearer,
+/** Selection and field meanings shared by both first-frame engines. */
+export const PICKS_RULES = `Choose only moments where a picture makes these exact words clearer,
 demonstrates something useful or completes the joke.
 Preserve Greg's reactions, conviction, personal admissions and final
 instruction. Respect the supplied hook boundaries.
@@ -89,7 +78,7 @@ A phrase may continue into the immediately following caption.
 Preserve the phrase exactly and anchor its first word.
 
 duration: This shot's useful screen time, independently chosen between
-1.2 and ${Math.min(2.5, duration)} seconds. Fit one readable event inside the relevant words.
+1.2 and MAX_DURATION seconds. Fit one readable event inside the relevant words.
 Never extend a picture merely to fill a standard slot.
 
 scene: A compact opening-image prompt using this house order:
@@ -116,6 +105,7 @@ Put exclusions in these planning rules, never in generation fields.
 Safety and selection:
 Exclude faces, real-person likenesses, readable text, numbers, labels,
 logos and invented evidence.
+Weapon lines stay on the speaker, including a knife or a two by four.
 Exclude attacks, threats, distress, injury and weapon use against anyone.
 Exclude hanging ropes or loops, neck contact, noose-like compositions,
 self-harm and death associations.
@@ -125,7 +115,24 @@ named subject only when the combined reading stays safe.
 Otherwise leave Greg visible. Never substitute an unrelated object.
 
 Use one physical event, one location and one camera instruction.
-Keep the assembled Runway prompts under 1,000 JavaScript string units.
+Keep the assembled Runway prompts under 1,000 JavaScript string units.`;
+
+export const PICKS_REPLY = '{"picks":[{"endsAt":{"line":N,"wordIndex":I,"text":"..."},"endsBefore":{"line":N,"wordIndex":I,"text":"..."},"line":N,"shows":"...","duration":S,"kind":"action","scene":"...","endScene":"...","action":"...","motion":"...","soundRole":"impact","sound":"..."}]}';
+
+export function runwayPicksPrompt({ candidates, transcript, hook, count, spacing = 8, style = "", recent = [], duration = 2.4, world = "", instructions = "Reply with JSON only. Use no tools.", reply = PICKS_REPLY }) {
+  return `You are choosing short moving cutaways for Greg's talking-head reel.
+${instructions}
+
+Read the whole passage first. Understand its story, setting, analogy,
+joke and lesson before choosing pictures.
+
+Return up to ${count + 2} useful candidates, ranked strongest first.
+The editor may use at most ${count}. Fewer candidates, including zero,
+are correct. Nearby alternatives may compete for one slot.
+Accepted shots require ${spacing} seconds from one shot's END to the next START.
+
+${PICKS_RULES.replace("MAX_DURATION", String(Math.min(2.5, duration)))}
+${world ? `The speaker's world (only for lines about their own life and work; never use it to replace an image they name; the named thing wins): ${world}` : ""}
 ${style ? `Optional visual style: ${style}` : ""}
 ${recent.length ? `Recent scenes; choose a different relevant event or leave Greg visible:\n${uniqueScenes(recent).slice(-12).map((s) => `- ${s}`).join("\n")}` : ""}
 
@@ -139,7 +146,7 @@ Available caption lines and times:
 ${candidates.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text} | words: ${JSON.stringify(c.words || [])}`).join("\n")}
 
 Reply exactly in this shape, ranked strongest first:
-{"picks":[{"endsAt":{"line":N,"wordIndex":I,"text":"..."},"endsBefore":{"line":N,"wordIndex":I,"text":"..."},"line":N,"shows":"...","duration":S,"kind":"action","scene":"...","endScene":"...","action":"...","motion":"...","soundRole":"impact","sound":"..."}]}`;
+${reply}`;
 }
 
 /** Start on an exact subject phrase, which may finish in the next caption. */
@@ -362,6 +369,30 @@ export function rapidListPicks(picks, candidates, groups) {
   return result;
 }
 
+/** Validate and rank the same spoken ideas for either first-frame engine. */
+export function validateBrollPicks(picks, candidates, groups, timing, settings = {}) {
+  const ranked = picks.map((p, i) => ({ ...p, rank: i + 1 }));
+  const planned = settings.rapidLists === false ? ranked : rapidListPicks(ranked, candidates, groups);
+  return planned.filter((p) => {
+    const c = candidates.find((c) => c.i === p.line), t = c && timing(p, c);
+    const why = !p.endsAt || !p.endsBefore ? "missing spoken idea boundaries" : !t ? "no room for this subject" : checkPick(p, { ...c, start: t.start }, groups, { len: t.duration });
+    if (why) warn(`b-roll: rejected line ${p.line}: ${why}`);
+    return !why;
+  });
+}
+
+/** Every named candidate bounds the preceding shot, even when spacing removes that candidate. */
+export function placePlannedBroll(picks, candidates, { gap, max, timing }) {
+  const boundedTiming = (p, c) => {
+    const t = timing(p, c);
+    if (!t) return null;
+    const next = Math.min(...picks.filter((q) => q !== p).map((q) => { const c = candidates.find((c) => c.i === q.line); return c && timing(q, c)?.start; }).filter((start) => start > t.start), Infinity);
+    const duration = Math.min(t.duration, next - t.start);
+    return duration >= (p.rapidList ? 0.8 : 1.2) - 0.000001 ? { start: t.start, duration } : null;
+  };
+  return placeRunwayBroll(picks, candidates, { gap, max, timing: boundedTiming });
+}
+
 /** Retry unavailable vision once; a valid negative answer is final. */
 async function lookJSON(prompt, valid, look, dir) {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -403,6 +434,7 @@ export async function checkRunwayVideo({ file, shot, pick, groups, inPoint = 0, 
 export function planShotBudget(pick, duration, settings = {}) {
   const models = shotModels(pick, settings);
   const initial = estimateClip({ ...models, imageRatio: settings.imageRatio, sfxSeconds: hasPhysicalSound(pick, settings) ? Math.max(1, duration) : 0 });
+  if (settings.stillSource === "codex") { initial.credits -= initial.image + (initial.endImage || 0); initial.image = 0; delete initial.endImage; initial.dollars = r3(initial.credits * CREDIT_USD); }
   const retryModel = settings.retrySameModelFirst === false ? settings.retryVideoModel || models.videoModel : models.videoModel;
   const retrySeconds = Math.max(modelInfo(retryModel).duration[0], models.seconds);
   const retry = estimateClip({ seconds: retrySeconds, videoModel: retryModel }).video;
@@ -413,7 +445,7 @@ export function hasPhysicalSound(pick, settings = {}) {
   return !!(settings.sfx && pick.kind !== "ambient" && pick.sound && (pick.soundRole === "impact" || pick.soundRole === "movement"));
 }
 
-export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [], tail = 1, footage, caption = {}, deps = {} }) {
+export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, settings = {}, force = false, busy = [], tail = 1, footage, caption = {}, stillSource = "runway", deps = {} }) {
   const dir = ensureDir(path.join(workDir, "broll")), planPath = path.join(dir, "broll.json");
   const seconds = Math.max(2, Math.min(10, Math.round(settings.videoSeconds ?? 5)));
   const len = Math.max(1.2, Math.min(2.5, seconds, settings.duration ?? 2.4)), gap = settings.gap ?? 6;
@@ -422,7 +454,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   const candidates = brollCandidates(groups, duration, { hook, cta, len: settings.rapidLists === false ? 1.2 : 0.8, busy, tail, clearStart: settings.clearStart ?? 0 });
   if (!candidates.length) return [];
   const timing = (p, c) => runwayTiming(p, c, groups, { len, until: Math.min(duration - tail, cta?.start ?? Infinity), busy });
-  const key = `${PROMPT_VERSION}|${JSON.stringify({ candidates, groups, settings, hook, cta, duration, busy, tail, footage, caption })}`;
+  const key = `${PROMPT_VERSION}|${JSON.stringify({ candidates, groups, settings, hook, cta, duration, busy, tail, footage, caption, stillSource })}`;
   const previous = fs.existsSync(planPath) ? readJSON(planPath) : {};
   const reusable = (s) => /\.mp4$/i.test(s.file || "") && s.move === "none" && s.moves?.ok && s.moves.look === "pass" && !s.soundPending && fs.existsSync(s.file) && (!s.sfx || fs.existsSync(s.sfx));
   if (!force && previous.key === key && previous.promptVersion === PROMPT_VERSION && previous.complete && previous.shots?.every(reusable)) return previous.shots;
@@ -438,7 +470,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   const namespace = createHash("sha256").update(key).digest("hex").slice(0, 10);
   const save = () => {
     const temporary = `${planPath}.tmp`;
-    writeJSON(temporary, { key, promptVersion: PROMPT_VERSION, shots, usage: items, tasks, reservations, attempts, picks, complete });
+    writeJSON(temporary, { key, promptVersion: PROMPT_VERSION, stillSource, shots, usage: items, tasks, reservations, attempts, picks, complete });
     fs.renameSync(temporary, planPath);
   };
   const journal = { tasks, save };
@@ -451,28 +483,15 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   const io = { runFn: runner, fetchFn: deps.fetchFn, sleepFn: deps.sleepFn, journal };
   if (!picks) {
     try {
-      picks = (firstJSON(await claude(runwayPicksPrompt({ candidates, transcript: groups.map((g) => g.text).join(" "), hook: hook?.text, count: max, spacing: gap, style: settings.style || "", recent: readRecent(), duration: len }), { timeoutMs: 240000 })).picks || []).map((p, i) => ({ ...p, rank: i + 1 }));
-      picks = settings.rapidLists === false ? picks : rapidListPicks(picks, candidates, groups);
-      picks = picks.filter((p) => {
-        const c = candidates.find((c) => c.i === p.line), t = c && timing(p, c);
-        const why = !p.endsAt || !p.endsBefore ? "missing spoken idea boundaries" : !t ? "no room for this subject" : checkPick(p, { ...c, start: t.start }, groups, { len: t.duration });
-        if (why) warn(`b-roll: rejected line ${p.line}: ${why}`);
-        return !why;
-      });
+      const request = { candidates, transcript: groups.map((g) => g.text).join(" "), hook: hook?.text, count: max, spacing: gap, style: settings.style || "", recent: readRecent(), duration: len, world: settings.worldInPrompt ? settings.world || "" : "" };
+      const planned = deps.planPicks ? await deps.planPicks(request, dir) : firstJSON(await claude(runwayPicksPrompt(request), { timeoutMs: 240000 })).picks || [];
+      picks = validateBrollPicks(planned, candidates, groups, timing, settings);
       save();
     } catch (e) { warn(`b-roll: planning failed (${e.message})`); return []; }
   }
-  // Every named candidate bounds the preceding shot, even when spacing later removes that candidate.
-  const boundedTiming = (p, c) => {
-    const t = timing(p, c);
-    if (!t) return null;
-    const next = Math.min(...picks.filter((q) => q !== p).map((q) => { const c = candidates.find((c) => c.i === q.line); return c && timing(q, c)?.start; }).filter((start) => start > t.start), Infinity);
-    const duration = Math.min(t.duration, next - t.start);
-    return duration >= (p.rapidList ? 0.8 : 1.2) - 0.000001 ? { start: t.start, duration } : null;
-  };
-  const placed = placeRunwayBroll(picks, candidates, { gap, max, timing: boundedTiming });
+  const placed = placePlannedBroll(picks, candidates, { gap, max, timing });
   let referenceImages;
-  if (footage && (settings.imageModel || "gen4_image") === "nano_banana_2.1") {
+  if (stillSource === "runway" && footage && (settings.imageModel || "gen4_image") === "nano_banana_2.1") {
     try {
       const reference = path.join(dir, "daylight-reference.jpg");
       await runner("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(placed[0]?.start ?? 0), "-i", footage, "-frames:v", "1", "-vf", "scale=360:-2", reference], { quiet: true });
@@ -481,7 +500,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   }
   for (const [k, s] of placed.entries()) {
     const p = picks.find((p) => p.line === s.line), models = shotModels(p, settings), seed = shotSeed(workDir, s.line);
-    const id = `${namespace}-${s.line}`, name = `broll-${k + 1}-${id}`, budget = planShotBudget(p, s.duration, settings);
+    const id = `${namespace}-${s.line}`, name = `broll-${k + 1}-${id}`, budget = planShotBudget(p, s.duration, { ...settings, stillSource });
     if (shots.some((shot) => shot.line === s.line)) { if (reservations[id]) reservations[id].open = false; continue; }
     const state = attempts[id] ||= { stillAttempt: 0, videoAttempt: 0 };
     if (state.clip && previous.shots?.some((shot) => shot.line === s.line && !reusable(shot))) { state.done = false; reservations[id] = { ...reservations[id], open: true }; }
@@ -520,11 +539,11 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
         try {
           const correction = state.stillAttempt ? ` Compose a closer, clearly recognizable ${p.shows} above the caption area. Preserve its natural anatomy, shape and surface.` : "";
           const scene = fitPrompt(`${state.stillPolicy?.remedy === "soften" ? "A calm, harmless scene in natural daylight. " : ""}${stillPrompt(p)}${referenceImages ? " Use @daylightlook as a colour and light reference only, not content." : ""}${correction}`);
-          clip = await make({ scene, referenceImages, endScene: models.lastFrame ? stillPrompt({ scene: p.endScene }) : undefined, motion: videoMotion(p), dir, name: `${name}-still${state.stillAttempt}`, ...models, seed, imageRatio: settings.imageRatio, ...shotIO, check, beforeBuy: (kind, pending) => beforeBuy(kind, pending, state.stillAttempt > 0) });
+          clip = await make({ scene, referenceImages, ...(deps.drawStill ? { drawStill: (args) => deps.drawStill({ ...args, pick: p, reason: state.stillCheck?.why, attempt: state.stillAttempt }) } : {}), endScene: models.lastFrame ? stillPrompt({ scene: p.endScene }) : undefined, motion: videoMotion(p), dir, name: `${name}-still${state.stillAttempt}`, ...models, seed, imageRatio: settings.imageRatio, ...shotIO, check, beforeBuy: (kind, pending) => beforeBuy(kind, pending, state.stillAttempt > 0) });
           merge(clip.items); state.clip = clip; save(); break;
         } catch (e) {
           merge(e.items);
-          if (e.code === "CHECK" && state.stillAttempt === 0 && !state.stillCheck?.dark) continue;
+          if (e.code === "CHECK" && state.stillAttempt === 0 && (stillSource === "codex" || !state.stillCheck?.dark)) continue;
           if (e.kind === "image" && e.policy?.retry && state.stillAttempt === 0) {
             state.stillPolicy = e.policy;
             if (e.policy.delayMs) await (deps.sleepFn || ((ms) => new Promise((r) => setTimeout(r, ms))))(e.policy.delayMs);
@@ -576,7 +595,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
               else warn(`b-roll: sound dropped (${sfxMix.why})`);
             } catch (e) { merge(e.items); state.soundPending = ["TASK_PENDING", "UNKNOWN_SUBMISSION", "OUTPUT_UNAVAILABLE", "LOCAL_PROCESS"].includes(e.code); warn(`b-roll: sound dropped (${e.message})`); }
           }
-          shots.push({ ...s, kind: models.kind, seed: state.seed ?? seed, imageModel: models.imageModel, videoModel: clip.videoModel || models.videoModel, file: clip.mp4, full: clip.full, original: clip.original, inPoint: clip.inPoint, still: clip.png, video: true, move: "none", motion: state.motion || videoMotion(p), scene: p.scene, action: p.action || "the subject moves", check: state.stillAttempt ? "retry-pass" : "pass", seen: state.seen, moves, sourceTimeline: clip.sourceTimeline, endsAt: p.endsAt, endsBefore: p.endsBefore, ...(p.endScene ? { endScene: p.endScene } : {}), ...(p.sound ? { sound: p.sound, soundRole: p.soundRole } : {}), ...(clip.last ? { last: clip.last } : {}), ...(state.soundPending ? { soundPending: true } : {}), ...(sfx ? { sfx, sfxMix } : {}) });
+          shots.push({ ...s, kind: models.kind, seed: state.seed ?? seed, stillSource, imageModel: stillSource === "codex" ? "codex" : models.imageModel, videoModel: clip.videoModel || models.videoModel, file: clip.mp4, full: clip.full, original: clip.original, inPoint: clip.inPoint, still: clip.png, video: true, move: "none", motion: state.motion || videoMotion(p), scene: p.scene, action: p.action || "the subject moves", check: state.stillAttempt ? "retry-pass" : "pass", seen: state.seen, moves, sourceTimeline: clip.sourceTimeline, endsAt: p.endsAt, endsBefore: p.endsBefore, ...(p.endScene ? { endScene: p.endScene } : {}), ...(p.sound ? { sound: p.sound, soundRole: p.soundRole } : {}), ...(clip.last ? { last: clip.last } : {}), ...(state.soundPending ? { soundPending: true } : {}), ...(sfx ? { sfx, sfxMix } : {}) });
           state.done = true; save(); break;
         }
         if (moves.dark || moves.humanFaces || moves.readableText || moves.local?.ok === false || state.videoAttempt >= (settings.retrySameModelFirst === false ? 1 : 2)) break;

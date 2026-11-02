@@ -101,6 +101,7 @@ function legacyPingelPreset() {
   preset.looks = { ...preset.looks };
   delete preset.looks.lockHook;
   delete preset.looks.lockCaptions;
+  delete preset.looks.lockBrollGrade;
   preset.cover = { ...preset.cover, style: "frame" };
   preset.finish = { ...preset.finish, enabled: false };
   return preset;

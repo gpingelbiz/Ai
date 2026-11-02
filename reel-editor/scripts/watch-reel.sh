@@ -158,15 +158,14 @@ fi
 # The b-roll folder gets the full look (the preset's cards, reveal captions and b-roll); the plain folder keeps
 # the classic captions with no cards.
 case "$MODE" in
-  broll|long) flags+=(--broll --graphics --caption-style reveal);;
+  # Codex draws the first frames unless a client's brand picked another engine (client.env REEL_BROLL_ENGINE).
+  broll) flags+=(--broll-engine "${REEL_BROLL_ENGINE:-codex}" --broll --graphics --caption-style reveal);;
+  long) flags+=(--broll --graphics --caption-style reveal);;
   # Greg's Runway look is pingel-runway; anyone else keeps their own look with Runway clips as the b-roll.
   runway) case "${REEL_PRESET:-pingel-brand}" in pingel-*) flags+=(--preset pingel-runway);; *) flags+=(--broll-engine runway);; esac
     flags+=(--broll --graphics --caption-style reveal);;
   reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate --no-behind);;
 esac
-if [ "$MODE" = broll ] && [ -n "${REEL_BROLL_ENGINE:-}" ]; then
-  flags+=(--broll-engine "$REEL_BROLL_ENGINE")
-fi
 # A carousel needs the transcript and plan, not a render.
 [ "$MODE" = carousel ] && flags+=(--no-render)
 name=$(echo "$stem" | sed -E 's/#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')

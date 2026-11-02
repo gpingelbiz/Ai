@@ -85,6 +85,7 @@ test("client brand presets keep the October 30 captions and old punch-in spacing
   for (const [k, v] of Object.entries({ uppercase: false, fontSizeFrac: 0.0355, animation: "cut", autoKeywords: false, annotate: false, dimFuture: false, keywordColorOnFootage: false, placeMax: 0.79 })) assert.equal(client.captions[k], v, k);
   assert.equal(client.zooms.minSpacing, 10);
   assert.equal(client.zooms.maxPer30, 3);
+  assert.equal(client.broll.animate, false, "a client's Codex stills are not animated on Greg's Runway account");
   // The client's own choices still win.
   fs.writeFileSync(old, JSON.stringify({ name: "brand-sample", extends: "pingel-brand", captions: { uppercase: true, annotate: true }, zooms: { minSpacing: 16 } }));
   const own = load(old);
@@ -94,6 +95,7 @@ test("client brand presets keep the October 30 captions and old punch-in spacing
   const greg = load("pingel-brand");
   for (const [k, v] of Object.entries({ uppercase: true, fontSizeFrac: 0.04, animation: "pop", autoKeywords: true, annotate: true, placeMax: 0.79 })) assert.equal(greg.captions[k], v, k);
   assert.equal(greg.zooms.minSpacing, 6);
+  assert.equal(greg.broll.animate, true);
   // pingel-runway builds on Greg's own look, not a client's.
   assert.equal(load("pingel-runway").captions.uppercase, true);
 });
