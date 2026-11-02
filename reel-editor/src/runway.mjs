@@ -94,20 +94,23 @@ export function estimateClip({ seconds = 5, imageModel = "gen4_image", imageRati
 }
 
 /** Animate a still we already have (as a data URI; no image is bought). Returns {mp4, items}. */
-export async function animateStill({ png, mp4, motion, seconds = 5, ratio = "720:1280", videoModel = "gen4_turbo", fps = 30, fetchFn, sleepFn } = {}) {
+export async function animateStill({ png, mp4, motion, seconds = 5, ratio = "720:1280", videoModel = "gen4_turbo", fps = 30, fetchFn, sleepFn, runFn } = {}) {
   const items = [];
+  const estimate = estimateClip({ seconds, videoModel }).video;
   const data = `data:image/png;base64,${fs.readFileSync(png).toString("base64")}`;
   const vid = await createVideo({ image: data, prompt: motion, ratio, duration: seconds, model: videoModel, fetchFn });
   let task;
   try {
     task = await waitForTask(vid.id, { fetchFn, sleepFn });
   } catch (e) {
-    items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: e.cost ?? vid.estimatedCredits ?? 0, dollars: r3((e.cost ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: false, error: e.message });
+    items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: e.cost ?? vid.estimatedCredits ?? estimate, dollars: r3((e.cost ?? vid.estimatedCredits ?? estimate) * CREDIT_USD), ok: false, error: e.message });
     throw Object.assign(e, { items });
   }
-  items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: task.cost?.credits ?? vid.estimatedCredits ?? 0, dollars: r3((task.cost?.credits ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: true });
-  await download(task.output[0], mp4, { fetchFn });
-  await conformClip(mp4, { fps });
+  items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: task.cost?.credits ?? vid.estimatedCredits ?? estimate, dollars: r3((task.cost?.credits ?? vid.estimatedCredits ?? estimate) * CREDIT_USD), ok: true });
+  try {
+    await download(task.output[0], mp4, { fetchFn });
+    await conformClip(mp4, { fps, runFn });
+  } catch (e) { throw Object.assign(e, { items }); }
   return { mp4, items };
 }
 
@@ -120,30 +123,40 @@ export async function conformClip(file, { fps = 30, runFn = run } = {}) {
   return file;
 }
 
-export async function makeClip({ scene, motion, dir, name, seconds = 5, ratio = "720:1280", imageRatio = "720:1280", imageModel = "gen4_image", videoModel = "gen4_turbo", fps = 30, fetchFn, sleepFn } = {}) {
+export async function makeClip({ scene, motion, dir, name, seconds = 5, ratio = "720:1280", imageRatio = "720:1280", imageModel = "gen4_image", videoModel = "gen4_turbo", fps = 30, fetchFn, sleepFn, runFn, check, beforeBuy } = {}) {
   const items = [];
+  const estimate = estimateClip({ seconds, imageModel, imageRatio, videoModel });
   const png = `${dir}/${name}.png`, mp4 = `${dir}/${name}.mp4`;
+  if (beforeBuy) await beforeBuy("image", items);
   const img = await createImage({ prompt: scene, ratio: imageRatio, model: imageModel, fetchFn });
   let task;
   try {
     task = await waitForTask(img.id, { fetchFn, sleepFn });
   } catch (e) {
-    items.push({ service: "runway", model: imageModel, kind: "image", credits: e.cost ?? img.estimatedCredits ?? 0, dollars: r3((e.cost ?? img.estimatedCredits ?? 0) * CREDIT_USD), ok: false, error: e.message });
+    items.push({ service: "runway", model: imageModel, kind: "image", credits: e.cost ?? img.estimatedCredits ?? estimate.image, dollars: r3((e.cost ?? img.estimatedCredits ?? estimate.image) * CREDIT_USD), ok: false, error: e.message });
     throw Object.assign(e, { items });
   }
-  items.push({ service: "runway", model: imageModel, kind: "image", credits: task.cost?.credits ?? img.estimatedCredits ?? 0, dollars: r3((task.cost?.credits ?? img.estimatedCredits ?? 0) * CREDIT_USD), ok: true });
-  await download(task.output[0], png, { fetchFn });
-  const vid = await createVideo({ image: task.output[0], prompt: motion, ratio, duration: seconds, model: videoModel, fetchFn });
+  items.push({ service: "runway", model: imageModel, kind: "image", credits: task.cost?.credits ?? img.estimatedCredits ?? estimate.image, dollars: r3((task.cost?.credits ?? img.estimatedCredits ?? estimate.image) * CREDIT_USD), ok: true });
+  let vid;
+  try {
+    await download(task.output[0], png, { fetchFn });
+    const result = check ? await check(png) : null;
+    if (result?.ok === false) throw Object.assign(new Error(result.why || "still check failed"), { code: "CHECK" });
+    if (beforeBuy) await beforeBuy("video", items);
+    vid = await createVideo({ image: task.output[0], prompt: motion, ratio, duration: seconds, model: videoModel, fetchFn });
+  } catch (e) { throw Object.assign(e, { items, png }); }
   let vtask;
   try {
     vtask = await waitForTask(vid.id, { fetchFn, sleepFn });
   } catch (e) {
-    items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: e.cost ?? vid.estimatedCredits ?? 0, dollars: r3((e.cost ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: false, error: e.message });
+    items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: e.cost ?? vid.estimatedCredits ?? estimate.video, dollars: r3((e.cost ?? vid.estimatedCredits ?? estimate.video) * CREDIT_USD), ok: false, error: e.message });
     throw Object.assign(e, { items, png });
   }
-  items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: vtask.cost?.credits ?? vid.estimatedCredits ?? 0, dollars: r3((vtask.cost?.credits ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: true });
-  await download(vtask.output[0], mp4, { fetchFn });
-  await conformClip(mp4, { fps });
+  items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: vtask.cost?.credits ?? vid.estimatedCredits ?? estimate.video, dollars: r3((vtask.cost?.credits ?? vid.estimatedCredits ?? estimate.video) * CREDIT_USD), ok: true });
+  try {
+    await download(vtask.output[0], mp4, { fetchFn });
+    await conformClip(mp4, { fps, runFn });
+  } catch (e) { throw Object.assign(e, { items, png }); }
   log(`runway: ${name} ready (${items.reduce((s, i) => s + i.credits, 0)} credits)`);
   return { png, mp4, items };
 }

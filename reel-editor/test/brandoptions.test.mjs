@@ -146,7 +146,7 @@ test("Runway: a client's reel gets the pingel-runway timing under its own look; 
     const p = mergeOverrides(before, { brollEngine: "runway", broll: true });
     const pick = (b) => ({ duration: b.duration, gap: b.gap, max: b.max, maxWithGraphics: b.maxWithGraphics, every: b.every, videoSeconds: b.videoSeconds, maxCreditsPerReel: b.maxCreditsPerReel });
     assert.equal(p.broll.engine, "runway");
-    assert.deepEqual(pick(p.broll), { duration: 4, gap: 6, max: 3, maxWithGraphics: 2, every: 12, videoSeconds: 5, maxCreditsPerReel: 150 });
+    assert.deepEqual(pick(p.broll), { duration: 2.4, gap: 3, max: 5, maxWithGraphics: 2, every: 10, videoSeconds: 5, maxCreditsPerReel: 180 });
     assert.equal(p.broll.world, "her world", "the client's world stays");
     assert.equal(p.colors.accent, "#FFB27D", "the client's brand stays");
     assert.equal(p.name, "brand-julee-gracey");

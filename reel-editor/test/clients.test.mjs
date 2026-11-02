@@ -84,13 +84,14 @@ test("the watcher edits Greg's drops as Greg and a client's drops with the clien
   fs.rmSync(T, { recursive: true, force: true });
 });
 
-test("client b-roll comes from the client's world, with a scene history of its own; Greg's prompt is unchanged", async () => {
+test("client b-roll uses its own world for life and work, preserves named images and keeps its own scene history", async () => {
   const { picksPrompt, recentFile } = await import("../src/broll.mjs");
   const base = { candidates: [{ i: 1, start: 1, text: "x" }], transcript: "x", hook: "", count: 1 };
   const greg = picksPrompt(base);
-  assert.match(greg, /truck tailgate/);
+  assert.match(greg, /The picture is what the words say/);
   const jane = picksPrompt({ ...base, world: "a Tesla interior in Scottsdale" });
   assert.match(jane, /speaker's world .*a Tesla interior in Scottsdale/);
+  assert.match(jane, /only for lines about their own life and work; never use it to replace an image they name/);
   assert.doesNotMatch(jane, /truck tailgate|job-site step|Bible open/);
   assert.equal(brandPreset({ ...brand, world: "w" }).broll.worldInPrompt, true);
   assert.equal(recentFile({ REEL_CACHE: "/c/jane" }), "/c/jane/broll-recent.json");
