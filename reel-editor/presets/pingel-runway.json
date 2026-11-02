@@ -7,17 +7,15 @@
   "broll": {
     "enabled": true,
     "engine": "runway",
-    "duration": 2.4,
+    "duration": 2.5,
     "gap": 3,
     "max": 5,
     "maxWithGraphics": 2,
     "every": 10,
-    "videoSeconds": 5,
+    "videoSeconds": 3,
     "maxCreditsPerReel": 180,
-    "grade": {
-      "preset": "soft-boost",
-      "intensity": 0.35,
-      "details": { "vignette": 0.08, "grain": 0.05 }
-    }
+    "grade": false,
+    "retryVideoModel": "gen4.5",
+    "focusPull": 0
   }
 }

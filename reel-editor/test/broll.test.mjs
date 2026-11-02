@@ -7,6 +7,8 @@ import { brollCount, brollCandidates, placeBroll, picksPrompt, holdForSplit, che
 import { codexModels, isModelRefusal, imageInstructions, savedImage } from "../src/codex.mjs";
 import { renderHTML } from "../src/compose.mjs";
 import { applyTheme } from "../src/looks.mjs";
+import { loadPreset } from "../src/presets.mjs";
+import { deepMerge } from "../src/util.mjs";
 
 const cache = fs.mkdtempSync(path.join(os.tmpdir(), "broll-test-"));
 process.env.REEL_BROLL_RECENT = path.join(cache, "recent.json");
@@ -214,6 +216,8 @@ test("stills prompt requires the named image, permits literal analogies and limi
   const p = picksPrompt({ candidates: [], count: 2, world: "a garage", recent: [...Array.from({ length: 16 }, (_, i) => `scene-${i}`), "scene-4"] });
   assert.match(p, /The picture is what the words say/);
   assert.match(p, /an analogy, a joke, a story/);
+  assert.match(p, /snake sliding down a broad jungle rock/);
+  assert.doesNotMatch(p, /toward the camera|dropping on them|hitting their head/);
   assert.match(p, /never a rope for a snake, never tape for a coconut, never a box cutter for a knife/);
   assert.match(p, /Dark-read rule:.*noose, self-harm/);
   assert.match(p, /only for lines about their own life and work; never use it to replace an image they name/);
@@ -232,15 +236,22 @@ test("recent scene dedupe keeps the newest occurrence and writes only the temp c
   assert.notEqual(process.env.REEL_BROLL_RECENT, realRecent);
 });
 
-test("lockBrollGrade preserves the preset colour grade while the rest of the theme applies", () => {
-  const preset = JSON.parse(fs.readFileSync(new URL("../presets/pingel-runway.json", import.meta.url), "utf8"));
+test("pingel-runway disables creative grade and focus blur through merge, theme and composition", () => {
+  const preset = loadPreset("pingel-runway");
   const themed = applyTheme(preset, "gregcard");
-  assert.deepEqual(themed.broll.grade, { preset: "soft-boost", intensity: 0.35, details: { vignette: 0.08, grain: 0.05 } });
+  assert.equal(themed.broll.grade, false);
+  assert.equal(deepMerge({ broll: { grade: { preset: "mono-fade" } } }, { broll: { grade: false } }).broll.grade, false);
   assert.equal(themed.look, "gregcard");
-  assert.ok(themed.hook.treat);
+  assert.equal(themed.slams.style, "type");
   assert.equal(applyTheme({ ...preset, looks: {} }, "gregcard").broll.grade.preset, "mono-fade");
-  assert.deepEqual([preset.broll.duration, preset.broll.gap, preset.broll.max, preset.broll.every, preset.broll.maxCreditsPerReel], [2.4, 3, 5, 10, 180]);
-  assert.equal(preset.broll.grade.preset, "soft-boost", "applyTheme does not mutate the preset");
+  assert.deepEqual([preset.broll.duration, preset.broll.gap, preset.broll.max, preset.broll.every, preset.broll.maxCreditsPerReel], [2.5, 3, 5, 10, 180]);
+  assert.equal(preset.broll.grade, false, "applyTheme does not mutate the preset");
+  assert.equal(preset.broll.videoSeconds, 3);
+  assert.equal(preset.broll.retryVideoModel, "gen4.5");
+  assert.equal(preset.broll.focusPull, 0);
+  const html = renderHTML({ name: "test", canvas: { width: 1080, height: 1920 }, video: { duration: 20, hasAudio: true }, captions: [], style: themed, broll: [{ start: 6, duration: 2, src: "assets/broll/broll-1.mp4", move: "none" }] }, "assets/footage.mp4");
+  assert.doesNotMatch(html, /data-color-grading=/);
+  assert.match(html, /"focusPull":0/);
 });
 
 test("Codex stills validate picks before placement and persist shows", async () => {

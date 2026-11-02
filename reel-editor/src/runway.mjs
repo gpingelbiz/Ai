@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { log, r3, run } from "./util.mjs";
+import { log, warn, r3, run } from "./util.mjs";
 
 /**
  * Runway developer API (docs.dev.runwayml.com, version 2024-11-06): text to image, image to video, task polling,
@@ -46,9 +46,24 @@ export async function waitForTask(id, { fetchFn = fetch, timeoutMs = 600000, sle
   }
 }
 
+/** Drop only the optional finish, then refuse an oversized prompt before any paid call. */
+export function fitPrompt(prompt, { optionalStyle = "", warnFn = warn } = {}) {
+  let text = String(prompt);
+  if (text.length <= 1000) return text;
+  if (optionalStyle && text.endsWith(optionalStyle)) {
+    text = text.slice(0, -optionalStyle.length).trimEnd();
+    warnFn("runway: prompt exceeded 1,000 UTF-16 units; dropped the optional style sentence");
+  }
+  if (text.length > 1000) {
+    warnFn(`runway: prompt is ${text.length} UTF-16 units; shorten complete sentences before generation`);
+    throw new Error("Runway prompt exceeds 1,000 UTF-16 units");
+  }
+  return text;
+}
+
 /** Text to image. Returns {id, estimatedCredits}. */
 export async function createImage({ prompt, ratio = "720:1280", model = "gen4_image", seed, fetchFn } = {}) {
-  const body = { model, promptText: String(prompt).slice(0, 1000), ratio, contentModeration: { publicFigureThreshold: "auto" } };
+  const body = { model, promptText: fitPrompt(prompt), ratio, contentModeration: { publicFigureThreshold: "auto" } };
   if (seed != null) body.seed = seed;
   const r = await post("/v1/text_to_image", body, { fetchFn });
   return { id: r.id, estimatedCredits: r.estimatedCost?.credits ?? null };
@@ -57,7 +72,7 @@ export async function createImage({ prompt, ratio = "720:1280", model = "gen4_im
 /** Image to video. `image` is an https URL or a data URI. Returns {id, estimatedCredits}. */
 export async function createVideo({ image, prompt = "", ratio = "720:1280", duration = 5, model = "gen4_turbo", seed, fetchFn } = {}) {
   const body = { model, promptImage: image, ratio, duration, contentModeration: { publicFigureThreshold: "auto" } };
-  if (prompt) body.promptText = String(prompt).slice(0, 1000);
+  if (prompt) body.promptText = fitPrompt(prompt);
   if (seed != null) body.seed = seed;
   const r = await post("/v1/image_to_video", body, { fetchFn });
   return { id: r.id, estimatedCredits: r.estimatedCost?.credits ?? null };
@@ -141,7 +156,7 @@ export async function makeClip({ scene, motion, dir, name, seconds = 5, ratio = 
   try {
     await download(task.output[0], png, { fetchFn });
     const result = check ? await check(png) : null;
-    if (result?.ok === false) throw Object.assign(new Error(result.why || "still check failed"), { code: "CHECK" });
+    if (result?.ok === false) throw Object.assign(new Error(result.why || "still check failed"), { code: result.unavailable ? "CHECK_UNAVAILABLE" : "CHECK" });
     if (beforeBuy) await beforeBuy("video", items);
     vid = await createVideo({ image: task.output[0], prompt: motion, ratio, duration: seconds, model: videoModel, fetchFn });
   } catch (e) { throw Object.assign(e, { items, png }); }
