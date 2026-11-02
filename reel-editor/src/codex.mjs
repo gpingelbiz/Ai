@@ -73,6 +73,36 @@ function runCodex(args, { timeoutMs }) {
 }
 
 /** One `codex exec` run in `cwd` (the only folder it may write). Returns the final message text. */
+/**
+ * OpenAI structured output (`codex --output-schema`) rejects a schema whose `required` misses any property
+ * (a live 400 on 2026-11-02 broke the b-roll picks and the carousel slides). Every property becomes required; one
+ * that was optional becomes nullable, and its nulls are stripped from the reply again so callers see it left out.
+ */
+export function strictSchema(schema) {
+  if (!schema || typeof schema !== "object") return schema;
+  const out = Array.isArray(schema) ? schema.map(strictSchema) : { ...schema };
+  if (out.properties) {
+    const required = new Set(out.required || []);
+    out.properties = Object.fromEntries(Object.entries(out.properties).map(([k, v]) => {
+      const strict = strictSchema(v);
+      if (required.has(k)) return [k, strict];
+      const type = strict.type ? [...new Set([...(Array.isArray(strict.type) ? strict.type : [strict.type]), "null"])] : undefined;
+      return [k, { ...strict, ...(type ? { type } : {}), ...(strict.enum ? { enum: [...new Set([...strict.enum, null])] } : {}) }];
+    }));
+    out.required = Object.keys(out.properties);
+  }
+  if (out.items) out.items = strictSchema(out.items);
+  return out;
+}
+
+/** Drop the nulls `strictSchema` allowed for properties the original schema left optional. */
+export function stripOptionalNulls(value, schema) {
+  if (Array.isArray(value)) return value.map((v) => stripOptionalNulls(v, schema?.items));
+  if (!value || typeof value !== "object" || !schema?.properties) return value;
+  const required = new Set(schema.required || []);
+  return Object.fromEntries(Object.entries(value).filter(([k, v]) => !(v === null && !required.has(k))).map(([k, v]) => [k, stripOptionalNulls(v, schema.properties[k])]));
+}
+
 export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}) {
   const paused = codexPausedUntil();
   if (paused) throw new CodexLimited(`Codex is paused after a rate limit until ${new Date(paused).toLocaleTimeString()}`);
@@ -81,7 +111,7 @@ export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}
   let schemaFile = null;
   if (schema) {
     schemaFile = path.join(cwd, `.codex-schema-${process.pid}-${Date.now()}.json`);
-    fs.writeFileSync(schemaFile, JSON.stringify(schema));
+    fs.writeFileSync(schemaFile, JSON.stringify(strictSchema(schema)));
   }
   let lastErr;
   try {
@@ -93,7 +123,9 @@ export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}
       try {
         await runCodex(args, { timeoutMs });
         workingModel = model;
-        return fs.existsSync(last) ? fs.readFileSync(last, "utf8") : "";
+        const text = fs.existsSync(last) ? fs.readFileSync(last, "utf8") : "";
+        if (!schema) return text;
+        try { return JSON.stringify(stripOptionalNulls(JSON.parse(text), schema)); } catch { return text; }
       } catch (e) {
         lastErr = e;
         if (isRateLimit(e.output || e.message)) {

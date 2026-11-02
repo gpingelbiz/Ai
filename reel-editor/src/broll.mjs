@@ -151,6 +151,9 @@ const WORD_REF_SCHEMA = {
   type: "object", properties: { line: { type: "integer" }, wordIndex: { type: "integer" }, text: { type: "string" } },
   required: ["line", "wordIndex", "text"], additionalProperties: false,
 };
+/** A null reads like a field Codex left out (codexExec strips them too; injected test replies may not). */
+export const withoutNulls = (picks) => picks.map((p) => Object.fromEntries(Object.entries(p).filter(([, v]) => v !== null)));
+
 export const PICKS_SCHEMA = {
   type: "object",
   properties: {
@@ -165,6 +168,7 @@ export const PICKS_SCHEMA = {
           sound: { type: "string" }, soundRole: { type: "string", enum: ["impact", "movement", "none"] },
           sequenceGroup: { type: "string" }, endsAt: WORD_REF_SCHEMA, endsBefore: WORD_REF_SCHEMA,
         },
+        // Optional fields stay optional here; codexExec's strictSchema makes them nullable for OpenAI.
         required: ["stockQuery", "line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
         additionalProperties: false,
       },
@@ -204,7 +208,7 @@ async function makeAnimatedBroll(args) {
     planPicks: async (request, dir) => {
       ready();
       for (const file of fs.readdirSync(dir)) if (/^broll-\d+\.(png|jpe?g|webp)$/i.test(file)) fs.rmSync(path.join(dir, file), { force: true });
-      return JSON.parse(await exec(picksPrompt({ ...request, aspect: settings.aspect || "9:16" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 })).picks || [];
+      return withoutNulls(JSON.parse(await exec(picksPrompt({ ...request, aspect: settings.aspect || "9:16" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 })).picks || []);
     },
     drawStill: async ({ file, prompt, pick, reason, attempt, kind }) => {
       const dir = path.dirname(file);
@@ -268,7 +272,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
     log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"}${sourcesFirst ? " for library and stock" : " and drawing the stills"}…`);
     const transcript = groups.map((g) => g.text).join(" ");
     const reply = await exec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: gap, duration: len, style: settings.style || "", recent: readRecent(recentFile(deps.env)), sourcesFirst, aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
-    picks = JSON.parse(reply).picks || [];
+    picks = withoutNulls(JSON.parse(reply).picks || []);
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);
     return [];

@@ -360,3 +360,25 @@ test("checkPick keeps a two-by-four weapon line on the speaker", async () => {
   const groups = [{ start: 51.66, end: 52.06, text: "Bring a two" }, { start: 52.06, end: 52.6, text: "by four" }];
   assert.match(checkPick({ shows: "two by four", scene: "Cropped hands lower a wooden two-by-four over wet sand." }, { i: 0, ...groups[0] }, groups, { len: 2 }), /weapon stays on the speaker/);
 });
+
+test("codexExec's strictSchema makes every schema OpenAI-valid and strips the optional nulls again", async () => {
+  // codex --output-schema rejected PICKS_SCHEMA and the carousel SLIDES_SCHEMA with a 400 on 2026-11-02.
+  const { strictSchema, stripOptionalNulls } = await import("../src/codex.mjs");
+  const { PICKS_SCHEMA, withoutNulls } = await import("../src/broll.mjs");
+  const { SLIDES_SCHEMA } = await import("../src/carousel.mjs");
+  const walk = (s, where) => {
+    if (s?.properties) {
+      assert.deepEqual([...s.required].sort(), Object.keys(s.properties).sort(), `${where}: every property required`);
+      for (const [k, v] of Object.entries(s.properties)) walk(v, `${where}.${k}`);
+    }
+    if (s?.items) walk(s.items, `${where}[]`);
+  };
+  walk(strictSchema(PICKS_SCHEMA), "picks");
+  walk(strictSchema(SLIDES_SCHEMA), "slides");
+  const strict = strictSchema(PICKS_SCHEMA).properties.picks.items.properties;
+  assert.deepEqual(strict.sound.type, ["string", "null"]);
+  assert.ok(strict.soundRole.enum.includes(null));
+  assert.equal(strict.line.type, "integer", "required fields keep their type");
+  assert.deepEqual(stripOptionalNulls({ picks: [{ line: 3, sound: null, endScene: "x" }] }, PICKS_SCHEMA), { picks: [{ line: 3, endScene: "x" }] });
+  assert.deepEqual(withoutNulls([{ line: 3, sound: null }]), [{ line: 3 }]);
+});
