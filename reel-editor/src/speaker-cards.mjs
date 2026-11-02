@@ -323,6 +323,20 @@ function fitText(text, preferred, minimum, width, lineHeight) {
   return { fontSize, minimum, lines, height: Math.ceil(lines * fontSize * lineHeight) };
 }
 
+// A role line joined with " · " breaks only between its credentials, so a wrap never strands one word
+// ("…Author of Highly / Confident"). Falls back to word wrapping when one credential alone is too wide.
+const roleParts = (text) => clean(text).split(/\s+·\s+/u).filter(Boolean);
+function fitRole(text, preferred, minimum, width, lineHeight) {
+  const words = fitText(text, preferred, minimum, width, lineHeight), parts = roleParts(text);
+  if (parts.length < 2) return words;
+  const widthOf = (p, i) => [...(i < parts.length - 1 ? `${p} ·` : p)].reduce((n, c) => n + (/\s/u.test(c) ? 0.35 : /[MW@%]/u.test(c) ? 1 : /[il.,!'·]/u.test(c) ? 0.35 : 0.68), 0) * words.fontSize;
+  if (parts.some((p, i) => widthOf(p, i) > width)) return words;
+  let lines = 1, used = 0;
+  parts.forEach((p, i) => { const w = widthOf(p, i), space = used ? 0.35 * words.fontSize : 0; if (used && used + space + w > width) { lines++; used = 0; } used += (used ? space : 0) + w; });
+  return { ...words, lines, height: Math.ceil(lines * words.fontSize * lineHeight), segmented: true };
+}
+const roleHTML = (text) => roleParts(text).map((p, i, all) => `<span class="sc-role-part" style="white-space:nowrap">${esc(p)}${i < all.length - 1 ? " ·" : ""}</span>`).join(" ");
+
 // New layouts use coordinates local to the active picture. The letterbox adapter only moves their parent.
 function optionLayout(card, canvas, context) {
   const { width: W, height } = dimensions(canvas), H = canvas?.activeBox?.height ?? height;
@@ -360,7 +374,7 @@ function optionLayout(card, canvas, context) {
   if (card.layout !== "premium") return null;
   if (card.type === "booking") {
     const w = 1000, photo = card.headshot ? { x: 1240, y: H / 9, w: 560, h: H * 7 / 9 } : null;
-    const name = fitText(card.name, 112, 112, w, 1.12), role = fitText(card.roleLine, 40, 40, w, 1.25);
+    const name = fitText(card.name, 112, 112, w, 1.12), role = fitRole(card.roleLine, 40, 40, w, 1.25);
     const text = fitText(card.text, 40, 40, w, 1.25);
     const route = fitText(card.mode === "bureau" ? card.bureauName : bookingUrlDisplay(card.url), 88, 88, w, 1.25);
     const gap = 32, h = [name, role, text, route].reduce((sum, f) => sum + f.height, 0) + gap * 3;
@@ -619,7 +633,7 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
     fields.push(card.name, ...(card.showRole !== false ? [card.roleLine] : []), ...(!compact ? [card.tagline] : []));
   } else if (card.type === "booking") {
     const routeColor = contrast(t.colors.accent, colors.surface) >= 4.5 ? t.colors.accent : colors.ink;
-    content = `<div class="sc-copy" style="${copyStyle};gap:${layout.gap}px">${display(card.name, "sc-name", layout.name.fontSize)}${display(card.roleLine, "sc-body", layout.role.fontSize)}${display(card.text, "sc-body", layout.text.fontSize)}<div class="sc-body sc-route" style="font-size:${layout.route.fontSize}px;color:${routeColor}">${esc(card.mode === "bureau" ? card.bureauName : bookingUrlDisplay(card.url))}</div></div>`;
+    content = `<div class="sc-copy" style="${copyStyle};gap:${layout.gap}px">${display(card.name, "sc-name", layout.name.fontSize)}${layout.role.segmented ? `<div class="sc-body" style="font-size:${layout.role.fontSize}px">${roleHTML(card.roleLine)}</div>` : display(card.roleLine, "sc-body", layout.role.fontSize)}${display(card.text, "sc-body", layout.text.fontSize)}<div class="sc-body sc-route" style="font-size:${layout.route.fontSize}px;color:${routeColor}">${esc(card.mode === "bureau" ? card.bureauName : bookingUrlDisplay(card.url))}</div></div>`;
     fields.push(card.name, card.roleLine, card.text, card.mode === "bureau" ? card.bureauName : card.url);
   } else if (card.type === "testimonial-name") {
     content = `<div class="sc-copy sc-attribution" style="inset:${layout.pad}px;gap:${layout.gap}px">${display(card.name, "sc-body sc-route", layout.name.fontSize)}${card.title ? display(card.title, "sc-body", layout.title.fontSize) : ""}${card.org ? display(card.org, "sc-body", layout.org.fontSize) : ""}</div>`;

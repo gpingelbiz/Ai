@@ -291,3 +291,16 @@ test("lavfi: side identifiers clear measured portrait foregrounds at all active 
     t.diagnostic(`${ratio || "16:9"}: measured foreground ${xs.length}x${ys.length} at ${xs[0]},${ys[0]}; identifier ends x=${layout.x + layout.w}; clear gap ${xs[0] - layout.x - layout.w}px`);
   }
 });
+
+test("premium booking breaks a ' · ' role line only between credentials, never stranding one word", () => {
+  const card = resolved({ type: "booking", layout: "premium" }, "insert");
+  const r = bookingCard(card, { tokens });
+  assert.equal(r.layout.role.segmented, true);
+  assert.match(r.html, /<span class="sc-role-part" style="white-space:nowrap">Sales and on-camera speaker ·<\/span> <span class="sc-role-part" style="white-space:nowrap">Author of Highly Confident<\/span>/);
+  // A role line without separators keeps plain word wrapping.
+  const plain = bookingCard({ ...card, roleLine: "Sales and on-camera speaker" }, { tokens });
+  assert.equal(plain.layout.role.segmented, undefined); assert.doesNotMatch(plain.html, /sc-role-part">/);
+  // One credential wider than the column falls back to word wrapping instead of overflowing.
+  const long = bookingCard({ ...card, roleLine: `${"Keynote ".repeat(40).trim()} · Author` }, { tokens });
+  assert.equal(long.layout.role.segmented, undefined);
+});
