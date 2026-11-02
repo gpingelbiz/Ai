@@ -331,3 +331,14 @@ test("intro sourceWordRange defers to composition when the index has no words (p
   assert.ok(!problems.some((p) => p.level === "error" && /sourceWordRange|evidence|lineBreaks|accentWord|fit at the minimum/.test(p.message)), JSON.stringify(problems));
   assert.ok(problems.some((p) => p.level === "warn" && /checked against indexed words/.test(p.message)));
 });
+
+test("intro bleed lets shape/image/video layers fill the active picture but never text", async () => {
+  const { resolveIntro } = await import("../src/speaker-intro.mjs");
+  const plan = { canvas: { width: 1920, height: 1080, fps: 30 }, look: { letterbox: null }, items: [{ id: "a", kind: "clip", sourceId: "s", in: 0, out: 4, audio: "source" }] };
+  const entry = { id: "o", at: "a", offset: 0, duration: 3 };
+  const run = (layer) => resolveIntro({ type: "intro", layers: [layer] }, { plan, entry, manifest: { sources: [{ id: "s", kind: "stage", audio: "ok" }] }, index: {}, mode: "overlay" }).problems || [];
+  const scrim = { id: "scrim", kind: "shape", shape: "scrim", color: "surface", from: 0, to: 60, rect: { x: 0, y: 0, w: 1920, h: 1080 }, allowOverFace: true };
+  assert.ok(run(scrim).some((p) => /safe margin/.test(p.message)), "full-frame shape needs bleed");
+  assert.ok(!run({ ...scrim, bleed: true }).some((p) => /safe margin|outside the active picture|bleed/.test(p.message)));
+  assert.ok(run({ id: "t", kind: "text", identity: "name", from: 0, to: 60, rect: { x: 0, y: 0, w: 1920, h: 200 }, bleed: true }).some((p) => /bleed must be boolean on a shape, image or video/.test(p.message)));
+});

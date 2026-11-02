@@ -94,17 +94,19 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
   for (const raw of Array.isArray(input?.layers) ? input.layers : []) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) { add("layers must be objects"); continue; }
     const l = structuredClone(raw), label = l.id || "layer", fail = (s) => add(`${label}: ${s}`);
-    const shared = ["id", "kind", "from", "to", "rect", "animations", "allowOverFace"];
-    const fields = { text: ["identity", "proofId", "itemId", "sourceWordRange", "wordByWord", "words", "font", "fontSize", "color", "accentWord", "lineBreaks"], image: ["sourceId", "proofId", "fit", "crop", "cutout"], video: ["sourceId", "in", "out", "fit", "crop", "radius"], shape: ["shape", "color", "opacity", "direction"] };
+    const shared = ["id", "kind", "from", "to", "rect", "animations", "allowOverFace", "bleed"];
+    const fields = { text: ["identity", "proofId", "itemId", "sourceWordRange", "wordByWord", "sourceTypography", "words", "font", "fontSize", "color", "accentWord", "lineBreaks"], image: ["sourceId", "proofId", "fit", "crop", "cutout"], video: ["sourceId", "in", "out", "fit", "crop", "radius"], shape: ["shape", "color", "opacity", "direction"] };
     if (!KINDS.includes(l.kind)) fail("unknown kind");
     for (const key of Object.keys(l)) if (![...shared, ...(fields[l.kind] || [])].includes(key)) fail(`unsupported field ${key}`);
     if (!/^[a-zA-Z0-9_-]+$/.test(l.id || "") || ids.has(l.id)) fail("id must be safe and unique");
     ids.add(l.id);
     if (!Number.isInteger(l.from) || !Number.isInteger(l.to) || l.from < 0 || l.to <= l.from || span && l.to > span.frames) fail("from/to must be integer half-open frames inside the overlay");
     if (l.allowOverFace != null && typeof l.allowOverFace !== "boolean") fail("allowOverFace must be boolean");
+    if (l.bleed != null && (typeof l.bleed !== "boolean" || !["shape", "image", "video"].includes(l.kind))) fail("bleed must be boolean on a shape, image or video");
+    const margin = l.bleed === true ? 0 : SAFE;
     const r = l.rect;
     if (!r || Object.keys(r).some((k) => !["x", "y", "w", "h"].includes(k)) || ![r.x, r.y, r.w, r.h].every(Number.isFinite) || r.w <= 0 || r.h <= 0) { fail("rect requires finite x,y,w,h"); continue; }
-    if (r.x < SAFE || r.y < box.y + SAFE || r.x + r.w > box.width - SAFE || r.y + r.h > box.y + box.height - SAFE) fail("rect is outside the 96px active-picture safe margin");
+    if (r.x < margin || r.y < box.y + margin || r.x + r.w > box.width - margin || r.y + r.h > box.y + box.height - margin) fail(l.bleed ? "bleed rect is outside the active picture" : "rect is outside the 96px active-picture safe margin");
     if (l.animations != null && (!Array.isArray(l.animations) || l.animations.length > 8)) fail("animations must be an array of at most eight motions");
     l.animations = Array.isArray(l.animations) ? l.animations : [];
     const animated = new Set();
@@ -123,7 +125,8 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
     const dx = l.animations.map((a) => a?.dx ?? (a?.type === "slam" ? 80 : a?.type === "drift" ? -8 : 0));
     const dy = l.animations.map((a) => a?.dy ?? (["rise", "slam"].includes(a?.type) ? 24 : 0));
     l.bounds = { x: r.x - r.w * (scale - 1) / 2 + Math.min(0, ...dx), y: r.y - r.h * (scale - 1) / 2 + Math.min(0, ...dy), w: r.w * scale + Math.max(0, ...dx) - Math.min(0, ...dx), h: r.h * scale + Math.max(0, ...dy) - Math.min(0, ...dy) };
-    if (l.bounds.x < SAFE - 1e-7 || l.bounds.y < box.y + SAFE - 1e-7 || l.bounds.x + l.bounds.w > box.width - SAFE + 1e-7 || l.bounds.y + l.bounds.h > box.y + box.height - SAFE + 1e-7) fail("animated bounds leave the safe margin");
+    const sweptMargin = l.bleed === true ? -160 : SAFE;
+    if (l.bounds.x < sweptMargin - 1e-7 || l.bounds.y < box.y + sweptMargin - 1e-7 || l.bounds.x + l.bounds.w > box.width - sweptMargin + 1e-7 || l.bounds.y + l.bounds.h > box.y + box.height - sweptMargin + 1e-7) fail(l.bleed ? "animated bleed exceeds 160px overscan" : "animated bounds leave the safe margin");
     if (l.kind === "text") {
       const evidence = [l.identity != null, l.proofId != null, l.sourceWordRange != null].filter(Boolean).length;
       let text = "", deferred = false;
@@ -150,6 +153,12 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
             if (l.wordFrames[0] < l.from || l.wordFrames.at(-1) >= l.to) fail("layer must include the words' real timestamp frames");
           }
         }
+      }
+      if (l.sourceTypography != null && (l.sourceTypography !== "sentence" || !l.sourceWordRange)) fail("sourceTypography must be sentence on sourceWordRange text");
+      if (l.sourceTypography === "sentence" && !deferred) {
+        l.sourceText = text;
+        text = text.replace(/^["“”]+|["“”]+$/gu, "");
+        text = text.charAt(0).toLocaleUpperCase("en-US") + text.slice(1);
       }
       if (l.wordByWord != null && (typeof l.wordByWord !== "boolean" || !l.sourceWordRange)) fail("wordByWord requires sourceWordRange");
       if (l.itemId && !l.sourceWordRange) fail("itemId requires sourceWordRange");
@@ -393,7 +402,7 @@ export function renderIntro(card, { id, span, tokens, assets = {}, offsetY = 0 }
     timeline.push(`tl.set(${js(target)},{autoAlpha:1},${first / FPS});`);
     for (const a of l.animations) timeline.push(animationCode(a.out ? target : `${target} > .si-motion`, a, span.startFrame));
     timeline.push(`tl.set(${js(target)},{autoAlpha:0},${end / FPS});`);
-    review.push({ id: l.id, kind: l.kind, firstFrame: first, lastFrame: end - 1, rect: r, bounds: l.bounds, sourceId: l.sourceId, proofId: l.proofId, identity: l.identity, sourceWordRange: l.sourceWordRange, itemId: l.itemId, wordFrames: l.wordFrames?.map((f) => span.startFrame + f), sourceIn: l.in, sourceOut: l.out, crop: l.crop, fit: l.fit, allowOverFace: l.allowOverFace === true, animations: l.animations, ...assets[l.id] });
+    review.push({ id: l.id, kind: l.kind, firstFrame: first, lastFrame: end - 1, rect: r, bounds: l.bounds, sourceId: l.sourceId, proofId: l.proofId, identity: l.identity, sourceWordRange: l.sourceWordRange, itemId: l.itemId, wordFrames: l.wordFrames?.map((f) => span.startFrame + f), sourceIn: l.in, sourceOut: l.out, crop: l.crop, fit: l.fit, allowOverFace: l.allowOverFace === true, bleed: l.bleed === true, sourceTypography: l.sourceTypography, sourceText: l.sourceText, text: l.text, animations: l.animations, ...assets[l.id] });
   }
   return { html: html.join("\n"), css: ".speaker-intro-layer{position:absolute;opacity:0;visibility:hidden;pointer-events:none;z-index:4}.si-motion{width:100%;height:100%;transform-origin:center}.si-text{background:none;padding:0;text-shadow:0 2px 12px #0006}", timeline: timeline.join("\n"), assets: [], warnings: [], layout: { fits: true, activeAware: true }, text: card.layers.filter((l) => l.kind === "text").map((l) => l.text), layers: review };
 }
