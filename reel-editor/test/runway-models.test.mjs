@@ -31,6 +31,7 @@ function fixture() {
   };
   const runFn = async (cmd, args) => {
     runs.push({ cmd, args });
+    if (cmd === "ffprobe") return { out: "3" };
     fs.writeFileSync(args.at(-1), "local asset");
   };
   return { calls, runs, tasks, ledger, fetchFn, runFn, sleepFn: async () => {}, recordUsage: (entry) => ledger.push(entry) };
@@ -93,7 +94,7 @@ test("unknown models, unsupported sizes and invalid seeds fail before HTTP", asy
 test("Mirelo: exact sound fields, fractional used duration, price and proxy", async () => {
   const f = fixture();
   await createSound({ videoUri: "https://fake/clip", promptText: "A coconut thuds onto sand", duration: 2.5, seed: 12, fetchFn: f.fetchFn });
-  assert.deepEqual(f.calls[0].body, { model: "mirelo_sfx_2_0", videoUri: "https://fake/clip", promptText: "A coconut thuds onto sand", negativePrompt: "music, speech, singing", duration: 2.5, seed: 12, format: "wav", numVariants: 1 });
+  assert.deepEqual(f.calls[0].body, { model: "mirelo_sfx_2_0", videoUri: "https://fake/clip", promptText: "A coconut thuds onto sand", negativePrompt: "music, speech, singing", preserveSpeech: false, duration: 2.5, seed: 12, format: "wav", numVariants: 1 });
   assert.equal(estimateClip({ seconds: 3, videoModel: "kling3.0_standard", lastFrame: true, sfxSeconds: 2.5 }).credits, 42);
   const file = path.join(dir, "trimmed.mp4"), out = path.join(dir, "broll-1.sfx.wav");
   fs.writeFileSync(file, "trimmed clip");
@@ -148,7 +149,7 @@ test("end stills use first-frame references, check identity, and fall back on re
 
 test("routing, stable shot seeds, planner fields and the five-shot preset budget", () => {
   const settings = JSON.parse(fs.readFileSync(new URL("../presets/pingel-runway.json", import.meta.url))).broll;
-  assert.equal(settings.maxCreditsPerReel, 260);
+  assert.equal(settings.maxCreditsPerReel, 300);
   // Routing itself, with Kling on action shots and a last frame (a brand can still choose this).
   const routed = { ...settings, imageModel: "gen4_image", videoModel: "gen4_turbo", actionVideoModel: "kling3.0_standard", lastFrame: true };
   const action = shotModels({ kind: "action", endScene: "Landed" }, routed), ambient = shotModels({ kind: "ambient", endScene: "Landed" }, routed);
@@ -164,12 +165,12 @@ test("routing, stable shot seeds, planner fields and the five-shot preset budget
   assert.equal(worst, 225);
   assert.equal(5 * estimateClip({ ...shot, sfxSeconds: settings.duration }).credits, worst);
   assert.ok(worst <= settings.maxCreditsPerReel);
-  assert.equal(settings.sfx, true); assert.equal(settings.sfxVolume, 0.35);
+  assert.equal(settings.sfx, true); assert.equal(settings.sfxUnderSpeechDb, 12);
   assert.equal(shotSeed("/one/reel", 5), shotSeed("/two/reel", 5));
   assert.notEqual(shotSeed("/one/reel", 5), shotSeed("/one/reel", 6));
   assert.notEqual(shotSeed("/one/reel", 5), shotSeed("/one/other", 5));
   assert.ok(shotSeed("/one/reel", 5) >= 0 && shotSeed("/one/reel", 5) <= 4294967295);
-  assert.equal(PROMPT_VERSION, "literal-video-v4");
+  assert.equal(PROMPT_VERSION, "literal-video-v5");
   const prompt = runwayPicksPrompt({ candidates: [], count: 2 });
   for (const field of ["kind:", "endScene:", "sound:"]) assert.ok(prompt.includes(field));
 });
@@ -266,4 +267,20 @@ test("Veo 3.1: only 4, 6 or 8 seconds, audio always sent and priced", async () =
   assert.equal(bodies[0].audio, false);
   assert.equal(bodies[0].seed, 7);
   await assert.rejects(createVideo({ image: "https://x/a.png", prompt: "x", model: "veo3.1", duration: 5, fetchFn }), /one of 4, 6, 8/);
+});
+
+test("bake-off samples actual duration and records conditioning, submitted seeds and durable tasks", async () => {
+  const { f, options } = bakeoffFixture();
+  await runBakeoff(options, f);
+  const count = f.calls.length;
+  const cached = await runBakeoff({ ...options, maxCredits: 18 }, f);
+  assert.equal(cached.credits, 18); assert.equal(f.calls.length, count, "restarting reuses the existing image tasks at the cap");
+  const runFn = async (cmd, args) => cmd === "ffprobe" ? { out: "4" } : f.runFn(cmd, args);
+  await runBakeoff({ ...options, stage: "videos", sfx: false }, { ...f, runFn });
+  const samples = f.runs.filter((r) => r.args.includes("-ss")).slice(0, 4);
+  assert.deepEqual(samples.map((r) => r.args[r.args.indexOf("-ss") + 1]), ["0", "1", "2", "3"]);
+  const metadata = JSON.parse(fs.readFileSync(path.join(options.out, "coconut", "gen4_image--kling3.0_standard.comparison.json")));
+  assert.equal(metadata.conditioning, "first-last"); assert.equal(metadata.submittedSeed, null); assert.equal(metadata.actualDuration, 4);
+  const usage = JSON.parse(fs.readFileSync(path.join(options.out, "usage.json")));
+  assert.ok(usage.tasks.length >= 7); assert.ok(usage.tasks.every((t) => t.taskId && t.state === "succeeded"));
 });

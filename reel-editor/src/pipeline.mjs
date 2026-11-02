@@ -546,7 +546,7 @@ export async function runEdit(input, opts = {}) {
   const sharedBrollLayout = ["window", "split", "mix", "full-split"].includes(preset.broll?.layout);
   const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...transientCards, ...evidence] : evidence, tail };
   let broll = preset.broll?.enabled && shownGroups.length
-    ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
+    ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, footage: videoSrc, caption: { top: preset.captions.position - 0.6 * preset.captions.fontSizeFrac, height: 0.18, fontSizeFrac: preset.captions.fontSizeFrac, uppercase: preset.captions.uppercase }, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
   // "full-split": one cutaway with clear time after it is held longer, to become a split once the face is known.
   if (preset.broll?.layout === "full-split" && broll.length) broll = holdForSplit(broll, { duration, cta, busy: brollArgs.busy, tail, gap: preset.broll.gap ?? 4, hold: preset.broll.hold ?? 5, clipSeconds: preset.broll.videoSeconds ?? 5 });

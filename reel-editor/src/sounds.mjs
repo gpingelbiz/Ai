@@ -61,6 +61,6 @@ export function brollSoundTracks(broll, assets, { volume = 0.35 } = {}) {
   return broll.filter((b) => b.sfx && fs.existsSync(b.sfx)).map((b, i) => {
     const name = `broll-${i + 1}.sfx.wav`;
     fs.copyFileSync(b.sfx, path.join(assets, name));
-    return { id: `sfx-broll-${i + 1}`, src: `assets/${name}`, start: b.start, duration: b.duration, volume, track: 10 };
+    return { id: `sfx-broll-${i + 1}`, src: `assets/${name}`, start: b.start, duration: b.duration, volume: b.sfxMix?.volume ?? volume, ...(b.sfxMix?.lane ? { lane: b.sfxMix.lane } : {}), track: 10 };
   });
 }
