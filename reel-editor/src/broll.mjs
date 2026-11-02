@@ -75,9 +75,33 @@ export function spokenInShot(candidate, groups, { len = 2.4 } = {}) {
 }
 
 /** Reject stand-ins before either engine places a shot. */
+// Words that never name the thing a picture shows ("a", "the", "coming", "just").
+const SUBJECT_STOP = new Set("a an the some my your his her their our this that these those in on at to of into onto with i i'm me you it it's is are was going coming just".split(" "));
+
+/**
+ * The subject a pick names. Claude often writes `shows` as a phrase ("a snake coming down", "going to the jungle",
+ * "a two by four"); the subject is the run of those words its own scene also names, without leading articles or
+ * verbs, at most three words ("snake", "jungle", "two by four").
+ */
+export function subjectWords(shows, scene = "") {
+  const words = String(shows || "").split(/\s+/).map(norm).filter(Boolean);
+  const named = new Set(String(scene || "").split(/[^\p{L}\p{N}']+/u).map(norm).filter(Boolean));
+  // Runs of words the scene also names; the run holding the longest such word is the subject.
+  const runs = [];
+  words.forEach((w, i) => {
+    const kept = named.has(w) && !SUBJECT_STOP.has(w) || (named.has(w) && runs.at(-1)?.end === i - 1 && named.has(words[i + 1] || ""));
+    if (!kept) return;
+    if (runs.at(-1)?.end === i - 1) runs.at(-1).end = i; else runs.push({ start: i, end: i });
+  });
+  if (!runs.length) return words.filter((w) => !SUBJECT_STOP.has(w)).slice(0, 3);
+  const longest = (r) => Math.max(...words.slice(r.start, r.end + 1).map((w) => w.length));
+  const best = runs.reduce((a, b) => (longest(b) > longest(a) ? b : a));
+  return words.slice(best.start, best.end + 1).slice(0, 3);
+}
+
 export function checkPick(pick, candidate, groups, { len = 2.4 } = {}) {
   const words = (s) => String(s || "").split(/\s+/).map(norm).filter(Boolean);
-  const shows = words(pick.shows);
+  const shows = subjectWords(pick.shows, pick.scene);
   if (!shows.length) return "shows missing";
   if (!candidate) return "line is not a candidate";
   const spoken = new Set(words(spokenInShot(candidate, groups, { len })));
@@ -87,6 +111,9 @@ export function checkPick(pick, candidate, groups, { len = 2.4 } = {}) {
   if (!words(pick.scene).includes(noun)) return `scene does not contain ${noun}`;
   const dark = String(pick.scene || "").match(/\b(rope|cord|strap|noose|lasso|cable|chain)s?\b/i);
   if (dark) return `dark-read word: ${dark[0]}`;
+  // A weapon line ("bring a knife, kill the snake") stays on the speaker: no cutaway of the weapon at all.
+  const weapon = `${shows.join(" ")} ${pick.scene || ""}`.match(/\b(knife|knives|gun|guns|pistol|rifle|sword|swords|machete|blade|blades|axe|dagger)\b/i);
+  if (weapon) return `weapon stays on the speaker: ${weapon[0]}`;
   return null;
 }
 

@@ -719,3 +719,18 @@ test("reported video cost exhausting the remaining cap prevents a sound purchase
   assert.equal(shots.length, 1); assert.equal(f.sounds.length, 0);
   assert.equal(f.plan().usage.reduce((s, i) => s + i.credits, 0), 30);
 });
+
+test("runwayTiming starts on the named word when Claude writes a phrase", async () => {
+  const { runwayTiming } = await import("../src/broll-runway.mjs");
+  const groups = [
+    { start: 19.78, end: 20.58, text: "a snake coming", words: [{ text: "a", start: 19.83 }, { text: "snake", start: 20.05 }, { text: "coming", start: 20.4 }] },
+    { start: 20.58, end: 21.5, text: "down grabbing me", words: [{ text: "down", start: 20.63 }, { text: "grabbing", start: 20.9 }, { text: "me", start: 21.3 }] },
+    { start: 51.66, end: 52.06, text: "Bring a two", words: [{ text: "Bring", start: 51.7 }, { text: "a", start: 51.9 }, { text: "two", start: 51.97 }] },
+    { start: 52.06, end: 52.6, text: "by four", words: [{ text: "by", start: 52.1 }, { text: "four", start: 52.3 }] },
+  ];
+  const c = (i) => ({ i, start: groups[i].start, text: groups[i].text, words: groups[i].words });
+  const snake = runwayTiming({ shows: "a snake coming down", scene: "One green snake slides down a rock.", duration: 1.8 }, c(0), groups, { len: 2.5 });
+  assert.equal(snake.start, 20.05);
+  assert.ok(Math.abs(snake.duration - 1.8) < 1e-9);
+  assert.equal(runwayTiming({ shows: "a two by four", scene: "Hands holding a wooden two by four.", duration: 2 }, c(2), groups, { len: 2.5 }).start, 51.97);
+});

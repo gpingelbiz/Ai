@@ -328,3 +328,23 @@ test("video compositions use real playback with no editor push while preserving 
   assert.match(html, /"broll":\[\{"start":6,"duration":1.8,"motion":"none","video":true\}\]/);
   assert.equal(shot.motion, "The coconut rolls. Camera: locked camera.");
 });
+
+test("subjectWords: a phrase from Claude comes down to the thing its scene names", async () => {
+  const { subjectWords, checkPick } = await import("../src/broll.mjs");
+  // The 2026-11-02 jungle re-cut: every one of these was rejected for "no room" before.
+  assert.deepEqual(subjectWords("a snake coming down", "Photographic close view of one green snake on a sloping jungle rock."), ["snake"]);
+  assert.deepEqual(subjectWords("going to the jungle", "Eye-level view of an empty path entering dense tropical jungle."), ["jungle"]);
+  assert.deepEqual(subjectWords("a gorilla coming after me", "One silverback gorilla in a bright jungle clearing."), ["gorilla"]);
+  assert.deepEqual(subjectWords("a coconut just hits", "One whole brown coconut at a low rock edge."), ["coconut"]);
+  assert.deepEqual(subjectWords("a two by four", "Cropped hands holding a wooden two by four above wet sand."), ["two", "by", "four"]);
+  assert.deepEqual(subjectWords("snake", "A rope coiled on a hook."), ["snake"], "a scene that does not name it keeps the word, so checkPick can reject it");
+  const groups = [{ start: 20, end: 21, text: "a snake coming" }, { start: 21, end: 22, text: "down grabbing me" }];
+  assert.equal(checkPick({ shows: "a snake coming down", scene: "One green snake slides down a sloping rock." }, { i: 0, ...groups[0] }, groups, { len: 2 }), null);
+  assert.match(checkPick({ shows: "snake", scene: "A tow strap coiled on a hook." }, { i: 0, ...groups[0] }, groups, { len: 2 }), /scene does not contain snake/);
+});
+
+test("checkPick keeps weapon lines on the speaker", async () => {
+  const { checkPick } = await import("../src/broll.mjs");
+  const groups = [{ start: 49.5, end: 50.1, text: "Bring a knife" }, { start: 50.1, end: 51.6, text: "kill the snake okay?" }];
+  assert.match(checkPick({ shows: "knife", scene: "A hunting knife in a leather sheath on a jungle log." }, { i: 0, ...groups[0] }, groups, { len: 1.6 }), /weapon stays on the speaker: knife/);
+});

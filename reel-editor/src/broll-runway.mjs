@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { claudeText, claudeLook, firstJSON, hasClaude } from "./claude.mjs";
-import { brollCount, brollCandidates, checkPick, spokenInShot, readRecent, rememberScenes, uniqueScenes } from "./broll.mjs";
+import { brollCount, brollCandidates, checkPick, subjectWords, spokenInShot, readRecent, rememberScenes, uniqueScenes } from "./broll.mjs";
 import { norm } from "./text.mjs";
 import { hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt, modelInfo, makeSound } from "./runway.mjs";
 import { recordUsage, reelUsageNote } from "./usage.mjs";
@@ -73,7 +73,7 @@ clear physical sound. Ambient shots usually omit this field.
 
 line: An available caption-line number containing the first anchor word.
 
-shows: One to three exact spoken words naming the visible subject.
+shows: One to three exact spoken words naming the visible subject: the noun itself, no article or verb ("snake", "coconut", "two by four").
 A phrase may continue into the immediately following caption.
 Preserve the phrase exactly and anchor its first word.
 
@@ -134,8 +134,8 @@ Reply exactly in this shape, ranked strongest first:
 /** Start on an exact subject phrase, which may finish in the next caption. */
 export function runwayTiming(pick, candidate, groups, { len = 2.4, until = Infinity, busy = [], clear = 1.5 } = {}) {
   const words = (s) => String(s || "").split(/\s+/).map(norm).filter(Boolean);
-  const subject = words(pick.shows), line = words(candidate.text);
-  if (!subject.length || subject.length > 3) return null;
+  const subject = subjectWords(pick.shows, pick.scene), line = words(candidate.text);
+  if (!subject.length) return null;
   const joined = [...line, ...words(groups[candidate.i + 1]?.text)];
   const anchor = line.findIndex((_, i) => subject.every((w, k) => joined[i + k] === w));
   if (anchor < 0) return null;
@@ -346,7 +346,7 @@ export async function checkRunwayVideo({ file, shot, pick, groups, inPoint = 0, 
     try {
       const open = await lookJSON(clipOpenPrompt(frames), hasSeen, look, dir);
       const result = await lookJSON(clipCheckPrompt({ seen: open.seen, frames, pick, shot, groups, inPoint }), hasBools(["shows", "action", "dark"]), look, dir);
-      return { ...result, look: "pass", motion, ok: !frozen && result.shows && result.action && !result.dark, why: frozen ? `frozen clip (mean change ${r3(motion.mean)} < ${threshold})` : String(result.why || "subject or action failed the video check").slice(0, 600) };
+      return { ...result, look: "pass", motion, ok: !frozen && result.shows && result.action && !result.dark, why: frozen ? `frozen clip (mean change ${r3(motion.mean)} < ${threshold})` : `shows ${result.shows ? "yes" : "no"}, action ${result.action ? "yes" : "no"}, dark ${result.dark ? "yes" : "no"}: ${String(result.why || "subject or action failed the video check").slice(0, 600)}` };
     } catch (e) {
       warn(`b-roll: video look unavailable after retry (${String(e.message).split("\n")[0]}); ${frozen ? "frozen clip rejected" : "accepting measured motion"}`);
       return { ok: !frozen, look: "unavailable", motion, why: frozen ? "frozen clip; video look unavailable" : "video look unavailable after retry; motion passed" };
