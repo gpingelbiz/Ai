@@ -288,7 +288,8 @@ test("moving-only b-roll cannot introduce a cold-open still, even when the brand
 
 test("Greg's presets inherit matching moving settings and still-only brands can opt out", () => {
   const codex = loadPreset("pingel-brand"), runway = loadPreset("pingel-runway");
-  assert.equal(codex.broll.animate, true);
+  // Greg 2026-11-02: the Codex folder is the cheap one (no Runway credits); the Runway folder is the premium one.
+  assert.equal(codex.broll.animate, false);
   assert.equal(runway.broll.animate, true);
   assert.equal(codex.broll.engine, "codex");
   for (const field of ["duration", "gap", "max", "maxWithGraphics", "every", "videoSeconds", "videoModel", "actionVideoModel", "retryVideoModel", "maxCreditsPerReel", "hardCreditsPerReel", "sfx"]) assert.equal(codex.broll[field], runway.broll[field], field);

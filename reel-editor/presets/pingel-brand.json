@@ -105,7 +105,7 @@
     "lastFrame": false,
     "sfx": true,
     "sfxUnderSpeechDb": 12,
-    "animate": true
+    "animate": false
   },
   "carousel": {
     "handle": "@officialgregpingel",

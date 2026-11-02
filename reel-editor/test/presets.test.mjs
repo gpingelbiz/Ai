@@ -95,7 +95,7 @@ test("client brand presets keep the October 30 captions and old punch-in spacing
   const greg = load("pingel-brand");
   for (const [k, v] of Object.entries({ uppercase: true, fontSizeFrac: 0.04, animation: "pop", autoKeywords: true, annotate: true, placeMax: 0.79 })) assert.equal(greg.captions[k], v, k);
   assert.equal(greg.zooms.minSpacing, 6);
-  assert.equal(greg.broll.animate, true);
+  assert.equal(greg.broll.animate, false, "Greg's Codex folder spends no Runway credits");
   // pingel-runway builds on Greg's own look, not a client's.
   assert.equal(load("pingel-runway").captions.uppercase, true);
 });
