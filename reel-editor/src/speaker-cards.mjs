@@ -7,7 +7,7 @@ import { identityLeaks } from "./speaker-guard.mjs";
 import { assetPath, headshotProblems } from "./speaker-intake.mjs";
 import { existsSync } from "node:fs";
 import { PKG_ROOT, run } from "./util.mjs";
-import { activeBox, defaultFit } from "./speaker-look.mjs";
+import { activeBox, defaultFit, sourceCropOptions } from "./speaker-look.mjs";
 
 const TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "event-list", "topic", "keyword"];
 const HEADINGS = { "spoke-at": "Spoke at", client: "Hired by", "featured-in": "Featured in", "available-at": "Available at" };
@@ -26,13 +26,14 @@ const identityLeak = (value) => identityLeaks(value).length > 0;
 export function cardOptionProblems(card, mode = "insert") {
   const problems = [], add = (message) => problems.push(problem("card-option", message));
   const layouts = { title: "compact", keyword: "compact", topic: "compact", quote: "premium", booking: "premium", "testimonial-name": "premium" };
-  const cinematic = ["title", "topic", "keyword", "event-list"].includes(card.type);
+  const cinematic = ["title", "topic", "keyword", "event-list", "testimonial-name"].includes(card.type);
   if (Object.hasOwn(card, "layout") && !["standard", layouts[card.type], ...(cinematic ? ["cinematic"] : [])].filter(Boolean).includes(card.layout)) add(`${card.type}: invalid layout`);
   if (card.layout === "compact" && mode !== "overlay") add(`${card.type}: compact layout must be an overlay`);
   if (card.layout === "cinematic" && mode !== "overlay") add(`${card.type}: cinematic layout must be an overlay`);
   if (Object.hasOwn(card, "eyebrow") && (card.type !== "topic" || card.layout !== "cinematic" || typeof card.eyebrow !== "string" || !clean(card.eyebrow))) add("eyebrow needs a cinematic topic and nonempty text");
   if (Object.hasOwn(card, "motion") && card.type !== "keyword" && (card.layout !== "cinematic" || card.motion !== "rise")) add("cinematic motion must be rise");
   if (card.type === "keyword" && card.layout === "cinematic" && Object.hasOwn(card, "motion") && card.motion !== "rise") add("cinematic motion must be rise");
+  if (Object.hasOwn(card, "variant") && (card.type !== "keyword" || card.layout !== "cinematic" || mode !== "overlay" || card.variant !== "phrase")) add("variant: phrase needs a cinematic keyword overlay");
   if (Object.hasOwn(card, "accent") && (card.layout !== "cinematic" || typeof card.accent !== "boolean")) add("cinematic accent must be true or false");
   if (card.type === "event-list" && mode === "overlay" && card.layout !== "cinematic") add("event-list overlay requires layout: cinematic; other layouts must be an insert");
   if (Object.hasOwn(card, "mergeYears") && (card.type !== "event-list" || typeof card.mergeYears !== "boolean")) add("mergeYears needs an event-list and must be true or false");
@@ -221,12 +222,14 @@ export function resolveCard(input, { manifest = {}, final = false, clientDir, mo
     if (!card.text || words([card.eyebrow, card.text].filter(Boolean).join(" ")) >= 8) add("card-topic-length", "topic and eyebrow must have 1 to 7 words combined");
   }
   if (type === "keyword") {
-    allow("text", "position", "motion");
+    allow("text", "position", "motion", "variant");
+    if (supplied("variant")) card.variant = source.variant;
     card.text = clean(source.text);
     card.position = source.position || (source.layout === "cinematic" ? "lower-third" : "center");
     if (source.layout !== "cinematic") card.motion = source.motion || "scale";
     if (mode !== "overlay") add("card-mode", "keyword must be an overlay");
-    if (words(card.text) < 1 || words(card.text) > 3) add("card-keyword", "keyword needs one to three transcript words");
+    const phrase = card.layout === "cinematic" && card.variant === "phrase" && mode === "overlay";
+    if (words(card.text) < 1 || words(card.text) > (phrase ? 4 : 3)) add("card-keyword", phrase ? "keyword phrase needs one to four transcript words" : "keyword needs one to three transcript words");
     if (!["center", "lower-third"].includes(card.position) || (source.layout !== "cinematic" && !["scale", "slide"].includes(card.motion))) add("card-keyword", "invalid keyword position or motion");
     // Full transcript provenance is checked by validateKeywords at compilation and composition.
   }
@@ -322,6 +325,7 @@ function optionLayout(card, canvas, context) {
   const { width: W, height } = dimensions(canvas), H = canvas?.activeBox?.height ?? height;
   const inset = 96, bottom = 54, pad = 24, gap = 12;
   if (card.type === "event-list" && card.layout === "cinematic") return eventWallLayout(card, W, H);
+  if (card.type === "testimonial-name" && card.layout === "cinematic") return testimonialCaptionLayout(card, canvas, context);
   if (card.layout === "cinematic") {
     const w = W * 0.7, gap = 16;
     const name = card.type === "title" ? fitText(card.name, 144, 120, w, 1.12) : null;
@@ -368,22 +372,57 @@ function optionLayout(card, canvas, context) {
     return { x: 216, y: (H - h) / 2, w, h, quote, name, title, org, activeAware: true, fits: h <= H - 108 };
   }
   if (card.type === "testimonial-name") {
-    const item = context?.item, meta = context?.meta || {};
-    const fit = item?.fit || defaultFit(meta, canvas);
-    // Without dimensions, reserve the widest possible portrait; explicit non-wash fits stay unchanged.
-    const sar = String(meta.sampleAspectRatio || "1:1").split(":").map(Number);
-    const pixelAspect = sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1;
-    const aspect = meta.width > 0 && meta.height > 0 ? meta.width / meta.height * (meta.rotationCw % 180 === 90 ? 1 / pixelAspect : pixelAspect) : 1;
-    if (fit !== "wash" || meta.width > 0 && meta.height > 0 && aspect >= 1) return null;
-    const portraitWidth = H * 0.9 * aspect;
-    const w = Math.min(536, Math.floor((W - portraitWidth) / 2 - inset - 48)), inner = w - pad * 2;
+    const side = portraitSideSpace(canvas, context);
+    if (!side) return null;
+    const { w, portrait } = side, inner = w - pad * 2;
     const name = fitText(card.name, 60, 60, inner, 1.25);
     const title = card.title ? fitText(card.title, 40, 40, inner, 1.25) : null;
     const org = card.org ? fitText(card.org, 36, 36, inner, 1.25) : null;
     const h = name.height + (title?.height || 0) + (org?.height || 0) + [title, org].filter(Boolean).length * gap + pad * 2;
-    return { x: inset, y: H - bottom - h, w, h, pad, gap, name, title, org, portrait: { x: (W - portraitWidth) / 2, w: portraitWidth }, activeAware: true, fits: w > pad * 2 && h <= H - 108 };
+    return { x: inset, y: H - bottom - h, w, h, pad, gap, name, title, org, portrait, activeAware: true, fits: w > pad * 2 && h <= H - 108 };
   }
   return null;
+}
+
+// Reserve the largest wash foreground, including its push allowance. Saved non-wash fits win.
+function portraitSideSpace(canvas, context) {
+  const { width: W, height } = dimensions(canvas), H = canvas?.activeBox?.height ?? height;
+  const meta = context?.meta || {}, fit = context?.item?.fit || defaultFit(meta, canvas);
+  const sar = String(meta.sampleAspectRatio || "1:1").split(":").map(Number);
+  const pixelAspect = sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1;
+  // Missing dimensions reserve the widest possible portrait rather than guessing a narrow gutter.
+  const aspect = meta.width > 0 && meta.height > 0 ? meta.width / meta.height * (meta.rotationCw % 180 === 90 ? 1 / pixelAspect : pixelAspect) : 1;
+  if (fit !== "wash" || meta.width > 0 && meta.height > 0 && aspect >= 1) return null;
+  const portraitWidth = H * 0.9 * aspect;
+  return { w: Math.min(536, Math.floor((W - portraitWidth) / 2 - 96 - 48)), portrait: { x: (W - portraitWidth) / 2, w: portraitWidth } };
+}
+
+function testimonialCaptionLayout(card, canvas, context) {
+  const { height } = dimensions(canvas), H = canvas?.activeBox?.height ?? height;
+  // Token-free callers may also lack the index; keep the conservative portrait reservation then.
+  const crop = context?.meta ? sourceCropOptions(context?.item?.sourceCrop, context.meta) : null;
+  const side = portraitSideSpace(canvas, crop ? { ...context, meta: crop.meta } : context);
+  // Wash centres on even pixels. Round its reserved left edge outward before keeping the 48px gap.
+  const w = side ? Math.min(side.w, Math.floor(side.portrait.x / 2) * 2 - 96 - 48) : 1152;
+  const pad = 24, gap = 12, inner = w - pad;
+  const tracked = (text, size) => fitText(text, size, size, inner - Math.max(0, [...text].length - 1) * 2.4, 1.25);
+  const name = fitText(card.name, 60, 60, inner, 1.12);
+  const title = card.title ? tracked(card.title, 40) : null;
+  const org = card.org ? tracked(card.org, 36) : null;
+  const fields = [name, title, org].filter(Boolean);
+  const h = Math.max(120, fields.reduce((sum, f) => sum + f.height, 0) + gap * (fields.length - 1));
+  return { x: 96, y: H - 96 - h, w, h, pad, gap, name, title, org, ...(side ? { portrait: side.portrait } : {}), activeAware: true,
+    fits: inner > 0 && h <= H - 192 && fields.every((f) => f.lines <= 2) };
+}
+
+function testimonialCaptionTimeline(id, startFrame, endFrame, fps, rise, accent) {
+  const root = js(`#${id}`), copy = js(`#${id} .sc-testimonial-text`);
+  const timeline = [`tl.set(${root},{autoAlpha:1},${startFrame / fps});`];
+  if (accent) timeline.push(`tl.fromTo(${js(`#${id} .sc-cinematic-rule`)},{scaleY:0},{scaleY:1,duration:${6 / fps},ease:"power2.out",immediateRender:false},${startFrame / fps});`);
+  timeline.push(`tl.fromTo(${copy},{autoAlpha:0,y:${rise ? 12 : 0}},{autoAlpha:1,y:0,duration:${8 / fps},ease:"power2.out",immediateRender:false},${(startFrame + 2) / fps});`);
+  timeline.push(`tl.fromTo(${root},{autoAlpha:1},{autoAlpha:0,duration:${6 / fps},ease:"none",immediateRender:false},${(endFrame - 6) / fps});`);
+  timeline.push(`tl.set(${root},{autoAlpha:0},${endFrame / fps});`);
+  return timeline.join("\n");
 }
 
 // One unbroken line per event; refuse oversized copy rather than squeezing below 60px.
@@ -546,8 +585,11 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
   if (card.type === "quote" && card.layout === "premium" && stop - start < 5 - 1e-7) throw new Error(`speaker card ${id}: premium quote needs five fully readable seconds`);
   const cinematic = card.layout === "cinematic";
   const eventWall = cinematic && card.type === "event-list";
+  const testimonialCaption = cinematic && card.type === "testimonial-name";
+  const captionAccent = testimonialCaption && card.accent !== false;
   if (cinematic && Math.round((stop - start) * size.fps) < 16) throw new Error(`speaker card ${id}: cinematic cards need at least 16 frames`);
   if (eventWall && Math.round((stop - start) * size.fps) < 90) throw new Error(`speaker card ${id}: event-list overlay needs at least 3 seconds`);
+  if (testimonialCaption && stop - start < 4 - 1e-7) throw new Error(`speaker card ${id}: testimonial-name needs at least 4 seconds`);
   if (card.type === "event-list" && !eventWall && (stop - start < 4 - 1e-7 || stop - start > 5 + 1e-7)) throw new Error(`speaker card ${id}: event-list must hold 4 to 5 seconds`);
   const assets = [];
   const fields = [];
@@ -558,6 +600,9 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
   if (eventWall) {
     content = `<div class="sc-event-scrim" aria-hidden="true"></div><div class="sc-copy sc-cinematic-copy sc-event-copy" style="${copyStyle};gap:0"><div class="sc-event-heading" style="height:${layout.heading.height}px;font-size:${layout.heading.fontSize}px"><div class="sc-cinematic-rule" aria-hidden="true"></div><h2 class="sc-body sc-eyebrow">${esc(card.heading)}</h2></div><div class="sc-event-lines" style="margin-top:${layout.headingGap}px;gap:${layout.gap}px">${card.events.map((event, i) => `<div class="sc-name sc-event-line sc-event-line-${i}" style="font-size:${layout.events[i].fontSize}px;height:${layout.events[i].h}px">${esc(event)}</div>`).join("")}</div></div>`;
     fields.push(card.heading, ...card.events);
+  } else if (testimonialCaption) {
+    content = `<div class="sc-copy sc-cinematic-copy sc-testimonial-copy" style="${copyStyle};gap:0">${captionAccent ? '<div class="sc-cinematic-rule" aria-hidden="true"></div>' : ""}<div class="sc-testimonial-text" style="margin-left:${layout.pad}px;width:${w - layout.pad}px;gap:${layout.gap}px">${display(card.name, "sc-name", layout.name.fontSize)}${card.title ? display(card.title, "sc-body sc-cinematic-role", layout.title.fontSize) : ""}${card.org ? display(card.org, "sc-body sc-cinematic-role", layout.org.fontSize) : ""}</div></div>`;
+    fields.push(card.name, card.title, card.org);
   } else if (cinematic) {
     content = `<div class="sc-copy sc-cinematic-copy" style="${copyStyle};gap:${layout.gap}px">${card.accent ? '<div class="sc-cinematic-rule" aria-hidden="true"></div>' : ""}${card.eyebrow ? display(card.eyebrow, "sc-body sc-eyebrow", layout.eyebrow.fontSize) : ""}${display(card.type === "title" ? card.name : card.text, "sc-name", (layout.name || layout.text).fontSize)}${layout.role ? display(card.roleLine, "sc-body sc-cinematic-role", layout.role.fontSize) : ""}</div>`;
     fields.push(card.eyebrow, card.type === "title" ? card.name : card.text, ...(layout.role ? [card.roleLine] : []));
@@ -617,11 +662,14 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
   const premiumCSS = card.layout === "premium" && ["booking", "testimonial-name"].includes(card.type) && layout.activeAware ? `\n#${id} .sc-name{line-height:1.12}#${id} .sc-body{line-height:1.25}` : "";
   // The scrim belongs to the whole active picture; only the copy moves. No local plate is drawn.
   const cinematicCSS = cinematic && !eventWall ? `\n#${id}.sc-cinematic{left:0;top:0;width:1920px;height:${canvas?.activeBox?.height ?? size.height}px;background:none;border-radius:0;color:#fff}
-#${id}::before{content:"";position:absolute;left:0;right:0;bottom:0;height:33.333333%;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,0.08) 35%,rgba(0,0,0,0.28) 70%,rgba(0,0,0,0.45) 100%)}
+${testimonialCaption && layout.portrait ? "" : `#${id}::before{content:"";position:absolute;left:0;right:0;bottom:0;height:33.333333%;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,0.08) 35%,rgba(0,0,0,0.28) 70%,rgba(0,0,0,0.45) 100%)}`}
 #${id} .sc-cinematic-copy{align-items:flex-start;text-align:left;padding:0;background:none;border-radius:0;color:inherit;text-shadow:0 2px 3px rgba(0,0,0,0.6),0 6px 18px rgba(0,0,0,0.45),0 14px 40px rgba(0,0,0,0.3)}
 #${id} .sc-cinematic-copy > *{max-width:100%;flex-shrink:0}
 #${id} .sc-name{line-height:1.12}#${id} .sc-cinematic-role,#${id} .sc-eyebrow{line-height:1.25;letter-spacing:2.4px}#${id} .sc-eyebrow{text-transform:uppercase}
 #${id} .sc-cinematic-rule{width:80px;height:4px;flex-shrink:0;background:var(--brand-accent)}` : "";
+  const testimonialCSS = testimonialCaption ? `\n#${id} .sc-testimonial-copy{justify-content:flex-end}
+#${id} .sc-testimonial-text{display:flex;flex-direction:column;opacity:0;visibility:hidden}
+#${id} .sc-testimonial-copy .sc-cinematic-rule{position:absolute;left:0;bottom:0;width:4px;height:120px;transform:scaleY(0);transform-origin:50% 100%}` : "";
   const eventWallCSS = eventWall ? `\n#${id}.sc-cinematic{left:0;top:0;width:1920px;height:${canvas?.activeBox?.height ?? size.height}px;background:none;border-radius:0;color:#fff}
 #${id} .sc-event-scrim{position:absolute;inset:0;opacity:0;visibility:hidden;background:linear-gradient(to right,rgba(0,0,0,0.65) 0%,rgba(0,0,0,0) 55%)}
 #${id} .sc-cinematic-copy{align-items:flex-start;justify-content:flex-start;text-align:left;padding:0;background:none;border-radius:0;color:inherit;text-shadow:0 2px 3px rgba(0,0,0,0.6),0 6px 18px rgba(0,0,0,0.45),0 14px 40px rgba(0,0,0,0.3)}
@@ -632,7 +680,8 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
 #${id} .sc-event-line{line-height:1.12;white-space:nowrap;flex-shrink:0;opacity:0;visibility:hidden}` : "";
   const eventCSS = card.type === "event-list" ? `\n#${id} .sc-name{line-height:1.12}` : "";
   const html = `<div id="${esc(id)}" class="speaker-card clip sc-${overlay ? "overlay" : "insert"} sc-${card.type}${cinematic ? " sc-cinematic" : ""}" style="--sc-bold:${bold};${overlay && !cinematic ? copyStyle : ""}" data-start="${start}" data-duration="${stop - start}" data-track-index="4">${content}</div>`;
-  const enter = eventWall ? (4 * card.events.length + 9) / size.fps : cinematic ? (card.reveal === "cut" ? 0 : 9 / size.fps) : card.type === "keyword" && card.layout === "compact" ? 6 / size.fps : enterFrames / size.fps, exit = cinematic ? 6 / size.fps : exitFrames / size.fps;
+  const cinematicKeyword = cinematic && card.type === "keyword" && card.variant === "phrase" && card.motion === "rise";
+  const enter = testimonialCaption ? 10 / size.fps : eventWall ? (4 * card.events.length + 9) / size.fps : cinematic ? (cinematicKeyword ? 6 / size.fps : card.reveal === "cut" ? 0 : 9 / size.fps) : card.type === "keyword" && card.layout === "compact" ? 6 / size.fps : enterFrames / size.fps, exit = cinematic ? (cinematicKeyword ? 4 : 6) / size.fps : exitFrames / size.fps;
   let timeline = `tl.fromTo(${js(`#${id}`)}, {autoAlpha:0}, {autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false}, ${start});\ntl.fromTo(${js(`#${id}`)}, {autoAlpha:1}, {autoAlpha:0,duration:${exit},ease:${js(t.motion.exitEase)},immediateRender:false}, ${stop - exit});`;
   if (card.type === "title" && card.reveal === "cut" || card.type === "quote" && card.layout === "premium") {
     timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
@@ -641,22 +690,25 @@ function renderCard(card, { tokens, canvas, id = "speaker-card", mode = "insert"
     // The real portrait and route are present on the entry frame; only supporting elements move into place.
     timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.fromTo(${js(`#${id} .sc-copy > :not(.sc-route)`)},{y:12},{y:0,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
   }
-  if (card.type === "keyword") {
+  if (card.type === "keyword" && !cinematic) {
     const target = js(`#${id} .sc-copy`), enter = 6 / size.fps;
     timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.fromTo(${target},${card.layout === "compact" ? "{y:24,autoAlpha:0}" : card.motion === "slide" ? "{y:48,autoAlpha:0}" : "{scale:0.82,autoAlpha:0}"},{y:0,scale:1,autoAlpha:1,duration:${enter},ease:${js(t.motion.enterEase)},immediateRender:false},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
   }
   if (card.type === "event-list") timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${start});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${stop});`;
-  if (cinematic && !eventWall) {
+  if (cinematic && !eventWall && !testimonialCaption) {
     // Integer absolute frame endpoints make seeking and sequential playback agree at every boundary.
     const startFrame = Math.round(start * size.fps), endFrame = Math.round(stop * size.fps), target = js(`#${id} .sc-cinematic-copy`);
     timeline = `tl.set(${js(`#${id}`)},{autoAlpha:1},${startFrame / size.fps});\n`;
-    timeline += enter ? `tl.fromTo(${target},{autoAlpha:0,y:${card.motion === "rise" ? 32 : 0}},{autoAlpha:1,y:0,duration:${enter},ease:"power2.out",immediateRender:false},${startFrame / size.fps});\n` : `tl.set(${target},{autoAlpha:1,y:0},${startFrame / size.fps});\n`;
-    timeline += `tl.fromTo(${js(`#${id}`)},{autoAlpha:1},{autoAlpha:0,duration:${exit},ease:"none",immediateRender:false},${(endFrame - 6) / size.fps});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${endFrame / size.fps});`;
+    const rise = card.motion === "rise" ? (cinematicKeyword ? 24 : 32) : 0;
+    const scale = cinematicKeyword ? ",scale:1" : "";
+    timeline += enter ? `tl.fromTo(${target},{autoAlpha:0,y:${rise}${scale}},{autoAlpha:1,y:0${scale},duration:${enter},ease:"power2.out",immediateRender:false},${startFrame / size.fps});\n` : `tl.set(${target},{autoAlpha:1,y:0},${startFrame / size.fps});\n`;
+    timeline += `tl.fromTo(${js(`#${id}`)},{autoAlpha:1},{autoAlpha:0,duration:${exit},ease:"none",immediateRender:false},${(endFrame - Math.round(exit * size.fps)) / size.fps});\ntl.set(${js(`#${id}`)},{autoAlpha:0},${endFrame / size.fps});`;
   }
+  if (testimonialCaption) timeline = testimonialCaptionTimeline(id, Math.round(start * size.fps), Math.round(stop * size.fps), size.fps, card.motion === "rise", captionAccent);
   if (eventWall) timeline = eventWallTimeline(id, card.events.length, Math.round(start * size.fps), Math.round(stop * size.fps), size.fps);
   const fullyLegible = cinematic ? (Math.round((stop - start) * size.fps) - Math.round((enter + exit) * size.fps)) / size.fps : stop - start - enter - exit;
-  return { html, css: cssRules(t, colors) + optionCSS + premiumCSS + cinematicCSS + eventWallCSS + eventCSS, timeline, layout, assets, warnings: colors.warnings,
-    durationHints: { min: card.type === "keyword" ? 1.2 : eventWall ? 3 : cinematic ? 16 / size.fps : card.type === "booking" ? 6 : ["testimonial-name", "event-list"].includes(card.type) ? 4 : card.type === "quote" ? duration : card.type === "logo-wall" ? 4 : 3, recommended: duration, max: card.type === "keyword" ? 2.5 : card.type === "event-list" && !eventWall ? 5 : card.type === "quote" ? 8 : card.type === "logo-wall" ? 6 : card.type === "topic" && card.layout === "compact" ? 3 : null, enter, exit, fullyLegible },
+  return { html, css: cssRules(t, colors) + optionCSS + premiumCSS + cinematicCSS + testimonialCSS + eventWallCSS + eventCSS, timeline, layout, assets, warnings: colors.warnings,
+    durationHints: { min: card.type === "keyword" ? 1.2 : eventWall ? 3 : testimonialCaption ? 4 : cinematic ? 16 / size.fps : card.type === "booking" ? 6 : ["testimonial-name", "event-list"].includes(card.type) ? 4 : card.type === "quote" ? duration : card.type === "logo-wall" ? 4 : 3, recommended: duration, max: card.type === "keyword" ? 2.5 : card.type === "event-list" && !eventWall ? 5 : card.type === "quote" ? 8 : card.type === "logo-wall" ? 6 : card.type === "topic" && card.layout === "compact" ? 3 : null, enter, exit, fullyLegible },
     text: fields.filter(Boolean) };
 }
 
@@ -811,6 +863,7 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
   const box = (c) => {
     if (!hasNewLayout) return c.card.type === "testimonial-name" ? { x: 0.05, y: 0.7, w: 0.6, h: 0.25 } : { x: 0.05, y: 0.05, w: 0.9, h: 0.25 };
     if (c.layout) return c.layout;
+    if (c.card.type === "testimonial-name" && c.card.layout === "cinematic") return testimonialCaptionLayout(c.card, canvas, cardContext(resolvedPlan, c.entry, index));
     if (c.card.type === "event-list" && c.card.layout === "cinematic") return { x: 144, y: 96, w: 1440, h: canvas.activeBox.height - 192 };
     if (c.card.layout === "cinematic") return { x: 96, y: canvas.activeBox.height / 2 - 96, w: 1344, h: canvas.activeBox.height / 2 };
     // No font metrics were supplied: reserve the largest permitted compact footprint.

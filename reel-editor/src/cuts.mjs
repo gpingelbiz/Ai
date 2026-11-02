@@ -389,7 +389,9 @@ export function finishFilter(stats, options = {}) {
 }
 
 /** Measure twelve evenly spaced, 96px samples in one ffmpeg decode (or twelve seeks with `seek`). Settings are then held for the whole clip. */
-export async function measureClip(input, { duration = null, preFilter = "", seek = false } = {}) {
+export async function measureClip(input, { duration = null, preFilter = "", seek = false, sampleTimes = null, lumaMode = "rgb24", noAutorotate = false } = {}) {
+  if (!["rgb24", "signalstats"].includes(lumaMode)) throw new Error("unknown luma measurement domain");
+  if (sampleTimes && (!Array.isArray(sampleTimes) || sampleTimes.length !== 12 || Array.from(sampleTimes).some((v) => !Number.isFinite(v) || v < 0))) throw new Error("expected twelve finite sample times");
   if (!(duration > 0)) {
     const { out } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", input], { capture: true });
     duration = Number(out.trim());
@@ -410,25 +412,26 @@ export async function measureClip(input, { duration = null, preFilter = "", seek
       "format=rgb24",
     ].filter(Boolean).join(",");
     let result, pixels;
-    if (seek) {
+    const rotation = noAutorotate ? ["-noautorotate"] : [];
+    if (seek || sampleTimes) {
       // Long sources (a 30+ minute keynote) are sampled by seeking to the same 12 points instead of decoding every frame.
       const frameVf = [preFilter, "scale=96:96:flags=area", "signalstats", "metadata=print:file=-", "format=rgb24"].filter(Boolean).join(",");
       const outs = [], chunks = [];
       for (let frame = 0; frame < 12; frame++) {
         const one = path.join(dir, `sample-${frame}.rgb`);
-        const r = await run("ffmpeg", ["-y", "-hide_banner", "-nostats", "-loglevel", "error", "-ss", short(first + frame / sampleRate, 6), "-i", input, "-an", "-vf", frameVf, "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", one], { capture: true });
+        const r = await run("ffmpeg", ["-y", "-hide_banner", "-nostats", "-loglevel", "error", ...rotation, "-ss", short(sampleTimes?.[frame] ?? first + frame / sampleRate, 6), "-i", input, "-an", "-vf", frameVf, "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", one], { capture: true });
         outs.push(r.out, r.err); chunks.push(fs.readFileSync(one));
       }
       result = { out: outs.join("\n"), err: "" };
       pixels = Buffer.concat(chunks);
     } else {
-      result = await run("ffmpeg", ["-y", "-hide_banner", "-nostats", "-loglevel", "error", "-i", input, "-an", "-vf", vf, "-frames:v", "12", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+      result = await run("ffmpeg", ["-y", "-hide_banner", "-nostats", "-loglevel", "error", ...rotation, "-i", input, "-an", "-vf", vf, "-frames:v", "12", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
       pixels = fs.readFileSync(raw);
     }
     const frames = Math.floor(pixels.length / frameBytes);
     const yavg = [...`${result.out}\n${result.err}`.matchAll(/lavfi\.signalstats\.YAVG=([\d.]+)/g)].map((m) => Number(m[1]));
-    if (frames !== 12 || yavg.length < 12) throw new Error(`expected 12 samples, got ${Math.min(frames, yavg.length)}`);
-    const contrasts = [], saturations = [], warmth = [], sharpness = [];
+    if (pixels.length !== 12 * frameBytes || (lumaMode === "signalstats" && yavg.length < 12)) throw new Error(`expected 12 samples, got ${frames}`);
+    const lumas = [], contrasts = [], saturations = [], warmth = [], sharpness = [];
     for (let frame = 0; frame < 12; frame++) {
       const base = frame * frameBytes;
       const ys = new Float64Array(96 * 96);
@@ -444,6 +447,7 @@ export async function measureClip(input, { duration = null, preFilter = "", seek
         if (y >= 38 && y <= 230) warmSum += (r - b) / 255;
       }
       const yMean = ySum / ys.length;
+      lumas.push(yMean / 255);
       let variance = 0, edges = 0, edgeCount = 0;
       for (let y = 0; y < 96; y++) for (let x = 0; x < 96; x++) {
         const p = y * 96 + x;
@@ -457,12 +461,15 @@ export async function measureClip(input, { duration = null, preFilter = "", seek
       sharpness.push(edges / edgeCount / 255);
     }
     return {
-      luma: median(yavg.slice(0, 12)) / 255,
+      // Exposure uses the same display RGB samples as contrast, independent of source bit depth.
+      // The daily finish explicitly retains its legacy YAVG domain.
+      luma: lumaMode === "signalstats" ? median(yavg.slice(0, 12)) / 255 : median(lumas),
       contrast: median(contrasts),
       saturation: median(saturations),
       warmth: median(warmth),
       sharpness: median(sharpness),
       frames: 12,
+      diagnostics: { nativeYavg: median(yavg.slice(0, 12)) },
     };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -474,7 +481,7 @@ export async function applyCuts(input, segments, output, { hasAudio = true, clea
   let measured = finishMeasurement;
   if (finish?.enabled && !measured) {
     try {
-      const stats = await measureClip(input, { duration: sourceDuration, preFilter: baseVideoFilters.join(",") });
+      const stats = await measureClip(input, { duration: sourceDuration, preFilter: baseVideoFilters.join(","), lumaMode: "signalstats" });
       measured = { stats, chain: finishFilter(stats, finish) };
       log(`finish: luma ${stats.luma.toFixed(3)}, contrast ${stats.contrast.toFixed(3)}, saturation ${stats.saturation.toFixed(3)}, warmth ${stats.warmth >= 0 ? "+" : ""}${stats.warmth.toFixed(3)}, sharpness ${stats.sharpness.toFixed(3)} → ${measured.chain || "identity"}`);
     } catch (error) {

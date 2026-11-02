@@ -50,7 +50,7 @@ test("speaker cards: a brand on the default font family resolves the font file f
   for (const asset of out.assets.filter((a) => a.font)) assert.ok(fs.existsSync(asset.source), asset.source);
 });
 
-test("speaker core fixes: a broken link does not stop init, and a word at a rounded clip edge keeps one frame", async () => {
+test("speaker core fixes: a broken link does not stop init, and rounded edges retain only audible words", async () => {
   const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
   const { initManifest } = await import("../src/speaker-intake.mjs");
   const { timelineWords } = await import("../src/speaker-compile.mjs");
@@ -64,8 +64,10 @@ test("speaker core fixes: a broken link does not stop init, and a word at a roun
   assert.ok(!JSON.stringify(manifest).includes("broken-link"));
   const resolved = { canvas: { fps: 30 }, items: [{ kind: "clip", id: "i01", sourceId: "s", in: 0, out: 0.98, start: 0, end: 29 / 30 }] };
   const index = { sources: { s: { words: [{ text: "end", start: 0.97, end: 0.975 }] } } };
+  assert.deepEqual(timelineWords(resolved, index), [], "a word wholly after the rendered edge is not heard");
+  index.sources.s.words[0].start = 0.94;
   const words = timelineWords(resolved, index);
-  assert.equal(words.length, 1);
+  assert.equal(words.length, 1, "a majority-retained word survives frame rounding");
   assert.ok(words[0].end > words[0].start && words[0].end <= 29 / 30 + 1e-9);
 });
 

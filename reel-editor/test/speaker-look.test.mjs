@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, pushScale, pushFilter, neutralStats, skinWeight, gradeSettings, gradePixel, gradeCube, prepareGrade, stabilizationKey, stabilizeRange, lookReviewFrames, letterboxCards, filterPath } from "../src/speaker-look.mjs";
+import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, foregroundSize, sourceCropOptions, pushScale, pushFilter, neutralStats, skinWeight, gradeSettings, gradePixel, gradeCube, prepareGrade, stabilizationKey, stabilizeRange, lookReviewFrames, letterboxCards, filterPath } from "../src/speaker-look.mjs";
 import { fitGeometry, resolvePlan, compileVersion } from "../src/speaker-compile.mjs";
 import { speakerHTML, composeSpeakerProject } from "../src/speaker-compose.mjs";
 import { speakerCardsHTML } from "../src/speaker-cards.mjs";
@@ -18,6 +18,64 @@ const manifest = { schemaVersion: 1, clientId: "jane", identity: { name: "Jane D
 const plan = { schemaVersion: 1, clientId: "jane", version: "full", revision: 1, canvas: { width: 1920, height: 1080, fps: 30 }, items: [{ id: "a", kind: "clip", sourceId: "phone", in: 0, out: 2, audio: "mute", role: "room" }], cutaways: [], overlays: [] };
 const index = { sources: { phone: { width: 360, height: 640, duration: 3 } } };
 function temp(t) { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-look-")); t.after(() => fs.rmSync(dir, { recursive: true, force: true })); return dir; }
+
+test("sourceCrop validates normalized upright bounds, square pixels and a 2x2 even-pixel minimum", () => {
+  const meta = { width: 2160, height: 3840, rotationCw: 90, sampleAspectRatio: "1:1" };
+  assert.equal(sourceCropOptions(undefined, meta), null);
+  const crop = sourceCropOptions({ x: 400 / 2160, y: 1540 / 3840, w: 1600 / 2160, h: 900 / 3840 }, meta);
+  assert.equal(crop.filter, "crop=1600:900:400:1540");
+  assert.equal(crop.meta.rotationCw, 0); assert.equal(meta.rotationCw, 90);
+  assert.deepEqual([crop.meta.width, crop.meta.height], [1600, 900]);
+  for (const value of [null, [], "crop", {}, { x: 0, y: 0, width: 100, height: 100 },
+    { x: -0.1, y: 0, w: 1, h: 1 }, { x: 0, y: 0.9, w: 1, h: 0.2 },
+    { x: 0, y: 0, w: 0, h: 1 }, { x: 0, y: 0, w: 1, h: Infinity },
+    { x: 0, y: 0, w: NaN, h: 1 }, { x: 0, y: 0, w: 0.00001, h: 1 }]) assert.throws(() => sourceCropOptions(value, meta), /sourceCrop/);
+  const full = { x: 0, y: 0, w: 1, h: 1 };
+  assert.throws(() => sourceCropOptions(full, {}), /indexed upright/);
+  for (const sampleAspectRatio of ["2:1", "0:1", "N/A", "Infinity:Infinity"]) assert.throws(() => sourceCropOptions(full, { ...meta, sampleAspectRatio }), /square/);
+  assert.equal(sourceCropOptions(full, { ...meta, sampleAspectRatio: "2:2" }).width, 2160);
+  const rounded = sourceCropOptions({ x: 0.1, y: 0.1, w: 0.9, h: 0.9 }, { width: 101, height: 201 });
+  assert.deepEqual([rounded.x, rounded.y, rounded.width, rounded.height], [10, 20, 90, 180]);
+  assert.equal(sourceCropOptions({ x: 0, y: 0, w: 2 / 2160, h: 2 / 3840 }, meta).width, 2);
+});
+
+test("lane 14 rectangles retain exact geometry, aspect and measured wash enlargement", (t) => {
+  const meta = { width: 2160, height: 3840 };
+  const examples = [[8, 1480, 2144, 1206], [400, 1540, 1600, 900], [0, 650, 2160, 2400], [0, 600, 2160, 2880], [0, 750, 2160, 2640], [8, 1420, 2144, 1206], [8, 800, 2144, 1206]];
+  for (const [x, y, w, h] of examples) {
+    const crop = sourceCropOptions({ x: x / 2160, y: y / 3840, w: w / 2160, h: h / 3840 }, meta);
+    assert.deepEqual([crop.x, crop.y, crop.width, crop.height], [x, y, w, h]);
+    const g = fitGeometry(crop.meta);
+    assert.ok(Math.abs(g.width / g.height - w / h) < 0.002);
+    if (w / h === 16 / 9) assert.deepEqual([g.width, g.height], [1920, 1080]);
+  }
+  assert.equal(fitGeometry(sourceCropOptions({ x: 400 / 2160, y: 1540 / 3840, w: 1600 / 2160, h: 900 / 3840 }, meta).meta).scale, 1.2);
+  const sizes = [3840, 2400, 2880, 2640].map((height) => foregroundSize(fitGeometry({ width: 2160, height }, "wash"), { fit: "wash" }));
+  assert.deepEqual(sizes, [{ width: 546, height: 972 }, { width: 874, height: 972 }, { width: 728, height: 972 }, { width: 794, height: 972 }]);
+  t.diagnostic(`wash sharp sizes: ${sizes.map((s) => `${s.width}x${s.height}`).join(", ")}; width gains ${sizes.slice(1).map((s) => ((s.width / sizes[0].width - 1) * 100).toFixed(2) + "%").join(", ")}`);
+});
+
+test("lavfi crop precedes every fit branch and push, retaining the selected source pixels", async (t) => {
+  const dir = temp(t), meta = { width: 216, height: 384 };
+  for (const fit of ["contain", "cover", "blur", "wash"]) for (const push of [1, 1.06]) {
+    const crop = sourceCropOptions({ x: 8 / 216, y: 148 / 384, w: 192 / 216, h: 108 / 384 }, meta);
+    const canvas = { width: 192, height: 108, fps: 30 };
+    const graph = fitGraph("0:v", "pic", fitGeometry(crop.meta, fit, canvas), { ...canvas, fit, push, frames: 3, sourceCrop: crop }).join(";");
+    assert.ok(graph.startsWith("[0:v]crop=192:108:8:148[pic_crop];"));
+    // Crop a solid red strip out of blue footage. Both wash/blur branches must use only red.
+    const raw = path.join(dir, `${fit}-${push}.rgb`);
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-filter_complex_threads", "1", "-f", "lavfi", "-i", "color=blue:s=216x384:r=30:d=0.1,drawbox=x=8:y=148:w=192:h=108:color=red:t=fill", "-filter_complex", graph, "-map", "[pic]", "-frames:v", "3", "-pix_fmt", "rgb24", "-f", "rawvideo", raw], { capture: true });
+    const pixels = fs.readFileSync(raw);
+    assert.equal(pixels.length, 192 * 108 * 3 * 3);
+    for (let frame = 0; frame < 3; frame++) {
+      const at = (frame * 192 * 108 + 54 * 192 + 96) * 3;
+      assert.ok(pixels[at] > 240 && pixels[at + 2] < 10, `${fit}/${push} frame ${frame}: selected red centre`);
+      const edge = frame * 192 * 108 * 3;
+      if (["wash", "blur", "cover"].includes(fit)) assert.ok(pixels[edge] > pixels[edge + 2] + 20, `${fit}/${push}: background also comes from crop`);
+    }
+  }
+  t.diagnostic("8 graphs × 3 frames: 24/24 red centres; zero blue source background at sampled corners; output 192x108, 30fps");
+});
 
 // Frame metadata and graphs are checked as well as real pixels: no browser or network involved.
 test("look defaults, automatic fit and explicit per-item choices resolve without mutating plans", () => {
@@ -192,7 +250,7 @@ test("source measurements are cached and optional review extraction fails open",
   assert.match(filterPath("/tmp/a:b.cube"), /\\\\:/);
 });
 
-test("grade cache identities include each reviewed value, reuse source measurements and preserve the legacy identity", async (t) => {
+test("grade cache identities include each reviewed value, reuse source measurements and invalidate the legacy identity", async (t) => {
   const dir = temp(t); let measures = 0, samples = 0;
   const options = { sourceKey: "reviewed", meta: { duration: 1 }, cacheDir: dir,
     measure: async () => { measures++; return { luma: 0.1 }; },
@@ -204,14 +262,14 @@ test("grade cache identities include each reviewed value, reuse source measureme
   assert.equal(again.key, first.key); assert.equal(again.lut, first.lut); assert.equal(fs.statSync(first.lut).mtimeMs, lutTime);
   assert.equal(first.settings.ev, 0.2);
   const keys = new Set([first.key]);
-  for (const change of [{ ev: 0.21 }, { saturation: 0.93 }, { contrast: 0.016 }]) {
+  for (const change of [{ ev: 0.21 }, { saturation: 0.93 }, { contrast: 0.016 }, { balance: [0, 0, 0] }, { warmth: 0 }]) {
     const other = await prepareGrade("source.mp4", { ...options, overrides: { ...trim, ...change } });
     assert.ok(!keys.has(other.key)); keys.add(other.key);
     assert.notEqual(fs.readFileSync(first.lut, "utf8"), fs.readFileSync(other.lut, "utf8"));
   }
   const automatic = await prepareGrade("source.mp4", options), empty = await prepareGrade("source.mp4", { ...options, overrides: {} });
   const legacyKey = createHash("sha256").update(JSON.stringify({ version: 1, sourceKey: "reviewed", preFilter: "" })).digest("hex");
-  assert.equal(automatic.key, legacyKey); assert.equal(empty.key, automatic.key); assert.equal(automatic.settings.ev, 0.3);
+  assert.notEqual(automatic.key, legacyKey); assert.equal(empty.key, automatic.key); assert.equal(automatic.settings.ev, 0.3);
   assert.equal(fs.readFileSync(automatic.lut, "utf8"), gradeCube(gradeSettings(automatic.stats, automatic.neutral)));
   assert.deepEqual(first.settings.balance, automatic.settings.balance);
   assert.equal(measures, 1); assert.equal(samples, 12);
@@ -261,7 +319,7 @@ test("compiled item trims have distinct LUTs and evidence, stay off cutaways and
   const meta = await probeSource(file), p = structuredClone(plan);
   const clip = { ...p.items[0], out: 0.2, fit: "contain", push: 1, stabilize: false };
   const itemTrim = { ev: -0.15, saturation: 0.92 };
-  p.look = { grade: "auto", sources: { phone: { ev: 0.1, saturation: 1, contrast: 0.015 } } };
+  p.look = { grade: "auto", sources: { phone: { ev: 0.1, saturation: 1, contrast: 0.015, balance: [0, 0, 0], warmth: 0 } } };
   p.items = [clip, { ...clip, id: "s5", grade: itemTrim }, { ...clip, id: "later" },
     { ...clip, id: "same", grade: { saturation: 0.92, ev: -0.15 } }, { ...clip, id: "off", look: { grade: "off" }, grade: { ev: 1 } }];
   p.cutaways = [{ id: "x", over: "s5", offset: 0, sourceId: "phone", in: 0, out: 0.1, fit: "contain", push: 1, stabilize: false }];
@@ -271,6 +329,9 @@ test("compiled item trims have distinct LUTs and evidence, stay off cutaways and
   const source = evidence.sources.phone, item = evidence.items.s5;
   assert.equal(source.settings.ev, 0.1); assert.equal(source.settings.saturation, 1); assert.equal(source.settings.contrast, 0.015);
   assert.equal(item.settings.ev, -0.15); assert.equal(item.settings.saturation, 0.92); assert.equal(item.settings.contrast, 0.015);
+  assert.deepEqual(source.settings.balance, [0, 0, 0]); assert.equal(item.settings.warmth, 0);
+  assert.deepEqual(source.measurement.ranges, [{ in: 0, out: 0.2 }]);
+  assert.equal(source.measurement.region, "source-foreground");
   assert.deepEqual(item.settings.balance, source.settings.balance); assert.equal(item.sourceId, "phone");
   assert.notEqual(item.key, source.key); assert.equal(item.key, evidence.items.same.key);
   assert.deepEqual(Object.keys(evidence.items).sort(), ["s5", "same"]);

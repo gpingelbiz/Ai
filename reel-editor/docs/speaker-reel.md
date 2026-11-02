@@ -290,9 +290,9 @@ Items play back to back. Overlays and cutaways add no time. Cutaway visibility u
 - `item.kind`: clip or card.
 - `audioCarry` on a card: `{ "preceding": "close-clip", "sourceId": "stage", "in": 1047.90, "out": 1054.40 }` continues the immediately preceding clip's real source audio from the card's first frame. The preceding item must be an audible clip using that same source; the source must have usable audio (`audio:"ok"`, never `bad` or `none`). `in` must equal that clip's `out` within one frame. Resolution snaps it to the actual frame-rounded source end, preventing repeats or gaps. The range must stay within the source and fit the card duration. It reuses the preceding dialogue's channel selection, fixed gain and optional limiter settings without renormalizing applause. The preceding clip does not fade out at this join; the carry fades its final 0.25 seconds (or its whole duration if shorter), then pads the remaining card with silence. Carry audio adds no transcript words or captions. Its resolved source range and frame count appear in the plan and map.
 - `role`: opening, identity, proof, core, room, testimonial, close, booking or montage.
-- `fit`: `wash`, `blur`, `contain` or `cover`, on clips and picture-only cutaways (including montage shots). Omitted values resolve to `wash` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `wash` cover-scales the same frame to 192×108, blurs it there (sigma 20), adds 20% saturation, darkens luma to 0.8, and applies a soft vignette before smooth upscaling. Very light, static uniform grain (strength 2, seed 42) reduces 8-bit banding. The sharp picture floats above this colour field with a soft 32%-opacity shadow, offset 8 pixels down; the shadow is blurred once and repeated. The card fits within 90% of the visible width/height, including any letterbox, and never exceeds 1.5× source enlargement, so small sources can stay smaller. Explicit `blur` keeps the original graph: a full-frame blur, 35% darker and slightly desaturated, with no card margin or shadow. `contain` keeps the client-brand frame. These three preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources, warns above 1.5× and needs visual review. Explicit saved fits always win.
+- `fit`: `wash`, `blur`, `contain` or `cover`, on clips and picture-only cutaways (including montage shots). Omitted values resolve to `wash` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `wash` cover-scales the same frame to 192×108, blurs it there (sigma 20), adds 20% saturation, darkens luma to 0.8, and applies a soft vignette before smooth upscaling. Very light, static uniform grain (strength 2, seed 42) reduces 8-bit banding. The sharp picture floats above this colour field with a soft 32%-opacity shadow, offset 8 pixels down; the shadow is blurred once and repeated. The card fits within 90% of the visible width/height, including any letterbox, and never exceeds 1.5× source enlargement, so small sources can stay smaller. Explicit `blur` keeps the original graph: a full-frame blur, 35% darker and slightly desaturated, with no card margin or shadow. `contain` keeps the client-brand frame. These three preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources or landscape `sourceCrop` regions, warns above 1.5× and needs visual review. Explicit saved fits always win.
 - `audio`: source or mute. A source marked none/bad must use mute when selected as a timeline clip. A cutaway always supplies picture only.
-- `protect: true`: no internal trimming, retiming, denoise or silence cuts. All items already stay at speed 1.0. Meaningful pauses and real reactions remain intact. Normalization and 10 ms edge fades do not rearrange the passage.
+- `protect: true`: no internal trimming, retiming, denoise or silence cuts. The explicit `audioRepair.allowProtected:true` exception below permits only reviewed reaction-safe cleanup. All items already stay at speed 1.0. Meaningful pauses and real reactions remain intact. Normalization and 10 ms edge fades do not rearrange the passage.
 - `limit: true` (optional, source audio only): each clip normally receives fixed gain toward −16 LUFS, stopping at −1.5 dBTP. A peaky phone recording can stay several LU quiet that way. With `limit`, the clip takes the full gain, and a delay-compensated lookahead limiter holds its sample peaks at −2 dBFS. It never compresses between peaks and never cuts silence. Use it only where the review hears a quiet clip.
 - `in` and `out` are original source seconds, with `0 <= in < out`. Out cannot exceed the indexed duration. Photos can be held for the requested duration; audio-only sources use a plain brand frame.
 - Overlays target `at`; cutaways target `over`. Offset is relative to the target item. Entries must fit inside the target and cutaways must not overlap. Item durations, offsets and overlay durations resolve to integer frames using nearest-frame rounding.
@@ -313,6 +313,50 @@ Card objects are rendered by the separate `speaker-cards.mjs` integration. Their
 | topic | exact text from identity or proof |
 
 Direct booking shows the client's route. Bureau booking uses `identity.bureau` and suppresses direct contact. Logo headings are “Spoke at”, “Clients”, “Featured in” or “Available at”, matching the registry relationship. Quotes and attributions must match the supplied proof exactly.
+
+### Static source crops
+
+Clip items and picture-only cutaways accept `sourceCrop: {x, y, w, h}`. All four numbers are **normalized 0–1 fractions of the upright source frame, after rotation**: divide source-pixel x and width by upright width, and y and height by upright height. This differs from lane 14's research notation `{x,y,width,height}` in pixels; do not paste that pixel object into a plan. Cards and overlays reject `sourceCrop`.
+
+```json
+{
+  "sourceCrop": { "x": 0, "y": 0.16927083333333334, "w": 1, "h": 0.625 },
+  "fit": "wash", "push": 1, "stabilize": false
+}
+```
+
+That example selects `(0,650,2160,2400)` from upright 2160×3840. Bounds must satisfy `x >= 0`, `y >= 0`, `w > 0`, `h > 0`, `x+w <= 1`, `y+h <= 1`; strings, nonfinite values, missing or unknown keys fail. Indexed upright dimensions and square source pixels are required. Each rectangle edge rounds to the nearest even source pixel and clamps at the last even in-bounds edge; the result must retain at least **2×2 pixels**. This deterministic chroma alignment can move an edge by about one source pixel. Inspect the resolved rectangle when authoring very small or odd-sized crops.
+
+Rotation/SDR conversion and the existing colour grade happen first; crop then precedes **all** fit branches and their background/foreground split. Thus wash/blur backgrounds also use the cropped real source region. Default fit uses the cropped geometry; explicit saved fits still win. `cover` still requires a landscape region: a portrait source can use it only when its crop is landscape. Original metadata, audio, words, rights, source times and cutaway frame windows retain their original clocks. Cropping adds no tracking or time shift.
+
+`contain`/`blur`/`wash` retain the existing 1.5× nominal enlargement ceiling and warn when the requested fit exceeds it; `cover` warns above it, including a cropped cover's end-of-push scale. Existing even output-size rounding can differ by a pixel from the nominal ceiling/aspect. Push reserves its usual foreground margin and wash still respects the active letterbox area. Static crop coordinates describe the normalized/stabilized picture if stabilization is enabled; lane 14 examples explicitly disable stabilization because its zoom changes the coordinate assumptions.
+
+`plan.resolved.json` and cropped `map.json` rows carry `framing.sourceCrop` in upright pixels, `fitScale`, and foreground width/height plus actual per-axis first/end scales (wash margin and push included). These are framing evidence, separate from original source probe metadata. Compilation also writes `look/crop-<id>-first.jpg` and `-last.jpg`, referenced by `framing.reviewFrames`, from the actual fitted item assembly. They include visible cutaways/push but precede HyperFrames cards and final letterbox bars. A host item's endpoint covered by a cutaway shows that cutaway; these two samples do not certify intervening motion. Colour-only before/after pairs remain unchanged.
+
+Lane 14 worked examples below all assume **upright 2160×3840 originals**; rectangles are exact `x,y,width,height` source pixels. For every row, author normalized `{x: x/2160, y: y/3840, w: width/2160, h: height/3840}` (evaluate the divisions before saving JSON). Use `push:1`, `stabilize:false` explicitly. These are framing examples, not edits to the client's plan.
+
+| Entry | Exact source ID | Source in–out (s) | Fit | Exact pixel rectangle |
+|---|---|---|---|---|
+| `ao1` | `video-oct-15-2026-2-12-39-pm` | 0.25–3.95 | contain | `8,1480,2144,1206` |
+| `ao3` | `video-oct-15-2026-2-12-39-pm` | 21.75–27.40 | contain | `400,1540,1600,900` |
+| `s4b` | `video-oct-15-2026-2-21-55-pm` | 3.12–25.57 | wash | `0,650,2160,2400` |
+| `s7` | `video-oct-15-2026-2-23-11-pm` | 34.50–52.30 | wash | `0,650,2160,2400` |
+| `bb1` | `video-oct-15-2026-2-25-51-pm` | 1.55–17.50 | wash | `0,600,2160,2880` |
+| `bb2` | `video-oct-15-2026-2-25-51-pm` | 28.80–34.75 | wash | `0,600,2160,2880` |
+| `dau` | `video-oct-15-2026-2-26-35-pm` | 3.65–12.80 | wash | `0,750,2160,2640` |
+| `tb1` | `video-oct-15-2026-2-29-24-pm` | 16.20–19.15 | contain | `8,1420,2144,1206` |
+| `a1` | `video-oct-15-2026-2-27-25-pm` | 26.08–28.80 | wash | `0,750,2160,2640` |
+| `s7-payoff-close` cutaway over `s7`, offset 15.47s | `video-oct-15-2026-2-23-11-pm` | 49.97–52.30 | contain | `8,800,2144,1206` |
+
+The 1600×900 `ao3` region fits 1920×1080 at exactly **1.20×**. The other 16:9 examples downscale at **0.895522×**. With no letterbox or push, full-source wash is 546×972; the 2400/2880/2640-high crops produce 874×972, 728×972 and 794×972 sharp pictures. Width gains are 60.07%, 33.33% and 45.42%; small even-size rounding means per-axis scale can differ slightly.
+
+For ao3, normalized JSON is `{ "sourceCrop": { "x": 0.185185185185, "y": 0.401041666667, "w": 0.740740740741, "h": 0.234375 }, "fit": "contain", "push": 1, "stabilize": false }`. The exact fit graph with input `raw`, output `pic`, and default brand surface is:
+
+```text
+[raw]crop=1600:900:400:1540[pic_crop];[pic_crop]scale=1920:1080:flags=lanczos,setsar=1,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=#111111[pic_fit];[pic_fit]null[pic]
+```
+
+For the payoff, preserve the underlying `s7` sound and use a hard picture-only cut. Resolve the cutaway start against `s7.in + Math.round(offset*30)/30` (34.50 + 464/30 = 49.96666666666667); source in 49.97 is the research's rounded notation. Verify first/last visible frames and sync on the real source. This is a head-and-chest close-up, not a whole-upper-body crop. Claude must play every affected passage at delivery size to check crown, gestures, moving subjects (especially the embrace in `tb1`), softness, wash margins, overlays and any letterbox masking. Prefer 4K originals; these rectangles are not certified for 720p proxies, and static crops cannot restore off-frame hands or follow movement.
 
 ### Card readability at 1920×1080
 
@@ -372,13 +416,29 @@ Text begins at x96, occupies at most 1344 px (70% width), and ends 96 px above t
 
 Topic `text` and `eyebrow` must each exactly match manifest identity or proof text, or together reconstruct one exact supplied line using a single space or comma-space. This permits `"Briefcase model, NBC’s Deal or No Deal"` to split into eyebrow `"Briefcase model"` and main `"NBC’s Deal or No Deal"` without authoring a new claim. The combined limit is seven words. Proof used by either field, or by their joined line, retains its rights requirements. Headshot paths/rights cannot supply copy. Keywords retain their existing transcript, duration and spacing requirements; cinematic placement is always lower-left.
 
-`motion: "rise"` moves only the copy upward 32 px while fading it in over **nine frames**, with `power2.out`; it holds, then the whole overlay fades linearly over its final **six frames**. Without `motion`, the same entry fades without movement. Every endpoint is calculated from absolute integer output frames at 30 fps. Cinematic title `reveal: "cut"` takes precedence over entry motion: the complete name is visible on its first frame, with no mask, scale settle or rise, including when `motion: "rise"` is also supplied. Its six-frame exit remains. Every cinematic overlay requires at least 16 frames; normal reading windows should be substantially longer. A four-second rise card has 3.5 fully settled seconds; a two-second keyword has 1.5. Standard layouts keep their existing reveals and motion.
+`motion: "rise"` moves only the copy upward 32 px while fading it in over **nine frames**, with `power2.out`; it holds, then the whole overlay fades linearly over its final **six frames**. Without `motion`, the same entry fades without movement. Every endpoint is calculated from absolute integer output frames at 30 fps. Cinematic title `reveal: "cut"` takes precedence over entry motion: the complete name is visible on its first frame, with no mask, scale settle or rise, including when `motion: "rise"` is also supplied. Its six-frame exit remains. Every cinematic overlay requires at least 16 frames; normal reading windows should be substantially longer. A four-second title or topic rise card has 3.5 fully settled seconds. Cinematic keyword `variant:"phrase"` with `motion:"rise"` uses a six-frame, 24 px rise with scale fixed at 1, then a linear four-frame exit; a two-second keyword has 50 fully settled frames (1.67 seconds). Existing cinematic keywords retain their nine-frame entry (32 px with rise, fade only without motion) and six-frame exit. Standard layouts keep their existing reveals and motion.
 
 ```json
 { "type": "title", "layout": "cinematic", "showRole": false, "reveal": "cut" }
 { "type": "topic", "layout": "cinematic", "eyebrow": "Briefcase model", "text": "NBC’s Deal or No Deal", "motion": "rise", "accent": true }
 { "type": "keyword", "layout": "cinematic", "text": "Taking action", "motion": "rise" }
 ```
+
+**Plate-less testimonial names.** Opt a `testimonial-name` overlay into `layout: "cinematic"` for an editorial attribution beside the footage. Existing standard and premium plans retain their current output; premium remains the normal choice unless this layout is explicitly requested. Copy, proof matching, source attribution, permissions and the minimum four-second hold use the existing testimonial checks.
+
+```json
+{ "id": "who", "at": "testimonial-clip", "offset": 0.3, "duration": 4.5,
+  "card": { "type": "testimonial-name", "proofId": "approved-testimonial",
+    "layout": "cinematic", "motion": "rise" } }
+```
+
+The white name uses the client's display serif at 60 px with 1.12 line height. The supplied relationship/title and organization use the body font at 40 and 36 px with 2.4 px tracking and 1.25 line height. Empty fields are omitted. A 4×120 px brand-accent vertical rule sits at x96, with text starting 24 px to its right. The name and relationship retain their exact supplied spelling and casing. The same three text shadows as other cinematic cards support the type. There is no local background, rectangle, border or rounded plate. The rule appears by default; `accent:false` omits it.
+
+On a portrait `wash`, the caption uses the existing left-gutter reservation: maximum width 536 px, with at least 48 px between the entire caption's right edge and the largest sharp portrait window. This also accounts for square-pixel source crops and source pixel aspect. No scrim is added over a portrait wash. On landscape footage or explicit non-wash fits, the caption is lower-left, width 1152 px, with the shared full-width cinematic bottom-third scrim. Both placements settle 96 px above the active picture's bottom, including 2.35 and 2.39 letterboxes. Long copy wraps to at most two lines per field at the stated sizes, then fails preflight rather than shrinking or truncating. Preflight collision checks use the caption rectangle, including when brand tokens are unavailable.
+
+At 30 fps, the rule grows from the bottom over local frames **0–6** (`power2.out`). With `motion:"rise"`, the text rises 12 px and fades in over **frames 2–10** (`power2.out`), then holds. Omitting motion uses the same fade without translation. The whole overlay fades linearly over its final six frames and is hidden at its half-open endpoint. Thus a 135-frame / 4.5-second overlay exits at frames **129–135**, with 119 fully settled frames / 3.97 seconds before exit. All endpoints derive from absolute integer output frames; no scale entrance or sound effect is added.
+
+Run `node --test test/speaker-testimonial-cinematic.test.mjs` for safe margins, portrait separation, provenance, collision rectangles, plate-free markup, bundled-GSAP forward/backward frame seeks and tiny deterministic lavfi foreground measurements. This changes only HTML/CSS/GSAP composition; `compileVersion()` and `fitGraph()` are unchanged. Before choosing this layout for Sonia or Madi, Claude must render and inspect their actual names, relationship wrapping, installed display/body fonts, bright and dark footage contrast, face/hand clearance, entry/exit frames and phone-size readability. Inspect every intervening cutaway as well: placement follows the named host clip and cannot detect faces or a replacement picture. No browser glyph measurement or face tracking is performed by these tests.
 
 An inserted **event-list** provides text proof when real logo files are unavailable:
 
@@ -429,9 +489,17 @@ The command also saves `preset.resolved.json`, `brand.resolved.json`, `brand.css
 
 `map.json` lists each item with itemId, kind, sourceId, original in/out, output start/end and role. Picture-only cutaways have additional labelled map entries. `words.json` contains output-time words tagged with sourceId and itemId, sliced from original transcripts; muted clips contribute no words. Overlays and cutaways never replace dialogue words.
 
-`plan.resolved.json` preserves source in/out and adds each item's, overlay's and cutaway's startFrame/endFrame, frames, start/end and outputStart/outputEnd in seconds, plus total frames/duration and warnings. SRT and VTT preserve transcript text with two lines of about 32 characters and a 17-character/second reading target. Fast speech is retained verbatim and warned on; captions are never fabricated to satisfy a reading rate.
+`plan.resolved.json` preserves source in/out and adds each item's, overlay's and cutaway's startFrame/endFrame, frames, start/end and outputStart/outputEnd in seconds, plus total frames/duration and warnings. Speaker captions include an indexed word only when more than half of its duration survives the source cut and resolved frame span. Cue times are clamped to that retained audio; half-or-less, unheard and zero-duration words are omitted. This is a timing rule, not transcription repair: listen to clipped words and repair the edit. The shared daily-reel `sliceWords()` rule is unchanged. SRT and VTT preserve transcript text with two lines of about 32 characters and a 17-character/second reading target. Fast speech is retained verbatim and warned on; captions are never fabricated to satisfy a reading rate.
 
 The compiler uses hard picture cuts and a re-encoded ffmpeg concatenation. No automatic silence cutting, speed ramping, reaction movement or content generation runs. `base.mp4` contains dialogue only. Composition prepares the listed licensed music at −16 LUFS, then applies each section's `gainDb` as linear gain with `duckingLane()` over output words. Section endpoints name inclusive items. No sections means a −20 dB default bed on unprotected, non-core items only. Nonempty sections mean silence everywhere outside them. Explicit sections may include protected/core items; those and room/testimonial passages never swell. Other long pauses may rise after a conservative release, with frame-aligned automation and section edge fades. Overlapping music sections fail clearly. Unlicensed/missing draft tracks remain silent with a review warning; final delivery refuses them.
+
+### Word boundaries and isolated brightness warnings
+
+`speakerQC()` loads indexed words from the client folder, or accepts an injected `index`. Audible clips warn when `in` or `out` falls strictly inside an indexed word and excludes more than 50 ms at that boundary. Findings name the item, source, word, indexed span and suggested safe out (and safe in for clipped entries). Suggestions retain the word without crossing into the adjacent indexed word; audition source handles before editing. Missing words/index data produce an explicit unavailable warning. These findings are advisory, including at final QC.
+
+Frame integrity decodes every frame, including cards, and measures mean luma after `scale=160:90:flags=area,format=yuv420p,signalstats,metadata=mode=print:key=lavfi.signalstats.YAVG:file=-`. A single bright or dark frame is a candidate when it differs from both neighbors by at least 18 luma units and those neighbors agree within 8. Findings report decoded frame indices and timestamps; they never replace frames or fail approval. No ranges are excluded automatically. The optional QC argument `frameIntegrityExclusions:[{"start":100,"end":104}]` excludes only those explicit half-open output frame ranges; direct `frameIntegrityChecks()` calls use `ignoreFrameRanges` for the same option.
+
+This full-frame mean heuristic can miss small/local flashes, flashes at the first/last frame, or multi-frame excursions. A one-frame intentional edit or real camera flash can be flagged. Decode/metadata failures warn instead of claiming a clean scan. Source timing and ASR errors still need real-time listening and visual review.
 
 ## Integration boundary and verification
 
@@ -461,15 +529,25 @@ These are plan options; no new CLI flags or preset keys are required. Defaults a
 
 Merge these fields into a complete plan with its existing schema, canvas, identity and rights records.
 
-- `look.grade`: `"auto"` (default) or `"off"`. Auto measures each used source after rotation/SDR conversion, caches its exposure and neutral-colour statistics, and holds one correction throughout that source unless a reviewed item trim is supplied. Automatic exposure correction is bounded to ±0.3 EV; neutral balance offsets stop at ±0.015 per RGB channel. Saturated/strongly coloured stages skip white balance. A shared gentle luminance S-curve and slight warmth follow. A broad skin-hue region is excluded from automatic neutral-balance and warmth shifts; no denoising, sharpening, grain or invented detail is added to the sharp footage. This is conservative matching, with human colour review still required.
+- `look.grade`: `"auto"` (default) or `"off"`. Auto samples twelve points across the union of selected ranges for each source after rotation/SDR conversion, before fitting, wash, bars or cards. Repeated uses and overlaps do not bias the source grade. Exposure is the median of display RGB24 frame means (`0.2126R + 0.7152G + 0.0722B`, divided by 255), independent of source bit depth. Native-depth YAVG is diagnostic only. One correction is held throughout that source unless a reviewed item trim is supplied. Automatic exposure correction is bounded to ±0.3 EV; neutral balance offsets stop at ±0.015 per RGB channel. Saturated/strongly coloured stages skip white balance. A shared gentle luminance S-curve and slight warmth follow. A broad skin-hue region is excluded from neutral-balance and warmth shifts, and receives only 25% of a saturation adjustment at full mask weight; no denoising, sharpening, grain or invented detail is added to the sharp footage. This is conservative matching, with human colour review still required.
 - Item/cutaway `look: { "grade": "off" }` bypasses both source matching and house grade, useful for original title cards. `"auto"` can also opt an entry back into a plan whose grade is off.
 - Item/cutaway `stabilize: true` enables two-pass vidstab on the selected picture range with up to one second of original handles at each end. Manifest `source.handheld: true` supplies this default for every use of that source; explicit `stabilize: false` disables it. The transform uses smoothing 15 and a 3% base zoom plus adaptive edge coverage. Cache identity includes source content, range, available duration, rotation/SDR normalization and settings. A failed pass logs one line, records a review warning, and uses the original picture. Original dialogue is always extracted separately at the original source times.
 - Item/cutaway `push`: 1 to 1.2. Items default to 1; cutaways longer than 1.5 seconds default to 1.06. Set 1 to disable. The smooth, deterministic move reaches its final scale on the last output frame and runs at 4× internal precision. For `contain`/`blur`/`wash`, the foreground reserves the move's margin so it remains fully visible and never exceeds 1.5× source enlargement. Wash pushes the completed picture (background, shadow and card together); its card remains within 90% of the letterbox active area at the end of the move.
 - `look.letterbox`: `null` (default), `2.35` or `2.39`. Bars mask the composed picture, leaving 1920×818 or 1920×804 active pixels. Cards, lower thirds and burned captions stay within that area. A composition adapter reflows the existing card boxes without shrinking type; layouts that cannot fit fail with the card ID. Check heads, hands and slides before using either crop. The resolved plan carries an informational finding shown on the review page.
 
+### HLG colour comparison
+
+Plan-level `look.hlg` accepts `"legacy"` (default) or `"review"`. Set `"review"` in a separate plan/version to compare HLG (`arib-std-b67`) footage through this exact transform after rotation and before the creative LUT:
+
+```text
+zscale=pin=2020:tin=arib-std-b67:min=2020_ncl:rin=limited:t=linear:npl=100,format=gbrpf32le,zscale=p=709,exposure=exposure=-1.5,tonemap=mobius:param=0.3:desat=2:peak=10,zscale=t=709:m=709:r=limited:dither=error_diffusion,format=yuv420p
+```
+
+The fixed −1.5 EV is a review starting point, not camera calibration. Compare Audacious skin and highlights against the legacy version and re-evaluate all HLG source/item trims before adoption. The path assumes limited-range BT.2020 HLG and requires ffmpeg's `zscale`, `exposure` and `tonemap`; a conversion failure stops compilation. It applies to HLG clips and cutaways even with grading off, and adds a review warning. PQ, plain BT.2020, source timing and audio retain their existing paths. Existing plans and the daily-reel pipeline keep their legacy conversion.
+
 ### Reviewed source trims: `look.sources`
 
-Add source trims to the plan's top-level `look`. IDs must exist in `manifest.sources`; the only trim keys are `ev`, `saturation` and `contrast`. Every value must be a finite number in the inclusive range below. Unknown look/trim keys, unknown source IDs and malformed objects fail plan validation, including when grading is off.
+Add source trims to the plan's top-level `look`. IDs must exist in `manifest.sources`; the trim keys are `ev`, `saturation`, `contrast`, `warmth` and `balance`. Every scalar/channel must be a finite number in the inclusive range below. Unknown look/trim keys, unknown source IDs and malformed objects fail plan validation, including when grading is off.
 
 ```json
 {
@@ -483,10 +561,12 @@ Add source trims to the plan's top-level `look`. IDs must exist in `manifest.sou
 ```
 
 - `ev`: −1 to +1. This is the final exposure setting, replacing automatic EV. For example, `0` removes an automatic +0.155 EV lift; it does not add zero to that lift.
-- `saturation`: 0.5 to 1.5, default 1. This multiplier follows the existing exposure, S-curve, neutral balance and warmth, inside the deterministic RGB LUT. It scales RGB chroma around Rec.709 luminance; out-of-gamut values clip.
+- `saturation`: 0.5 to 1.5, default 1. This multiplier follows the existing exposure, S-curve, neutral balance and warmth, inside the deterministic RGB LUT. It scales RGB chroma around Rec.709 luminance, using `1 + (saturation - 1) * (1 - 0.75 * skinWeight)` to protect skin. Out-of-gamut values clip.
 - `contrast`: 0 to 0.1, default 0.025. Replaces the shared luminance S-curve amount for this source.
+- `balance`: three RGB offsets, each −0.03 to +0.03. Replaces automatic balance; `[0,0,0]` disables it. Review a neutral patch before supplying nonzero values. Skin stays protected.
+- `warmth`: −0.01 to +0.01, default 0.003. Replaces shared warmth; `0` disables it. Skin stays protected.
 
-Missing fields retain their automatic/shared values. Neutral-balance offsets and the coloured-stage safeguard remain automatic. Source trims apply to both clip pictures and picture-only cutaways using that source.
+Missing fields retain their automatic/shared values. The coloured-stage safeguard still controls automatic balance. Source trims apply to both clip pictures and picture-only cutaways using that source.
 
 ### Clip item `grade`
 
@@ -500,9 +580,9 @@ A clip item's optional `grade` uses the same keys and ranges. Its fields overrid
 }
 ```
 
-With the Nova source trim above, `s5` uses EV −0.15, saturation 0.92 and contrast 0.015. A Nova cutaway over `s5` still uses EV 0, saturation 0.94 and contrast 0.015. Overrides apply only when that entry's effective `look.grade` is `"auto"`. An entry with `look.grade:"off"` bypasses all grading and trims; an explicit entry `"auto"` still opts into grading and trims on a plan whose grade is off. Omitting both new fields preserves the original automatic grade and its cache identity.
+With the Nova source trim above, `s5` uses EV −0.15, saturation 0.92 and contrast 0.015. A Nova cutaway over `s5` still uses EV 0, saturation 0.94 and contrast 0.015. Overrides apply only when that entry's effective `look.grade` is `"auto"`. An entry with `look.grade:"off"` bypasses all grading and trims; an explicit entry `"auto"` still opts into grading and trims on a plan whose grade is off. Empty trims use the same automatic grade as omitted trims.
 
-Colour measurements and deterministic LUTs live in `work/index/look/<key>.look.json` and `<key>.cube`; stabilized picture-only ranges live in `work/index/look/stabilize/`. The original index/transcript JSON is unchanged. Trim variants share source measurements but have separate LUT/cache identities containing their effective override values; changing a value rebuilds that grade, while unchanged values reuse it regardless of JSON key order. Review pairs for each used source/grade mode or trim variant are written to `work/<version>/look/*-before.jpg` and `*-after.jpg`, sampled at the same original source time. `look/look.json` records effective source grades in `sources[sourceId]` and applied item overrides in `items[itemId]`, with settings, cache keys, fallback status and item source IDs, plus the active box. Entries with grading off have no applied-grade record. These frames show colour correction before framing, motion and composited cards. Optional measurement/review-frame failures log once per source operation; failed measurement falls back to the shared gentle house grade while retaining reviewed trims.
+Colour measurements and deterministic LUTs live in `work/index/look/<key>.look.json` and `<key>.cube`; stabilized picture-only ranges live in `work/index/look/stabilize/`. The original index/transcript JSON is unchanged. Measurement version 2 and grade version 3 invalidate older exposure/LUT caches. Evidence records the display RGB domain, foreground region, normalization filter, selected ranges and exact sample times; invalid normalized statistics fall back without driving exposure. Trim variants share source measurements but have separate LUT/cache identities containing their effective override values; changing a value rebuilds that grade, while unchanged values reuse it regardless of JSON key order. Review pairs for each used source/grade mode or trim variant are written to `work/<version>/look/*-before.jpg` and `*-after.jpg`, sampled at the same original source time. `look/look.json` records effective source grades in `sources[sourceId]` and applied item overrides in `items[itemId]`, with settings, cache keys, fallback status and item source IDs, plus the active box. Entries with grading off have no applied-grade record. These frames show colour correction before framing, motion and composited cards. Optional measurement/review-frame failures log once per source operation; failed measurement falls back to the shared gentle house grade while retaining reviewed trims.
 
 `plan.resolved.json` records actual fits, pushes, stabilization requests, plan look and active box. `composition.json` records letterbox/active-box metadata and adjusted card review geometry. Existing `base.mp4`, map, words and sidecar contracts retain their timing and dimensions. Final composition adds the bars; the base assembly remains full 1920×1080. All source audio and cutaway L-cuts use the existing compiler clock. Hardware encoding still uses the existing VideoToolbox helper, with its existing automatic software fallback.
 
@@ -585,6 +665,19 @@ A keyword is an overlay with one to three verbatim, ordered words from the targe
 
 `position` is `center` (default) or `lower-third`; `motion` is `scale` (default) or `slide`. The entry takes six frames, then the card holds until its end. The overlay window is 1.2–2.5 seconds; use at least 1.4 seconds to retain 1.2 seconds fully settled. Keywords use only the client's display font, ink, surface and radius. Unknown/reordered words, words from another item/source, testimonials and keyword starts less than 20 seconds apart fail. Plan-only runs without transcripts warn that indexed-word validation is still required; rendering refuses ungrounded text. Speaker identification within a shared microphone source still requires operator review.
 
+Cinematic keyword overlays may opt into `card.variant:"phrase"` for one to four verbatim words. All other keywords retain the three-word maximum. Duration, testimonial and 20-second spacing checks still apply.
+
+An optional overlay-level `sourceWordRange:{"start":5,"end":8}` selects inclusive, zero-based indices into the source's `work/index/sources.json` words array. It must name the exact complete phrase within the target item's retained transcript, and the overlay window must overlap that utterance. A repeated phrase at another time cannot satisfy this anchor. It validates the authored offset; it does not move the overlay automatically. Source indexing or transcript edits require rechecking the indices.
+
+```json
+{
+  "id": "phrase-1", "at": "story", "offset": 2, "duration": 2,
+  "sourceWordRange": { "start": 5, "end": 8 },
+  "card": { "type": "keyword", "layout": "cinematic", "variant": "phrase",
+    "text": "What if I did?", "motion": "rise" }
+}
+```
+
 Standard title and booking names reveal with a 0.6-second mask on the absolute GSAP timeline and then hold. Reserve at least **6.6 seconds** for a standard booking card to retain six fully readable seconds after its reveal; historical six-second plans remain accepted for compatibility. Title `reveal: "cut"` and booking `layout: "premium"` use the entry behaviour described in the cards section above.
 
 `transition` on an incoming item is `cut` (default), `dip` (eight frames to the brand surface), `flash` (four frames, white at 60%) or `whip` (six frames of directional blur/slide). A reel may have at most four decorative transitions. Neither side of a decorative boundary may touch protected footage or the core; transitions never add time. Effects remain opt-in:
@@ -619,3 +712,37 @@ An optional injected `scoreDnsmos(file, {start, end, audioStream})` may return `
 Insert analysis compares each scene's centre frame with distant scenes in the same recording. Recurring room angles should match; short, unusual pictures receive extra weight. Local Apple Vision feature prints and text-area observations are preferred; ffmpeg 16×9 colour signatures and flat-colour/edge measures provide an automatic fallback. No npm package, model download or transcription is needed. Compilation uses the installed Swift/macOS SDK and caches the helper under `REEL_CACHE` (default `~/.cache/reel-editor`). Missing analysis fails open with a log line.
 
 Independent version-1 records live at `work/index/<source-cache-key>.inserts.json`: `{sourceId, version, inserts:[{start,end,kind,confidence,reason}]}`; all times are original-source seconds. Existing records are reused until their version or source key changes. Missing records mean unmeasured. Review lists the flags intersecting visible picture with source/output seconds and reasons; QC adds one WARN per intersection. Cutaways hide the underlying picture but their own pictures are checked too. Overlays do not clear a flag. No detector trims, covers, changes rights, or approves anything: inspect each original frame and make the editorial decision by hand. Similar-looking stock images, gradual edits and uncommon genuine room angles can fool this heuristic.
+
+## Optional dialogue cleanup
+
+An individual audible dialogue clip can opt into native DeepFilterNet3. Run `reel speaker reactions <client>` first. Without a valid source reaction index or an executable binary, compilation logs one line for that item and uses the selected original channel. Music, effects, picture-only cutaways and card audio carries never enter this adapter. Nothing is installed or downloaded. The existing daily-reel studio chain is unchanged.
+
+For Julee's Madi testimonial, add this field to the existing item with `sourceId:"testimonial-madi"`, `in:1.60`, `out:10.95` (keep its existing ID, role and other fields):
+
+```json
+"audioRepair": {
+  "profile": "dfn3-6",
+  "channel": "left",
+  "allowProtected": true,
+  "dryRanges": [],
+  "rampMs": 150
+}
+```
+
+This is an audition setting. Compare the original channel selection and left channel at matched speech loudness, then compare `dfn3-6` and `dfn3-9` under the actual music. A protected item needs `allowProtected:true`; that allowance permits only this cleanup, without authorizing cuts or retiming. After listening, set `audioRepair.auditioned:true`, increment the plan revision and rebuild the reviewed draft. Final QC refuses a requested repair that failed, is missing, changed since preparation, or has no recorded audition. Draft QC warns and permits the original-audio fallback.
+
+Profiles select a 6 or 9 dB attenuation limit. Channels are `existing` (the compiler's safe mono selection), `left` or `right`. `dryRanges` contain `{start,end}` in **absolute source seconds**, augmenting indexed laughter, applause, cheering and audience responses, including unverified hints. All protected samples remain byte-identical to the selected original before common gain/fades. Smoothstep ramps run outside the dry intervals; `rampMs` defaults to 150 (allowed 1–1000). For a conservative closing bypass, for example, `{start:1047.45,end:1054.5}` begins its 150 ms ramp at 1047.30. Carry audio remains original and inherits the preceding dialogue's selected channel, fixed gain and limiter.
+
+The binary lookup reuses `REEL_DEEPFILTER`, then `${REEL_CACHE:-~/.cache/reel-editor}/bin/deep-filter`, then PATH. The verified local arm64 binary is `/Users/gregpingel/.cache/reel-editor/bin/deep-filter` (0.5.6, SHA-256 `4601e7f4e4c03e59a4c5b5000216ef3add3e808799cfccd95e14e83ea4611081`). Invocation is `deep-filter -D --atten-lim-db 6 -o WORK_OUTPUT INPUT_PADDED.wav`; postfilter is disabled. The binary embeds the model; its full hash identifies both runtime and model bytes.
+
+The adapter decodes only the selected interval with up to 0.50 s context at either end, clamped to source boundaries. It preserves stream selection and the existing source clock at 48 kHz, adds another 24,000 silent tail samples, uses native `-D` delay compensation, removes context by integer sample offsets, then blends `y = x + wet * (e - x)`. The selected interval inside the context buffer is copied from the compiler’s decoded PCM, so packet-seek rounding cannot change the dialogue clock. Context supplies only the handles. It never stretches a shortened output. Frame-rounded output remains authoritative: Madi is 281 frames / 449,600 samples (9.366667 s), with her stored source range unchanged.
+
+For Madi's left-channel audition, the preparation graph is exactly:
+
+```text
+aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo,pan=mono|c0=c0,apad,atrim=end_sample=497600,apad=pad_len=24000,atrim=end_sample=521600
+```
+
+It seeks to source 1.10 s, processes 521,600 samples including context/padding, then keeps enhanced samples `[24000,473600)`. Reaction blending runs on those aligned float samples. Existing fixed gain, optional limiter, dual-mono output and 10 ms clip-edge fades follow cleanup, with loudness measured after cleanup. No other filters are added.
+
+`work/index/enhance/<key>/` holds `original.wav`, `enhanced.wav`, `repair.wav` and `repair.json`. The key covers full streamed source content, source index key, exact stored range, frame sample count, original selected-channel PCM, stream, channel, context/padding, binary/model identity, settings, bypass ranges and adapter version. Original quality labels are retained; selected-original/repaired measurements appear separately in review. QC re-reads PCM for exact counts, finite samples, reaction nulls and strong evidence of displaced waveforms. Weak or uncorrelated audio cannot prove alignment; listening remains required. Review approval hashes guard these WAVs, provenance, source and reaction index, so changes require a new review.

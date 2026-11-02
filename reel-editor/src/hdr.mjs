@@ -5,8 +5,8 @@ import { run } from "./util.mjs";
  * HyperFrames composites HDR footage on a native layer drawn over the page, which hides every caption, so the
  * cut pass always hands it BT.709 SDR footage.
  *
- * - HLG and plain BT.2020: ffmpeg's colorspace filter (portable; HLG is SDR-compatible, so the result matches
- *   what the phone shows).
+ * - The daily cut pass retains its legacy BT.2020 conversion. Speaker reels can opt into an HLG-aware
+ *   review transform; its exposure compensation must be reviewed before replacing accepted trims.
  * - PQ: colorspace cannot tone-map PQ (it comes out flat and dark), so on macOS a VideoToolbox pre-pass
  *   tone-maps it first. Elsewhere, or if that pass fails, the colorspace filter is used with a warning.
  */
@@ -37,8 +37,18 @@ export function rotateFilters(cw) {
   return [];
 }
 
-/** Filter that converts BT.2020 / HLG frames to BT.709 SDR (8-bit). */
+/** Legacy BT.2020 conversion, retained for existing plans and the daily pipeline. */
 export const SDR_FILTER = "colorspace=iall=bt2020:all=bt709:format=yuv420p";
+
+/** HLG/BT.2020 review transform. -1.5 EV is a fixed review starting point, not camera calibration. */
+export function hlgToSdrFilter() {
+  return [
+    "zscale=pin=2020:tin=arib-std-b67:min=2020_ncl:rin=limited:t=linear:npl=100",
+    "format=gbrpf32le", "zscale=p=709", "exposure=exposure=-1.5",
+    "tonemap=mobius:param=0.3:desat=2:peak=10",
+    "zscale=t=709:m=709:r=limited:dither=error_diffusion", "format=yuv420p",
+  ].join(",");
+}
 
 /** Output tags for BT.709 SDR video. */
 export const SDR_TAGS = ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"];

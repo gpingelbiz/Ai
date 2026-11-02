@@ -222,6 +222,17 @@ export async function measurePlanAudio(folder, plan, manifest, { index: supplied
   catch { print("speaker review: audio quality unavailable (source index missing)"); return plan; }
   for (const item of plan.items || []) {
     if (item.kind !== "clip" || item.audio === "mute") continue;
+    if (item.audioRepairResult?.status === "repaired") {
+      // These selected-channel measurements never replace the source's quality label or candidate rank.
+      try {
+        const words = (index.sources[item.sourceId]?.words || []).map((w) => ({ ...w, start: w.start - item.in, end: w.end - item.in }));
+        const range = { ...options, start: 0, end: item.frames / 30, words };
+        item.audioRepairResult.measurements = {
+          selectedOriginal: await (options.measure || measurePassage)(path.resolve(folder, item.audioRepairResult.original), range),
+          repaired: await (options.measure || measurePassage)(path.resolve(folder, item.audioRepairResult.file), range),
+        };
+      } catch (e) { delete item.audioRepairResult.measurements; print(`${item.id}: repair measurements unavailable (${e.message.split("\n")[0]})`); }
+    }
     const source = manifest.sources.find((s) => s.id === item.sourceId), row = index.sources[item.sourceId];
     if (source?.audio !== "ok" || !row) continue;
     try { item.audioQuality = await cachedPassageQuality(folder, source, row, { ...options, start: item.in, end: item.out, print }); }

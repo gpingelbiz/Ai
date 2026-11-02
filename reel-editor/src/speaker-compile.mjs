@@ -3,12 +3,12 @@ import path from "node:path";
 import { assetPath, assertNoGreg, LOGO_RELATIONSHIPS, headshotProblems } from "./speaker-intake.mjs";
 import { probeSource } from "./speaker-index.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
-import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr } from "./hdr.mjs";
-import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
+import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr, hlgToSdrFilter } from "./hdr.mjs";
+import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, foregroundSize, sourceCropOptions, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
 import { measureLoudness } from "./preflight.mjs";
+import { repairOptions, prepareRepair, loadRepairReactions } from "./speaker-enhance.mjs";
 import { groupWords } from "./captions.mjs";
-import { sliceWords } from "./clips.mjs";
-import { readJSON, writeJSON, ensureDir, run, warn } from "./util.mjs";
+import { readJSON, writeJSON, ensureDir, run, warn, r3 } from "./util.mjs";
 
 import { musicProblems } from "./speaker-music.mjs";
 import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
@@ -135,14 +135,27 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     if (!finite(i.in) || !finite(i.out) || i.in < 0 || i.in >= i.out) add(i.id, "source range requires 0 <= in < out");
     if (meta && s.kind !== "photo" && (!finite(meta.duration) || i.out > meta.duration + 0.000001)) add(i.id, `out ${i.out} is past source ${i.sourceId} duration ${meta.duration}`);
     if (i.fit != null && !["contain", "cover", "blur", "wash"].includes(i.fit)) add(i.id, `invalid fit: ${i.fit}`);
-    if (i.fit === "cover" && meta && (!(meta.width > meta.height))) add(i.id, `cover requires a landscape source; ${i.sourceId} must use contain`);
+    let effective = meta;
+    try { effective = sourceCropOptions(i.sourceCrop, meta)?.meta || meta; } catch (e) { add(i.id, e.message); }
+    if (i.fit === "cover" && effective && (!(effective.width > effective.height))) add(i.id, `cover requires a landscape source region; ${i.sourceId} must use contain`);
   };
   for (const i of [...items, ...overlays, ...cutaways]) {
     if (!i || typeof i !== "object") { add("plan", "timeline entries must be objects"); continue; }
+    if (Object.hasOwn(i, "audioRepair")) {
+      if (!items.includes(i) || i.kind !== "clip") add(i.id, "audioRepair requires a dialogue clip item");
+      try {
+        const repair = repairOptions(i.audioRepair);
+        if (i.protect && !repair.allowProtected) add(i.id, "protected audioRepair requires allowProtected:true; internal cuts remain forbidden");
+      } catch (e) { add(i.id, e.message); }
+      const source = sources.get(i.sourceId), meta = sourceRow(index, i.sourceId);
+      if (i.audio === "mute" || source?.audio !== "ok" || meta?.hasAudio === false) add(i.id, "audioRepair needs usable source dialogue audio");
+      if (source && !["stage", "podcast", "webinar", "interview", "testimonial"].includes(source.kind)) add(i.id, "audioRepair is only for dialogue sources, never broll, music or sfx");
+    }
     if (Object.hasOwn(i, "grade")) {
       if (!items.includes(i) || i.kind !== "clip") add(i.id, "grade requires a clip item; cutaways use look.sources");
       try { gradeOverrides(i.grade, "grade"); } catch (e) { add(i.id, e.message); }
     }
+    if (Object.hasOwn(i, "sourceCrop") && !(items.includes(i) && i.kind === "clip") && !cutaways.includes(i)) add(i.id, "sourceCrop requires a clip item or picture-only cutaway");
     if (typeof i.id !== "string" || !i.id.trim()) add("plan", "entry id is missing");
     else if (allIds.has(i.id)) add(i.id, "duplicate timeline id");
     else if (!/^[a-zA-Z0-9_-]+$/.test(i.id)) add(i.id, "timeline id must use letters, numbers, underscores or hyphens");
@@ -243,9 +256,18 @@ export function resolvePlan(plan, options) {
   const fps = plan.canvas.fps;
   let frame = 0;
   const timing = (startFrame, frames) => ({ startFrame, endFrame: startFrame + frames, frames, start: seconds(startFrame, fps), end: seconds(startFrame + frames, fps), outputStart: seconds(startFrame, fps), outputEnd: seconds(startFrame + frames, fps) });
+  const pictureOptions = (entry, push) => {
+    const meta = sourceRow(options.index, entry.sourceId), crop = sourceCropOptions(entry.sourceCrop, meta);
+    const fit = entry.fit || defaultFit(crop?.meta || meta, plan.canvas);
+    if (!crop) return { fit };
+    const geometry = fitGeometry(crop.meta, fit), size = foregroundSize(geometry, { fit, push, active: activeBox(plan.look?.letterbox) });
+    const endPush = Math.round((entry.out - entry.in) * fps) > 1 ? push : 1;
+    return { fit, framing: { sourceCrop: { x: crop.x, y: crop.y, width: crop.width, height: crop.height }, fitScale: geometry.scale,
+      foreground: { ...size, scaleX: size.width / crop.width, scaleY: size.height / crop.height, endScaleX: size.width / crop.width * endPush, endScaleY: size.height / crop.height * endPush } } };
+  };
   const items = plan.items.map((i) => {
     const frames = Math.round((i.kind === "clip" ? i.out - i.in : i.duration) * fps);
-    const resolved = { ...i, ...timing(frame, frames), ...(i.kind === "clip" ? { fit: i.fit || defaultFit(sourceRow(options.index, i.sourceId), plan.canvas), push: i.push ?? 1, stabilize: i.stabilize ?? (options.manifest.sources.find((s) => s.id === i.sourceId)?.handheld === true), audio: i.audio || "source", protect: i.protect === true } : {}) };
+    const resolved = { ...i, ...timing(frame, frames), ...(i.kind === "clip" ? { ...pictureOptions(i, i.push ?? 1), push: i.push ?? 1, stabilize: i.stabilize ?? (options.manifest.sources.find((s) => s.id === i.sourceId)?.handheld === true), audio: i.audio || "source", protect: i.protect === true } : {}) };
     frame += frames;
     return resolved;
   });
@@ -257,19 +279,22 @@ export function resolvePlan(plan, options) {
   }
   const byId = new Map(items.map((i) => [i.id, i]));
   const overlays = (plan.overlays || []).map((o) => ({ ...o, ...timing(byId.get(o.at).startFrame + Math.round(o.offset * fps), Math.round(o.duration * fps)) }));
-  const cutaways = (plan.cutaways || []).map((x) => ({ ...x, fit: x.fit || defaultFit(sourceRow(options.index, x.sourceId), plan.canvas), push: x.push ?? (x.out - x.in > 1.5 ? 1.06 : 1), stabilize: x.stabilize ?? (options.manifest.sources.find((s) => s.id === x.sourceId)?.handheld === true), ...timing(byId.get(x.over).startFrame + Math.round(x.offset * fps), Math.round((x.out - x.in) * fps)) }));
+  const cutaways = (plan.cutaways || []).map((x) => ({ ...x, ...pictureOptions(x, x.push ?? (x.out - x.in > 1.5 ? 1.06 : 1)), push: x.push ?? (x.out - x.in > 1.5 ? 1.06 : 1), stabilize: x.stabilize ?? (options.manifest.sources.find((s) => s.id === x.sourceId)?.handheld === true), ...timing(byId.get(x.over).startFrame + Math.round(x.offset * fps), Math.round((x.out - x.in) * fps)) }));
   return { ...plan, look: lookOptions(plan.look), activeBox: activeBox(plan.look?.letterbox), items, overlays, cutaways, frames: frame, duration: seconds(frame, fps), problems };
 }
 
+/** Speaker captions retain a word only when most of its indexed audio survives the actual frame clock. */
 export function timelineWords(resolved, index) {
-  return resolved.items.filter((i) => i.kind === "clip" && i.audio !== "mute").flatMap((i) =>
-    sliceWords(sourceRow(index, i.sourceId)?.words || [], i.in, i.out).map((w) => {
-      const end = Math.min(i.end, i.start + w.end), frame = 1 / (resolved.canvas?.fps || 30);
-      // Frame rounding can shorten a clip below its source range; a word inside it keeps at least one frame.
-      const start = Math.min(i.start + w.start, Math.max(i.start, end - frame));
-      return { ...w, start, end, sourceId: i.sourceId, itemId: i.id, itemEnd: i.end };
-    }),
-  ).filter((w) => w.end > w.start);
+  return resolved.items.filter((i) => i.kind === "clip" && i.audio !== "mute").flatMap((i) => {
+    const sourceEnd = Math.min(i.out, i.in + i.end - i.start);
+    return (sourceRow(index, i.sourceId)?.words || []).flatMap((w, sourceWordIndex) => {
+      const start = Math.max(i.in, w.start), end = Math.min(sourceEnd, w.end);
+      const retained = end - start, length = w.end - w.start;
+      if (!(length > 0) || !(retained > length / 2 + 1e-7)) return [];
+      return [{ ...w, start: i.start + r3(start - i.in), end: Math.min(i.end, i.start + r3(end - i.in)),
+        sourceId: i.sourceId, itemId: i.id, itemEnd: i.end, sourceWordIndex, sourceStart: w.start, sourceEnd: w.end }];
+    }).filter((w) => w.end > w.start);
+  });
 }
 
 /** Existing phrase-aware line logic, then at most two 32-character lines per cue. Fast speech stays verbatim. */
@@ -355,7 +380,7 @@ export function dialogueLevel(loudness, { limit = false } = {}) {
   return { gain, limiter: limit && gain > 0 ? "alimiter=limit=0.794:attack=5:release=50:level=false:latency=true" : "" };
 }
 
-async function preparedAudio(file, source, meta, item, dir, { preparation = null, savePreparation = () => {}, carry = false, continues = false } = {}) {
+export async function preparedAudio(file, source, meta, item, dir, { preparation = null, savePreparation = () => {}, carry = false, continues = false, workDir, repair = prepareRepair, repairDeps = {}, print = warn } = {}) {
   const output = path.join(dir, `${item.id}.wav`), raw = path.join(dir, `${item.id}.f32`);
   const duration = item.frames / 30, samples = item.frames * 1600;
   const audibleDuration = carry ? item.audioCarry.frames / 30 : duration;
@@ -368,16 +393,37 @@ async function preparedAudio(file, source, meta, item, dir, { preparation = null
   try {
     // Preserve packet offsets relative to the source origin, then lock samples to video frames.
     await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(item.in), "-i", file, "-map", `0:${stream}`, "-vn", "-t", String(audibleDuration), "-af", `aresample=48000:async=1:first_pts=0,apad,atrim=end_sample=${samples}`, "-ac", "2", "-f", "f32le", raw], { capture: true });
-    const mono = preparation?.mono ?? safeMonoFilter(stereoStats(raw));
-    if (!mono.includes("0.5")) warn(`${item.id}: stereo cancellation detected; using the louder channel`);
-    const common = ["-y", "-loglevel", "error", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", raw];
-    await run("ffmpeg", [...common, "-af", `${mono},pan=stereo|c0=c0|c1=c0`, "-c:a", "pcm_s16le", output], { capture: true });
+    const requested = !carry && item.audioRepair ? repairOptions(item.audioRepair) : null;
+    const mono = preparation?.mono ?? (requested?.channel === "left" ? "pan=mono|c0=c0" : requested?.channel === "right" ? "pan=mono|c0=c1" : safeMonoFilter(stereoStats(raw)));
+    if (!requested && !preparation && !mono.includes("0.5")) warn(`${item.id}: stereo cancellation detected; using the louder channel`);
+    let common = ["-y", "-loglevel", "error", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", raw], inputMono = mono;
+    delete item.audioRepairResult;
+    if (requested) {
+      const selected = path.join(dir, `${item.id}.selected.f32`);
+      try {
+        await run("ffmpeg", [...common, "-af", mono, "-f", "f32le", selected], { capture: true });
+        let reactions;
+        try { reactions = loadRepairReactions(workDir, meta.key, source.id, file); } catch { reactions = null; }
+        const result = await repair(file, { ...repairDeps, original: fs.readFileSync(selected), sourceKey: meta.key, sourceId: source.id, stream, start: item.in, out: item.out, samples, sourceDuration: meta.duration, mono, settings: requested, reactions, cacheDir: path.join(workDir, "index", "enhance"), print });
+        item.audioRepairResult = { status: result.status, ...(result.warning ? { warning: result.warning } : {}) };
+        if (result.status === "repaired") {
+          Object.assign(item.audioRepairResult, { key: result.key, sourceKey: meta.key, ranges: result.evidence.ranges, checks: result.checks, measurements: result.measurements });
+          for (const key of ["file", "original", "enhanced", "sidecar"]) item.audioRepairResult[key] = path.relative(path.dirname(workDir), result[key]);
+          common = ["-y", "-loglevel", "error", "-i", result.file];
+          inputMono = "pan=mono|c0=c0";
+        }
+      } catch (error) {
+        const warning = `dialogue enhance: ${String(error.message).split("\n")[0]}; using original audio`;
+        print(warning); item.audioRepairResult = { status: "original", warning };
+      } finally { fs.rmSync(selected, { force: true }); }
+    }
+    await run("ffmpeg", [...common, "-af", `${inputMono},pan=stereo|c0=c0|c1=c0`, "-c:a", "pcm_s16le", output], { capture: true });
     const { gain, limiter } = preparation ?? dialogueLevel(await measureLoudness(output), { limit: item.limit === true });
     savePreparation({ mono, gain, limiter });
     const fades = carry
       ? `atrim=end_sample=${item.audioCarry.frames * 1600},afade=t=out:st=${Math.max(0, audibleDuration - 0.25)}:d=${Math.min(0.25, audibleDuration)},apad,atrim=end_sample=${samples}`
       : `apad,atrim=end_sample=${samples},afade=t=in:d=0.01${continues ? "" : `,afade=t=out:st=${Math.max(0, duration - 0.01)}:d=0.01`}`;
-    await run("ffmpeg", [...common, "-af", `${mono},volume=${gain}dB,${limiter ? `${limiter},` : ""}pan=stereo|c0=c0|c1=c0,${fades}`, "-c:a", "pcm_s16le", output], { capture: true });
+    await run("ffmpeg", [...common, "-af", `${inputMono},volume=${gain}dB,${limiter ? `${limiter},` : ""}pan=stereo|c0=c0|c1=c0,${fades}`, "-c:a", "pcm_s16le", output], { capture: true });
     return output;
   } finally { fs.rmSync(raw, { force: true }); }
 }
@@ -408,7 +454,7 @@ export function cutawayGraph(base, cut, output, start, end, shifted = "shift") {
 }
 
 /** Each item is encoded once after rotation, SDR conversion and one scale. Cutaways share its dialogue stem. */
-export async function compileVersion(folder, plan, { manifest, index, preset = null, tokens = null, draft = false, encoder = "auto", print = warn } = {}) {
+export async function compileVersion(folder, plan, { manifest, index, preset = null, tokens = null, draft = false, encoder = "auto", print = warn, repairDeps = {} } = {}) {
   assertNoGreg(manifest, "manifest");
   if (preset) assertNoGreg(preset, "preset");
   const resolved = resolvePlan(plan, { manifest, index, draft });
@@ -422,9 +468,16 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   const scratch = ensureDir(path.join(dir, "compile"));
   const sourceById = new Map(manifest.sources.map((s) => [s.id, s]));
   const sourceTrims = new Map(Object.entries(resolved.look.sources || {}));
+  const selectedRanges = new Map();
+  for (const entry of [...resolved.items, ...resolved.cutaways]) if (entry.sourceId) {
+    if (!selectedRanges.has(entry.sourceId)) selectedRanges.set(entry.sourceId, []);
+    selectedRanges.get(entry.sourceId).push({ in: entry.in, out: entry.out });
+  }
+  // A held photo's item range is longer than its indexed duration: sample the whole still instead.
+  const stillSource = (id, meta) => sourceById.get(id)?.kind === "photo" || !(meta?.duration > 0.1);
   const normalized = new Map(), grades = new Map(), reviewed = new Set(), stabilized = new Map();
   const sourceGrades = new Map(), itemGrades = new Map();
-  const gradeEvidence = (grade) => ({ key: grade.key, settings: { saturation: 1, ...grade.settings }, fallback: grade.fallback || false });
+  const gradeEvidence = (grade) => ({ key: grade.key, measurementKey: grade.measurementKey, measurement: grade.measurement, gradeVersion: grade.gradeVersion, settings: { saturation: 1, ...grade.settings }, fallback: grade.fallback || false });
   const lookDir = ensureDir(path.join(dir, "look")), lookIndex = ensureDir(path.join(folder, "work", "index", "look"));
   if (resolved.look.letterbox) resolved.problems.push({ level: "info", id: "look", message: `Cinematic ${resolved.look.letterbox}:1 letterbox; active image ${resolved.activeBox.width}x${resolved.activeBox.height}. Check heads, hands and slides in the crop.` });
   let chosenEncoder = encoder;
@@ -432,6 +485,10 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
     if (normalized.has(id)) return normalized.get(id);
     const s = sourceById.get(id), meta = sourceRow(index, id), original = assetPath(folder, s.path);
     let file = original, hdr = meta.hdr, rotation = meta.rotationCw || 0;
+    if (meta.hdrKind === "hlg" && resolved.look.hlg === "review") {
+      const message = `${id}: HLG review transform (-1.5 EV before grading); compare skin and highlights against the legacy render and re-evaluate reviewed trims`;
+      print(message); resolved.problems.push({ level: "warn", id, message });
+    }
     if (meta.hdrKind === "pq") {
       const mapped = path.join(scratch, `hdr-${normalized.size}.mp4`);
       if (await toneMapToSdr(original, mapped, meta)) { file = mapped; hdr = false; rotation = 0; }
@@ -459,13 +516,14 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
         args.push("-f", "lavfi", "-i", `color=c=${bg}:s=1920x1080:r=30:d=${frames / 30}`);
         filters.push(`[${inputCount++}:v]setsar=1[${label}]`); return;
       }
-      const preFilter = [...rotateFilters(data.rotation), data.hdr ? SDR_FILTER : ["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null].filter(Boolean).join(",");
+      const hdrFilter = data.meta.hdrKind === "hlg" && resolved.look.hlg === "review" ? hlgToSdrFilter() : data.hdr ? SDR_FILTER : null;
+      const preFilter = [...rotateFilters(data.rotation), hdrFilter || (["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null)].filter(Boolean).join(",");
       let grade = null;
       if ((entry.look?.grade ?? resolved.look.grade) === "auto") {
         const sourceTrim = gradeOverrides(sourceTrims.get(entry.sourceId));
         const prepared = async (overrides) => {
           const key = JSON.stringify([entry.sourceId, overrides]);
-          if (!grades.has(key)) grades.set(key, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, overrides, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
+          if (!grades.has(key)) grades.set(key, await prepareGrade(data.file, { sourceKey: data.meta.key, meta: data.meta, preFilter, ranges: stillSource(entry.sourceId, data.meta) ? undefined : selectedRanges.get(entry.sourceId), overrides, cacheDir: lookIndex, print: (message) => print(`${entry.sourceId}: ${message}`) }));
           return grades.get(key);
         };
         grade = await prepared(sourceTrim);
@@ -490,11 +548,16 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
       }
       if (data.source.kind === "photo") args.push("-loop", "1", "-framerate", "30");
       args.push("-noautorotate", "-ss", String(seek), "-t", String(frames / 30 + 1 / 30), "-i", file);
-      const g = fitGeometry(data.meta, entry.fit);
+      const crop = sourceCropOptions(entry.sourceCrop, data.meta);
+      const g = fitGeometry(crop?.meta || data.meta, entry.fit);
       if (g.warning) { const message = `${entry.id}: ${g.warning}`; print(message); resolved.problems.push({ level: "warn", id: entry.id, message }); }
+      if (crop && frames > 1 && entry.fit === "cover" && !g.warning && g.scale * entry.push > 1.5 + 0.0001) {
+        const message = `${entry.id}: requested ${(g.scale * entry.push).toFixed(2)}x enlargement at end of push; review the landscape crop`;
+        print(message); resolved.problems.push({ level: "warn", id: entry.id, message });
+      }
       const raw = `${label}_raw`, fitted = `${label}_fitted`;
       filters.push(`[${inputCount++}:v]setpts=PTS-STARTPTS,${[normalization, "fps=30:start_time=0:round=near", grade?.filter, "tpad=stop_mode=clone:stop_duration=1", `trim=end_frame=${frames}`, "setpts=N/(30*TB)"].filter(Boolean).join(",")}[${raw}]`);
-      filters.push(...fitGraph(raw, fitted, g, { fit: entry.fit, background: bg, frames, push: entry.push, active: resolved.activeBox }));
+      filters.push(...fitGraph(raw, fitted, g, { fit: entry.fit, background: bg, frames, push: entry.push, active: resolved.activeBox, sourceCrop: crop }));
       filters.push(`[${fitted}]settb=expr=1/30,setpts=N,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709[${label}]`);
     };
     if (picture) await addPicture(item, item.frames, "picture0");
@@ -512,6 +575,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
     }
     let audio;
     if (picture) audio = await preparedAudio(assetPath(folder, picture.source.path), picture.source, picture.meta, item, scratch, {
+      workDir: path.join(folder, "work"), repairDeps, print: (message) => { print(`${item.id}: ${message}`); resolved.problems.push({ level: "warn", id: item.id, message }); },
       savePreparation: (settings) => audioPreparations.set(item.id, settings), continues: resolved.items[number + 1]?.audioCarry?.preceding === item.id,
     });
     else if (item.audioCarry) {
@@ -524,6 +588,20 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
     const output = path.join(scratch, `${String(number).padStart(4, "0")}.mov`);
     chosenEncoder = await encode([...args, "-filter_complex", filters.join(";"), "-map", `[${label}]`, "-map", `${inputCount}:a:0`, "-r", "30", "-fps_mode", "cfr", "-frames:v", String(item.frames)], ["-pix_fmt", "yuv420p", ...SDR_TAGS, "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", output], chosenEncoder);
     await verifyStreams(output, item.frames, item.id);
+    // These are fitted pictures from the actual assembly, including push and cutaway boundaries.
+    for (const entry of [item, ...cuts].filter((entry) => entry.framing)) {
+      const start = entry.startFrame - item.startFrame, end = entry.endFrame - item.startFrame - 1;
+      const reviewFrames = [];
+      try {
+        for (const [suffix, frame] of [["first", start], ["last", end]]) {
+          const name = `crop-${entry.id}-${suffix}.jpg`;
+          await run("ffmpeg", ["-y", "-loglevel", "error", "-i", output, "-vf", `select=eq(n\\,${frame}),scale=960:540`, "-frames:v", "1", path.join(lookDir, name)], { capture: true });
+          if (!fs.existsSync(path.join(lookDir, name)) || !fs.statSync(path.join(lookDir, name)).size) throw new Error("no crop review frame");
+          reviewFrames.push(`look/${name}`);
+        }
+        entry.framing.reviewFrames = reviewFrames;
+      } catch { const message = `${entry.id}: crop review frames unavailable`; print(message); resolved.problems.push({ level: "warn", id: entry.id, message }); }
+    }
     files.push(output);
   }
   const list = path.join(scratch, "concat.txt");
@@ -533,8 +611,8 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
   await encode(["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", list, "-map", "0:v:0", "-map", "0:a:0", "-vf", "setpts=N/(30*TB),setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709", "-af", `aresample=48000:async=1:first_pts=0,apad,atrim=end_sample=${resolved.frames * 1600}`, "-r", "30", "-fps_mode", "cfr", "-frames:v", String(resolved.frames)], ["-pix_fmt", "yuv420p", ...SDR_TAGS, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", temporary], chosenEncoder);
   await verifyStreams(temporary, resolved.frames, resolved.version);
   fs.renameSync(temporary, base);
-  const map = [...resolved.items.map((i) => ({ itemId: i.id, kind: i.kind, sourceId: i.sourceId ?? null, in: i.in ?? null, out: i.out ?? null, start: i.start, end: i.end, outputStart: i.start, outputEnd: i.end, role: i.role, ...(i.audioCarry ? { audioCarry: i.audioCarry } : {}) })),
-    ...resolved.cutaways.map((x) => ({ itemId: x.over, cutawayId: x.id, kind: "cutaway", sourceId: x.sourceId, in: x.in, out: x.out, start: x.start, end: x.end, outputStart: x.start, outputEnd: x.end, role: resolved.items.find((i) => i.id === x.over).role, pictureOnly: true }))];
+  const map = [...resolved.items.map((i) => ({ itemId: i.id, kind: i.kind, sourceId: i.sourceId ?? null, in: i.in ?? null, out: i.out ?? null, start: i.start, end: i.end, outputStart: i.start, outputEnd: i.end, role: i.role, ...(i.framing ? { sourceCrop: i.sourceCrop, framing: i.framing } : {}), ...(i.audioCarry ? { audioCarry: i.audioCarry } : {}) })),
+    ...resolved.cutaways.map((x) => ({ itemId: x.over, cutawayId: x.id, kind: "cutaway", sourceId: x.sourceId, in: x.in, out: x.out, start: x.start, end: x.end, outputStart: x.start, outputEnd: x.end, role: resolved.items.find((i) => i.id === x.over).role, pictureOnly: true, ...(x.framing ? { sourceCrop: x.sourceCrop, framing: x.framing } : {}) }))];
   const words = timelineWords(resolved, index), captions = captionFiles(words, resolved.duration);
   writeJSON(path.join(lookDir, "look.json"), { schemaVersion: 1, look: resolved.look, activeBox: resolved.activeBox, sources: Object.fromEntries(sourceGrades), items: Object.fromEntries(itemGrades) });
   writeJSON(path.join(dir, "map.json"), map);

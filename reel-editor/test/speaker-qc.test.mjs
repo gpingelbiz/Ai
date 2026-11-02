@@ -14,7 +14,7 @@ const manifest = () => ({ identity: { name: "Client", bookingMode: "direct" }, s
 const deps = (over = {}) => ({
   probe: async () => ({ duration: 8, width: 1920, height: 1080, fps: 30, pixFmt: "yuv420p", codec: "h264", hasAudio: true }),
   encoding: async () => ({ video: { avg_frame_rate: "30/1" }, audio: { codec_name: "aac", sample_rate: "48000", channels: 2 } }),
-  measureLoudness: async () => ({ i: -14, tp: -1 }), silences: async () => [], blackGaps: async () => [], ...over,
+  measureLoudness: async () => ({ i: -14, tp: -1 }), silences: async () => [], blackGaps: async () => [], frameIntegrityChecks: async () => [], ...over,
 });
 function captions(dir, end = "00:00:02.500") {
   const files = { srt: path.join(dir, "captions.srt"), vtt: path.join(dir, "captions.vtt") };
