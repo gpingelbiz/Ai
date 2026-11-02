@@ -100,7 +100,7 @@ export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, p
   const projectDir = ensureDir(path.join(workDir, "project"));
   ensureDir(path.join(projectDir, "assets", "vendor"));
   const box = activeBox(resolvedPlan.look?.letterbox, resolvedPlan.canvas);
-  const sideNames = resolvedPlan.overlays?.some((o) => o.card?.type === "testimonial-name" && o.card.layout === "premium");
+  const sideNames = resolvedPlan.overlays?.some((o) => o.card?.type === "testimonial-name" && ["premium", "cinematic"].includes(o.card.layout));
   const sourceIndex = sideNames && fs.existsSync(path.join(folder, "work/index/sources.json")) ? readJSON(path.join(folder, "work/index/sources.json")) : {};
   const cards = await copyCardAssets(letterboxCards(speakerCardsHTML(resolvedPlan, { manifest, tokens, canvas: { ...resolvedPlan.canvas, activeBox: box }, clientDir: folder, index: sourceIndex, log: print }), box, resolvedPlan), projectDir);
   for (const p of cards.problems) print(`WARNING ${p.code}: ${p.message}`);
