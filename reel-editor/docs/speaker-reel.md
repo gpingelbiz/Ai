@@ -372,7 +372,7 @@ Text begins at x96, occupies at most 1344 px (70% width), and ends 96 px above t
 
 Topic `text` and `eyebrow` must each exactly match manifest identity or proof text, or together reconstruct one exact supplied line using a single space or comma-space. This permits `"Briefcase model, NBC’s Deal or No Deal"` to split into eyebrow `"Briefcase model"` and main `"NBC’s Deal or No Deal"` without authoring a new claim. The combined limit is seven words. Proof used by either field, or by their joined line, retains its rights requirements. Headshot paths/rights cannot supply copy. Keywords retain their existing transcript, duration and spacing requirements; cinematic placement is always lower-left.
 
-`motion: "rise"` moves only the copy upward 32 px while fading it in over **nine frames**, with `power2.out`; it holds, then the whole overlay fades linearly over its final **six frames**. Without `motion`, the same entry fades without movement. Every endpoint is calculated from absolute integer output frames at 30 fps. Cinematic title `reveal: "cut"` takes precedence over entry motion: the complete name is visible on its first frame, with no mask, scale settle or rise, including when `motion: "rise"` is also supplied. Its six-frame exit remains. Every cinematic overlay requires at least 16 frames; normal reading windows should be substantially longer. A four-second rise card has 3.5 fully settled seconds; a two-second keyword has 1.5. Standard layouts keep their existing reveals and motion.
+`motion: "rise"` moves only the copy upward 32 px while fading it in over **nine frames**, with `power2.out`; it holds, then the whole overlay fades linearly over its final **six frames**. Without `motion`, the same entry fades without movement. Every endpoint is calculated from absolute integer output frames at 30 fps. Cinematic title `reveal: "cut"` takes precedence over entry motion: the complete name is visible on its first frame, with no mask, scale settle or rise, including when `motion: "rise"` is also supplied. Its six-frame exit remains. Every cinematic overlay requires at least 16 frames; normal reading windows should be substantially longer. A four-second title or topic rise card has 3.5 fully settled seconds. Cinematic keyword `variant:"phrase"` with `motion:"rise"` uses a six-frame, 24 px rise with scale fixed at 1, then a linear four-frame exit; a two-second keyword has 50 fully settled frames (1.67 seconds). Existing cinematic keywords retain their nine-frame entry (32 px with rise, fade only without motion) and six-frame exit. Standard layouts keep their existing reveals and motion.
 
 ```json
 { "type": "title", "layout": "cinematic", "showRole": false, "reveal": "cut" }
@@ -429,9 +429,17 @@ The command also saves `preset.resolved.json`, `brand.resolved.json`, `brand.css
 
 `map.json` lists each item with itemId, kind, sourceId, original in/out, output start/end and role. Picture-only cutaways have additional labelled map entries. `words.json` contains output-time words tagged with sourceId and itemId, sliced from original transcripts; muted clips contribute no words. Overlays and cutaways never replace dialogue words.
 
-`plan.resolved.json` preserves source in/out and adds each item's, overlay's and cutaway's startFrame/endFrame, frames, start/end and outputStart/outputEnd in seconds, plus total frames/duration and warnings. SRT and VTT preserve transcript text with two lines of about 32 characters and a 17-character/second reading target. Fast speech is retained verbatim and warned on; captions are never fabricated to satisfy a reading rate.
+`plan.resolved.json` preserves source in/out and adds each item's, overlay's and cutaway's startFrame/endFrame, frames, start/end and outputStart/outputEnd in seconds, plus total frames/duration and warnings. Speaker captions include an indexed word only when more than half of its duration survives the source cut and resolved frame span. Cue times are clamped to that retained audio; half-or-less, unheard and zero-duration words are omitted. This is a timing rule, not transcription repair: listen to clipped words and repair the edit. The shared daily-reel `sliceWords()` rule is unchanged. SRT and VTT preserve transcript text with two lines of about 32 characters and a 17-character/second reading target. Fast speech is retained verbatim and warned on; captions are never fabricated to satisfy a reading rate.
 
 The compiler uses hard picture cuts and a re-encoded ffmpeg concatenation. No automatic silence cutting, speed ramping, reaction movement or content generation runs. `base.mp4` contains dialogue only. Composition prepares the listed licensed music at −16 LUFS, then applies each section's `gainDb` as linear gain with `duckingLane()` over output words. Section endpoints name inclusive items. No sections means a −20 dB default bed on unprotected, non-core items only. Nonempty sections mean silence everywhere outside them. Explicit sections may include protected/core items; those and room/testimonial passages never swell. Other long pauses may rise after a conservative release, with frame-aligned automation and section edge fades. Overlapping music sections fail clearly. Unlicensed/missing draft tracks remain silent with a review warning; final delivery refuses them.
+
+### Word boundaries and isolated brightness warnings
+
+`speakerQC()` loads indexed words from the client folder, or accepts an injected `index`. Audible clips warn when `in` or `out` falls strictly inside an indexed word and excludes more than 50 ms at that boundary. Findings name the item, source, word, indexed span and suggested safe out (and safe in for clipped entries). Suggestions retain the word without crossing into the adjacent indexed word; audition source handles before editing. Missing words/index data produce an explicit unavailable warning. These findings are advisory, including at final QC.
+
+Frame integrity decodes every frame, including cards, and measures mean luma after `scale=160:90:flags=area,format=yuv420p,signalstats,metadata=mode=print:key=lavfi.signalstats.YAVG:file=-`. A single bright or dark frame is a candidate when it differs from both neighbors by at least 18 luma units and those neighbors agree within 8. Findings report decoded frame indices and timestamps; they never replace frames or fail approval. No ranges are excluded automatically. The optional QC argument `frameIntegrityExclusions:[{"start":100,"end":104}]` excludes only those explicit half-open output frame ranges; direct `frameIntegrityChecks()` calls use `ignoreFrameRanges` for the same option.
+
+This full-frame mean heuristic can miss small/local flashes, flashes at the first/last frame, or multi-frame excursions. A one-frame intentional edit or real camera flash can be flagged. Decode/metadata failures warn instead of claiming a clean scan. Source timing and ASR errors still need real-time listening and visual review.
 
 ## Integration boundary and verification
 
@@ -584,6 +592,19 @@ A keyword is an overlay with one to three verbatim, ordered words from the targe
 ```
 
 `position` is `center` (default) or `lower-third`; `motion` is `scale` (default) or `slide`. The entry takes six frames, then the card holds until its end. The overlay window is 1.2–2.5 seconds; use at least 1.4 seconds to retain 1.2 seconds fully settled. Keywords use only the client's display font, ink, surface and radius. Unknown/reordered words, words from another item/source, testimonials and keyword starts less than 20 seconds apart fail. Plan-only runs without transcripts warn that indexed-word validation is still required; rendering refuses ungrounded text. Speaker identification within a shared microphone source still requires operator review.
+
+Cinematic keyword overlays may opt into `card.variant:"phrase"` for one to four verbatim words. All other keywords retain the three-word maximum. Duration, testimonial and 20-second spacing checks still apply.
+
+An optional overlay-level `sourceWordRange:{"start":5,"end":8}` selects inclusive, zero-based indices into the source's `work/index/sources.json` words array. It must name the exact complete phrase within the target item's retained transcript, and the overlay window must overlap that utterance. A repeated phrase at another time cannot satisfy this anchor. It validates the authored offset; it does not move the overlay automatically. Source indexing or transcript edits require rechecking the indices.
+
+```json
+{
+  "id": "phrase-1", "at": "story", "offset": 2, "duration": 2,
+  "sourceWordRange": { "start": 5, "end": 8 },
+  "card": { "type": "keyword", "layout": "cinematic", "variant": "phrase",
+    "text": "What if I did?", "motion": "rise" }
+}
+```
 
 Standard title and booking names reveal with a 0.6-second mask on the absolute GSAP timeline and then hold. Reserve at least **6.6 seconds** for a standard booking card to retain six fully readable seconds after its reveal; historical six-second plans remain accepted for compatibility. Title `reveal: "cut"` and booking `layout: "premium"` use the entry behaviour described in the cards section above.
 

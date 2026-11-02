@@ -7,8 +7,7 @@ import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr } from "./hdr.mjs";
 import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
 import { measureLoudness } from "./preflight.mjs";
 import { groupWords } from "./captions.mjs";
-import { sliceWords } from "./clips.mjs";
-import { readJSON, writeJSON, ensureDir, run, warn } from "./util.mjs";
+import { readJSON, writeJSON, ensureDir, run, warn, r3 } from "./util.mjs";
 
 import { musicProblems } from "./speaker-music.mjs";
 import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
@@ -261,15 +260,18 @@ export function resolvePlan(plan, options) {
   return { ...plan, look: lookOptions(plan.look), activeBox: activeBox(plan.look?.letterbox), items, overlays, cutaways, frames: frame, duration: seconds(frame, fps), problems };
 }
 
+/** Speaker captions retain a word only when most of its indexed audio survives the actual frame clock. */
 export function timelineWords(resolved, index) {
-  return resolved.items.filter((i) => i.kind === "clip" && i.audio !== "mute").flatMap((i) =>
-    sliceWords(sourceRow(index, i.sourceId)?.words || [], i.in, i.out).map((w) => {
-      const end = Math.min(i.end, i.start + w.end), frame = 1 / (resolved.canvas?.fps || 30);
-      // Frame rounding can shorten a clip below its source range; a word inside it keeps at least one frame.
-      const start = Math.min(i.start + w.start, Math.max(i.start, end - frame));
-      return { ...w, start, end, sourceId: i.sourceId, itemId: i.id, itemEnd: i.end };
-    }),
-  ).filter((w) => w.end > w.start);
+  return resolved.items.filter((i) => i.kind === "clip" && i.audio !== "mute").flatMap((i) => {
+    const sourceEnd = Math.min(i.out, i.in + i.end - i.start);
+    return (sourceRow(index, i.sourceId)?.words || []).flatMap((w, sourceWordIndex) => {
+      const start = Math.max(i.in, w.start), end = Math.min(sourceEnd, w.end);
+      const retained = end - start, length = w.end - w.start;
+      if (!(length > 0) || !(retained > length / 2 + 1e-7)) return [];
+      return [{ ...w, start: i.start + r3(start - i.in), end: Math.min(i.end, i.start + r3(end - i.in)),
+        sourceId: i.sourceId, itemId: i.id, itemEnd: i.end, sourceWordIndex, sourceStart: w.start, sourceEnd: w.end }];
+    }).filter((w) => w.end > w.start);
+  });
 }
 
 /** Existing phrase-aware line logic, then at most two 32-character lines per cue. Fast speech stays verbatim. */
