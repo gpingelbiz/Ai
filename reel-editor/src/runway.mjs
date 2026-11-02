@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import { log, warn, r3, run } from "./util.mjs";
 
 /**
@@ -25,6 +26,8 @@ async function post(path, body, { fetchFn = fetch } = {}) {
     const text = await res.text().catch(() => "");
     const e = new Error(`runway ${path} ${res.status}: ${text.slice(0, 300)}`);
     e.status = res.status;
+    try { const body = JSON.parse(text); e.code = body.failureCode || body.code; } catch {}
+    e.policy = failurePolicy(e.code);
     throw e;
   }
   return res.json();
@@ -33,17 +36,30 @@ async function post(path, body, { fetchFn = fetch } = {}) {
 /** Poll a task to its end. Runway asks for no more than one check every 5 s. */
 export async function waitForTask(id, { fetchFn = fetch, timeoutMs = 600000, sleepFn = sleep, onProgress } = {}) {
   const t0 = Date.now();
+  let failures = 0;
   for (;;) {
     await sleepFn(5000 + Math.random() * 2000);
-    if (Date.now() - t0 > timeoutMs) throw new Error(`runway task ${id} timed out`);
+    if (Date.now() - t0 > timeoutMs) throw Object.assign(new Error(`runway task ${id} timed out`), { code: "TASK_PENDING", taskId: id });
     const res = await fetchFn(`${BASE}/v1/tasks/${id}`, { headers: headers() });
-    if (!res.ok) { await sleepFn(10000); continue; }
+    if (!res.ok) {
+      if (![408, 409, 429].includes(res.status) && res.status < 500) throw Object.assign(new Error(`runway task lookup ${res.status}`), { code: "TASK_PENDING" });
+      await sleepFn(Math.min(60000, 5000 * 2 ** failures++ * (1 + Math.random() * 0.5))); continue;
+    }
+    failures = 0;
     const t = await res.json();
     if (t.status === "SUCCEEDED") return t;
-    if (t.status === "FAILED") { const e = new Error(`${t.failureCode || "FAILED"}: ${t.failure || "no reason given"}`); e.code = t.failureCode; e.cost = t.cost?.credits; throw e; }
-    if (t.status === "CANCELLED") throw new Error("runway task cancelled");
+    if (t.status === "FAILED") { const e = new Error(`${t.failureCode || "FAILED"}: ${t.failure || "no reason given"}`); e.code = t.failureCode; e.cost = t.cost?.credits; e.policy = failurePolicy(e.code); e.terminal = true; throw e; }
+    if (t.status === "CANCELLED") throw Object.assign(new Error("runway task cancelled"), { code: "CANCELLED", terminal: true });
     if (onProgress && t.status === "RUNNING" && t.progress != null) onProgress(t.progress);
   }
+}
+
+/** Task failures need a different remedy from an unavailable waiter or a bad input. */
+export function failurePolicy(code = "") {
+  if (/SAFETY\.INPUT|INPUT_PREPROCESSING\.SAFETY|ASSET\.INVALID/.test(code)) return { retry: false, remedy: "revise-input" };
+  if (/SAFETY\.OUTPUT/.test(code)) return { retry: true, remedy: "soften", delayMs: 0 };
+  if (/THIRD_PARTY|INTERNAL/.test(code)) return { retry: true, remedy: "delay", delayMs: 10000 };
+  return { retry: false, remedy: "recover" };
 }
 
 /** Drop only the optional finish, then refuse an oversized prompt before any paid call. */
@@ -130,21 +146,25 @@ export async function createVideo({ image, lastImage, prompt = "", duration = 5,
   return created(await post("/v1/image_to_video", body, { fetchFn }));
 }
 
-export async function createSound({ videoUri, promptText, negativePrompt = "music, speech, singing", duration, seed, format = "wav", numVariants = 1, model = "mirelo_sfx_2_0", fetchFn } = {}) {
+export async function createSound({ videoUri, promptText, negativePrompt = "music, speech, singing", preserveSpeech = false, duration, seed, format = "wav", numVariants = 1, model = "mirelo_sfx_2_0", fetchFn } = {}) {
   const info = modelInfo(model, "audio");
   if (videoUri?.startsWith("data:") && videoUri.length > 5 * 1024 * 1024) throw new Error("Runway sound video data URI exceeds 5 MB");
   if (!["mp3", "wav", "flac"].includes(format) || !Number.isInteger(numVariants) || numVariants < 1 || numVariants > 4) throw new Error("Invalid Runway sound format or variant count");
-  const body = optionalFields({ model, videoUri, duration: durationFor(info, duration), format, numVariants }, info, { seed });
+  const body = optionalFields({ model, videoUri, preserveSpeech, duration: durationFor(info, duration), format, numVariants }, info, { seed });
   if (promptText) body.promptText = promptText;
   if (negativePrompt) body.negativePrompt = negativePrompt;
   return created(await post("/v1/video_to_audio", body, { fetchFn }));
 }
 
 export async function download(url, file, { fetchFn = fetch } = {}) {
-  const res = await fetchFn(url);
-  if (!res.ok) throw new Error(`download ${res.status}`);
-  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-  return file;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetchFn(url);
+      if (!res.ok) throw new Error(`download ${res.status}`);
+      fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+      return file;
+    } catch (e) { if (attempt) throw Object.assign(e, { code: "OUTPUT_UNAVAILABLE" }); }
+  }
 }
 
 /** The account: {creditBalance, tier, usage}. */
@@ -175,18 +195,54 @@ export function estimateClip({ seconds = 5, imageModel = "gen4_image", imageRati
 }
 
 /** Keep every charged task, including failed generations, attached to errors for the caller's ledger. */
-export async function generateTask({ kind, model, credits, seconds, request, items, fetchFn, sleepFn }) {
-  const started = await request();
-  let task;
-  try { task = await waitForTask(started.id, { fetchFn, sleepFn }); }
-  catch (e) {
-    const cost = e.cost ?? started.estimatedCredits ?? credits;
-    items.push({ service: "runway", model, kind, ...(seconds != null ? { seconds } : {}), credits: cost, dollars: r3(cost * CREDIT_USD), ok: false, error: e.message });
-    throw Object.assign(e, { items });
+export async function generateTask({ kind, model, credits, seconds, request, requestKey, journal, beforeBuy, items = [], fetchFn, sleepFn, timeoutMs }) {
+  const requestHash = createHash("sha256").update(JSON.stringify({ kind, model, requestKey })).digest("hex");
+  let entry = journal?.tasks.find((t) => t.requestHash === requestHash);
+  const save = () => journal?.save();
+  if (!entry) {
+    if (beforeBuy) await beforeBuy();
+    entry = { requestHash, kind, model, estimatedCredits: credits, reservedCredits: credits, state: "submitting", scope: journal?.scope };
+    if (journal) { journal.tasks.push(entry); save(); }
+    try {
+      const started = await request();
+      if (!started.id) throw new Error("Runway returned no task id");
+      Object.assign(entry, { taskId: started.id, estimatedCredits: started.estimatedCredits ?? credits, state: "submitted" });
+      save();
+    } catch (e) {
+      // A transport timeout may have bought a task. Never resubmit an unknown purchase.
+      Object.assign(entry, { state: e.status ? "failed" : "unknown", error: e.message, code: e.status ? e.code || "INVALID_REQUEST" : "UNKNOWN_SUBMISSION", credits: e.status ? 0 : credits });
+      save();
+      throw Object.assign(e, { code: entry.code, kind, items });
+    }
   }
-  const cost = task.cost?.credits ?? started.estimatedCredits ?? credits;
-  items.push({ service: "runway", model, kind, ...(seconds != null ? { seconds } : {}), credits: cost, dollars: r3(cost * CREDIT_USD), ok: true });
-  return task;
+  if (!entry.taskId) throw Object.assign(new Error(entry.error || "submission needs reconciliation"), { code: entry.code || "UNKNOWN_SUBMISSION", items });
+  const account = (ok) => {
+    const cost = entry.credits ?? entry.estimatedCredits;
+    const item = { taskId: entry.taskId, service: "runway", model, kind, ...(seconds != null ? { seconds } : {}), credits: cost, dollars: r3(cost * CREDIT_USD), ok, ...(entry.error ? { error: entry.error } : {}) };
+    const at = items.findIndex((i) => i.taskId === entry.taskId);
+    if (at < 0) items.push(item); else items[at] = item;
+  };
+  if (entry.state === "failed") {
+    account(false);
+    throw Object.assign(new Error(entry.error), { code: entry.code, policy: failurePolicy(entry.code), kind, items });
+  }
+  try {
+    const task = entry.state === "succeeded" ? entry.result : await waitForTask(entry.taskId, { fetchFn, sleepFn, timeoutMs });
+    Object.assign(entry, { state: "succeeded", credits: task.cost?.credits ?? entry.estimatedCredits, result: task });
+    save();
+    account(true);
+    if (!Array.isArray(task.output) || !task.output.length || !task.output.every((u) => typeof u === "string" && /^https?:\/\//.test(u))) {
+      throw Object.assign(new Error("Runway task has no valid output URL"), { code: "OUTPUT_UNAVAILABLE" });
+    }
+    return task;
+  } catch (e) {
+    if (entry.state !== "succeeded") {
+      Object.assign(entry, { state: e.terminal ? "failed" : "pending", error: e.message, code: e.code || "TASK_PENDING", credits: e.cost ?? entry.estimatedCredits });
+      save();
+    }
+    account(false);
+    throw Object.assign(e, { code: e.terminal ? e.code : entry.state === "succeeded" ? e.code : "TASK_PENDING", kind, items, taskId: entry.taskId });
+  }
 }
 
 export const dataURI = (file, mime) => `data:${mime};base64,${fs.readFileSync(file).toString("base64")}`;
@@ -201,39 +257,39 @@ export async function conformStill(file, { runFn = run } = {}) {
   throw new Error("Runway still JPEG exceeds 2 MB");
 }
 
-export async function makeStill({ prompt, file, imageModel = "gen4_image", imageRatio, seed, referenceImages, items = [], fetchFn, sleepFn, runFn } = {}) {
+export async function makeStill({ prompt, file, imageModel = "gen4_image", imageRatio, seed, referenceImages, items = [], fetchFn, sleepFn, runFn, journal, beforeBuy, kind = "image" } = {}) {
   const info = modelInfo(imageModel, "image");
   const resolution = imageResolution(info, { ratio: imageRatio });
   try {
-    const task = await generateTask({ kind: "image", model: imageModel, credits: resolution.credits, request: () => createImage({ prompt, model: imageModel, ratio: imageRatio, seed, referenceImages, fetchFn }), items, fetchFn, sleepFn });
+    const task = await generateTask({ kind: "image", model: imageModel, credits: resolution.credits, journal, beforeBuy: beforeBuy ? () => beforeBuy(kind, items) : undefined, requestKey: { file, prompt, seed, imageRatio, referenceImages }, request: () => createImage({ prompt, model: imageModel, ratio: imageRatio, seed, referenceImages, fetchFn }), items, fetchFn, sleepFn });
     await download(task.output[0], file, { fetchFn });
     return { png: file, jpg: await conformStill(file, { runFn }), items };
-  } catch (e) { throw Object.assign(e, { items }); }
+  } catch (e) { throw Object.assign(e, { code: e.code || "LOCAL_PROCESS", items }); }
 }
 
 /** Animate an approved still, reusing its seed and optional approved end frame. */
-export async function animateStill({ png, last, mp4, motion, seconds = 5, videoModel = "gen4_turbo", seed, audio = false, fps = 30, fetchFn, sleepFn, runFn, beforeBuy, items = [] } = {}) {
+export async function animateStill({ png, last, mp4, motion, seconds = 5, videoModel = "gen4_turbo", seed, audio = false, fps = 30, fetchFn, sleepFn, runFn, beforeBuy, items = [], journal } = {}) {
   const estimate = estimateClip({ seconds, videoModel, audio }).video;
   try {
     const jpg = await conformStill(png, { runFn });
     const end = last ? await conformStill(last, { runFn }) : null;
-    if (beforeBuy) await beforeBuy("video", items);
-    const task = await generateTask({ kind: "video", model: videoModel, seconds, credits: estimate, request: () => createVideo({ image: dataURI(jpg, "image/jpeg"), lastImage: end ? dataURI(end, "image/jpeg") : undefined, prompt: motion, duration: seconds, model: videoModel, seed, audio, fetchFn }), items, fetchFn, sleepFn });
+    const task = await generateTask({ kind: "video", model: videoModel, seconds, credits: estimate, journal, beforeBuy: beforeBuy ? () => beforeBuy("video", items) : undefined, requestKey: { mp4, image: dataURI(jpg, "image/jpeg"), last: end ? dataURI(end, "image/jpeg") : null, motion, seconds, seed, audio }, request: () => createVideo({ image: dataURI(jpg, "image/jpeg"), lastImage: end ? dataURI(end, "image/jpeg") : undefined, prompt: motion, duration: seconds, model: videoModel, seed, audio, fetchFn }), items, fetchFn, sleepFn });
     await download(task.output[0], mp4, { fetchFn });
+    const original = mp4.replace(/\.mp4$/i, ".original.mp4");
+    fs.copyFileSync(mp4, original);
     await conformClip(mp4, { fps, runFn });
-    return { mp4, items, last };
-  } catch (e) { throw Object.assign(e, { items, png, last }); }
+    return { mp4, original, items, last };
+  } catch (e) { throw Object.assign(e, { code: e.code || "LOCAL_PROCESS", items, png, last }); }
 }
 
 /** Small local proxy keeps even high-bitrate trimmed clips within Mirelo's 5 MB data URI limit. */
-export async function makeSound({ file, out, sound, seconds, seed, fetchFn, sleepFn, runFn = run, beforeBuy } = {}) {
+export async function makeSound({ file, out, sound, seconds, seed, fetchFn, sleepFn, runFn = run, beforeBuy, journal } = {}) {
   const items = [], proxy = file.replace(/\.mp4$/, ".sound.mp4");
   try {
     await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-t", String(seconds), "-an", "-vf", "scale=360:640", "-c:v", "libx264", "-b:v", "400k", "-maxrate", "500k", "-bufsize", "1000k", "-movflags", "+faststart", proxy], { quiet: true });
     const videoUri = dataURI(proxy, "video/mp4");
     if (videoUri.length > 5 * 1024 * 1024) throw new Error("Runway sound video data URI exceeds 5 MB");
-    if (beforeBuy) await beforeBuy("sound", items);
-    const task = await generateTask({ kind: "audio", model: "mirelo_sfx_2_0", seconds, credits: seconds * MODELS.mirelo_sfx_2_0.credits.perSecond, request: () => createSound({ videoUri, promptText: sound, duration: seconds, seed, format: "wav", fetchFn }), items, fetchFn, sleepFn });
+    const task = await generateTask({ kind: "audio", model: "mirelo_sfx_2_0", seconds, journal, beforeBuy: beforeBuy ? () => beforeBuy("sound", items) : undefined, requestKey: { out, videoUri, sound, seconds, seed }, credits: seconds * MODELS.mirelo_sfx_2_0.credits.perSecond, request: () => createSound({ videoUri, promptText: sound, duration: seconds, seed, format: "wav", fetchFn }), items, fetchFn, sleepFn });
     await download(task.output[0], out, { fetchFn });
     return { sfx: out, items };
   } catch (e) { throw Object.assign(e, { items }); }
@@ -248,26 +304,24 @@ export async function conformClip(file, { fps = 30, runFn = run } = {}) {
   return file;
 }
 
-export async function makeClip({ scene, endScene, motion, dir, name, seconds = 5, imageRatio, imageModel = "gen4_image", videoModel = "gen4_turbo", seed, audio = false, fps = 30, fetchFn, sleepFn, runFn, check, beforeBuy } = {}) {
+export async function makeClip({ scene, endScene, motion, dir, name, seconds = 5, imageRatio, imageModel = "gen4_image", videoModel = "gen4_turbo", seed, audio = false, fps = 30, fetchFn, sleepFn, runFn, check, beforeBuy, journal, referenceImages } = {}) {
   estimateClip({ seconds, imageModel, imageRatio, videoModel, audio, lastFrame: !!endScene });
   const items = [], png = `${dir}/${name}.png`, mp4 = `${dir}/${name}.mp4`;
   let last;
   try {
-    if (beforeBuy) await beforeBuy("image", items);
-    const first = await makeStill({ prompt: scene, file: png, imageModel, imageRatio, seed, items, fetchFn, sleepFn, runFn });
+    const first = await makeStill({ prompt: scene, file: png, imageModel, imageRatio, seed, referenceImages, items, fetchFn, sleepFn, runFn, journal, beforeBuy });
     const result = check ? await check(first.jpg) : null;
     if (result?.ok === false) throw Object.assign(new Error(result.why || "still check failed"), { code: result.unavailable ? "CHECK_UNAVAILABLE" : "CHECK" });
     if (endScene && modelInfo(videoModel, "video").fields.lastFrame) {
       try {
-        if (beforeBuy) await beforeBuy("endImage", items);
-        const end = await makeStill({ prompt: fitPrompt(`The same subject and setting as @firstframe. ${endScene}`), file: `${dir}/${name}.end.png`, imageModel, imageRatio, seed, referenceImages: [{ uri: dataURI(first.jpg, "image/jpeg"), tag: "firstframe" }], items, fetchFn, sleepFn, runFn });
+        const end = await makeStill({ prompt: fitPrompt(`The same subject and setting as @firstframe. ${endScene}`), file: `${dir}/${name}.end.png`, imageModel, imageRatio, seed, referenceImages: [{ uri: dataURI(first.jpg, "image/jpeg"), tag: "firstframe" }], items, fetchFn, sleepFn, runFn, journal, beforeBuy, kind: "endImage" });
         const checked = check ? await check(end.jpg, { end: true, first: first.jpg }) : null;
         if (checked?.ok !== false) last = end.png;
         else warn(`runway: end still rejected (${checked.why}); using first frame only`);
       } catch (e) { warn(`runway: end still unavailable (${e.message}); using first frame only`); }
     }
-    await animateStill({ png, last, mp4, motion, seconds, videoModel, seed, audio, fps, fetchFn, sleepFn, runFn, beforeBuy, items });
+    const animated = await animateStill({ png, last, mp4, motion, seconds, videoModel, seed, audio, fps, fetchFn, sleepFn, runFn, beforeBuy, items, journal });
     log(`runway: ${name} ready (${items.reduce((s, i) => s + i.credits, 0)} credits)`);
-    return { png, mp4, last, items };
-  } catch (e) { throw Object.assign(e, { items, png, last }); }
+    return { png, mp4, original: animated.original, last, items };
+  } catch (e) { throw Object.assign(e, { code: e.code || "LOCAL_PROCESS", items, png, last }); }
 }

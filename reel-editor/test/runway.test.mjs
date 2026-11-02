@@ -13,6 +13,11 @@ process.env.REEL_CACHE = cache;
 const realRecent = path.join(os.homedir(), ".cache", "reel-editor", "broll-recent.json");
 const snapshot = () => fs.existsSync(realRecent) ? { bytes: fs.readFileSync(realRecent).toString("base64"), mtime: fs.statSync(realRecent).mtimeMs } : null;
 const before = snapshot();
+const stillPass = { shows: true, dark: false, detailReadable: true, actionAreaVisible: true, captionOcclusion: false, subjectLarge: true };
+const timelinePass = { shows: true, action: true, dark: false, physicsPlausible: true, identityStable: true, artifacts: false, directionPlausible: true, humanFaces: false, readableText: false, onset: 0.1, contact: 0.5, completion: 0.8, defects: [] };
+const timedGroups = (groups) => groups.map((g, i) => ({ ...g, words: g.words?.length ? g.words : String(g.text).split(/\s+/).map((text) => ({ text, start: g.start, end: g.start + 1.9 })), end: g.end ?? g.start + 1.9 }));
+const boundedPicks = (picks, groups) => picks.map((p) => ({ ...p, soundRole: p.sound ? "impact" : "none", endsAt: p.endsAt || { line: p.line + 1, wordIndex: 0, text: groups[p.line + 1]?.words[0].text }, endsBefore: p.endsBefore || { line: p.line + 2, wordIndex: 0, text: groups[p.line + 2]?.words[0].text } }));
+
 after(() => {
   assert.deepEqual(snapshot(), before, "the real recent-scene cache must stay untouched");
   fs.rmSync(cache, { recursive: true, force: true });
@@ -49,15 +54,16 @@ test("runway: cost estimates, task polling, create calls send the documented fie
 test("runway b-roll: budget checks, picks via Claude, clips made, usage recorded, note written", async () => {
   const wd = fs.mkdtempSync(path.join(os.tmpdir(), "rw-"));
   const usage = path.join(wd, "usage.json");
-  const groups = Array.from({ length: 20 }, (_, i) => ({ start: 3 + i * 2, end: 4.8 + i * 2, text: `line ${i} glove coffee`, words: [] }));
+  const groups = timedGroups(Array.from({ length: 20 }, (_, i) => ({ start: 3 + i * 2, end: 4.8 + i * 2, text: `line ${i} glove coffee`, words: [] })));
   const made = [];
   const runFn = async (_cmd, args) => _cmd === "ffprobe" ? { out: "5\n" } : fs.writeFileSync(args.at(-1), args.at(-1).endsWith(".gray") ? Buffer.concat([Buffer.alloc(4096), Buffer.alloc(4096, 10)]) : "frame");
   const deps = {
     runFn,
-    claudeLook: async () => JSON.stringify({ seen: "a clear subject moving", shows: true, action: true, dark: false, why: "clear movement" }),
+    localClipCheck: async () => ({ ok: true }),
+    claudeLook: async () => JSON.stringify({ seen: "a clear subject moving", ...stillPass, ...timelinePass, why: "clear movement" }),
     hasRunway: () => true,
     hasClaude: () => true,
-    claudeText: async (prompt) => { assert.match(prompt, /motion/); return '{"picks":[{"line":4,"scene":"a worn glove on a step","shows":"glove","motion":"slow push"},{"line":12,"scene":"a cold coffee","shows":"coffee","motion":"steam drifts"}]}'; },
+    claudeText: async (prompt) => { assert.match(prompt, /motion/); return JSON.stringify({ picks: boundedPicks([{line:4,scene:"a worn glove on a step",shows:"glove",motion:"slow push"},{line:12,scene:"a cold coffee",shows:"coffee",motion:"steam drifts"}], groups) }); },
     organization: async () => ({ creditBalance: 100 }),
     makeClip: async ({ dir, name, scene }) => { made.push(scene); fs.writeFileSync(path.join(dir, `${name}.mp4`), "v"); fs.writeFileSync(path.join(dir, `${name}.png`), "p"); return { mp4: path.join(dir, `${name}.mp4`), png: path.join(dir, `${name}.png`), items: [{ kind: "image", credits: 5, dollars: 0.05, ok: true }, { kind: "video", seconds: 5, credits: 25, dollars: 0.25, ok: true }] }; },
     recordUsage: (args) => recordUsage({ ...args, file: usage }),
@@ -94,6 +100,7 @@ test("Runway planner uses the synthesis with ranked alternatives, literal subjec
   assert.match(p, /immediately following caption/);
   assert.match(p, /1.2 and 2.5 seconds/);
   assert.match(p, /Default: "Locked camera/);
+  assert.match(p, /"soundRole":"impact"/, "the JSON example must include the role that makes physical sound eligible");
   assert.match(p, /camera move only for a place reveal or travel/);
   assert.match(p, /positive descriptions/);
   assert.match(p, /neck contact, noose-like compositions/);
@@ -105,7 +112,7 @@ test("Runway planner uses the synthesis with ranked alternatives, literal subjec
 });
 
 // Real orchestration and HTTP code, with every paid call, CLI and ffmpeg replaced.
-function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOpenChecks = [], motionLevels = [], actionLevels, picks = [{ line: 4, shows: "snake", scene: "a green snake dropping from a jungle branch" }], cap = 150, imageCredits = 5, failVideos = 0, reportCosts = true, settings = {}, balance = 1000, groups } = {}) {
+function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOpenChecks = [], motionLevels = [], actionLevels, picks = [{ line: 4, shows: "snake", scene: "a green snake dropping from a jungle branch" }], cap = 150, imageCredits = 5, failVideos = 0, failCode = "SAFETY.INPUT", reportCosts = true, settings = {}, balance = 1000, groups } = {}) {
   const workDir = fs.mkdtempSync(path.join(cache, "clips-"));
   const images = [], videos = [], sounds = [], looked = [], openLooked = [], videoLooked = [], videoOpenLooked = [], runs = [], pickPrompts = [], tasks = new Map();
   const fetchFn = async (url, init) => {
@@ -119,7 +126,7 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
       videos.push(JSON.parse(init.body));
       const id = `vid-${videos.length}`;
       tasks.set(id, videos.length <= failVideos
-        ? { status: "FAILED", failureCode: "SAFETY.INPUT", failure: "refused", ...(reportCosts ? { cost: { credits: 25 } } : {}) }
+        ? { status: "FAILED", failureCode: failCode, failure: "refused", ...(reportCosts ? { cost: { credits: 25 } } : {}) }
         : { status: "SUCCEEDED", output: [`https://fake/${id}.mp4`], ...(reportCosts ? { cost: { credits: 25 } } : {}) });
       return json({ id });
     }
@@ -143,7 +150,7 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
     if (cmd === "ffprobe") return { out: String(settings.videoSeconds ?? 5) };
     assert.equal(cmd, "ffmpeg");
     if (args.at(-1).endsWith(".gray")) {
-      const action = args.includes("fps=8,scale=64:64,format=gray");
+      const action = args.at(-1).includes("action-");
       const level = action ? 10 : motionLevels[measured++] ?? 10;
       const levels = action && actionLevels ? actionLevels : Array.from({ length: 24 }, (_, i) => i % 2 ? level : 0);
       fs.writeFileSync(args.at(-1), Buffer.concat(levels.map((v) => Buffer.alloc(4096, v))));
@@ -152,15 +159,17 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
   const io = { fetchFn, sleepFn: async () => {}, runFn };
   const deps = {
     hasRunway: () => true, hasClaude: () => true,
+    localClipCheck: async () => ({ ok: true }),
+    verifySound: async () => ({ ok: true, volume: 0.1, lane: [] }),
     organization: async () => ({ creditBalance: balance }),
     runFn,
-    claudeText: async (prompt) => { pickPrompts.push(prompt); return JSON.stringify({ picks }); },
+    claudeText: async (prompt) => { pickPrompts.push(prompt); return JSON.stringify({ picks: boundedPicks(picks, actualGroups) }); },
     claudeLook: async (prompt, options) => {
       assert.equal(options.cwd, path.join(workDir, "broll"));
-      if (prompt.startsWith("Inspect these three frames")) {
+      if (prompt.startsWith("Inspect the timestamped contact sheet")) {
         videoOpenLooked.push({ prompt, ...options });
         const files = [...prompt.matchAll(/"([^"\n]+\.png)"/g)].map((m) => m[1]);
-        assert.equal(files.length, 3);
+        assert.equal(files.length, 1);
         assert.ok(files.every((file) => fs.existsSync(path.join(options.cwd, file))));
         const result = videoOpenChecks[videoOpenLooked.length - 1] ?? { seen: "subject position changes" };
         if (result instanceof Error) throw result;
@@ -170,7 +179,7 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
         videoLooked.push({ prompt, ...options });
         const result = videoChecks[videoLooked.length - 1] ?? { shows: true, action: true, dark: false, why: "action visible" };
         if (result instanceof Error) throw result;
-        return JSON.stringify(result);
+        return JSON.stringify({ ...timelinePass, ...result });
       }
       const file = prompt.match(/Inspect "([^"]+)"/)[1];
       assert.ok(fs.existsSync(path.join(options.cwd, file)), "the image must be downloaded before looking");
@@ -183,14 +192,15 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
       looked.push({ prompt, ...options });
       const result = checks[looked.length - 1] ?? { shows: true, dark: false, why: "clear subject" };
       if (result instanceof Error) throw result;
-      return JSON.stringify(result);
+      return JSON.stringify({ ...stillPass, ...result });
     },
     makeClip: (args) => makeClip({ ...args, ...io }),
     animateStill: (args) => animateStill({ ...args, ...io }),
     makeSound: (args) => makeSound({ ...args, ...io }),
     recordUsage: (args) => recordUsage({ ...args, file: path.join(workDir, "usage.json") }),
   };
-  const run = () => makeRunwayBroll({ workDir, groups: groups ?? Array.from({ length: 20 }, (_, i) => ({ start: 4 + i * 2, text: "a snake a coconut a knife" })), duration: 50, voice: "UNRELATED PRIVATE VOICE", settings: { maxCreditsPerReel: cap, ...settings }, deps });
+  const actualGroups = timedGroups(groups ?? Array.from({ length: 20 }, (_, i) => ({ start: 4 + i * 2, text: "a snake a coconut a knife" })));
+  const run = (overrides = {}) => makeRunwayBroll({ workDir, groups: actualGroups, duration: 50, voice: "UNRELATED PRIVATE VOICE", settings: { maxCreditsPerReel: cap, hardCreditsPerReel: cap, retrySameModelFirst: false, ...settings }, deps, ...overrides });
   const plan = () => JSON.parse(fs.readFileSync(path.join(workDir, "broll", "broll.json"), "utf8"));
   return { run, plan, images, videos, sounds, looked, openLooked, videoLooked, videoOpenLooked, runs, pickPrompts, workDir, deps, io };
 }
@@ -218,7 +228,7 @@ test("Runway checks fail then pass: only the corrected still buys video and meta
   assert.equal(f.images.length, 2);
   assert.equal(f.videos.length, 1);
   assert.equal(f.looked.length, 2);
-  assert.equal(f.images[1].promptText, stillPrompt({ scene: "a green snake dropping from a jungle branch" }));
+  assert.match(f.images[1].promptText, /Compose a closer, clearly recognizable snake above the caption area/);
   assert.doesNotMatch(f.images[1].promptText, /strap/);
   assert.match(f.looked[0].prompt, /Overlapping captions and spoken words: "a snake a coconut a knife/);
   assert.match(f.looked[0].prompt, /self-harm, death, an attack, weapon use against someone/);
@@ -232,14 +242,14 @@ test("two failed still checks drop the shot and buy no video, including a clear 
   for (const result of [{ shows: false, dark: false, why: "wrong subject" }, { shows: true, dark: true, why: "reads as danger" }]) {
     const f = runwayFixture({ checks: [result, result] });
     assert.deepEqual(await f.run(), []);
-    assert.equal(f.images.length, 2);
+    assert.equal(f.images.length, result.dark ? 1 : 2);
     assert.equal(f.videos.length, 0);
     assert.deepEqual(f.plan().shots, []);
-    assert.equal(f.plan().usage.reduce((sum, i) => sum + i.credits, 0), 10);
+    assert.equal(f.plan().usage.reduce((sum, i) => sum + i.credits, 0), result.dark ? 5 : 10);
   }
 });
 
-test("still vision retries unavailable calls, and check:false skips only still vision", async () => {
+test("still vision retries unavailable calls and cannot be bypassed by check:false", async () => {
   const transient = runwayFixture({ checks: [new Error("claude timed out")] });
   assert.equal((await transient.run())[0].check, "pass");
   assert.equal(transient.looked.length, 2);
@@ -253,14 +263,14 @@ test("still vision retries unavailable calls, and check:false skips only still v
     assert.equal(unavailable.plan().usage.reduce((n, i) => n + i.credits, 0), 5);
   }
   const disabled = runwayFixture({ settings: { check: false } });
-  assert.equal((await disabled.run())[0].check, "skipped");
-  assert.equal(disabled.looked.length, 0);
+  assert.equal((await disabled.run())[0].check, "pass");
+  assert.equal(disabled.looked.length, 1);
   assert.equal(disabled.videos.length, 1);
-  assert.equal(disabled.videoLooked.length, 1, "video vision remains mandatory");
+  assert.equal(disabled.videoLooked.length, 2, "video vision remains mandatory");
 });
 
 test("Runway rejects stand-ins before buying and selects spaced picks by rank", async () => {
-  const f = runwayFixture({ cap: 60, picks: [
+  const f = runwayFixture({ cap: 120, picks: [
     { line: 2, shows: "coconut", scene: "packing tape on a shelf" },
     { line: 12, shows: "snake", scene: "a green snake dropping from a branch" },
     { line: 11, shows: "knife", scene: "a knife in a sheath on a log" },
@@ -282,39 +292,31 @@ test("still retries consume the cap before later clips, and an unaffordable retr
   assert.equal(f.plan().usage.reduce((sum, i) => sum + i.credits, 0), 35);
   const tight = runwayFixture({ cap: 30, checks: [{ shows: false, dark: false }] });
   assert.deepEqual(await tight.run(), []);
-  assert.equal(tight.images.length, 1);
+  assert.equal(tight.images.length, 0);
   assert.equal(tight.videos.length, 0);
-  const exact = runwayFixture({ cap: 35, checks: [{ shows: false, dark: false }] });
-  assert.equal((await exact.run()).length, 1, "a retry fits exactly at 35 credits");
+  const exact = runwayFixture({ cap: 60, checks: [{ shows: false, dark: false }] });
+  assert.equal((await exact.run()).length, 1, "the complete reservation permits a corrected still");
   assert.equal(exact.plan().usage.reduce((sum, i) => sum + i.credits, 0), 35);
 });
 
 test("actual still charges are checked before video, and 1080 image pricing is budgeted", async () => {
-  const f = runwayFixture({ cap: 30, imageCredits: 8 });
+  const f = runwayFixture({ cap: 60, imageCredits: 40 });
   assert.deepEqual(await f.run(), []);
   assert.equal(f.images.length, 1);
-  assert.equal(f.videos.length, 0, "8 + 25 would cross the cap");
+  assert.equal(f.videos.length, 0, "40 + 25 would cross the cap");
   const large = runwayFixture({ cap: 30, settings: { imageRatio: "1080:1920" } });
   assert.deepEqual(await large.run(), []);
   assert.equal(large.images.length, 0, "the 33-credit clip cannot start");
 });
 
-test("charged moderation retries obey the cap and the account reserve, even without reported costs", async () => {
-  for (const options of [{ cap: 30 }, { cap: 150, balance: 40, settings: { keepCredits: 10 } }]) {
-    const f = runwayFixture({ ...options, failVideos: 1, reportCosts: false });
-    const shots = await f.run();
-    assert.equal(f.videos.length, 1, "no budget for another charged video");
-    assert.deepEqual(shots, [], "a refused video never falls back to a still");
-    assert.equal(f.plan().usage.reduce((sum, i) => sum + i.credits, 0), 30);
-  }
-  for (const failVideos of [1, 2]) {
-    const fits = runwayFixture({ cap: 55, failVideos, reportCosts: false });
-    const shots = await fits.run();
-    if (failVideos === 1) assert.ok(shots[0].file.endsWith(".mp4"));
-    else assert.deepEqual(shots, []);
-    assert.equal(fits.videos.length, 2);
-    assert.equal(fits.plan().usage.reduce((sum, i) => sum + i.credits, 0), 55);
-  }
+test("input safety stops unchanged retries while retaining charged usage", async () => {
+  const f = runwayFixture({ cap: 60, failVideos: 1, reportCosts: false });
+  assert.deepEqual(await f.run(), []);
+  assert.equal(f.videos.length, 1);
+  assert.equal(f.plan().usage.reduce((sum, i) => sum + i.credits, 0), 30);
+  const tight = runwayFixture({ cap: 30, failVideos: 1 });
+  assert.deepEqual(await tight.run(), []);
+  assert.equal(tight.videos.length, 0, "reserve a complete shot before its first purchase");
 });
 
 test("local download and conform failures preserve paid usage for the next budget check", async () => {
@@ -410,7 +412,7 @@ test("generation templates use positive descriptions, daylight and a locked came
   assert.match(videoMotion({ action: "The vehicle travels forward", motion: "Stable forward-facing camera" }, { retry: true }), /Locked camera/);
 });
 
-test("motion measurement compares quarter-second grey samples from only the used duration", async () => {
+test("motion measurement compares camera-compensated eighth-second grey samples from only the used duration", async () => {
   assert.deepEqual(frameChange(Buffer.from([0, 10, 2, 6, 4, 2]), 2), { mean: 3, frames: 3 });
   assert.equal(frameChange(Buffer.alloc(4096 * 5)).mean, 0);
   assert.throws(() => frameChange(Buffer.alloc(4097)), /complete motion samples/);
@@ -420,21 +422,21 @@ test("motion measurement compares quarter-second grey samples from only the used
     called++;
     assert.equal(cmd, "ffmpeg");
     assert.equal(args[args.indexOf("-t") + 1], "1.8");
-    assert.equal(args[args.indexOf("-vf") + 1], "fps=4,scale=64:64,format=gray");
+    assert.equal(args[args.indexOf("-vf") + 1], "fps=8,scale=64:64,format=gray");
     fs.writeFileSync(args.at(-1), Buffer.concat([Buffer.alloc(4096), Buffer.alloc(4096, 8)]));
   } });
-  assert.deepEqual(result, { mean: 8, frames: 2 });
+  assert.equal(result.mean, 8); assert.equal(result.frames, 2); assert.equal(result.shifts.length, 1);
   assert.equal(called, 1);
   assert.deepEqual(fs.readdirSync(dir), [], "temporary samples are removed");
   await assert.rejects(measureMotion("bad.mp4", 2, { dir, runFn: async () => { throw new Error("decode failed"); } }), /decode failed/);
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 
-test("video look reads start, middle and end, with caption words and explicit all-frame/action questions", async () => {
+test("video look reads a dense timed sheet of the full event and rechecks the used interval", async () => {
   const f = runwayFixture();
   await f.run();
   const prompt = f.videoLooked[0].prompt;
-  assert.match(prompt, /Used source interval: 0 to 2.4/);
+  assert.match(prompt, /Used source interval: 0 to 5/);
   assert.match(f.videoOpenLooked[0].prompt, /physical changes/);
   assert.match(prompt, /Overlapping words and captions.*a snake a coconut a knife/);
   assert.match(prompt, /intact and recognizable throughout these frames/);
@@ -446,15 +448,17 @@ test("video look reads start, middle and end, with caption words and explicit al
       if (args.includes("-ss")) times.push(Number(args[args.indexOf("-ss") + 1]));
       fs.writeFileSync(args.at(-1), args.at(-1).endsWith(".gray") ? Buffer.concat([Buffer.alloc(4096), Buffer.alloc(4096, 10)]) : "frame");
     },
-    claudeLook: async () => '{"seen":"subject moves","shows":true,"action":true,"dark":false}',
+    localClipCheck: async () => ({ ok: true }),
+    claudeLook: async () => JSON.stringify({ seen: "subject moves", ...timelinePass }),
   } });
   assert.equal(result.ok, true);
-  assert.deepEqual(times, [0, 1, 2 - 1 / 30]);
-  assert.deepEqual(fs.readdirSync(dir), []);
+  assert.ok([0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75].every((t) => times.includes(t)));
+  assert.ok(result.frames.length > 9);
+  assert.ok(fs.existsSync(result.sheet));
 });
 
 test("a frozen clip gets one re-animation from the same still, with charged usage", async () => {
-  const f = runwayFixture({ cap: 55, motionLevels: [0, 10] });
+  const f = runwayFixture({ cap: 60, motionLevels: [0, 10] });
   const [shot] = await f.run();
   assert.equal(f.images.length, 1);
   assert.equal(f.videos.length, 2);
@@ -471,21 +475,24 @@ test("frozen, wrong-subject, dark or inactive videos fail closed after one re-an
     { motionLevels: [0, 0] },
     ...[{ shows: false, action: true, dark: false }, { shows: true, action: false, dark: false }, { shows: true, action: true, dark: true }].map((result) => ({ videoChecks: [result, result] })),
   ]) {
-    const f = runwayFixture({ cap: 55, ...options });
+    const f = runwayFixture({ cap: 60, ...options });
     assert.deepEqual(await f.run(), []);
     assert.equal(f.images.length, 1);
-    assert.equal(f.videos.length, 2);
-    assert.equal(f.plan().usage.reduce((n, i) => n + i.credits, 0), 55);
+    assert.equal(f.videos.length, options.videoChecks?.[0].dark ? 1 : 2);
+    assert.equal(f.plan().usage.reduce((n, i) => n + i.credits, 0), options.videoChecks?.[0].dark ? 30 : 55);
   }
 });
 
-test("motion retry respects the cap and account reserve, and threshold can be raised", async () => {
-  for (const options of [{ cap: 30 }, { balance: 40, settings: { keepCredits: 10 } }, { cap: 30, settings: { motionThreshold: 11 } }]) {
-    const f = runwayFixture({ motionLevels: [options.settings?.motionThreshold ? 10 : 0], ...options });
+test("a full-shot reservation respects the cap and account reserve before spending", async () => {
+  for (const options of [{ cap: 30 }, { balance: 40, settings: { keepCredits: 10 } }]) {
+    const f = runwayFixture(options);
     assert.deepEqual(await f.run(), []);
-    assert.equal(f.videos.length, 1);
-    assert.equal(f.plan().usage.reduce((n, i) => n + i.credits, 0), 30);
+    assert.equal(f.videos.length, 0);
+    assert.equal(f.images.length, 0);
   }
+  const frozen = runwayFixture({ cap: 60, settings: { motionThreshold: 11 } });
+  assert.deepEqual(await frozen.run(), []);
+  assert.equal(frozen.videos.length, 2);
 });
 
 test("Runway reuse requires the prompt version, timings and settings, and never accepts a saved still", async () => {
@@ -508,7 +515,7 @@ test("Runway reuse requires the prompt version, timings and settings, and never 
     fs.writeFileSync(planPath, JSON.stringify(changed));
     const before = f.videos.length;
     await f.run();
-    assert.equal(f.videos.length, before + 1);
+    assert.equal(f.videos.length, before, "recheck already paid media after cache invalidation");
   }
 });
 
@@ -548,23 +555,23 @@ test("action in-point uses the first above-median eighth-second change, pre-roll
 
 test("selection preserves the full download, trims with injected ffmpeg, and checks the trimmed file", async () => {
   const levels = Array.from({ length: 24 }, (_, i) => i < 8 ? 0 : 20);
-  const f = runwayFixture({ settings: { videoSeconds: 3 }, actionLevels: levels, picks: [{ line: 4, shows: "snake", scene: "a snake on a rock", action: "The snake slides down", duration: 1.2 }] });
+  const f = runwayFixture({ settings: { videoSeconds: 3 }, actionLevels: levels, videoChecks: [{ onset: 1, contact: 1.5, completion: 1.7 }], picks: [{ line: 4, shows: "snake", scene: "a snake on a rock", action: "The snake slides down", duration: 1.2 }] });
   const [shot] = await f.run();
   assert.equal(shot.inPoint, 0.85);
   assert.equal(f.plan().shots[0].inPoint, 0.85);
-  assert.ok(shot.full.endsWith("broll-1.full.mp4"));
+  assert.ok(shot.full.endsWith("-still0.full.mp4"));
   assert.ok(fs.existsSync(shot.full));
-  assert.ok(shot.file.endsWith("broll-1.mp4"));
+  assert.ok(shot.file.endsWith("-still0.mp4"));
   const trim = f.runs.find((r) => r.args.includes("-ss") && r.args.at(-1) === shot.file);
   assert.equal(trim.args[trim.args.indexOf("-i") + 1], shot.full);
   assert.equal(trim.args[trim.args.indexOf("-ss") + 1], "0.85");
-  assert.equal(trim.args[trim.args.indexOf("-t") + 1], "1.5");
-  const measure = f.runs.find((r) => r.args.includes("fps=4,scale=64:64,format=gray"));
+  assert.equal(trim.args[trim.args.indexOf("-t") + 1], "1.2");
+  const measure = f.runs.find((r) => r.args.includes("fps=8,scale=64:64,format=gray"));
   assert.equal(measure.args[measure.args.indexOf("-i") + 1], shot.file);
-  assert.match(f.videoOpenLooked[0].prompt, /at 0.85s/);
-  assert.match(f.videoLooked[0].prompt, /Used source interval: 0.85 to 2.05/);
+  assert.match(f.videoOpenLooked[1].prompt, /0.85s/);
+  assert.match(f.videoLooked[1].prompt, /Used source interval: 0.85 to 2.05/);
   assert.doesNotMatch(f.videoOpenLooked[0].prompt, /snake|Required subject/);
-  assert.match(f.videoLooked[0].prompt, /clip-check-.*1.png/);
+  assert.match(f.videoLooked[0].prompt, /clip-check-.*timeline.png/);
 });
 
 test("trim failures retain the full clip and clean temporary sampling files", async () => {
@@ -580,7 +587,7 @@ test("three-second Turbo generation is 20 credits and Gen-4.5 retry buys only 36
   assert.deepEqual(estimateClip({ seconds: 3 }), { image: 5, video: 15, credits: 20, dollars: 0.2 });
   assert.equal(estimateClip({ seconds: 3, videoModel: "gen4.5" }).video, 36);
   const settings = { videoSeconds: 3, retryVideoModel: "gen4.5" };
-  const f = runwayFixture({ settings, cap: 56, reportCosts: false, motionLevels: [0, 10] });
+  const f = runwayFixture({ settings, cap: 61, reportCosts: false, motionLevels: [0, 10] });
   assert.equal((await f.run()).length, 1);
   assert.equal(f.images.length, 1);
   assert.deepEqual(f.videos.map((v) => [v.model, v.duration, v.ratio]), [["gen4_turbo", 3, "720:1280"], ["gen4.5", 3, "720:1280"]]);
@@ -589,21 +596,20 @@ test("three-second Turbo generation is 20 credits and Gen-4.5 retry buys only 36
   for (const options of [{ cap: 55 }, { cap: 180, balance: 65, settings: { ...settings, keepCredits: 10 } }]) {
     const tight = runwayFixture({ settings, reportCosts: false, motionLevels: [0], ...options });
     assert.deepEqual(await tight.run(), []);
-    assert.equal(tight.videos.length, 1, "retry must fit its own rate before purchase");
-    assert.equal(tight.plan().usage.reduce((n, i) => n + i.credits, 0), 20);
+    assert.equal(tight.videos.length, 0, "the complete retry reservation must fit before any purchase");
+    assert.equal(tight.plan().usage.reduce((n, i) => n + i.credits, 0), 0);
   }
 });
 
-test("unavailable clip vision retries once and accepts only measured motion, recording unavailable", async () => {
+test("unavailable clip vision retries once then holds the paid clip without another purchase", async () => {
   const timedOut = new Error("look timed out");
   for (const field of ["videoChecks", "videoOpenChecks"]) {
     const f = runwayFixture({ [field]: [timedOut, timedOut] });
-    const [shot] = await f.run();
-    assert.equal(shot.moves.look, "unavailable");
-    assert.equal(shot.moves.ok, true);
+    assert.deepEqual(await f.run(), []);
+    assert.equal(Object.values(f.plan().attempts)[0].review.look, "unavailable");
     assert.equal(f[field === "videoChecks" ? "videoLooked" : "videoOpenLooked"].length, 2);
     assert.equal(f.videos.length, 1);
-    const frozen = runwayFixture({ cap: 30, [field]: [timedOut, timedOut], motionLevels: [0] });
+    const frozen = runwayFixture({ cap: 60, [field]: [timedOut, timedOut], motionLevels: [0] });
     assert.deepEqual(await frozen.run(), []);
     assert.equal(frozen.videos.length, 1);
     const transient = runwayFixture({ [field]: [timedOut] });
@@ -623,7 +629,9 @@ test("cross-caption phrases anchor exact ordered words, with only the next capti
   assert.equal(runwayTiming({ ...pick, shows: "four two" }, c, groups), null);
   assert.equal(runwayTiming({ ...pick, shows: "by four" }, c, groups), null, "first word must be in candidate caption");
   assert.equal(runwayTiming(pick, c, [groups[0], groups[2], groups[1]]), null);
-  const f = runwayFixture({ groups, picks: [pick] });
+  groups[1].words[1].end = 12.5;
+  groups[2].words = [{ text: "and", start: 13, end: 13.2 }, { text: "use", start: 13.2, end: 13.4 }];
+  const f = runwayFixture({ groups, picks: [{ ...pick, endsAt: { line: 1, wordIndex: 1, text: "four" } }] });
   const [shot] = await f.run();
   assert.equal(shot.start, 10.3);
   assert.equal(shot.duration, 2.2, "later caption changes do not truncate the board");
@@ -664,9 +672,9 @@ test("action orchestration checks matching end identity, routes Kling and adds s
   assert.equal(f.videos[0].audio, false);
   assert.equal(Array.isArray(f.videos[0].promptImage), true);
   assert.equal(f.openLooked.length, 2);
-  assert.match(f.looked[1].prompt, /Compare with approved first frame/);
-  assert.match(f.looked[1].prompt, /same individual subject/);
-  assert.match(f.looked[1].prompt, /completed event/);
+  assert.match(f.looked[1].prompt, /Compare the same subject/);
+  assert.match(f.looked[1].prompt, /camera, daylight and ground plane/);
+  assert.match(f.looked[1].prompt, /ending state/);
   assert.equal(f.sounds[0].duration, shots[0].duration);
   assert.equal(f.sounds[0].seed, shots[0].seed);
   assert.equal(shots[0].kind, "action");
@@ -686,11 +694,11 @@ test("ambient picks use the ambient model and never buy an end still or sound wi
   assert.equal(shots[0].kind, "ambient"); assert.equal(shots[0].videoModel, "gen4_turbo");
   assert.equal(f.images.length, 1); assert.equal(f.sounds.length, 0);
   assert.equal("sfx" in shots[0], false);
-  assert.match(f.videoLooked[0].prompt, /gentle continuous movement/);
+  assert.match(f.videoLooked[0].prompt, /sustained subject motion/);
 });
 
 test("end identity rejection uses only the approved first still; its credits stay in the reel cap", async () => {
-  const f = runwayFixture({ reportCosts: false, cap: 37, checks: [{ shows: true, dark: false }, { shows: false, dark: false, why: "different coconut" }], settings: { actionVideoModel: "kling3.0_standard", lastFrame: true, videoSeconds: 3 },
+  const f = runwayFixture({ reportCosts: false, cap: 69, checks: [{ shows: true, dark: false }, { shows: false, dark: false, why: "different coconut" }], settings: { actionVideoModel: "kling3.0_standard", lastFrame: true, videoSeconds: 3 },
     picks: [{ line: 0, shows: "coconut", kind: "action", scene: "A coconut above sand", endScene: "The same coconut on sand", action: "The coconut lands" }],
   });
   const shots = await f.run();
@@ -708,16 +716,17 @@ test("shot seeds survive redraws and re-animation, and failed synced sound warns
   const shots = await f.run();
   assert.equal(called, true); assert.equal(shots.length, 1); assert.equal("sfx" in shots[0], false);
   assert.equal(f.images.length, 2); assert.equal(f.videos.length, 2);
-  assert.ok(f.images.every((i) => i.seed === shots[0].seed));
-  assert.ok(f.videos.every((v) => v.seed === shots[0].seed));
+  assert.equal(f.images[0].seed, f.images[1].seed);
+  assert.equal(f.videos[1].seed, (f.videos[0].seed + 1) >>> 0);
+  assert.equal(shots[0].seed, f.videos[1].seed);
   assert.equal(f.plan().usage.at(-1).ok, false);
 });
 
-test("reported video cost exhausting the remaining cap prevents a sound purchase", async () => {
+test("a sound-enabled shot is skipped when its whole reservation cannot fit", async () => {
   const f = runwayFixture({ cap: 30, settings: { videoSeconds: 3, sfx: true }, picks: [{ line: 0, shows: "coconut", scene: "A coconut above sand", action: "The coconut lands", sound: "A thud" }] });
   const shots = await f.run();
-  assert.equal(shots.length, 1); assert.equal(f.sounds.length, 0);
-  assert.equal(f.plan().usage.reduce((s, i) => s + i.credits, 0), 30);
+  assert.equal(shots.length, 0); assert.equal(f.sounds.length, 0);
+  assert.equal(f.plan().usage.reduce((s, i) => s + i.credits, 0), 0);
 });
 
 test("runwayTiming starts on the named word when Claude writes a phrase", async () => {
@@ -733,4 +742,133 @@ test("runwayTiming starts on the named word when Claude writes a phrase", async 
   assert.equal(snake.start, 20.05);
   assert.ok(Math.abs(snake.duration - 1.8) < 1e-9);
   assert.equal(runwayTiming({ shows: "a two by four", scene: "Hands holding a wooden two by four.", duration: 2 }, c(2), groups, { len: 2.5 }).start, 51.97);
+});
+
+test("Nano first still receives the reel daylight frame and phone framing failures block animation", async () => {
+  const f = runwayFixture({ reportCosts: false, settings: { imageModel: "nano_banana_2.1", videoModel: "gen4.5", videoSeconds: 3, retrySameModelFirst: true }, checks: [{ subjectLarge: false, captionOcclusion: true, why: "subject too small under caption" }, { subjectLarge: false, why: "still too small" }] });
+  assert.deepEqual(await f.run({ footage: "reel.mp4", caption: { top: 0.6, height: 0.2 } }), []);
+  assert.equal(f.images.length, 2); assert.equal(f.videos.length, 0);
+  assert.equal(f.images[0].referenceImages[0].tag, "daylightlook");
+  assert.match(f.images[0].referenceImages[0].uri, /^data:image\/jpeg;base64,/);
+  assert.match(f.images[0].promptText, /colour and light reference only, not content/);
+  assert.ok(f.runs.some((r) => r.args.some((a) => a.includes("drawbox=x=0:y=384:w=360:h=128"))));
+  assert.match(f.looked[0].prompt, /Phone previews:/);
+});
+
+test("first motion retry keeps Gen-4.5 with a new seed and correction; only the second model is Kling", async () => {
+  const defect = { artifacts: true, directionPlausible: false, defects: ["upward hop and white ring"], why: "upward hop before contact" };
+  const f = runwayFixture({ cap: 300, reportCosts: false, settings: { imageModel: "nano_banana_2.1", videoModel: "gen4.5", videoSeconds: 3, retrySameModelFirst: true, retryVideoModel: "kling3.0_standard" }, videoChecks: [defect, defect] });
+  const [shot] = await f.run();
+  assert.deepEqual(f.videos.map((v) => v.model), ["gen4.5", "gen4.5", "kling3.0_standard"]);
+  assert.equal(f.videos[1].seed, (f.videos[0].seed + 1) >>> 0);
+  assert.match(f.videos[1].promptText, /falls downward/);
+  assert.equal(f.images.length, 1);
+  assert.equal(shot.videoModel, "kling3.0_standard");
+  assert.equal(f.plan().tasks.filter((t) => t.kind === "video").length, 3);
+  const originals = fs.readdirSync(path.join(f.workDir, "broll")).filter((file) => file.endsWith(".original.mp4"));
+  assert.equal(originals.length, 3);
+  assert.ok(originals.every((file) => fs.readFileSync(path.join(f.workDir, "broll", file)).equals(Buffer.from([1, 2, 3]))));
+});
+
+test("a timeout during a paid retry resumes its task after restart, without buying again", async () => {
+  const f = runwayFixture({ cap: 150, reportCosts: false, motionLevels: [0, 10] });
+  const fetchFn = f.io.fetchFn; let interrupted = false;
+  f.deps.animateStill = (args) => animateStill({ ...args, ...f.io, fetchFn: async (url, init) => {
+    if (!interrupted && url.includes("/tasks/vid-2")) { interrupted = true; throw new Error("poll connection lost"); }
+    return fetchFn(url, init);
+  } });
+  assert.deepEqual(await f.run(), []);
+  assert.equal(f.videos.length, 2);
+  assert.equal(f.plan().tasks.find((t) => t.taskId === "vid-2").state, "pending");
+  const [shot] = await f.run();
+  assert.equal(shot.moves.ok, true);
+  assert.equal(f.videos.length, 2);
+  assert.equal(f.images.length, 1);
+  assert.equal(f.plan().usage.length, 3);
+});
+
+test("unavailable review rechecks the already paid picture on restart and the forced rerun keeps spend", async () => {
+  const f = runwayFixture({ videoChecks: [new Error("offline"), new Error("offline")] });
+  assert.deepEqual(await f.run(), []);
+  assert.equal(f.videos.length, 1);
+  assert.equal((await f.run()).length, 1);
+  assert.equal(f.videos.length, 1);
+  assert.equal((await f.run({ force: true })).length, 1);
+  assert.equal(f.videos.length, 1);
+  assert.equal(f.plan().usage.reduce((n, i) => n + i.credits, 0), 30);
+});
+
+test("hard budget funds only retries and never admits an unaffordable new shot", async () => {
+  const defect = { artifacts: true, defects: ["white ring"], why: "white ring" };
+  const f = runwayFixture({ cap: 60, reportCosts: false, settings: { hardCreditsPerReel: 80, retrySameModelFirst: true }, videoChecks: [defect, defect], picks: [4, 12].map((line) => ({ line, shows: "snake", scene: "A snake on a branch", action: "The snake moves" })) });
+  assert.equal((await f.run()).length, 1);
+  assert.equal(f.images.length, 1);
+  assert.equal(f.videos.length, 3);
+  assert.equal(f.plan().usage.reduce((n, i) => n + i.credits, 0), 80);
+  assert.equal((await f.run({ force: true })).length, 1);
+  assert.equal(f.videos.length, 3);
+});
+
+test("out-of-window sound is dropped while the accepted clip stays; ambience is never purchased", async () => {
+  const pick = { line: 4, shows: "coconut", scene: "A coconut on a rock", action: "The coconut lands", sound: "A coconut thuds" };
+  const f = runwayFixture({ settings: { sfx: true }, picks: [pick] });
+  f.deps.verifySound = async () => ({ ok: false, why: "sound peak outside event" });
+  const [shot] = await f.run();
+  assert.equal(shot.moves.ok, true); assert.equal("sfx" in shot, false); assert.equal(f.sounds.length, 1);
+  const ambient = runwayFixture({ settings: { sfx: true }, picks: [{ ...pick, kind: "ambient", sound: "Jungle birds" }] });
+  assert.equal((await ambient.run()).length, 1); assert.equal(ambient.sounds.length, 0);
+});
+
+test("output safety retries with a softened prompt; a third-party failure waits before its retry", async () => {
+  for (const failCode of ["SAFETY.OUTPUT.VIDEO", "THIRD_PARTY.UNAVAILABLE"]) {
+    const f = runwayFixture({ failVideos: 1, failCode, reportCosts: false, settings: { retrySameModelFirst: true } });
+    const waits = [];
+    f.io.sleepFn = async (ms) => waits.push(ms);
+    f.deps.sleepFn = f.io.sleepFn;
+    const [shot] = await f.run();
+    assert.equal(shot.moves.ok, true); assert.equal(f.videos.length, 2);
+    assert.equal(f.videos[0].model, f.videos[1].model);
+    if (failCode.startsWith("SAFETY.OUTPUT")) assert.match(f.videos[1].promptText, /gentle, harmless/);
+    else assert.ok(waits.includes(10000));
+  }
+});
+
+test("a pending sound resumes its task without buying new picture or sound", async () => {
+  const f = runwayFixture({ settings: { sfx: true }, picks: [{ line: 4, shows: "coconut", scene: "A coconut on sand", action: "The coconut lands", sound: "a thud" }] });
+  const fetchFn = f.io.fetchFn; let interrupted = false;
+  f.deps.makeSound = (args) => makeSound({ ...args, ...f.io, fetchFn: async (url, init) => {
+    if (!interrupted && url.includes("/tasks/sfx-1")) { interrupted = true; throw new Error("sound waiter lost connection"); }
+    return fetchFn(url, init);
+  } });
+  const [silent] = await f.run();
+  assert.equal(silent.soundPending, true); assert.equal("sfx" in silent, false);
+  const [sounded] = await f.run();
+  assert.ok(sounded.sfx); assert.equal(sounded.soundPending, undefined);
+  assert.equal(f.videos.length, 1); assert.equal(f.sounds.length, 1);
+});
+
+test("a crash after the full-file rename recovers the paid original before probing or trimming", async () => {
+  const f = runwayFixture();
+  const [first] = await f.run();
+  fs.rmSync(first.file);
+  assert.ok(fs.existsSync(first.full));
+  const [recovered] = await f.run();
+  assert.equal(recovered.file, first.file); assert.ok(fs.existsSync(recovered.file));
+  assert.equal(f.images.length, 1); assert.equal(f.videos.length, 1);
+});
+
+test("the next named candidate caps the preceding shot even when ordinary spacing drops it", async () => {
+  const f = runwayFixture({ picks: [4, 5].map((line) => ({ line, shows: "snake", scene: "A snake on a rock", action: "The snake moves" })) });
+  const [shot] = await f.run();
+  assert.equal(shot.start, 12); assert.equal(shot.duration, 2);
+  assert.equal(f.videos.length, 1);
+});
+
+test("a terminal output-safety failure during re-animation gets one softened remaining attempt", async () => {
+  const f = runwayFixture({ cap: 150, motionLevels: [0, 10], settings: { retrySameModelFirst: true } });
+  f.deps.animateStill = (args) => animateStill({ ...args, ...f.io, fetchFn: async (url, init) => url.includes("/tasks/vid-2") ? json({ status: "FAILED", failureCode: "SAFETY.OUTPUT.VIDEO", cost: { credits: 0 } }) : f.io.fetchFn(url, init) });
+  const [shot] = await f.run();
+  assert.equal(shot.moves.ok, true); assert.equal(f.videos.length, 3);
+  assert.match(f.videos[2].promptText, /gentle, harmless/);
+  assert.equal(f.plan().tasks.find((t) => t.taskId === "vid-2").credits, 0);
 });

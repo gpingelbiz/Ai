@@ -11,14 +11,14 @@ export function bakeoffOptions(args) {
   const { values } = parseArgs({ args, options: {
     picks: { type: "string" }, out: { type: "string" }, stage: { type: "string" },
     images: { type: "string", default: "gen4_image,nano_banana_2.1" },
-    still: { type: "string", default: "gen4_image" },
-    videos: { type: "string", default: "gen4_turbo,kling3.0_standard,grok_imagine_1_5_lite" },
+    still: { type: "string", default: "nano_banana_2.1" },
+    videos: { type: "string", default: "gen4.5,gen4_turbo,kling3.0_standard" },
     seconds: { type: "string", default: "3" }, "max-credits": { type: "string" },
     "last-frame": { type: "boolean", default: false }, sfx: { type: "boolean", default: false },
   } });
-  if (!values.picks || !values.out || !["stills", "videos"].includes(values.stage)) throw new Error("Use --picks <json> --out <dir> --stage stills|videos [--max-credits N]");
-  const seconds = Number(values.seconds), maxCredits = values["max-credits"] == null ? Infinity : Number(values["max-credits"]);
-  if (!Number.isInteger(seconds) || seconds < 1 || (!Number.isFinite(maxCredits) && maxCredits !== Infinity) || maxCredits < 0) throw new Error("Invalid seconds or max-credits");
+  if (!values.picks || !values.out || !["stills", "videos"].includes(values.stage)) throw new Error("Use --picks <json> --out <dir> --stage stills|videos --max-credits N");
+  const seconds = Number(values.seconds), maxCredits = Number(values["max-credits"]);
+  if (!Number.isInteger(seconds) || seconds < 1 || !Number.isFinite(maxCredits) || maxCredits < 0) throw new Error("Invalid seconds or max-credits");
   const images = values.images.split(","), videos = values.videos.split(",");
   images.forEach((m) => modelInfo(m, "image"));
   modelInfo(values.still, "image");
@@ -37,7 +37,8 @@ export async function bakeoffSheet(files, file, columns, { runFn = run } = {}) {
 
 /** Independent comparison runner: no edit pipeline, and every purchase is checked and recorded. */
 export async function runBakeoff(options, deps = {}) {
-  const { out, stage, images, videos, still, seconds, lastFrame, sfx, maxCredits = Infinity } = options;
+  const { out, stage, images, videos, still, seconds, lastFrame, sfx, maxCredits } = options;
+  if (!Number.isFinite(maxCredits) || maxCredits < 0) throw new Error("A finite explicit --max-credits is required");
   const input = readJSON(options.picks), picks = Array.isArray(input) ? input : input.picks;
   if (!Array.isArray(picks) || !picks.length) throw new Error("The picks file must contain a nonempty array or {picks:[]}");
   const names = picks.map((p, i) => String(p.name || `shot-${i + 1}`).replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || `shot-${i + 1}`);
@@ -47,12 +48,18 @@ export async function runBakeoff(options, deps = {}) {
   if (stage === "videos") videos.forEach((m) => estimateClip({ seconds, imageModel: still, videoModel: m }));
   ensureDir(out);
   const usagePath = path.join(out, "usage.json");
-  const previous = fs.existsSync(usagePath) ? readJSON(usagePath).items || [] : [];
+  const saved = fs.existsSync(usagePath) ? readJSON(usagePath) : {};
+  const previous = saved.items || [], tasks = saved.tasks || [];
   const items = [], io = { fetchFn: deps.fetchFn, sleepFn: deps.sleepFn, runFn: deps.runFn || run };
-  const spent = () => [...previous, ...items].reduce((sum, i) => sum + i.credits, 0);
+  const allItems = () => [...new Map([...previous, ...items].map((i, n) => [i.taskId || `legacy-${n}`, i])).values()];
+  const spent = () => allItems().filter((i) => !i.taskId || !tasks.some((t) => t.taskId === i.taskId)).reduce((sum, i) => sum + i.credits, 0) + tasks.reduce((sum, t) => sum + (t.credits ?? t.estimatedCredits ?? 0), 0);
   const before = (credits) => { if (spent() + credits > maxCredits) throw Object.assign(new Error(`Credit cap ${maxCredits} reached before purchase (${credits} more credits)`), { code: "BUDGET" }); };
   let aborted = false;
-  const save = () => writeJSON(usagePath, { items: [...previous, ...items], credits: spent(), aborted });
+  const save = () => {
+    writeJSON(`${usagePath}.tmp`, { items: allItems(), tasks, credits: spent(), aborted });
+    fs.renameSync(`${usagePath}.tmp`, usagePath);
+  };
+  io.journal = { tasks, save };
   // Helpers retain charged task lines when a later download or local process fails.
   const buy = async (fn) => {
     try { const result = await fn(); items.push(...result.items); return result; }
@@ -67,15 +74,13 @@ export async function runBakeoff(options, deps = {}) {
         for (const imageModel of images) {
           const cost = estimateClip({ seconds: 3, imageModel }).image;
           const file = path.join(dir, `${imageModel}.png`);
-          before(cost);
-          const first = await buy(() => makeStill({ prompt: stillPrompt(pick), file, imageModel, seed, ...io }));
+          const first = await buy(() => makeStill({ prompt: stillPrompt(pick), file, imageModel, seed, beforeBuy: () => before(cost), ...io }));
           // Make the extension truthful even when a provider returns WebP or JPEG.
           await io.runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", first.jpg, "-frames:v", "1", file], { quiet: true });
           sheet.push(file);
           if (pick.endScene) {
-            before(cost);
             const end = path.join(dir, `${imageModel}.end.png`);
-            const result = await buy(() => makeStill({ prompt: `The same subject and setting as @firstframe. ${stillPrompt({ scene: pick.endScene })}`, file: end, imageModel, seed, referenceImages: [{ uri: dataURI(first.jpg, "image/jpeg"), tag: "firstframe" }], ...io }));
+            const result = await buy(() => makeStill({ prompt: `The same subject and setting as @firstframe. ${stillPrompt({ scene: pick.endScene })}`, file: end, imageModel, seed, beforeBuy: () => before(cost), referenceImages: [{ uri: dataURI(first.jpg, "image/jpeg"), tag: "firstframe" }], ...io }));
             await io.runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", result.jpg, "-frames:v", "1", end], { quiet: true });
             sheet.push(end);
           }
@@ -95,9 +100,13 @@ export async function runBakeoff(options, deps = {}) {
               await buy(() => makeSound({ file: mp4, out: mp4.replace(/\.mp4$/, ".sfx.wav"), sound: pick.sound, seconds, seed, beforeBuy: () => before(seconds * modelInfo("mirelo_sfx_2_0", "audio").credits.perSecond), ...io }));
             } catch (e) { if (e.code === "BUDGET") throw e; warn(`bake-off: sound failed (${e.message})`); }
           }
-          for (const time of [0, 0.75, 1.5, 2.25]) {
+          const probe = await io.runFn("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", mp4], { capture: true });
+          const actualDuration = Number(probe.out?.trim());
+          if (!(actualDuration > 0)) throw new Error("bake-off clip duration unavailable");
+          writeJSON(mp4.replace(/\.mp4$/, ".comparison.json"), { videoModel, still, conditioning: useLast ? "first-last" : "first-only", requestedSeed: seed, submittedSeed: modelInfo(videoModel).fields.seed ? seed : null, actualDuration, requestedDuration: seconds });
+          for (const time of [0, 0.25, 0.5, 0.75].map((fraction) => fraction * actualDuration)) {
             const frame = mp4.replace(/\.mp4$/, `.${time}.png`);
-            await io.runFn("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(Math.min(time, seconds - 1 / 30)), "-i", mp4, "-frames:v", "1", frame], { quiet: true });
+            await io.runFn("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(Math.min(time, actualDuration - 1 / 30)), "-i", mp4, "-frames:v", "1", frame], { quiet: true });
             frames.push(frame);
           }
         }
@@ -111,7 +120,7 @@ export async function runBakeoff(options, deps = {}) {
   } finally {
     save();
     (deps.recordUsage || recordUsage)({ reel: path.basename(out), items });
-    fs.writeFileSync(path.join(out, "runway usage.txt"), reelUsageNote([...previous, ...items]));
+    fs.writeFileSync(path.join(out, "runway usage.txt"), reelUsageNote(allItems()));
   }
   log(`bake-off: ${spent()} credits, ${aborted ? "cap reached" : "ready"}`);
   return { items, credits: spent(), aborted };
