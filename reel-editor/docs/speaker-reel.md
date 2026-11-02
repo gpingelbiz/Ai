@@ -290,7 +290,7 @@ Items play back to back. Overlays and cutaways add no time. Cutaway visibility u
 - `item.kind`: clip or card.
 - `audioCarry` on a card: `{ "preceding": "close-clip", "sourceId": "stage", "in": 1047.90, "out": 1054.40 }` continues the immediately preceding clip's real source audio from the card's first frame. The preceding item must be an audible clip using that same source; the source must have usable audio (`audio:"ok"`, never `bad` or `none`). `in` must equal that clip's `out` within one frame. Resolution snaps it to the actual frame-rounded source end, preventing repeats or gaps. The range must stay within the source and fit the card duration. It reuses the preceding dialogue's channel selection, fixed gain and optional limiter settings without renormalizing applause. The preceding clip does not fade out at this join; the carry fades its final 0.25 seconds (or its whole duration if shorter), then pads the remaining card with silence. Carry audio adds no transcript words or captions. Its resolved source range and frame count appear in the plan and map.
 - `role`: opening, identity, proof, core, room, testimonial, close, booking or montage.
-- `fit`: `wash`, `blur`, `contain` or `cover`, on clips and picture-only cutaways (including montage shots). Omitted values resolve to `wash` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `wash` cover-scales the same frame to 192×108, blurs it there (sigma 20), adds 20% saturation, darkens luma to 0.8, and applies a soft vignette before smooth upscaling. Very light, static uniform grain (strength 2, seed 42) reduces 8-bit banding. The sharp picture floats above this colour field with a soft 32%-opacity shadow, offset 8 pixels down; the shadow is blurred once and repeated. The card fits within 90% of the visible width/height, including any letterbox, and never exceeds 1.5× source enlargement, so small sources can stay smaller. Explicit `blur` keeps the original graph: a full-frame blur, 35% darker and slightly desaturated, with no card margin or shadow. `contain` keeps the client-brand frame. These three preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources, warns above 1.5× and needs visual review. Explicit saved fits always win.
+- `fit`: `wash`, `blur`, `contain` or `cover`, on clips and picture-only cutaways (including montage shots). Omitted values resolve to `wash` for portrait sources or sources below 60% of canvas height, otherwise `contain`. `wash` cover-scales the same frame to 192×108, blurs it there (sigma 20), adds 20% saturation, darkens luma to 0.8, and applies a soft vignette before smooth upscaling. Very light, static uniform grain (strength 2, seed 42) reduces 8-bit banding. The sharp picture floats above this colour field with a soft 32%-opacity shadow, offset 8 pixels down; the shadow is blurred once and repeated. The card fits within 90% of the visible width/height, including any letterbox, and never exceeds 1.5× source enlargement, so small sources can stay smaller. Explicit `blur` keeps the original graph: a full-frame blur, 35% darker and slightly desaturated, with no card margin or shadow. `contain` keeps the client-brand frame. These three preserve aspect ratio and limit foreground enlargement to 1.5×. `cover` is allowed only for landscape sources or landscape `sourceCrop` regions, warns above 1.5× and needs visual review. Explicit saved fits always win.
 - `audio`: source or mute. A source marked none/bad must use mute when selected as a timeline clip. A cutaway always supplies picture only.
 - `protect: true`: no internal trimming, retiming, denoise or silence cuts. All items already stay at speed 1.0. Meaningful pauses and real reactions remain intact. Normalization and 10 ms edge fades do not rearrange the passage.
 - `limit: true` (optional, source audio only): each clip normally receives fixed gain toward −16 LUFS, stopping at −1.5 dBTP. A peaky phone recording can stay several LU quiet that way. With `limit`, the clip takes the full gain, and a delay-compensated lookahead limiter holds its sample peaks at −2 dBFS. It never compresses between peaks and never cuts silence. Use it only where the review hears a quiet clip.
@@ -313,6 +313,50 @@ Card objects are rendered by the separate `speaker-cards.mjs` integration. Their
 | topic | exact text from identity or proof |
 
 Direct booking shows the client's route. Bureau booking uses `identity.bureau` and suppresses direct contact. Logo headings are “Spoke at”, “Clients”, “Featured in” or “Available at”, matching the registry relationship. Quotes and attributions must match the supplied proof exactly.
+
+### Static source crops
+
+Clip items and picture-only cutaways accept `sourceCrop: {x, y, w, h}`. All four numbers are **normalized 0–1 fractions of the upright source frame, after rotation**: divide source-pixel x and width by upright width, and y and height by upright height. This differs from lane 14's research notation `{x,y,width,height}` in pixels; do not paste that pixel object into a plan. Cards and overlays reject `sourceCrop`.
+
+```json
+{
+  "sourceCrop": { "x": 0, "y": 0.16927083333333334, "w": 1, "h": 0.625 },
+  "fit": "wash", "push": 1, "stabilize": false
+}
+```
+
+That example selects `(0,650,2160,2400)` from upright 2160×3840. Bounds must satisfy `x >= 0`, `y >= 0`, `w > 0`, `h > 0`, `x+w <= 1`, `y+h <= 1`; strings, nonfinite values, missing or unknown keys fail. Indexed upright dimensions and square source pixels are required. Each rectangle edge rounds to the nearest even source pixel and clamps at the last even in-bounds edge; the result must retain at least **2×2 pixels**. This deterministic chroma alignment can move an edge by about one source pixel. Inspect the resolved rectangle when authoring very small or odd-sized crops.
+
+Rotation/SDR conversion and the existing colour grade happen first; crop then precedes **all** fit branches and their background/foreground split. Thus wash/blur backgrounds also use the cropped real source region. Default fit uses the cropped geometry; explicit saved fits still win. `cover` still requires a landscape region: a portrait source can use it only when its crop is landscape. Original metadata, audio, words, rights, source times and cutaway frame windows retain their original clocks. Cropping adds no tracking or time shift.
+
+`contain`/`blur`/`wash` retain the existing 1.5× nominal enlargement ceiling and warn when the requested fit exceeds it; `cover` warns above it, including a cropped cover's end-of-push scale. Existing even output-size rounding can differ by a pixel from the nominal ceiling/aspect. Push reserves its usual foreground margin and wash still respects the active letterbox area. Static crop coordinates describe the normalized/stabilized picture if stabilization is enabled; lane 14 examples explicitly disable stabilization because its zoom changes the coordinate assumptions.
+
+`plan.resolved.json` and cropped `map.json` rows carry `framing.sourceCrop` in upright pixels, `fitScale`, and foreground width/height plus actual per-axis first/end scales (wash margin and push included). These are framing evidence, separate from original source probe metadata. Compilation also writes `look/crop-<id>-first.jpg` and `-last.jpg`, referenced by `framing.reviewFrames`, from the actual fitted item assembly. They include visible cutaways/push but precede HyperFrames cards and final letterbox bars. A host item's endpoint covered by a cutaway shows that cutaway; these two samples do not certify intervening motion. Colour-only before/after pairs remain unchanged.
+
+Lane 14 worked examples below all assume **upright 2160×3840 originals**; rectangles are exact `x,y,width,height` source pixels. For every row, author normalized `{x: x/2160, y: y/3840, w: width/2160, h: height/3840}` (evaluate the divisions before saving JSON). Use `push:1`, `stabilize:false` explicitly. These are framing examples, not edits to the client's plan.
+
+| Entry | Exact source ID | Source in–out (s) | Fit | Exact pixel rectangle |
+|---|---|---|---|---|
+| `ao1` | `video-oct-15-2026-2-12-39-pm` | 0.25–3.95 | contain | `8,1480,2144,1206` |
+| `ao3` | `video-oct-15-2026-2-12-39-pm` | 21.75–27.40 | contain | `400,1540,1600,900` |
+| `s4b` | `video-oct-15-2026-2-21-55-pm` | 3.12–25.57 | wash | `0,650,2160,2400` |
+| `s7` | `video-oct-15-2026-2-23-11-pm` | 34.50–52.30 | wash | `0,650,2160,2400` |
+| `bb1` | `video-oct-15-2026-2-25-51-pm` | 1.55–17.50 | wash | `0,600,2160,2880` |
+| `bb2` | `video-oct-15-2026-2-25-51-pm` | 28.80–34.75 | wash | `0,600,2160,2880` |
+| `dau` | `video-oct-15-2026-2-26-35-pm` | 3.65–12.80 | wash | `0,750,2160,2640` |
+| `tb1` | `video-oct-15-2026-2-29-24-pm` | 16.20–19.15 | contain | `8,1420,2144,1206` |
+| `a1` | `video-oct-15-2026-2-27-25-pm` | 26.08–28.80 | wash | `0,750,2160,2640` |
+| `s7-payoff-close` cutaway over `s7`, offset 15.47s | `video-oct-15-2026-2-23-11-pm` | 49.97–52.30 | contain | `8,800,2144,1206` |
+
+The 1600×900 `ao3` region fits 1920×1080 at exactly **1.20×**. The other 16:9 examples downscale at **0.895522×**. With no letterbox or push, full-source wash is 546×972; the 2400/2880/2640-high crops produce 874×972, 728×972 and 794×972 sharp pictures. Width gains are 60.07%, 33.33% and 45.42%; small even-size rounding means per-axis scale can differ slightly.
+
+For ao3, normalized JSON is `{ "sourceCrop": { "x": 0.185185185185, "y": 0.401041666667, "w": 0.740740740741, "h": 0.234375 }, "fit": "contain", "push": 1, "stabilize": false }`. The exact fit graph with input `raw`, output `pic`, and default brand surface is:
+
+```text
+[raw]crop=1600:900:400:1540[pic_crop];[pic_crop]scale=1920:1080:flags=lanczos,setsar=1,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=#111111[pic_fit];[pic_fit]null[pic]
+```
+
+For the payoff, preserve the underlying `s7` sound and use a hard picture-only cut. Resolve the cutaway start against `s7.in + Math.round(offset*30)/30` (34.50 + 464/30 = 49.96666666666667); source in 49.97 is the research's rounded notation. Verify first/last visible frames and sync on the real source. This is a head-and-chest close-up, not a whole-upper-body crop. Claude must play every affected passage at delivery size to check crown, gestures, moving subjects (especially the embrace in `tb1`), softness, wash margins, overlays and any letterbox masking. Prefer 4K originals; these rectangles are not certified for 720p proxies, and static crops cannot restore off-frame hands or follow movement.
 
 ### Card readability at 1920×1080
 
