@@ -71,6 +71,9 @@ export const MODELS = {
   grok_imagine_1_5_lite: { kind: "video", credits: { perSecond: 3, perStartFrame: 1 }, duration: [1, 15], vertical: "auto_720p", fields: {} },
   "gemini_omni_flash_1.1": { kind: "video", credits: { perSecond: 10 }, duration: [3, 10], vertical: "720:1280", requiredPrompt: true, fields: { lastFrame: true } },
   wan3: { kind: "video", credits: { perSecond: 10 }, duration: [2, 30], vertical: "auto_720p", requiredPrompt: true, fields: { audio: true, lastFrame: true } },
+  // Veo 3.1 takes only 4, 6 or 8 seconds; audio defaults to on, so it is always sent (off for b-roll).
+  "veo3.1": { kind: "video", credits: { perSecond: 20, audioSurcharge: 20 }, duration: [4, 8], durations: [4, 6, 8], vertical: "720:1280", fields: { seed: true, audio: true, lastFrame: true } },
+  "veo3.1_fast": { kind: "video", credits: { perSecond: 10, audioSurcharge: 5 }, duration: [4, 8], durations: [4, 6, 8], vertical: "720:1280", fields: { seed: true, audio: true, lastFrame: true } },
   mirelo_sfx_2_0: { kind: "audio", credits: { perSecond: 2 }, duration: [1, 600], vertical: null, fields: { seed: true } },
 };
 
@@ -91,6 +94,7 @@ function durationFor(info, duration) {
   if (!Number.isFinite(duration) || duration < info.duration[0] || duration > info.duration[1] || (info.kind === "video" && !Number.isInteger(duration))) {
     throw new Error(`Runway duration must be ${info.duration[0]}–${info.duration[1]} seconds${info.kind === "video" ? " (integer)" : ""}`);
   }
+  if (info.durations && !info.durations.includes(duration)) throw new Error(`Runway duration must be one of ${info.durations.join(", ")} seconds`);
   return duration;
 }
 

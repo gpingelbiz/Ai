@@ -249,3 +249,14 @@ test("bake-off records charged sound failures and continues with accepted video"
   assert.equal(result.items.at(-1).credits, 3);
   assert.ok(fs.existsSync(path.join(options.out, "coconut", "gen4_image--frames-sheet.png")));
 });
+
+test("Veo 3.1: only 4, 6 or 8 seconds, audio always sent and priced", async () => {
+  assert.equal(estimateClip({ seconds: 4, videoModel: "veo3.1" }).video, 80);
+  assert.equal(estimateClip({ seconds: 4, videoModel: "veo3.1_fast" }).video, 40);
+  const bodies = [];
+  const fetchFn = async (url, init) => { bodies.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ id: "v1" }), text: async () => "{}" }; };
+  await createVideo({ image: "https://x/a.png", prompt: "The coconut drops.", model: "veo3.1_fast", duration: 4, seed: 7, fetchFn });
+  assert.equal(bodies[0].audio, false);
+  assert.equal(bodies[0].seed, 7);
+  await assert.rejects(createVideo({ image: "https://x/a.png", prompt: "x", model: "veo3.1", duration: 5, fetchFn }), /one of 4, 6, 8/);
+});
