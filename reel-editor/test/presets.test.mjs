@@ -82,7 +82,7 @@ test("client brand presets keep the October 30 captions and old punch-in spacing
   const old = path.join(dir, "preset.json");
   fs.writeFileSync(old, JSON.stringify({ name: "brand-sample", extends: "pingel-brand", captions: { style: "reveal" } }));
   const client = load(old);
-  for (const [k, v] of Object.entries({ uppercase: false, fontSizeFrac: 0.0355, animation: "cut", autoKeywords: false, annotate: false, dimFuture: false, keywordColorOnFootage: false, placeMax: 0.72 })) assert.equal(client.captions[k], v, k);
+  for (const [k, v] of Object.entries({ uppercase: false, fontSizeFrac: 0.0355, animation: "cut", autoKeywords: false, annotate: false, dimFuture: false, keywordColorOnFootage: false, placeMax: 0.79 })) assert.equal(client.captions[k], v, k);
   assert.equal(client.zooms.minSpacing, 10);
   assert.equal(client.zooms.maxPer30, 3);
   // The client's own choices still win.

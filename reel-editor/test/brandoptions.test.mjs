@@ -4,7 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { checkBrand, brandPreset, CALM } from "../src/brandkit.mjs";
-import { loadPreset, mergeOverrides, runwayTiming } from "../src/presets.mjs";
+import { loadPreset, mergeOverrides, runwayTiming, CLIENT_CAPTIONS } from "../src/presets.mjs";
+import { upgradeBrandV1 } from "../src/brandtokens.mjs";
+import { markKeywords } from "../src/captions.mjs";
+import { placeCaptions } from "../src/placement.mjs";
 import { hookSeconds } from "../src/hook.mjs";
 import { renderHTML } from "../src/compose.mjs";
 import { skinFonts } from "../src/looks.mjs";
@@ -33,7 +36,7 @@ const GREG = {
 };
 const CLIENT = {
   ...GREG, "captions.uppercase": false, "captions.fontSizeFrac": 0.0355, "captions.autoKeywords": false, "captions.keywordColorOnFootage": false,
-  "captions.animation": "cut", "captions.annotate": false, "captions.dimFuture": false, "captions.placeMax": 0.72,
+  "captions.animation": "cut", "captions.annotate": false, "captions.dimFuture": false,
   "zooms.minSpacing": 10, "zooms.maxPer30": 3,
 };
 const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
@@ -118,6 +121,72 @@ test("brand.json: bad values are named in plain words", () => {
   assert.deepEqual(checkBrand({ ...julee, look: { hookSeconds: 8 } }), []);
   const bad = checkBrand({ ...julee, look: { hookCase: "lower", captionCase: "title", hookSeconds: "forever", pace: "slow" } });
   for (const re of [/look.hookCase/, /look.captionCase/, /look.hookSeconds/, /look.pace/]) assert.ok(bad.some((m) => re.test(m)), String(re));
+});
+
+test("brand.json: b-roll defaults to Codex; Runway copies the current clip rules under the client's style", () => {
+  const rules = JSON.parse(fs.readFileSync(new URL("../presets/pingel-runway.json", import.meta.url), "utf8")).broll;
+  const brand = { ...julee, world: "Her car.", brollStyle: "Warm daylight.", looks: { lockHook: false, lockCaptions: true } };
+  const codex = brandPreset(brand);
+  assert.equal(codex.broll.engine, "codex");
+  assert.deepEqual(codex, brandPreset({ ...brand, brollEngine: "codex" }));
+  assert.deepEqual(codex.broll, { engine: "codex", world: "Her car.", worldInPrompt: true, style: "Warm daylight.", max: 3, every: 12, clearStart: 0 });
+  assert.equal(codex.looks.lockBrollGrade, undefined);
+  for (const input of [brand, upgradeBrandV1(brand)]) {
+    const built = brandPreset({ ...input, brollEngine: "runway" });
+    assert.deepEqual(built.broll, { ...rules, engine: "runway", world: "Her car.", worldInPrompt: true, style: "Warm daylight." });
+    assert.deepEqual(built.looks, { lockHook: false, lockCaptions: true, lockBrollGrade: true });
+    built.broll.grade.preset = "changed by caller";
+    assert.deepEqual(brandPreset({ ...input, brollEngine: "runway" }).broll.grade, rules.grade, "each build reads fresh rules");
+  }
+  const { p, dir } = load({ ...julee, brollEngine: "runway" });
+  try {
+    assert.equal(p.looks.lockBrollGrade, true);
+    assert.equal(p.looks.lockHook, true, "no brand hook choice: keep the inherited lock");
+    assert.equal(p.looks.lockCaptions, true, "no brand caption choice: keep the inherited lock");
+    const greg = loadPreset("pingel-runway");
+    for (const key of Object.keys(rules)) assert.deepEqual(p.broll[key], greg.broll[key], key);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  for (const brollEngine of ["codex", "runway"]) assert.deepEqual(checkBrand({ ...julee, brollEngine }), []);
+  for (const brollEngine of ["library", "unknown", ""]) assert.ok(checkBrand({ ...julee, brollEngine }).some((m) => /brollEngine/.test(m)));
+});
+
+test("brand.json: automatic punch words keep the quiet serif captions and accent box", () => {
+  const brand = { ...julee, brollEngine: "runway", look: { captions: "serif", captionCase: "sentence", pace: "calm", annotate: false, slams: false }, looks: { lockHook: false, lockCaptions: true } };
+  assert.equal(brandPreset(brand).captions.autoKeywords, false, "clients opt in");
+  const { p, dir } = load({ ...brand, captionKeywords: "auto" });
+  try {
+    assert.deepEqual(p.captions, { ...loadPreset("pingel-brand").captions, ...CLIENT_CAPTIONS, style: "reveal", autoKeywords: true, quiet: true, serif: true, keywordColorOnFootage: true, fontSizeFrac: 0.033 });
+    assert.equal(p.slams.enabled, false);
+    assert.equal(p.zooms.minSpacing, 16);
+    const captions = [{ text: "a coconut", start: 4, end: 5, words: [{ text: "a", start: 4, end: 4.3 }, { text: "coconut", start: 4.3, end: 5 }] }];
+    markKeywords(captions, {}, { auto: p.captions.autoKeywords, maxPerLine: p.captions.maxKeywordsPerLine });
+    assert.deepEqual(captions[0].words.filter((w) => w.key).map((w) => w.text), ["coconut"]);
+    const html = renderHTML({ name: "serif", style: p, canvas: { width: 1080, height: 1920 }, video: { duration: 8, hasAudio: true }, captions, zooms: [] }, "assets/footage.mp4");
+    assert.match(html, /\.cap-line \{ font-family: "Look Serif", "Anton", serif/);
+    assert.match(html, /\.cap \.w\.k \{ color: #111111; background: #FFB27D;/);
+    assert.match(html, /class="w k"[^>]*>coconut</);
+    assert.doesNotMatch(html, /<svg class="an /);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  assert.deepEqual(checkBrand({ ...julee, captionKeywords: "auto" }), []);
+  assert.ok(checkBrand({ ...julee, captionKeywords: "always" }).some((m) => /captionKeywords/.test(m)));
+});
+
+test("client captions inherit the lower chin clearance and keep wrapped rows above the bottom UI", () => {
+  assert.equal(Object.hasOwn(CLIENT_CAPTIONS, "placeMax"), false);
+  for (const captions of ["reveal", "quiet", "serif"]) {
+    const { p, dir } = load({ ...julee, look: { captions } });
+    try {
+      const cap = p.captions;
+      assert.equal(cap.placeMax, 0.79);
+      const lineHeight = cap.serif ? 1.14 : cap.quiet ? 1.2 : 1.04;
+      for (const bottom of [0.71, 0.72, 0.73, 0.8]) {
+        const spot = placeCaptions({ top: 0.2, bottom }, { fontSizeFrac: cap.fontSizeFrac, lineHeight, gap: cap.placeGap, min: cap.placeMin, max: cap.placeMax });
+        const top = spot.position - 0.6 * cap.fontSizeFrac;
+        assert.ok(top + cap.fontSizeFrac * (2 * lineHeight + 0.02) <= 0.84, `${captions}: wrapped rows cross the bottom UI`);
+        if (bottom <= 0.73) assert.ok(top > bottom, `${captions}: overlaps chin at ${bottom}`);
+      }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }
 });
 
 test("hook time: seconds capped at the reel, or the whole reel", () => {

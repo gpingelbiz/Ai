@@ -57,6 +57,7 @@ export function clientEnv(brand, p) {
   const vars = {
     REEL_CLIENT: brand.name,
     REEL_PRESET: p.preset,
+    REEL_BROLL_ENGINE: brand.brollEngine ?? "codex",
     REEL_YOUTUBE_PRESET: p.youtube,
     REEL_DICTIONARY: p.dictionary,
     REEL_CAPTION_VOICE: p.voice,

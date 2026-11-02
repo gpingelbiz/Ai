@@ -1,10 +1,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planSlams, slamCandidates } from "../src/slams.mjs";
+import { planSlams, slamCandidates, SLAM_EXCLUDED_WORDS } from "../src/slams.mjs";
 import { renderHTML } from "../src/compose.mjs";
 
 const dict = { powerWords: ["accountability"], terms: ["Ghost P&L"] };
 const line = (start, words) => ({ start, end: start + 1.6, text: words.map((w) => w[0]).join(" "), words: words.map(([text, key], k) => ({ text, key: !!key, start: start + k * 0.4, end: start + k * 0.4 + 0.35 })) });
+
+test("slams: violent words never become candidates, even as power words or dictionary phrases", () => {
+  const excluded = "kill killed killing die dead death murder gun guns shoot shot knife stab blood choke hang hanged suicide".split(" ");
+  assert.ok(SLAM_EXCLUDED_WORDS instanceof Set);
+  for (const word of excluded) {
+    assert.ok(SLAM_EXCLUDED_WORDS.has(word), word);
+    const groups = [line(4, [[`\"${word.toUpperCase()}!`, 1]]), line(8, [["no", 1], [word, 1]]), line(12, [[`${word}-proof`, 1]]), line(16, [[`'${word}'`, 1]]), line(20, [[`“${word}”`, 1]])];
+    const dict = { powerWords: [word], terms: ["no"] };
+    assert.deepEqual(slamCandidates(groups, dict), [], word);
+    assert.deepEqual(planSlams(groups, 30, { dict }), [], word);
+  }
+  const safe = [line(4, [["skill", 1]]), line(12, [["hangar", 1]]), line(20, [["accountability", 1]])];
+  assert.deepEqual(slamCandidates(safe).map((c) => c.text), ["skill", "hangar", "accountability"], "whole words only");
+  const groups = [line(4, [["kill", 1], ["the", 0], ["snake", 0]]), ...safe];
+  const before = structuredClone(groups);
+  assert.deepEqual(planSlams(groups, 30, { dict: { powerWords: ["kill"] } }).map((c) => c.text), ["skill", "hangar", "accountability"]);
+  assert.deepEqual(groups, before, "spoken captions keep their text and emphasis");
+});
 
 test("slams: gold runs become candidates, ranked power word > number > term > everyday word", () => {
   const groups = [line(2, [["you", 0], ["standard", 1], ["it", 0]]), line(6, [["almost", 0], ["$10,000", 1], ["a", 0]]), line(10, [["accountability,", 1], ["period", 0]]), line(14, [["Ghost", 1], ["P&L", 1], ["call", 0]]), line(18, [["one", 1], ["thing", 0]]), line(22, [["own", 1], ["it", 0]])];
