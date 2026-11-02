@@ -6,6 +6,7 @@ import { resolveBrandTokens } from "./brandtokens.mjs";
 import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr } from "./hdr.mjs";
 import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
 import { measureLoudness } from "./preflight.mjs";
+import { repairOptions, prepareRepair, loadRepairReactions } from "./speaker-enhance.mjs";
 import { groupWords } from "./captions.mjs";
 import { sliceWords } from "./clips.mjs";
 import { readJSON, writeJSON, ensureDir, run, warn } from "./util.mjs";
@@ -139,6 +140,16 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   };
   for (const i of [...items, ...overlays, ...cutaways]) {
     if (!i || typeof i !== "object") { add("plan", "timeline entries must be objects"); continue; }
+    if (Object.hasOwn(i, "audioRepair")) {
+      if (!items.includes(i) || i.kind !== "clip") add(i.id, "audioRepair requires a dialogue clip item");
+      try {
+        const repair = repairOptions(i.audioRepair);
+        if (i.protect && !repair.allowProtected) add(i.id, "protected audioRepair requires allowProtected:true; internal cuts remain forbidden");
+      } catch (e) { add(i.id, e.message); }
+      const source = sources.get(i.sourceId), meta = sourceRow(index, i.sourceId);
+      if (i.audio === "mute" || source?.audio !== "ok" || meta?.hasAudio === false) add(i.id, "audioRepair needs usable source dialogue audio");
+      if (source && !["stage", "podcast", "webinar", "interview", "testimonial"].includes(source.kind)) add(i.id, "audioRepair is only for dialogue sources, never broll, music or sfx");
+    }
     if (Object.hasOwn(i, "grade")) {
       if (!items.includes(i) || i.kind !== "clip") add(i.id, "grade requires a clip item; cutaways use look.sources");
       try { gradeOverrides(i.grade, "grade"); } catch (e) { add(i.id, e.message); }
@@ -355,7 +366,7 @@ export function dialogueLevel(loudness, { limit = false } = {}) {
   return { gain, limiter: limit && gain > 0 ? "alimiter=limit=0.794:attack=5:release=50:level=false:latency=true" : "" };
 }
 
-async function preparedAudio(file, source, meta, item, dir, { preparation = null, savePreparation = () => {}, carry = false, continues = false } = {}) {
+export async function preparedAudio(file, source, meta, item, dir, { preparation = null, savePreparation = () => {}, carry = false, continues = false, workDir, repair = prepareRepair, repairDeps = {}, print = warn } = {}) {
   const output = path.join(dir, `${item.id}.wav`), raw = path.join(dir, `${item.id}.f32`);
   const duration = item.frames / 30, samples = item.frames * 1600;
   const audibleDuration = carry ? item.audioCarry.frames / 30 : duration;
@@ -368,16 +379,37 @@ async function preparedAudio(file, source, meta, item, dir, { preparation = null
   try {
     // Preserve packet offsets relative to the source origin, then lock samples to video frames.
     await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(item.in), "-i", file, "-map", `0:${stream}`, "-vn", "-t", String(audibleDuration), "-af", `aresample=48000:async=1:first_pts=0,apad,atrim=end_sample=${samples}`, "-ac", "2", "-f", "f32le", raw], { capture: true });
-    const mono = preparation?.mono ?? safeMonoFilter(stereoStats(raw));
-    if (!mono.includes("0.5")) warn(`${item.id}: stereo cancellation detected; using the louder channel`);
-    const common = ["-y", "-loglevel", "error", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", raw];
-    await run("ffmpeg", [...common, "-af", `${mono},pan=stereo|c0=c0|c1=c0`, "-c:a", "pcm_s16le", output], { capture: true });
+    const requested = !carry && item.audioRepair ? repairOptions(item.audioRepair) : null;
+    const mono = preparation?.mono ?? (requested?.channel === "left" ? "pan=mono|c0=c0" : requested?.channel === "right" ? "pan=mono|c0=c1" : safeMonoFilter(stereoStats(raw)));
+    if (!requested && !preparation && !mono.includes("0.5")) warn(`${item.id}: stereo cancellation detected; using the louder channel`);
+    let common = ["-y", "-loglevel", "error", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", raw], inputMono = mono;
+    delete item.audioRepairResult;
+    if (requested) {
+      const selected = path.join(dir, `${item.id}.selected.f32`);
+      try {
+        await run("ffmpeg", [...common, "-af", mono, "-f", "f32le", selected], { capture: true });
+        let reactions;
+        try { reactions = loadRepairReactions(workDir, meta.key, source.id, file); } catch { reactions = null; }
+        const result = await repair(file, { ...repairDeps, original: fs.readFileSync(selected), sourceKey: meta.key, sourceId: source.id, stream, start: item.in, out: item.out, samples, sourceDuration: meta.duration, mono, settings: requested, reactions, cacheDir: path.join(workDir, "index", "enhance"), print });
+        item.audioRepairResult = { status: result.status, ...(result.warning ? { warning: result.warning } : {}) };
+        if (result.status === "repaired") {
+          Object.assign(item.audioRepairResult, { key: result.key, sourceKey: meta.key, ranges: result.evidence.ranges, checks: result.checks, measurements: result.measurements });
+          for (const key of ["file", "original", "enhanced", "sidecar"]) item.audioRepairResult[key] = path.relative(path.dirname(workDir), result[key]);
+          common = ["-y", "-loglevel", "error", "-i", result.file];
+          inputMono = "pan=mono|c0=c0";
+        }
+      } catch (error) {
+        const warning = `dialogue enhance: ${String(error.message).split("\n")[0]}; using original audio`;
+        print(warning); item.audioRepairResult = { status: "original", warning };
+      } finally { fs.rmSync(selected, { force: true }); }
+    }
+    await run("ffmpeg", [...common, "-af", `${inputMono},pan=stereo|c0=c0|c1=c0`, "-c:a", "pcm_s16le", output], { capture: true });
     const { gain, limiter } = preparation ?? dialogueLevel(await measureLoudness(output), { limit: item.limit === true });
     savePreparation({ mono, gain, limiter });
     const fades = carry
       ? `atrim=end_sample=${item.audioCarry.frames * 1600},afade=t=out:st=${Math.max(0, audibleDuration - 0.25)}:d=${Math.min(0.25, audibleDuration)},apad,atrim=end_sample=${samples}`
       : `apad,atrim=end_sample=${samples},afade=t=in:d=0.01${continues ? "" : `,afade=t=out:st=${Math.max(0, duration - 0.01)}:d=0.01`}`;
-    await run("ffmpeg", [...common, "-af", `${mono},volume=${gain}dB,${limiter ? `${limiter},` : ""}pan=stereo|c0=c0|c1=c0,${fades}`, "-c:a", "pcm_s16le", output], { capture: true });
+    await run("ffmpeg", [...common, "-af", `${inputMono},volume=${gain}dB,${limiter ? `${limiter},` : ""}pan=stereo|c0=c0|c1=c0,${fades}`, "-c:a", "pcm_s16le", output], { capture: true });
     return output;
   } finally { fs.rmSync(raw, { force: true }); }
 }
@@ -408,7 +440,7 @@ export function cutawayGraph(base, cut, output, start, end, shifted = "shift") {
 }
 
 /** Each item is encoded once after rotation, SDR conversion and one scale. Cutaways share its dialogue stem. */
-export async function compileVersion(folder, plan, { manifest, index, preset = null, tokens = null, draft = false, encoder = "auto", print = warn } = {}) {
+export async function compileVersion(folder, plan, { manifest, index, preset = null, tokens = null, draft = false, encoder = "auto", print = warn, repairDeps = {} } = {}) {
   assertNoGreg(manifest, "manifest");
   if (preset) assertNoGreg(preset, "preset");
   const resolved = resolvePlan(plan, { manifest, index, draft });
@@ -512,6 +544,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
     }
     let audio;
     if (picture) audio = await preparedAudio(assetPath(folder, picture.source.path), picture.source, picture.meta, item, scratch, {
+      workDir: path.join(folder, "work"), repairDeps, print: (message) => { print(`${item.id}: ${message}`); resolved.problems.push({ level: "warn", id: item.id, message }); },
       savePreparation: (settings) => audioPreparations.set(item.id, settings), continues: resolved.items[number + 1]?.audioCarry?.preceding === item.id,
     });
     else if (item.audioCarry) {

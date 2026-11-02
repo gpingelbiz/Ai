@@ -45,6 +45,14 @@ function snapshot(folder, entry) {
   const manifestPath = path.join(folder, "speaker-manifest.json");
   hashes["speaker-manifest.json"] = fileHash(manifestPath);
   const manifest = readJSON(manifestPath);
+  for (const item of plan.items || []) {
+    if (!item.audioRepair || item.audioRepairResult?.status !== "repaired") continue;
+    const sidecar = path.resolve(folder, item.audioRepairResult.sidecar), provenance = readJSON(sidecar);
+    const source = manifest.sources.find((s) => s.id === item.sourceId);
+    const guards = [sidecar, ...["original", "enhanced", "file"].map((key) => path.resolve(folder, item.audioRepairResult[key])),
+      path.join(folder, "work", "index", `${provenance.evidence.sourceKey}.reactions.json`), path.resolve(folder, source.path)];
+    for (const guard of guards) hashes[path.relative(folder, guard)] = fileHash(guard);
+  }
   if (manifest.brand?.file) hashes[`brand:${manifest.brand.file}`] = fileHash(path.resolve(folder, manifest.brand.file));
   const editable = path.join(folder, "work", entry.version, "speaker-plan.json");
   if (fs.existsSync(editable)) hashes[`work/${entry.version}/speaker-plan.json`] = fileHash(editable);
@@ -103,7 +111,7 @@ async function checkFiles(folder, entry, final, qc) {
   const identity = [...identityProblems(plan), ...identityProblems(manifest)];
   if (identity.length) throw new Error(`speaker ${entry.version}: forbidden Greg identity at ${identity.join(", ")}`);
   for (const video of videos) {
-    const result = await qc(path.resolve(folder, video.path), { resolvedPlan: plan, manifest, final, captionFiles: captions });
+    const result = await qc(path.resolve(folder, video.path), { resolvedPlan: plan, manifest, final, folder, captionFiles: captions });
     writeQC(path.join(folder, "work", entry.version), result);
     if (!result.ok) throw new Error(`speaker ${entry.version}: QC failed: ${result.checks.filter((c) => c.level === "fail").map((c) => c.message).join("; ")}`);
   }

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { repairQC } from "./speaker-enhance.mjs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { measureLoudness, silences } from "./preflight.mjs";
@@ -143,6 +144,7 @@ export async function speakerQC(video, { resolvedPlan, manifest, final = false, 
   checks.push(...audioQualityWarnings(plan, audioCandidates, manifest));
   // Optional original-picture flags: subtract cutaways, then inspect their own picture sources too.
   const clientFolder = folder || path.resolve(path.dirname(typeof resolvedPlan === "string" ? resolvedPlan : video), "../..");
+  for (const item of plan.items) checks.push(...await repairQC(clientFolder, item, { final, source: manifest.sources?.find((s) => s.id === item.sourceId) }));
   checks.push(...insertWarnings(plan, deps.inserts || loadInsertFlags(clientFolder)));
   checks.push(...rightsChecks(plan, manifest, final));
   for (const p of plan.composition?.cardProblems || []) checks.push({ code: p.code, level: p.level === "error" ? "fail" : "warn", message: p.message });
