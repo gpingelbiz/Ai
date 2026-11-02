@@ -11,6 +11,7 @@ import { ensureDir, copyOrLink, PKG_ROOT, readJSON, writeJSON, run } from "./uti
 import { speakerBeats, sectionBeatTimes, snapSpeakerPlan, layoutMontage, validateKeywords, motionProblems } from "./speaker-beats.mjs";
 import { probeSource } from "./speaker-index.mjs";
 import { measureLoudness } from "./preflight.mjs";
+import { prepareIntroAssets } from "./speaker-intro.mjs";
 
 const js = (value) => JSON.stringify(value).replace(/</g, "\\u003c");
 
@@ -50,7 +51,7 @@ window.__timelines=window.__timelines||{};window.__timelines["speaker"]=tl;
 }
 
 /** Compose only; orchestration renders, normalizes, checks and builds review after this succeeds. */
-export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, preset, tokens, captions, print = console.log, prepareMusic = run, beatsImpl = speakerBeats, compileImpl = compileVersion, measureImpl = measureLoudness, probeAudio = probeSource } = {}) {
+export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, preset, tokens, captions, print = console.log, prepareMusic = run, prepareIntro = prepareIntroAssets, beatsImpl = speakerBeats, compileImpl = compileVersion, measureImpl = measureLoudness, probeAudio = probeSource } = {}) {
   assertNoGreg({ resolvedPlan, manifest, preset, tokens }, "speaker composition");
   const folder = path.resolve(workDir, "../.."), base = path.join(workDir, "base.mp4");
   const warnings = [], warning = (message) => { print(message); warnings.push({ level: "warn", id: "music", message }); };
@@ -101,8 +102,12 @@ export async function composeSpeakerProject(workDir, resolvedPlan, { manifest, p
   ensureDir(path.join(projectDir, "assets", "vendor"));
   const box = activeBox(resolvedPlan.look?.letterbox, resolvedPlan.canvas);
   const sideNames = resolvedPlan.overlays?.some((o) => o.card?.type === "testimonial-name" && ["premium", "cinematic"].includes(o.card.layout));
-  const sourceIndex = sideNames && fs.existsSync(path.join(folder, "work/index/sources.json")) ? readJSON(path.join(folder, "work/index/sources.json")) : {};
-  const cards = await copyCardAssets(letterboxCards(speakerCardsHTML(resolvedPlan, { manifest, tokens, canvas: { ...resolvedPlan.canvas, activeBox: box }, clientDir: folder, index: sourceIndex, log: print }), box, resolvedPlan), projectDir);
+  const hasIntro = resolvedPlan.overlays?.some((o) => o.card?.type === "intro");
+  const sourceIndex = (sideNames || hasIntro) && fs.existsSync(path.join(folder, "work/index/sources.json")) ? readJSON(path.join(folder, "work/index/sources.json")) : {};
+  const intros = hasIntro ? await prepareIntro(resolvedPlan, { manifest, index: sourceIndex, clientDir: folder, projectDir, print }) : { prepared: {}, warnings: [] };
+  for (const message of intros.warnings) warnings.push({ level: "warn", id: "intro", message });
+  const cards = await copyCardAssets(letterboxCards(speakerCardsHTML(resolvedPlan, { manifest, tokens, canvas: { ...resolvedPlan.canvas, activeBox: box }, clientDir: folder, index: sourceIndex, introAssets: intros.prepared, log: print }), box, resolvedPlan), projectDir);
+  for (const card of cards.review.filter((c) => c.type === "intro")) resolvedPlan.overlays.find((o) => o.id === card.id).introReview = card.layers;
   for (const p of cards.problems) print(`WARNING ${p.code}: ${p.message}`);
   copyOrLink(base, path.join(projectDir, "assets", "base.mp4"));
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(projectDir, "assets", "vendor", "gsap.min.js"));

@@ -8,6 +8,7 @@ import { identityLeaks } from "./speaker-guard.mjs";
 import { audioQualityWarnings } from "./speaker-audio-quality.mjs";
 import { resolveCard, cardCopyEvidence } from "./speaker-cards.mjs";
 import { loadInsertFlags, insertWarnings } from "./speaker-inserts.mjs";
+import { introReferences } from "./speaker-intro.mjs";
 
 /** Accept the explicit output fields, or start/end from a compiled plan. Never use source in/out as output time. */
 export function outputSpan(item) {
@@ -27,6 +28,11 @@ export function usedAssets(plan, manifest) {
   const sourceIds = new Set(), proofIds = new Set();
   const entries = [...(plan.items || []), ...(plan.overlays || []), ...(plan.cutaways || [])];
   for (const item of entries) {
+    if (item.card?.type === "intro") {
+      const refs = introReferences(item.card, manifest, plan);
+      for (const id of refs.sourceIds) sourceIds.add(id);
+      for (const id of refs.proofIds) proofIds.add(id);
+    }
     if (item.card?.type === "event-list") for (const id of Array.isArray(item.card.sourceIds) ? item.card.sourceIds : []) sourceIds.add(id);
     if (item.card) for (const id of cardCopyEvidence(item.card, manifest).proofIds) proofIds.add(id);
     if (item.sourceId) sourceIds.add(item.sourceId);

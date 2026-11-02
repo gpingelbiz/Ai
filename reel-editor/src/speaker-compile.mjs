@@ -13,9 +13,10 @@ import { readJSON, writeJSON, ensureDir, run, warn, r3 } from "./util.mjs";
 import { musicProblems } from "./speaker-music.mjs";
 import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
 import { cardOptionProblems, cardCopyEvidence, resolveCard } from "./speaker-cards.mjs";
+import { introSpan, introReferences, resolveIntro } from "./speaker-intro.mjs";
 
 const ROLES = ["opening", "identity", "proof", "core", "room", "testimonial", "close", "booking", "montage"];
-const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "event-list", "topic", "keyword"];
+const CARD_TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "event-list", "topic", "keyword", "intro"];
 const finite = (x) => typeof x === "number" && Number.isFinite(x);
 const sourceRow = (index, id) => index?.sources?.[id] || index?.[id];
 const seconds = (frame, fps) => frame / fps;
@@ -25,6 +26,11 @@ export function planUsage(plan, manifest) {
   const sourceIds = new Set([...plan.items.filter((i) => i.kind === "clip").map((i) => i.sourceId), ...plan.items.filter((i) => i.audioCarry).map((i) => i.audioCarry.sourceId), ...(plan.cutaways || []).map((x) => x.sourceId)]);
   const proofIds = new Set();
   for (const entry of [...plan.items, ...(plan.overlays || [])]) {
+    if (entry.card?.type === "intro") {
+      const refs = introReferences(entry.card, manifest, plan);
+      for (const id of refs.sourceIds) sourceIds.add(id);
+      for (const id of refs.proofIds) proofIds.add(id);
+    }
     if (entry.card?.type === "event-list") for (const id of Array.isArray(entry.card.sourceIds) ? entry.card.sourceIds : []) sourceIds.add(id);
     if (entry.card) for (const id of cardCopyEvidence(entry.card, manifest).proofIds) proofIds.add(id);
     if (entry.proofId) proofIds.add(entry.proofId);
@@ -75,6 +81,10 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     const mode = overlays.some((o) => o?.id === id) ? "overlay" : "insert";
     for (const p of cardOptionProblems(c, mode)) add(id, p.message);
     const entry = [...items, ...overlays].find((i) => i?.id === id);
+    if (c.type === "intro") {
+      for (const p of resolveIntro(c, { manifest, index, plan, entry, mode, final: !draft }).problems) add(id, p.message, p.level);
+      return;
+    }
     if (c.layout === "cinematic" && Math.round(entry?.duration * 30) < 16) add(id, "cinematic cards need at least 16 frames");
     if (c.type === "event-list") {
       for (const p of resolveCard(c, { manifest, mode, final: !draft }).problems) add(id, p.message, p.level);
@@ -160,6 +170,7 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
     else if (allIds.has(i.id)) add(i.id, "duplicate timeline id");
     else if (!/^[a-zA-Z0-9_-]+$/.test(i.id)) add(i.id, "timeline id must use letters, numbers, underscores or hyphens");
     allIds.add(i.id);
+    if (i.spanTo != null && (!overlays.includes(i) || i.card?.type !== "intro")) add(i.id, "spanTo requires an intro overlay");
   }
   for (const i of items) {
     if (!["clip", "card"].includes(i.kind)) add(i.id, `invalid item.kind: ${i.kind}`);
@@ -198,8 +209,10 @@ export function validatePlan(plan, { manifest, index, draft = false } = {}) {
   for (const o of overlays.filter(Boolean)) {
     const target = byId.get(o.at);
     if (!target) add(o.id, `unknown overlay target: ${o.at}`);
-    if (!finite(o.offset) || o.offset < 0 || !finite(o.duration) || o.duration <= 0 || Math.round(o.duration * 30) < 1) add(o.id, "overlay needs non-negative offset and positive duration");
-    if (target && Math.round(o.offset * 30) + Math.round(o.duration * 30) > Math.round(duration(target) * 30)) add(o.id, "overlay extends past its target item");
+    if (o.card?.type !== "intro") {
+      if (!finite(o.offset) || o.offset < 0 || !finite(o.duration) || o.duration <= 0 || Math.round(o.duration * 30) < 1) add(o.id, "overlay needs non-negative offset and positive duration");
+      if (target && Math.round(o.offset * 30) + Math.round(o.duration * 30) > Math.round(duration(target) * 30)) add(o.id, "overlay extends past its target item");
+    }
     card(o.id, o.card);
   }
   const intervals = new Map();
@@ -278,7 +291,12 @@ export function resolvePlan(plan, options) {
     item.audioCarry = { ...item.audioCarry, in: start, frames: Math.round((item.audioCarry.out - start) * fps) };
   }
   const byId = new Map(items.map((i) => [i.id, i]));
-  const overlays = (plan.overlays || []).map((o) => ({ ...o, ...timing(byId.get(o.at).startFrame + Math.round(o.offset * fps), Math.round(o.duration * fps)) }));
+  const overlays = (plan.overlays || []).map((o) => {
+    const span = o.card?.type === "intro" ? introSpan(o, plan) : { startFrame: byId.get(o.at).startFrame + Math.round(o.offset * fps), frames: Math.round(o.duration * fps) };
+    const resolved = { ...o, ...timing(span.startFrame, span.frames) };
+    if (o.card?.type === "intro") resolved.intro = resolveIntro(o.card, { ...options, plan, entry: o }).card;
+    return resolved;
+  });
   const cutaways = (plan.cutaways || []).map((x) => ({ ...x, ...pictureOptions(x, x.push ?? (x.out - x.in > 1.5 ? 1.06 : 1)), push: x.push ?? (x.out - x.in > 1.5 ? 1.06 : 1), stabilize: x.stabilize ?? (options.manifest.sources.find((s) => s.id === x.sourceId)?.handheld === true), ...timing(byId.get(x.over).startFrame + Math.round(x.offset * fps), Math.round((x.out - x.in) * fps)) }));
   return { ...plan, look: lookOptions(plan.look), activeBox: activeBox(plan.look?.letterbox), items, overlays, cutaways, frames: frame, duration: seconds(frame, fps), problems };
 }

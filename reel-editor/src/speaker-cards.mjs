@@ -8,6 +8,7 @@ import { assetPath, headshotProblems } from "./speaker-intake.mjs";
 import { existsSync } from "node:fs";
 import { PKG_ROOT, run } from "./util.mjs";
 import { activeBox, defaultFit, sourceCropOptions } from "./speaker-look.mjs";
+import { resolveIntro, renderIntro } from "./speaker-intro.mjs";
 
 const TYPES = ["title", "booking", "testimonial-name", "quote", "logo-wall", "event-list", "topic", "keyword"];
 const HEADINGS = { "spoke-at": "Spoke at", client: "Hired by", "featured-in": "Featured in", "available-at": "Available at" };
@@ -24,6 +25,7 @@ const identityLeak = (value) => identityLeaks(value).length > 0;
 
 /** Shared by plan and card validation. Omitted options retain the original design. */
 export function cardOptionProblems(card, mode = "insert") {
+  if (card.type === "intro") return mode === "overlay" ? [] : [problem("card-mode", "intro must be an overlay")];
   const problems = [], add = (message) => problems.push(problem("card-option", message));
   const layouts = { title: "compact", keyword: "compact", topic: "compact", quote: "premium", booking: "premium", "testimonial-name": "premium" };
   const cinematic = ["title", "topic", "keyword", "event-list", "testimonial-name"].includes(card.type);
@@ -99,7 +101,8 @@ export function leaksContact(text, identity = {}) {
     || (url && bare.includes(url)));
 }
 
-export function resolveCard(input, { manifest = {}, final = false, clientDir, mode = "insert" } = {}) {
+export function resolveCard(input, { manifest = {}, final = false, clientDir, mode = "insert", plan, entry, index } = {}) {
+  if (input?.type === "intro") return resolveIntro(input, { manifest, final, clientDir, mode, plan, entry, index });
   const problems = [];
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const type = clean(source.type);
@@ -748,7 +751,7 @@ function cardCanvas(plan, canvas = plan.canvas) {
 /** Fragment contract: html + css + timeline (statements on the caller's paused `tl`), assets and review entries.
  * Pass clientDir for manifest-relative logos, or provide absolute proof files. No files or JSON are written here.
  */
-export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas = resolvedPlan.canvas, clientDir, final = false, index, log = console.log } = {}) {
+export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas = resolvedPlan.canvas, clientDir, final = false, index, introAssets = {}, log = console.log } = {}) {
   canvas = cardCanvas(resolvedPlan, canvas);
   const t = brandTokens(tokens), size = dimensions(canvas);
   const problems = cardChecks(resolvedPlan, { manifest, final, tokens: t, clientDir, index, canvas });
@@ -757,15 +760,17 @@ export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas =
   // Structural review findings are returned; invalid card copy and unsafe layouts cannot be rendered.
   const fragments = [], review = [];
   cardEntries(resolvedPlan).forEach(({ entry, mode }, i) => {
-    const resolved = resolveCard(entry.card, { manifest, final, clientDir, mode });
+    const resolved = resolveCard(entry.card, { manifest, final, clientDir, mode, plan: resolvedPlan, entry, index });
     const errors = resolved.problems.filter((p) => p.level === "error");
     if (errors.length) throw new Error(`speaker card ${entry.id}: ${errors.map((p) => p.message).join("; ")}`);
     const span = outputSpan(entry, size.fps);
-    const rendered = renderCard(resolved.card, { tokens: t, canvas, id: `speaker-card-${i}`, mode, ...span, manifest, clientDir, context: cardContext(resolvedPlan, entry, index) });
+    const rendered = resolved.card.type === "intro"
+      ? renderIntro(resolved.card, { id: `speaker-card-${i}`, tokens: t, span: resolved.span, assets: introAssets[entry.id], offsetY: canvas.activeBox?.y || 0 })
+      : renderCard(resolved.card, { tokens: t, canvas, id: `speaker-card-${i}`, mode, ...span, manifest, clientDir, context: cardContext(resolvedPlan, entry, index) });
     if (!rendered.layout.fits) throw new Error(`speaker card ${entry.id}: text cannot fit at the minimum readable sizes`);
     for (const asset of rendered.assets) asset.itemId = entry.id;
     fragments.push(rendered);
-    review.push({ id: entry.id, type: resolved.card.type, mode, position: resolved.card.position, ...span, text: rendered.text, proofIds: resolved.card.logos || (resolved.card.proofId ? [resolved.card.proofId] : cardCopyEvidence(resolved.card, manifest).proofIds), ...(resolved.card.type === "event-list" ? { sourceIds: resolved.card.sourceIds } : {}), problems: resolved.problems, layout: rendered.layout });
+    review.push({ id: entry.id, type: resolved.card.type, mode, position: resolved.card.position, ...span, text: rendered.text, proofIds: resolved.card.logos || (resolved.card.proofId ? [resolved.card.proofId] : cardCopyEvidence(resolved.card, manifest).proofIds), ...(resolved.card.type === "event-list" ? { sourceIds: resolved.card.sourceIds } : {}), ...(rendered.layers ? { layers: rendered.layers } : {}), problems: resolved.problems, layout: rendered.layout });
   });
   const warnings = [...new Set(fragments.flatMap((f) => f.warnings))];
   for (const warning of warnings) log(`[reel] ${warning}`);
@@ -778,7 +783,7 @@ export function speakerCardsHTML(resolvedPlan, { manifest = {}, tokens, canvas =
     assets.push({ ref: role.file, source, font: true });
   }
   const baseCSS = cssRules(t, palette(t));
-  return { html: `<div class="speaker-cards">${fragments.map((f) => f.html).join("\n")}</div>`, css: baseCSS + fragments.map((f) => f.css.slice(baseCSS.length)).join(""), timeline: fragments.map((f) => f.timeline).join("\n"), assets, review: review.sort((a, b) => a.start - b.start), problems, warnings };
+  return { html: `<div class="speaker-cards">${fragments.map((f) => f.html).join("\n")}</div>`, css: baseCSS + fragments.map((f) => f.layers ? f.css : f.css.slice(baseCSS.length)).join(""), timeline: fragments.map((f) => f.timeline).join("\n"), assets, review: review.sort((a, b) => a.start - b.start), problems, warnings };
 }
 
 /** Copy only supplied local files; stable content hashes avoid basename collisions and preserve originals. */
@@ -821,7 +826,7 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
   if (identityLeak(resolvedPlan)) add("card-identity", "speaker plan contains Greg's identity");
   const entries = cardEntries(resolvedPlan), fps = resolvedPlan.canvas?.fps || 30;
   const cards = entries.map(({ entry, mode }) => {
-    const resolved = resolveCard(entry.card, { manifest, final, clientDir, mode });
+    const resolved = resolveCard(entry.card, { manifest, final, clientDir, mode, plan: resolvedPlan, entry, index });
     findings.push(...resolved.problems.map((p) => ({ ...p, itemId: entry.id, message: `${entry.id}: ${p.message}` })));
     let span = null;
     try { span = outputSpan(entry, fps); } catch (error) { add("card-time", error.message); }
@@ -857,7 +862,7 @@ export function cardChecks(resolvedPlan = {}, { manifest = {}, final = false, to
     })[c.card.type] || {};
     for (const [key, min] of Object.entries(minima)) if (Number.isFinite(c.entry.card?.[key]) && c.entry.card[key] < min) add("card-text-size", `${c.entry.id}: ${key} is below ${min}px`);
   }
-  const overlays = cards.filter((c) => c.mode === "overlay" && c.span);
+  const overlays = cards.filter((c) => c.mode === "overlay" && c.span && c.card.type !== "intro");
   // Without renderer geometry, use each family's reserved safe rectangle. Plans cannot override placement.
   const hasNewLayout = overlays.some((c) => ["compact", "premium", "cinematic"].includes(c.card.layout));
   const box = (c) => {
