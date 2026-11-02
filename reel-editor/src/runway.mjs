@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { log, r3, run } from "./util.mjs";
+import { createHash } from "node:crypto";
+import { log, warn, r3, run } from "./util.mjs";
 
 /**
  * Runway developer API (docs.dev.runwayml.com, version 2024-11-06): text to image, image to video, task polling,
@@ -25,6 +26,8 @@ async function post(path, body, { fetchFn = fetch } = {}) {
     const text = await res.text().catch(() => "");
     const e = new Error(`runway ${path} ${res.status}: ${text.slice(0, 300)}`);
     e.status = res.status;
+    try { const body = JSON.parse(text); e.code = body.failureCode || body.code; } catch {}
+    e.policy = failurePolicy(e.code);
     throw e;
   }
   return res.json();
@@ -33,41 +36,135 @@ async function post(path, body, { fetchFn = fetch } = {}) {
 /** Poll a task to its end. Runway asks for no more than one check every 5 s. */
 export async function waitForTask(id, { fetchFn = fetch, timeoutMs = 600000, sleepFn = sleep, onProgress } = {}) {
   const t0 = Date.now();
+  let failures = 0;
   for (;;) {
     await sleepFn(5000 + Math.random() * 2000);
-    if (Date.now() - t0 > timeoutMs) throw new Error(`runway task ${id} timed out`);
+    if (Date.now() - t0 > timeoutMs) throw Object.assign(new Error(`runway task ${id} timed out`), { code: "TASK_PENDING", taskId: id });
     const res = await fetchFn(`${BASE}/v1/tasks/${id}`, { headers: headers() });
-    if (!res.ok) { await sleepFn(10000); continue; }
+    if (!res.ok) {
+      if (![408, 409, 429].includes(res.status) && res.status < 500) throw Object.assign(new Error(`runway task lookup ${res.status}`), { code: "TASK_PENDING" });
+      await sleepFn(Math.min(60000, 5000 * 2 ** failures++ * (1 + Math.random() * 0.5))); continue;
+    }
+    failures = 0;
     const t = await res.json();
     if (t.status === "SUCCEEDED") return t;
-    if (t.status === "FAILED") { const e = new Error(`${t.failureCode || "FAILED"}: ${t.failure || "no reason given"}`); e.code = t.failureCode; e.cost = t.cost?.credits; throw e; }
-    if (t.status === "CANCELLED") throw new Error("runway task cancelled");
+    if (t.status === "FAILED") { const e = new Error(`${t.failureCode || "FAILED"}: ${t.failure || "no reason given"}`); e.code = t.failureCode; e.cost = t.cost?.credits; e.policy = failurePolicy(e.code); e.terminal = true; throw e; }
+    if (t.status === "CANCELLED") throw Object.assign(new Error("runway task cancelled"), { code: "CANCELLED", terminal: true });
     if (onProgress && t.status === "RUNNING" && t.progress != null) onProgress(t.progress);
   }
 }
 
-/** Text to image. Returns {id, estimatedCredits}. */
-export async function createImage({ prompt, ratio = "720:1280", model = "gen4_image", seed, fetchFn } = {}) {
-  const body = { model, promptText: String(prompt).slice(0, 1000), ratio, contentModeration: { publicFigureThreshold: "auto" } };
-  if (seed != null) body.seed = seed;
-  const r = await post("/v1/text_to_image", body, { fetchFn });
-  return { id: r.id, estimatedCredits: r.estimatedCost?.credits ?? null };
+/** Task failures need a different remedy from an unavailable waiter or a bad input. */
+export function failurePolicy(code = "") {
+  if (/SAFETY\.INPUT|INPUT_PREPROCESSING\.SAFETY|ASSET\.INVALID/.test(code)) return { retry: false, remedy: "revise-input" };
+  if (/SAFETY\.OUTPUT/.test(code)) return { retry: true, remedy: "soften", delayMs: 0 };
+  if (/THIRD_PARTY|INTERNAL/.test(code)) return { retry: true, remedy: "delay", delayMs: 10000 };
+  return { retry: false, remedy: "recover" };
 }
 
-/** Image to video. `image` is an https URL or a data URI. Returns {id, estimatedCredits}. */
-export async function createVideo({ image, prompt = "", ratio = "720:1280", duration = 5, model = "gen4_turbo", seed, fetchFn } = {}) {
-  const body = { model, promptImage: image, ratio, duration, contentModeration: { publicFigureThreshold: "auto" } };
-  if (prompt) body.promptText = String(prompt).slice(0, 1000);
-  if (seed != null) body.seed = seed;
-  const r = await post("/v1/image_to_video", body, { fetchFn });
-  return { id: r.id, estimatedCredits: r.estimatedCost?.credits ?? null };
+/** Drop only the optional finish, then refuse an oversized prompt before any paid call. */
+export function fitPrompt(prompt, { optionalStyle = "", warnFn = warn } = {}) {
+  let text = String(prompt);
+  if (text.length <= 1000) return text;
+  if (optionalStyle && text.endsWith(optionalStyle)) {
+    text = text.slice(0, -optionalStyle.length).trimEnd();
+    warnFn("runway: prompt exceeded 1,000 UTF-16 units; dropped the optional style sentence");
+  }
+  if (text.length > 1000) {
+    warnFn(`runway: prompt is ${text.length} UTF-16 units; shorten complete sentences before generation`);
+    throw new Error("Runway prompt exceeds 1,000 UTF-16 units");
+  }
+  return text;
+}
+
+/** Model capabilities and prices from the developer API schema; credits are per output. */
+export const MODELS = {
+  gen4_image: { kind: "image", credits: { "720p": 5, "1080p": 8 }, vertical: "720:1280", sizes: { "720p": "720:1280", "1080p": "1080:1920" }, fields: { seed: true, contentModeration: true, references: 3 } },
+  "nano_banana_2.1": { kind: "image", credits: { "1K": 4, "2K": 6 }, vertical: "768:1376", ratioAliases: { "720:1280": "768:1376" }, sizes: { "1K": "768:1376", "2K": "1536:2752" }, fields: { references: 14 } },
+  gen4_turbo: { kind: "video", credits: { perSecond: 5 }, duration: [2, 10], vertical: "720:1280", fields: { seed: true, contentModeration: true } },
+  "gen4.5": { kind: "video", credits: { perSecond: 12 }, duration: [2, 10], vertical: "720:1280", requiredPrompt: true, fields: { seed: true, contentModeration: true } },
+  "kling3.0_standard": { kind: "video", credits: { perSecond: 9, audioSurcharge: 4 }, duration: [3, 15], vertical: "720:1280", fields: { audio: true, lastFrame: true } },
+  grok_imagine_1_5_lite: { kind: "video", credits: { perSecond: 3, perStartFrame: 1 }, duration: [1, 15], vertical: "auto_720p", fields: {} },
+  "gemini_omni_flash_1.1": { kind: "video", credits: { perSecond: 10 }, duration: [3, 10], vertical: "720:1280", requiredPrompt: true, fields: { lastFrame: true } },
+  wan3: { kind: "video", credits: { perSecond: 10 }, duration: [2, 30], vertical: "auto_720p", requiredPrompt: true, fields: { audio: true, lastFrame: true } },
+  // Veo 3.1 takes only 4, 6 or 8 seconds; audio defaults to on, so it is always sent (off for b-roll).
+  "veo3.1": { kind: "video", credits: { perSecond: 20, audioSurcharge: 20 }, duration: [4, 8], durations: [4, 6, 8], vertical: "720:1280", fields: { seed: true, audio: true, lastFrame: true } },
+  "veo3.1_fast": { kind: "video", credits: { perSecond: 10, audioSurcharge: 5 }, duration: [4, 8], durations: [4, 6, 8], vertical: "720:1280", fields: { seed: true, audio: true, lastFrame: true } },
+  mirelo_sfx_2_0: { kind: "audio", credits: { perSecond: 2 }, duration: [1, 600], vertical: null, fields: { seed: true } },
+};
+
+export function modelInfo(model, kind) {
+  const info = Object.hasOwn(MODELS, model) ? MODELS[model] : null;
+  if (!info || (kind && info.kind !== kind)) throw new Error(`Unknown Runway ${kind || ""} model: ${model}`);
+  return info;
+}
+
+function imageResolution(info, { ratio, size } = {}) {
+  ratio = info.ratioAliases?.[ratio] || ratio || (size ? info.sizes[size] : info.vertical);
+  const matched = Object.keys(info.sizes).find((s) => info.sizes[s] === ratio);
+  if (!matched) throw new Error(`Unsupported Runway image size/ratio: ${size || ratio}`);
+  return { ratio, credits: info.credits[matched] };
+}
+
+function durationFor(info, duration) {
+  if (!Number.isFinite(duration) || duration < info.duration[0] || duration > info.duration[1] || (info.kind === "video" && !Number.isInteger(duration))) {
+    throw new Error(`Runway duration must be ${info.duration[0]}–${info.duration[1]} seconds${info.kind === "video" ? " (integer)" : ""}`);
+  }
+  if (info.durations && !info.durations.includes(duration)) throw new Error(`Runway duration must be one of ${info.durations.join(", ")} seconds`);
+  return duration;
+}
+
+function optionalFields(body, info, { seed } = {}) {
+  if (info.fields.seed && seed != null) {
+    if (!Number.isInteger(seed) || seed < 0 || seed > 4294967295) throw new Error("Runway seed must be an unsigned 32-bit integer");
+    body.seed = seed;
+  }
+  if (info.fields.contentModeration) body.contentModeration = { publicFigureThreshold: "auto" };
+  return body;
+}
+const created = (r) => ({ id: r.id, estimatedCredits: r.estimatedCost?.credits ?? null });
+
+/** Text to image, with only fields accepted by that model. */
+export async function createImage({ prompt, ratio, size, model = "gen4_image", seed, referenceImages, fetchFn } = {}) {
+  const info = modelInfo(model, "image");
+  ratio = imageResolution(info, { ratio, size }).ratio;
+  const body = optionalFields({ model, promptText: fitPrompt(prompt), ratio }, info, { seed });
+  if (referenceImages?.length) {
+    if (referenceImages.length > info.fields.references) throw new Error(`${model} accepts up to ${info.fields.references} reference images`);
+    body.referenceImages = referenceImages.map(({ uri, tag }) => ({ uri, ...(tag ? { tag } : {}) }));
+  }
+  return created(await post("/v1/text_to_image", body, { fetchFn }));
+}
+
+/** Image to video. Explicitly disable native sound unless requested. */
+export async function createVideo({ image, lastImage, prompt = "", duration = 5, model = "gen4_turbo", seed, audio = false, fetchFn } = {}) {
+  const info = modelInfo(model, "video");
+  const promptImage = lastImage && info.fields.lastFrame ? [{ uri: image, position: "first" }, { uri: lastImage, position: "last" }] : image;
+  const body = optionalFields({ model, promptImage, ratio: info.vertical, duration: durationFor(info, duration) }, info, { seed });
+  if (prompt || info.requiredPrompt) body.promptText = fitPrompt(prompt || "Locked camera.");
+  if (info.fields.audio) body.audio = !!audio;
+  return created(await post("/v1/image_to_video", body, { fetchFn }));
+}
+
+export async function createSound({ videoUri, promptText, negativePrompt = "music, speech, singing", preserveSpeech = false, duration, seed, format = "wav", numVariants = 1, model = "mirelo_sfx_2_0", fetchFn } = {}) {
+  const info = modelInfo(model, "audio");
+  if (videoUri?.startsWith("data:") && videoUri.length > 5 * 1024 * 1024) throw new Error("Runway sound video data URI exceeds 5 MB");
+  if (!["mp3", "wav", "flac"].includes(format) || !Number.isInteger(numVariants) || numVariants < 1 || numVariants > 4) throw new Error("Invalid Runway sound format or variant count");
+  const body = optionalFields({ model, videoUri, preserveSpeech, duration: durationFor(info, duration), format, numVariants }, info, { seed });
+  if (promptText) body.promptText = promptText;
+  if (negativePrompt) body.negativePrompt = negativePrompt;
+  return created(await post("/v1/video_to_audio", body, { fetchFn }));
 }
 
 export async function download(url, file, { fetchFn = fetch } = {}) {
-  const res = await fetchFn(url);
-  if (!res.ok) throw new Error(`download ${res.status}`);
-  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-  return file;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetchFn(url);
+      if (!res.ok) throw new Error(`download ${res.status}`);
+      fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+      return file;
+    } catch (e) { if (attempt) throw Object.assign(e, { code: "OUTPUT_UNAVAILABLE" }); }
+  }
 }
 
 /** The account: {creditBalance, tier, usage}. */
@@ -85,33 +182,120 @@ export async function usageByDay({ startDate, beforeDate, fetchFn } = {}) {
   return post("/v1/organization/usage", body, { fetchFn });
 }
 
-/** What a still plus a clip will cost, before asking for it. */
-export function estimateClip({ seconds = 5, imageModel = "gen4_image", imageRatio = "720:1280", videoModel = "gen4_turbo" } = {}) {
-  const image = imageModel === "gen4_image" ? (/1080/.test(imageRatio) ? 8 : 5) : 5;
-  const perSecond = { gen4_turbo: 5, "gen4.5": 12, "veo3.1_fast": 10, grok_imagine_1_5_lite: 3 }[videoModel] ?? 12;
-  const credits = image + perSecond * seconds;
-  return { image, video: perSecond * seconds, credits, dollars: r3(credits * CREDIT_USD) };
+/** Price the complete shot before buying any part of it. */
+export function estimateClip({ seconds = 5, imageModel = "gen4_image", imageRatio, imageSize, videoModel = "gen4_turbo", audio = false, lastFrame = false, sfxSeconds = 0 } = {}) {
+  const im = modelInfo(imageModel, "image"), vm = modelInfo(videoModel, "video");
+  const image = imageResolution(im, { ratio: imageRatio, size: imageSize }).credits;
+  durationFor(vm, seconds);
+  const video = (vm.credits.perSecond + (audio && vm.fields.audio ? vm.credits.audioSurcharge || 0 : 0)) * seconds + (vm.credits.perStartFrame || 0);
+  const endImage = lastFrame && vm.fields.lastFrame ? image : 0;
+  const sound = sfxSeconds ? durationFor(MODELS.mirelo_sfx_2_0, sfxSeconds) * MODELS.mirelo_sfx_2_0.credits.perSecond : 0;
+  const credits = r3(image + endImage + video + sound);
+  return { image, video, ...(endImage ? { endImage } : {}), ...(sound ? { sound } : {}), credits, dollars: r3(credits * CREDIT_USD) };
 }
 
-/** Animate a still we already have (as a data URI; no image is bought). Returns {mp4, items}. */
-export async function animateStill({ png, mp4, motion, seconds = 5, ratio = "720:1280", videoModel = "gen4_turbo", fps = 30, fetchFn, sleepFn } = {}) {
-  const items = [];
-  const data = `data:image/png;base64,${fs.readFileSync(png).toString("base64")}`;
-  const vid = await createVideo({ image: data, prompt: motion, ratio, duration: seconds, model: videoModel, fetchFn });
-  let task;
-  try {
-    task = await waitForTask(vid.id, { fetchFn, sleepFn });
-  } catch (e) {
-    items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: e.cost ?? vid.estimatedCredits ?? 0, dollars: r3((e.cost ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: false, error: e.message });
-    throw Object.assign(e, { items });
+/** Keep every charged task, including failed generations, attached to errors for the caller's ledger. */
+export async function generateTask({ kind, model, credits, seconds, request, requestKey, journal, beforeBuy, items = [], fetchFn, sleepFn, timeoutMs }) {
+  const requestHash = createHash("sha256").update(JSON.stringify({ kind, model, requestKey })).digest("hex");
+  let entry = journal?.tasks.find((t) => t.requestHash === requestHash);
+  const save = () => journal?.save();
+  if (!entry) {
+    if (beforeBuy) await beforeBuy();
+    entry = { requestHash, kind, model, estimatedCredits: credits, reservedCredits: credits, state: "submitting", scope: journal?.scope };
+    if (journal) { journal.tasks.push(entry); save(); }
+    try {
+      const started = await request();
+      if (!started.id) throw new Error("Runway returned no task id");
+      Object.assign(entry, { taskId: started.id, estimatedCredits: started.estimatedCredits ?? credits, state: "submitted" });
+      save();
+    } catch (e) {
+      // A transport timeout may have bought a task. Never resubmit an unknown purchase.
+      Object.assign(entry, { state: e.status ? "failed" : "unknown", error: e.message, code: e.status ? e.code || "INVALID_REQUEST" : "UNKNOWN_SUBMISSION", credits: e.status ? 0 : credits });
+      save();
+      throw Object.assign(e, { code: entry.code, kind, items });
+    }
   }
-  items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: task.cost?.credits ?? vid.estimatedCredits ?? 0, dollars: r3((task.cost?.credits ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: true });
-  await download(task.output[0], mp4, { fetchFn });
-  await conformClip(mp4, { fps });
-  return { mp4, items };
+  if (!entry.taskId) throw Object.assign(new Error(entry.error || "submission needs reconciliation"), { code: entry.code || "UNKNOWN_SUBMISSION", items });
+  const account = (ok) => {
+    const cost = entry.credits ?? entry.estimatedCredits;
+    const item = { taskId: entry.taskId, service: "runway", model, kind, ...(seconds != null ? { seconds } : {}), credits: cost, dollars: r3(cost * CREDIT_USD), ok, ...(entry.error ? { error: entry.error } : {}) };
+    const at = items.findIndex((i) => i.taskId === entry.taskId);
+    if (at < 0) items.push(item); else items[at] = item;
+  };
+  if (entry.state === "failed") {
+    account(false);
+    throw Object.assign(new Error(entry.error), { code: entry.code, policy: failurePolicy(entry.code), kind, items });
+  }
+  try {
+    const task = entry.state === "succeeded" ? entry.result : await waitForTask(entry.taskId, { fetchFn, sleepFn, timeoutMs });
+    Object.assign(entry, { state: "succeeded", credits: task.cost?.credits ?? entry.estimatedCredits, result: task });
+    save();
+    account(true);
+    if (!Array.isArray(task.output) || !task.output.length || !task.output.every((u) => typeof u === "string" && /^https?:\/\//.test(u))) {
+      throw Object.assign(new Error("Runway task has no valid output URL"), { code: "OUTPUT_UNAVAILABLE" });
+    }
+    return task;
+  } catch (e) {
+    if (entry.state !== "succeeded") {
+      Object.assign(entry, { state: e.terminal ? "failed" : "pending", error: e.message, code: e.code || "TASK_PENDING", credits: e.cost ?? entry.estimatedCredits });
+      save();
+    }
+    account(false);
+    throw Object.assign(e, { code: e.terminal ? e.code : entry.state === "succeeded" ? e.code : "TASK_PENDING", kind, items, taskId: entry.taskId });
+  }
 }
 
-/** Make one clip: still, then video from it. Downloads both; returns {png, mp4, items:[usage lines]}. */
+export const dataURI = (file, mime) => `data:${mime};base64,${fs.readFileSync(file).toString("base64")}`;
+
+/** Every video model receives the same portrait JPEG, including stills from a different aspect ratio. */
+export async function conformStill(file, { runFn = run } = {}) {
+  const jpg = file.replace(/\.[^.]+$/, ".input.jpg");
+  for (const quality of [2, 5, 10, 18, 26, 31]) {
+    await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-frames:v", "1", "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280", "-q:v", String(quality), jpg], { quiet: true });
+    if (fs.statSync(jpg).size < 2 * 1000 * 1000) return jpg;
+  }
+  throw new Error("Runway still JPEG exceeds 2 MB");
+}
+
+export async function makeStill({ prompt, file, imageModel = "gen4_image", imageRatio, seed, referenceImages, items = [], fetchFn, sleepFn, runFn, journal, beforeBuy, kind = "image" } = {}) {
+  const info = modelInfo(imageModel, "image");
+  const resolution = imageResolution(info, { ratio: imageRatio });
+  try {
+    const task = await generateTask({ kind: "image", model: imageModel, credits: resolution.credits, journal, beforeBuy: beforeBuy ? () => beforeBuy(kind, items) : undefined, requestKey: { file, prompt, seed, imageRatio, referenceImages }, request: () => createImage({ prompt, model: imageModel, ratio: imageRatio, seed, referenceImages, fetchFn }), items, fetchFn, sleepFn });
+    await download(task.output[0], file, { fetchFn });
+    return { png: file, jpg: await conformStill(file, { runFn }), items };
+  } catch (e) { throw Object.assign(e, { code: e.code || "LOCAL_PROCESS", items }); }
+}
+
+/** Animate an approved still, reusing its seed and optional approved end frame. */
+export async function animateStill({ png, last, mp4, motion, seconds = 5, videoModel = "gen4_turbo", seed, audio = false, fps = 30, fetchFn, sleepFn, runFn, beforeBuy, items = [], journal } = {}) {
+  const estimate = estimateClip({ seconds, videoModel, audio }).video;
+  try {
+    const jpg = await conformStill(png, { runFn });
+    const end = last ? await conformStill(last, { runFn }) : null;
+    const task = await generateTask({ kind: "video", model: videoModel, seconds, credits: estimate, journal, beforeBuy: beforeBuy ? () => beforeBuy("video", items) : undefined, requestKey: { mp4, image: dataURI(jpg, "image/jpeg"), last: end ? dataURI(end, "image/jpeg") : null, motion, seconds, seed, audio }, request: () => createVideo({ image: dataURI(jpg, "image/jpeg"), lastImage: end ? dataURI(end, "image/jpeg") : undefined, prompt: motion, duration: seconds, model: videoModel, seed, audio, fetchFn }), items, fetchFn, sleepFn });
+    await download(task.output[0], mp4, { fetchFn });
+    const original = mp4.replace(/\.mp4$/i, ".original.mp4");
+    fs.copyFileSync(mp4, original);
+    await conformClip(mp4, { fps, runFn });
+    return { mp4, original, items, last };
+  } catch (e) { throw Object.assign(e, { code: e.code || "LOCAL_PROCESS", items, png, last }); }
+}
+
+/** Small local proxy keeps even high-bitrate trimmed clips within Mirelo's 5 MB data URI limit. */
+export async function makeSound({ file, out, sound, seconds, seed, fetchFn, sleepFn, runFn = run, beforeBuy, journal } = {}) {
+  const items = [], proxy = file.replace(/\.mp4$/, ".sound.mp4");
+  try {
+    await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-t", String(seconds), "-an", "-vf", "scale=360:640", "-c:v", "libx264", "-b:v", "400k", "-maxrate", "500k", "-bufsize", "1000k", "-movflags", "+faststart", proxy], { quiet: true });
+    const videoUri = dataURI(proxy, "video/mp4");
+    if (videoUri.length > 5 * 1024 * 1024) throw new Error("Runway sound video data URI exceeds 5 MB");
+    const task = await generateTask({ kind: "audio", model: "mirelo_sfx_2_0", seconds, journal, beforeBuy: beforeBuy ? () => beforeBuy("sound", items) : undefined, requestKey: { out, videoUri, sound, seconds, seed }, credits: seconds * MODELS.mirelo_sfx_2_0.credits.perSecond, request: () => createSound({ videoUri, promptText: sound, duration: seconds, seed, format: "wav", fetchFn }), items, fetchFn, sleepFn });
+    await download(task.output[0], out, { fetchFn });
+    return { sfx: out, items };
+  } catch (e) { throw Object.assign(e, { items }); }
+  finally { fs.rmSync(proxy, { force: true }); }
+}
+
 /** Runway clips come at 24 fps with a keyframe every 5 s, which makes the renderer's seeks freeze; conform to 30 fps, a keyframe a second. */
 export async function conformClip(file, { fps = 30, runFn = run } = {}) {
   const tmp = file.replace(/\.mp4$/, ".conform.mp4");
@@ -120,30 +304,24 @@ export async function conformClip(file, { fps = 30, runFn = run } = {}) {
   return file;
 }
 
-export async function makeClip({ scene, motion, dir, name, seconds = 5, ratio = "720:1280", imageRatio = "720:1280", imageModel = "gen4_image", videoModel = "gen4_turbo", fps = 30, fetchFn, sleepFn } = {}) {
-  const items = [];
-  const png = `${dir}/${name}.png`, mp4 = `${dir}/${name}.mp4`;
-  const img = await createImage({ prompt: scene, ratio: imageRatio, model: imageModel, fetchFn });
-  let task;
+export async function makeClip({ scene, endScene, motion, dir, name, seconds = 5, imageRatio, imageModel = "gen4_image", videoModel = "gen4_turbo", seed, audio = false, fps = 30, fetchFn, sleepFn, runFn, check, beforeBuy, journal, referenceImages } = {}) {
+  estimateClip({ seconds, imageModel, imageRatio, videoModel, audio, lastFrame: !!endScene });
+  const items = [], png = `${dir}/${name}.png`, mp4 = `${dir}/${name}.mp4`;
+  let last;
   try {
-    task = await waitForTask(img.id, { fetchFn, sleepFn });
-  } catch (e) {
-    items.push({ service: "runway", model: imageModel, kind: "image", credits: e.cost ?? img.estimatedCredits ?? 0, dollars: r3((e.cost ?? img.estimatedCredits ?? 0) * CREDIT_USD), ok: false, error: e.message });
-    throw Object.assign(e, { items });
-  }
-  items.push({ service: "runway", model: imageModel, kind: "image", credits: task.cost?.credits ?? img.estimatedCredits ?? 0, dollars: r3((task.cost?.credits ?? img.estimatedCredits ?? 0) * CREDIT_USD), ok: true });
-  await download(task.output[0], png, { fetchFn });
-  const vid = await createVideo({ image: task.output[0], prompt: motion, ratio, duration: seconds, model: videoModel, fetchFn });
-  let vtask;
-  try {
-    vtask = await waitForTask(vid.id, { fetchFn, sleepFn });
-  } catch (e) {
-    items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: e.cost ?? vid.estimatedCredits ?? 0, dollars: r3((e.cost ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: false, error: e.message });
-    throw Object.assign(e, { items, png });
-  }
-  items.push({ service: "runway", model: videoModel, kind: "video", seconds, credits: vtask.cost?.credits ?? vid.estimatedCredits ?? 0, dollars: r3((vtask.cost?.credits ?? vid.estimatedCredits ?? 0) * CREDIT_USD), ok: true });
-  await download(vtask.output[0], mp4, { fetchFn });
-  await conformClip(mp4, { fps });
-  log(`runway: ${name} ready (${items.reduce((s, i) => s + i.credits, 0)} credits)`);
-  return { png, mp4, items };
+    const first = await makeStill({ prompt: scene, file: png, imageModel, imageRatio, seed, referenceImages, items, fetchFn, sleepFn, runFn, journal, beforeBuy });
+    const result = check ? await check(first.jpg) : null;
+    if (result?.ok === false) throw Object.assign(new Error(result.why || "still check failed"), { code: result.unavailable ? "CHECK_UNAVAILABLE" : "CHECK" });
+    if (endScene && modelInfo(videoModel, "video").fields.lastFrame) {
+      try {
+        const end = await makeStill({ prompt: fitPrompt(`The same subject and setting as @firstframe. ${endScene}`), file: `${dir}/${name}.end.png`, imageModel, imageRatio, seed, referenceImages: [{ uri: dataURI(first.jpg, "image/jpeg"), tag: "firstframe" }], items, fetchFn, sleepFn, runFn, journal, beforeBuy, kind: "endImage" });
+        const checked = check ? await check(end.jpg, { end: true, first: first.jpg }) : null;
+        if (checked?.ok !== false) last = end.png;
+        else warn(`runway: end still rejected (${checked.why}); using first frame only`);
+      } catch (e) { warn(`runway: end still unavailable (${e.message}); using first frame only`); }
+    }
+    const animated = await animateStill({ png, last, mp4, motion, seconds, videoModel, seed, audio, fps, fetchFn, sleepFn, runFn, beforeBuy, items, journal });
+    log(`runway: ${name} ready (${items.reduce((s, i) => s + i.credits, 0)} credits)`);
+    return { png, mp4, original: animated.original, last, items };
+  } catch (e) { throw Object.assign(e, { code: e.code || "LOCAL_PROCESS", items, png, last }); }
 }

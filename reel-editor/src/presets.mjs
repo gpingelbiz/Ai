@@ -12,6 +12,16 @@ export function listPresets() {
     .map((f) => f.replace(/\.json$/, ""));
 }
 
+/**
+ * Client brand presets (`brand-<slug>`, written by brandkit) are built on pingel-brand. Greg's own captions and
+ * punch-in spacing changed on 2026-11-02 (bigger caps, gold, markers, a punch-in about every 6 s); a client keeps
+ * the October 30 captions and the old spacing unless its own preset says otherwise, including presets written
+ * before this change. Chin clearance still inherits the current placement fix.
+ */
+export const CLIENT_CAPTIONS = { uppercase: false, fontSizeFrac: 0.0355, animation: "cut", autoKeywords: false, annotate: false, dimFuture: false, keywordColorOnFootage: false, maxKeywordsPerLine: 1 };
+export const CLIENT_BASE = { captions: CLIENT_CAPTIONS, zooms: { minSpacing: 10, maxPer30: 3 } };
+export const isClientBrand = (own = {}) => own.extends === "pingel-brand" && /^brand-/.test(String(own.name || ""));
+
 /** Default preset: REEL_PRESET (a name in presets/ or a path to a .json, set by install.sh), else pingel-brand. */
 export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand") {
   const file = fs.existsSync(nameOrPath) && nameOrPath.endsWith(".json") ? nameOrPath : path.join(PRESET_DIR, `${nameOrPath}.json`);
@@ -19,7 +29,8 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
   const base = readJSON(path.join(PRESET_DIR, "_defaults.json"));
   const own = readJSON(file);
   // "extends": another preset's settings underneath this one's (pingel-runway builds on pingel-brand).
-  const parent = own.extends ? deepMerge(base, readJSON(path.join(PRESET_DIR, `${own.extends}.json`))) : base;
+  let parent = own.extends ? deepMerge(base, readJSON(path.join(PRESET_DIR, `${own.extends}.json`))) : base;
+  if (isClientBrand(own)) parent = deepMerge(parent, CLIENT_BASE);
   const p = deepMerge(parent, own);
   delete p.extends;
   if (!p.name) p.name = path.basename(file, ".json");

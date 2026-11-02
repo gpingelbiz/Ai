@@ -21,8 +21,22 @@ export function recordUsage({ reel = "", items = [], balance = null, file = usag
   const u = readUsage(file);
   const m = (u.months[month(at)] ||= { credits: 0, dollars: 0, generations: 0, failed: 0, reels: {}, lines: [] });
   for (const it of items) {
+    // A resumed task settles its existing ledger line, including a later refund.
+    const priorMonth = it.taskId && Object.values(u.months).find((entry) => entry.lines.some((line) => line.taskId === it.taskId));
+    if (priorMonth) {
+      const old = priorMonth.lines.find((line) => line.taskId === it.taskId);
+      const credits = Number(it.credits) || 0, dollars = Number(it.dollars) || 0;
+      const deltaCredits = credits - old.credits, deltaDollars = dollars - old.dollars;
+      const deltaOk = Number(it.ok !== false) - Number(old.ok !== false);
+      priorMonth.credits += deltaCredits; priorMonth.dollars = Math.round((priorMonth.dollars + deltaDollars) * 1000) / 1000;
+      priorMonth.generations += deltaOk; priorMonth.failed -= deltaOk;
+      const priorReel = priorMonth.reels[old.reel || "(none)"];
+      priorReel.credits += deltaCredits; priorReel.dollars += deltaDollars; priorReel.generations += deltaOk;
+      Object.assign(old, { credits, dollars, ok: it.ok !== false });
+      continue;
+    }
     const credits = Number(it.credits) || 0, dollars = Number(it.dollars) || 0;
-    m.lines.push({ t: at.toISOString(), reel, service: it.service || "runway", model: it.model || "", kind: it.kind || "", seconds: it.seconds ?? null, credits, dollars, ok: it.ok !== false });
+    m.lines.push({ ...(it.taskId ? { taskId: it.taskId } : {}), t: at.toISOString(), reel, service: it.service || "runway", model: it.model || "", kind: it.kind || "", seconds: it.seconds ?? null, credits, dollars, ok: it.ok !== false });
     // A failed generation is still charged when the service reports a cost (Runway charges moderated tasks).
     m.credits += credits; m.dollars += dollars;
     if (it.ok !== false) m.generations += 1; else m.failed += 1;

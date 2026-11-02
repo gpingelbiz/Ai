@@ -19,7 +19,7 @@ import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs
 import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
-import { soundCues, describeCues } from "./sounds.mjs";
+import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
 import { runTextcheck } from "./textcheck.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
@@ -546,7 +546,7 @@ export async function runEdit(input, opts = {}) {
   const sharedBrollLayout = ["window", "split", "mix", "full-split"].includes(preset.broll?.layout);
   const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...transientCards, ...evidence] : evidence, tail };
   let broll = preset.broll?.enabled && shownGroups.length
-    ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
+    ? (preset.broll.engine === "runway" ? await makeRunwayBroll({ ...brollArgs, footage: videoSrc, caption: { top: preset.captions.position - 0.6 * preset.captions.fontSizeFrac, height: 0.18, fontSizeFrac: preset.captions.fontSizeFrac, uppercase: preset.captions.uppercase }, voice: readVoice({ style: preset }) }) : await makeBroll(brollArgs))
     : [];
   // "full-split": one cutaway with clear time after it is held longer, to become a split once the face is known.
   if (preset.broll?.layout === "full-split" && broll.length) broll = holdForSplit(broll, { duration, cta, busy: brollArgs.busy, tail, gap: preset.broll.gap ?? 4, hold: preset.broll.hold ?? 5, clipSeconds: preset.broll.videoSeconds ?? 5 });
@@ -849,7 +849,7 @@ function readVoice(plan) {
 
 async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], envelope = null, segments = [], transcript = "", cues = null }) {
   const assets = ensureDir(path.join(projectDir, "assets"));
-  const audio = { tracks: [], replaceAudio: !!opts.replaceAudio };
+  const audio = { tracks: brollSoundTracks(cues?.broll || [], assets, { volume: preset.broll?.sfxVolume ?? 0.35 }), replaceAudio: !!opts.replaceAudio };
 
   // The bed: a file (--music), or a pick from the music folder (--music-dir) by the mood of what is said.
   let src = preset.audio.music ? path.resolve(preset.audio.music) : null;

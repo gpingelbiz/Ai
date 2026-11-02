@@ -1,15 +1,30 @@
 {
   "name": "pingel-runway",
   "extends": "pingel-brand",
+  "looks": {
+    "lockBrollGrade": true
+  },
   "broll": {
     "enabled": true,
     "engine": "runway",
-    "duration": 4,
-    "gap": 6,
-    "max": 3,
+    "duration": 2.5,
+    "gap": 3,
+    "max": 5,
     "maxWithGraphics": 2,
-    "every": 12,
-    "videoSeconds": 5,
-    "maxCreditsPerReel": 150
+    "every": 10,
+    "videoSeconds": 3,
+    "maxCreditsPerReel": 300,
+    "hardCreditsPerReel": 450,
+    "retrySameModelFirst": true,
+    "rapidLists": true,
+    "grade": false,
+    "retryVideoModel": "kling3.0_standard",
+    "focusPull": 0,
+    "imageModel": "nano_banana_2.1",
+    "videoModel": "gen4.5",
+    "actionVideoModel": "gen4.5",
+    "lastFrame": false,
+    "sfx": true,
+    "sfxUnderSpeechDb": 12
   }
 }

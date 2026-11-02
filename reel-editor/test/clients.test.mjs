@@ -22,7 +22,9 @@ test("client paths: a root of its own under the clients folder, finished reels i
 test("client.env sets every setting that has a Greg default, so ~/.zshrc can never fill one in", () => {
   const p = clientPaths(brand, { REEL_CLIENTS: "/x/clients", REEL_CLIENTS_DESKTOP: "/d/Clients" });
   const env = clientEnv({ ...brand, name: "Jane O'Doe" }, p);
-  for (const k of ["REEL_PRESET", "REEL_YOUTUBE_PRESET", "REEL_DICTIONARY", "REEL_CAPTION_VOICE", "REEL_CACHE", "REEL_WATCH_ROOT", "REEL_WATCH_DONE", "REEL_WATCH_MUSIC", "REEL_WATCH_CTA"]) assert.match(env, new RegExp(`^${k}=`, "m"), k);
+  for (const k of ["REEL_PRESET", "REEL_BROLL_ENGINE", "REEL_YOUTUBE_PRESET", "REEL_DICTIONARY", "REEL_CAPTION_VOICE", "REEL_CACHE", "REEL_WATCH_ROOT", "REEL_WATCH_DONE", "REEL_WATCH_MUSIC", "REEL_WATCH_CTA"]) assert.match(env, new RegExp(`^${k}=`, "m"), k);
+  assert.match(env, /^REEL_BROLL_ENGINE='codex'$/m, "clients default explicitly to Codex");
+  assert.match(clientEnv({ ...brand, brollEngine: "runway" }, p), /^REEL_BROLL_ENGINE='runway'$/m);
   assert.match(env, /^REEL_WATCH_CTA=''$/m, "no CTA unless the brand file names one");
   assert.match(env, /^REEL_CAPTION_WATCHLIST='0'$/m);
   const r = spawnSync("/bin/bash", ["-c", `set -a; . /dev/stdin; set +a; printf '%s|%s|[%s]' "$REEL_CLIENT" "$REEL_WATCH_DONE" "$REEL_WATCH_CTA"`], { input: env, encoding: "utf8" });
@@ -58,15 +60,15 @@ test("the watcher edits Greg's drops as Greg and a client's drops with the clien
   const bin = path.join(T, "bin"); fs.mkdirSync(bin);
   fs.copyFileSync(new URL("../scripts/watch-folder.sh", import.meta.url), path.join(bin, "watch-folder.sh"));
   // A stand-in job: records what it was run with.
-  fs.writeFileSync(path.join(bin, "watch-reel.sh"), `#!/bin/bash\nprintf '%s|%s|%s|%s|%s\\n' "$(basename "$1")" "$2" "\${REEL_CLIENT:-greg}" "\${REEL_PRESET:-default}" "\${REEL_WATCH_DONE:-none}" >> "${T}/jobs.txt"\n`);
+  fs.writeFileSync(path.join(bin, "watch-reel.sh"), `#!/bin/bash\nprintf '%s|%s|%s|%s|%s|%s\\n' "$(basename "$1")" "$2" "\${REEL_CLIENT:-greg}" "\${REEL_PRESET:-default}" "\${REEL_WATCH_DONE:-none}" "\${REEL_BROLL_ENGINE:-unset}" >> "${T}/jobs.txt"\n`);
   fs.chmodSync(path.join(bin, "watch-reel.sh"), 0o755);
   const greg = path.join(T, "greg");
   const env = { ...process.env, REEL_WATCH_ROOT: greg, REEL_CLIENTS: path.join(T, "clients"), REEL_WATCH_DONE: "/greg/Desktop/Reels" };
-  delete env.REEL_PRESET; delete env.REEL_CLIENT;
+  delete env.REEL_PRESET; delete env.REEL_CLIENT; delete env.REEL_BROLL_ENGINE;
   for (const [dir] of DROP_FOLDERS) env[{ raw: "REEL_WATCH_RAW", "raw-broll": "REEL_WATCH_RAW_BROLL", "raw-carousel": "REEL_WATCH_RAW_CAROUSEL", "raw-long": "REEL_WATCH_RAW_LONG", "raw-youtube": "REEL_WATCH_RAW_YOUTUBE", "raw-runway": "REEL_WATCH_RAW_RUNWAY" }[dir]] = path.join(greg, dir);
   const p = clientPaths(brand, { REEL_CLIENTS: env.REEL_CLIENTS, REEL_CLIENTS_DESKTOP: path.join(T, "Desktop") });
   for (const d of p.drops) fs.mkdirSync(d.dir, { recursive: true });
-  fs.writeFileSync(p.env, clientEnv(brand, p));
+  fs.writeFileSync(p.env, clientEnv({ ...brand, brollEngine: "runway" }, p));
   fs.mkdirSync(path.join(greg, "raw"), { recursive: true });
   fs.writeFileSync(path.join(greg, "raw", "mine.mov"), "x");
   fs.writeFileSync(path.join(p.root, "raw-broll", "hers.mov"), "x");
@@ -74,8 +76,8 @@ test("the watcher edits Greg's drops as Greg and a client's drops with the clien
   assert.equal(run().status, 0);
   const jobs = fs.readFileSync(path.join(T, "jobs.txt"), "utf8").trim().split("\n").sort();
   assert.deepEqual(jobs, [
-    `hers.mov|broll|Jane Doe|${p.preset}|${p.desktop}`,
-    "mine.mov|reel|greg|default|/greg/Desktop/Reels",
+    `hers.mov|broll|Jane Doe|${p.preset}|${p.desktop}|runway`,
+    "mine.mov|reel|greg|default|/greg/Desktop/Reels|unset",
   ]);
   assert.ok(fs.readdirSync(path.join(p.root, "videos", ".seen")).some((f) => f.startsWith("broll-hers.mov@") && f.endsWith(".done")));
   assert.ok(!fs.readdirSync(path.join(greg, "videos", ".seen")).some((f) => f.includes("hers")), "a client's marker never lands in Greg's");
@@ -84,13 +86,14 @@ test("the watcher edits Greg's drops as Greg and a client's drops with the clien
   fs.rmSync(T, { recursive: true, force: true });
 });
 
-test("client b-roll comes from the client's world, with a scene history of its own; Greg's prompt is unchanged", async () => {
+test("client b-roll uses its own world for life and work, preserves named images and keeps its own scene history", async () => {
   const { picksPrompt, recentFile } = await import("../src/broll.mjs");
   const base = { candidates: [{ i: 1, start: 1, text: "x" }], transcript: "x", hook: "", count: 1 };
   const greg = picksPrompt(base);
-  assert.match(greg, /truck tailgate/);
+  assert.match(greg, /The picture is what the words say/);
   const jane = picksPrompt({ ...base, world: "a Tesla interior in Scottsdale" });
   assert.match(jane, /speaker's world .*a Tesla interior in Scottsdale/);
+  assert.match(jane, /only for lines about their own life and work; never use it to replace an image they name/);
   assert.doesNotMatch(jane, /truck tailgate|job-site step|Bible open/);
   assert.equal(brandPreset({ ...brand, world: "w" }).broll.worldInPrompt, true);
   assert.equal(recentFile({ REEL_CACHE: "/c/jane" }), "/c/jane/broll-recent.json");
@@ -99,7 +102,7 @@ test("client b-roll comes from the client's world, with a scene history of its o
 
 test("client add: a new client gets your folders, a Content Studio with Publish, and a music folder pointing to Epidemic Sound, never Greg's tracks", () => {
   const T = fs.mkdtempSync(path.join(os.tmpdir(), "reel-client-add-"));
-  const env = { ...process.env, REEL_CLIENTS: path.join(T, "clients"), REEL_CLIENTS_DESKTOP: path.join(T, "Desktop") };
+  const env = { ...process.env, REEL_CLIENTS: path.join(T, "clients"), REEL_CLIENTS_DESKTOP: path.join(T, "Desktop"), REEL_CACHE: path.join(T, "cache"), REEL_BROLL_RECENT: path.join(T, "recent.json") };
   const file = path.join(T, "brand.json");
   fs.writeFileSync(file, JSON.stringify(brand));
   const guide = path.join(T, "guide.md");
@@ -125,6 +128,15 @@ test("client add: a new client gets your folders, a Content Studio with Publish,
   assert.equal(add().status, 0);
   assert.equal(JSON.parse(fs.readFileSync(path.join(p.studio, "studio.json"), "utf8")).publish.mode, "draft");
   assert.ok(fs.existsSync(path.join(p.music, "Lofi - Mine - Jane.mp3")));
+  fs.writeFileSync(file, JSON.stringify({ ...brand, brollEngine: "runway", captionKeywords: "auto", look: { captions: "serif" } }));
+  const updated = add();
+  assert.equal(updated.status, 0, updated.stderr);
+  const preset = JSON.parse(fs.readFileSync(p.preset, "utf8"));
+  assert.equal(preset.broll.engine, "runway");
+  assert.equal(preset.looks.lockBrollGrade, true);
+  assert.equal(preset.captions.autoKeywords, true);
+  assert.equal(preset.captions.serif, true);
+  assert.match(fs.readFileSync(p.env, "utf8"), /^REEL_BROLL_ENGINE='runway'$/m);
   fs.rmSync(T, { recursive: true, force: true });
 });
 

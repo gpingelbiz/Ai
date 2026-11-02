@@ -4,7 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { checkBrand, brandPreset, CALM } from "../src/brandkit.mjs";
-import { loadPreset, mergeOverrides, runwayTiming } from "../src/presets.mjs";
+import { loadPreset, mergeOverrides, runwayTiming, CLIENT_CAPTIONS } from "../src/presets.mjs";
+import { upgradeBrandV1 } from "../src/brandtokens.mjs";
+import { markKeywords } from "../src/captions.mjs";
+import { placeCaptions } from "../src/placement.mjs";
 import { hookSeconds } from "../src/hook.mjs";
 import { renderHTML } from "../src/compose.mjs";
 import { skinFonts } from "../src/looks.mjs";
@@ -22,12 +25,19 @@ function load(brand, { font = true } = {}) {
 }
 
 const GREG = {
-  "captions.uppercase": false, "captions.fontSizeFrac": 0.0355, "captions.autoKeywords": false, "captions.keywordColorOnFootage": false,
+  "captions.uppercase": true, "captions.fontSizeFrac": 0.04, "captions.autoKeywords": true, "captions.keywordColorOnFootage": undefined,
+  "captions.animation": "pop", "captions.style": "reveal", "captions.annotate": true, "captions.dimFuture": undefined,
+  "captions.maxKeywordsPerLine": 1, "captions.placeMin": 0.58, "captions.placeMax": 0.79, "captions.minShow": 0.35, "captions.wordsPerLine": 3,
   "hook.uppercase": undefined, "hook.duration": 3, "hook.fontSizeFrac": 0.041, "hook.behind": false, "hook.plaque": true,
-  "zooms.minSpacing": undefined, "zooms.maxPer30": undefined,
+  "zooms.minSpacing": 6, "zooms.maxPer30": 4,
   "looks.lockHook": true, "looks.lockCaptions": true, "cover.style": "archetypes", "finish.enabled": true,
   // Off since 2026-10-29: the opening still put b-roll behind Greg, which no top reel in the b-roll study did.
   "coldOpen.enabled": false,
+};
+const CLIENT = {
+  ...GREG, "captions.uppercase": false, "captions.fontSizeFrac": 0.0355, "captions.autoKeywords": false, "captions.keywordColorOnFootage": false,
+  "captions.animation": "cut", "captions.annotate": false, "captions.dimFuture": false,
+  "zooms.minSpacing": 10, "zooms.maxPer30": 3,
 };
 const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
 
@@ -35,24 +45,36 @@ const at = (o, k) => k.split(".").reduce((v, part) => v?.[part], o);
 const ONE_TAKE = { "cuts.silence": "medium", "zooms.cadence.enabled": false, "graphics.clearStart": 5, "graphics.max": 3, "broll.clearStart": 5, "broll.max": 2 };
 const CLIENT_FAST = { "cuts.silence": "fast", "zooms.cadence.enabled": true, "graphics.clearStart": 0, "graphics.max": 6, "broll.clearStart": 0, "broll.max": 3 };
 
-test("Greg's preset keeps today's case and hook time, with the one-take pacing", () => {
-  // Greg 2026-10-30: pingel-v2 text direction is his default
+test("Greg's preset restores big gold captions and punch-ins, with the one-take pacing", () => {
   const g = loadPreset("pingel-brand");
   for (const [k, v] of Object.entries({ ...GREG, ...ONE_TAKE })) assert.equal(at(g, k), v, k);
   assert.doesNotMatch(g.broll.world, /wife/i, "never his wife, not even in a b-roll brief");
   assert.equal(ownDisplay(g), false, "pingel-brand has no display font: Anton and DM Serif stay");
 });
 
-test("a brand file without the new fields inherits Greg's new defaults and keeps its legacy behind hook", () => {
-  // Greg 2026-10-30: pingel-v2 text direction is his default
+test("a brand file without caption overrides keeps the quieter client captions and legacy behind hook", () => {
   const { p, dir } = load(julee);
   try {
-    for (const [k, v] of Object.entries({ ...GREG, ...CLIENT_FAST, "hook.behind": true })) assert.equal(at(p, k), v, k);
+    for (const [k, v] of Object.entries({ ...CLIENT, ...CLIENT_FAST, "hook.behind": true })) assert.equal(at(p, k), v, k);
     const raw = brandPreset(julee);
     assert.ok(!("coldOpen" in raw), "coldOpen not written");
     assert.deepEqual(raw.cuts, { silence: "fast" }, "client brands write the fast pacing instead of inheriting Greg's one-take look");
-    assert.ok(!("uppercase" in raw.captions) && !("uppercase" in raw.hook) && !("duration" in raw.hook));
+    assert.equal(raw.captions.uppercase, false, "client caption case is written explicitly");
+    assert.ok(!("uppercase" in raw.hook) && !("duration" in raw.hook));
     assert.equal(raw.hook.behind, true, "generic brands still request their legacy behind hook");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a client built from the kit template keeps its caption defaults and explicit case and marker choices", () => {
+  const template = JSON.parse(fs.readFileSync(new URL("../kit/brand-template.json", import.meta.url), "utf8"));
+  const { p, dir } = load(template);
+  try {
+    for (const [k, v] of Object.entries({ ...CLIENT, ...CLIENT_FAST, "captions.uppercase": true, "captions.annotate": true, "hook.behind": true, "hook.uppercase": true })) assert.equal(at(p, k), v, k);
+    const greg = loadPreset("pingel-brand");
+    assert.equal(p.captions.fontSizeFrac, 0.0355);
+    assert.equal(greg.captions.fontSizeFrac, 0.04);
+    assert.equal(p.captions.autoKeywords, false);
+    assert.equal(greg.captions.autoKeywords, true);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -101,6 +123,72 @@ test("brand.json: bad values are named in plain words", () => {
   for (const re of [/look.hookCase/, /look.captionCase/, /look.hookSeconds/, /look.pace/]) assert.ok(bad.some((m) => re.test(m)), String(re));
 });
 
+test("brand.json: b-roll defaults to Codex; Runway copies the current clip rules under the client's style", () => {
+  const rules = JSON.parse(fs.readFileSync(new URL("../presets/pingel-runway.json", import.meta.url), "utf8")).broll;
+  const brand = { ...julee, world: "Her car.", brollStyle: "Warm daylight.", looks: { lockHook: false, lockCaptions: true } };
+  const codex = brandPreset(brand);
+  assert.equal(codex.broll.engine, "codex");
+  assert.deepEqual(codex, brandPreset({ ...brand, brollEngine: "codex" }));
+  assert.deepEqual(codex.broll, { engine: "codex", world: "Her car.", worldInPrompt: true, style: "Warm daylight.", max: 3, every: 12, clearStart: 0 });
+  assert.equal(codex.looks.lockBrollGrade, undefined);
+  for (const input of [brand, upgradeBrandV1(brand)]) {
+    const built = brandPreset({ ...input, brollEngine: "runway" });
+    assert.deepEqual(built.broll, { ...rules, engine: "runway", world: "Her car.", worldInPrompt: true, style: "Warm daylight." });
+    assert.deepEqual(built.looks, { lockHook: false, lockCaptions: true, lockBrollGrade: true });
+    built.broll.max = 99;
+    assert.deepEqual(brandPreset({ ...input, brollEngine: "runway" }).broll.max, rules.max, "each build reads fresh rules");
+  }
+  const { p, dir } = load({ ...julee, brollEngine: "runway" });
+  try {
+    assert.equal(p.looks.lockBrollGrade, true);
+    assert.equal(p.looks.lockHook, true, "no brand hook choice: keep the inherited lock");
+    assert.equal(p.looks.lockCaptions, true, "no brand caption choice: keep the inherited lock");
+    const greg = loadPreset("pingel-runway");
+    for (const key of Object.keys(rules)) assert.deepEqual(p.broll[key], greg.broll[key], key);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  for (const brollEngine of ["codex", "runway"]) assert.deepEqual(checkBrand({ ...julee, brollEngine }), []);
+  for (const brollEngine of ["library", "unknown", ""]) assert.ok(checkBrand({ ...julee, brollEngine }).some((m) => /brollEngine/.test(m)));
+});
+
+test("brand.json: automatic punch words keep the quiet serif captions and accent box", () => {
+  const brand = { ...julee, brollEngine: "runway", look: { captions: "serif", captionCase: "sentence", pace: "calm", annotate: false, slams: false }, looks: { lockHook: false, lockCaptions: true } };
+  assert.equal(brandPreset(brand).captions.autoKeywords, false, "clients opt in");
+  const { p, dir } = load({ ...brand, captionKeywords: "auto" });
+  try {
+    assert.deepEqual(p.captions, { ...loadPreset("pingel-brand").captions, ...CLIENT_CAPTIONS, style: "reveal", autoKeywords: true, quiet: true, serif: true, keywordColorOnFootage: true, fontSizeFrac: 0.033 });
+    assert.equal(p.slams.enabled, false);
+    assert.equal(p.zooms.minSpacing, 16);
+    const captions = [{ text: "a coconut", start: 4, end: 5, words: [{ text: "a", start: 4, end: 4.3 }, { text: "coconut", start: 4.3, end: 5 }] }];
+    markKeywords(captions, {}, { auto: p.captions.autoKeywords, maxPerLine: p.captions.maxKeywordsPerLine });
+    assert.deepEqual(captions[0].words.filter((w) => w.key).map((w) => w.text), ["coconut"]);
+    const html = renderHTML({ name: "serif", style: p, canvas: { width: 1080, height: 1920 }, video: { duration: 8, hasAudio: true }, captions, zooms: [] }, "assets/footage.mp4");
+    assert.match(html, /\.cap-line \{ font-family: "Look Serif", "Anton", serif/);
+    assert.match(html, /\.cap \.w\.k \{ color: #111111; background: #FFB27D;/);
+    assert.match(html, /class="w k"[^>]*>coconut</);
+    assert.doesNotMatch(html, /<svg class="an /);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  assert.deepEqual(checkBrand({ ...julee, captionKeywords: "auto" }), []);
+  assert.ok(checkBrand({ ...julee, captionKeywords: "always" }).some((m) => /captionKeywords/.test(m)));
+});
+
+test("client captions inherit the lower chin clearance and keep wrapped rows above the bottom UI", () => {
+  assert.equal(Object.hasOwn(CLIENT_CAPTIONS, "placeMax"), false);
+  for (const captions of ["reveal", "quiet", "serif"]) {
+    const { p, dir } = load({ ...julee, look: { captions } });
+    try {
+      const cap = p.captions;
+      assert.equal(cap.placeMax, 0.79);
+      const lineHeight = cap.serif ? 1.14 : cap.quiet ? 1.2 : 1.04;
+      for (const bottom of [0.71, 0.72, 0.73, 0.8]) {
+        const spot = placeCaptions({ top: 0.2, bottom }, { fontSizeFrac: cap.fontSizeFrac, lineHeight, gap: cap.placeGap, min: cap.placeMin, max: cap.placeMax });
+        const top = spot.position - 0.6 * cap.fontSizeFrac;
+        assert.ok(top + cap.fontSizeFrac * (2 * lineHeight + 0.02) <= 0.84, `${captions}: wrapped rows cross the bottom UI`);
+        if (bottom <= 0.73) assert.ok(top > bottom, `${captions}: overlaps chin at ${bottom}`);
+      }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
 test("hook time: seconds capped at the reel, or the whole reel", () => {
   assert.equal(hookSeconds(3, 20), 3);
   assert.equal(hookSeconds(3, 2), 2);
@@ -146,7 +234,10 @@ test("Runway: a client's reel gets the pingel-runway timing under its own look; 
     const p = mergeOverrides(before, { brollEngine: "runway", broll: true });
     const pick = (b) => ({ duration: b.duration, gap: b.gap, max: b.max, maxWithGraphics: b.maxWithGraphics, every: b.every, videoSeconds: b.videoSeconds, maxCreditsPerReel: b.maxCreditsPerReel });
     assert.equal(p.broll.engine, "runway");
-    assert.deepEqual(pick(p.broll), { duration: 4, gap: 6, max: 3, maxWithGraphics: 2, every: 12, videoSeconds: 5, maxCreditsPerReel: 150 });
+    assert.deepEqual(pick(p.broll), { duration: 2.5, gap: 3, max: 5, maxWithGraphics: 2, every: 10, videoSeconds: 3, maxCreditsPerReel: 300 });
+    assert.equal(p.broll.retryVideoModel, "kling3.0_standard");
+    assert.equal(p.broll.grade, false);
+    assert.equal(p.broll.focusPull, 0);
     assert.equal(p.broll.world, "her world", "the client's world stays");
     assert.equal(p.colors.accent, "#FFB27D", "the client's brand stays");
     assert.equal(p.name, "brand-julee-gracey");

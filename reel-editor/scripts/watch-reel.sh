@@ -2,7 +2,7 @@
 # One drop-folder job: wait for the file to finish copying, make what its folder asks for, deliver it.
 # Usage: watch-reel.sh /path/to/clip.mov [reel|broll|carousel]
 #   reel      the edited reel, classic look (Anton pop captions, no cards)        -> "<date> Reel <n>/"
-#   broll     the full look: graphic cards, reveal captions, Codex b-roll photos -> "<date> Reel <n> with B-roll/"
+#   broll     the full look: graphic cards, reveal captions, the configured b-roll engine -> "<date> Reel <n> with B-roll/"
 #   carousel  an IG carousel from the video     -> "<date> Carousel <n>/"
 #   long      a long recording (a podcast, a live, a training) cut into several reels with the full look, the
 #             crop following whoever is talking, split screen when two people trade lines -> "<date> Clips <n>/"
@@ -155,7 +155,7 @@ if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then
       ;;
   esac
 fi
-# The b-roll folder gets the full look (the preset's cards and reveal captions plus photos); the plain folder keeps
+# The b-roll folder gets the full look (the preset's cards, reveal captions and b-roll); the plain folder keeps
 # the classic captions with no cards.
 case "$MODE" in
   broll|long) flags+=(--broll --graphics --caption-style reveal);;
@@ -164,6 +164,9 @@ case "$MODE" in
     flags+=(--broll --graphics --caption-style reveal);;
   reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate --no-behind);;
 esac
+if [ "$MODE" = broll ] && [ -n "${REEL_BROLL_ENGINE:-}" ]; then
+  flags+=(--broll-engine "$REEL_BROLL_ENGINE")
+fi
 # A carousel needs the transcript and plan, not a render.
 [ "$MODE" = carousel ] && flags+=(--no-render)
 name=$(echo "$stem" | sed -E 's/#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')

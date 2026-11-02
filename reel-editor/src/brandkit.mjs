@@ -8,6 +8,8 @@ import { signupsHTML } from "./signups.mjs";
 import { deepMerge, readJSON } from "./util.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
 import { assertNoGreg } from "./speaker-intake.mjs";
+// Client captions keep the quieter October 30 look as Greg restores his bigger, gold captions.
+import { CLIENT_CAPTIONS } from "./presets.mjs";
 
 /**
  * Brand kits: one brand file (kit/brand-template.json) becomes a Reel Editor Kit zip for someone else, with their
@@ -32,6 +34,8 @@ export function checkBrand(b) {
   const hs = b.look?.hookSeconds;
   if (hs != null && hs !== "reel" && !(Number(hs) >= 1 && Number(hs) <= 60)) out.push('look.hookSeconds is a number of seconds (1-60) or "reel"');
   if (b.look?.pace && !["fast", "calm"].includes(b.look.pace)) out.push('look.pace is "fast" or "calm"');
+  if (b.brollEngine != null && !["codex", "runway"].includes(b.brollEngine)) out.push('brollEngine is "codex" or "runway"');
+  if (b.captionKeywords != null && b.captionKeywords !== "auto") out.push('captionKeywords is "auto" (or leave it out)');
   if (b.looks?.only != null) {
     const only = Array.isArray(b.looks.only) ? b.looks.only.map((x) => String(x).toLowerCase().trim()) : [];
     for (const x of only) if (!LOOK_IDS.includes(x) || x === "gregcard") out.push(`looks.only: "${x}" is not a look they can use (${LOOK_IDS.filter((id) => id !== "gregcard").join(", ")})`);
@@ -55,7 +59,8 @@ export const CALM = { cuts: { silence: "medium" }, zooms: { minSpacing: 16, maxP
  * and cards and cutaways right after the hook. Greg's own preset moved to the one-take look on
  * 2026-10-31 (his uncut reels held viewers best), so client brands write this out instead of inheriting his.
  */
-export const FAST = { cuts: { silence: "fast" }, zooms: { cadence: { enabled: true } } };
+export const FAST = { cuts: { silence: "fast" }, zooms: { minSpacing: 10, maxPer30: 3, cadence: { enabled: true } } };
+
 
 /** The card looks a brand allows: everything but gregcard, or only `looks.only` (brand looks included). */
 export function lookChoice(b) {
@@ -78,6 +83,15 @@ export function brandPreset(b, { fonts = {} } = {}) {
     : b;
   const calm = look.pace === "calm";
   const quietCaps = look.captions === "quiet" || look.captions === "serif";
+  const brollEngine = b.brollEngine ?? "codex";
+  // Read the Runway rules when the brand is built, so a rebuild follows Greg's latest clip rules.
+  const broll = brollEngine === "runway"
+    ? readJSON(path.join(PKG_ROOT, "presets", "pingel-runway.json")).broll
+    : { max: 3, every: 12, clearStart: 0 };
+  const locks = {
+    ...((legacy.looks?.lockHook != null || legacy.looks?.lockCaptions != null) ? { lockHook: legacy.looks?.lockHook === true, lockCaptions: legacy.looks?.lockCaptions === true } : {}),
+    ...(brollEngine === "runway" ? { lockBrollGrade: true } : {}),
+  };
   // Only what the brand file asks for is written, so a brand file without these fields keeps Greg's behaviour.
   const coldOpen = look.coldOpen != null ? look.coldOpen !== false : calm ? false : null;
   return {
@@ -89,8 +103,8 @@ export function brandPreset(b, { fonts = {} } = {}) {
     ...(fonts.display || fonts.body ? { fonts: { ...(fonts.display ? { display: fonts.display } : {}), ...(fonts.displayItalic ? { displayItalic: fonts.displayItalic } : {}), ...(fonts.body ? { body: fonts.body } : {}) } } : {}),
     // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
     // serif: the same in their display serif (BossBabe's and Jasmine Star's podcast captions), a touch larger.
-    // Both turn the keyword colour back on: the accent box is the point, and Greg's preset has it off for his gold.
-    captions: { style: quietCaps ? "reveal" : look.captions || "reveal", annotate: look.annotate !== false, ...(quietCaps ? { quiet: true, keywordColorOnFootage: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
+    // Both turn the keyword colour back on: the accent box is the point.
+    captions: { ...CLIENT_CAPTIONS, ...(b.captionKeywords === "auto" ? { autoKeywords: true } : {}), style: quietCaps ? "reveal" : look.captions || "reveal", ...(look.annotate != null ? { annotate: look.annotate !== false } : {}), ...(quietCaps ? { quiet: true, keywordColorOnFootage: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
     hook: {
       style: look.hook || "headline", behind: look.behind !== false,
       // looks.lockHook false lets each reel's look draw the hook; Greg's plaque would cover every one of them.
@@ -103,12 +117,12 @@ export function brandPreset(b, { fonts = {} } = {}) {
     // Calm brands keep the slams plain: no pop-out (the dim, outline and word behind the head), no icon stickers
     // and no impact bumps (CALM); drift and the face-on b-roll layouts stay.
     slams: { enabled: look.slams !== false, ...(calm ? { popout: { enabled: false } } : {}) },
-    ...((legacy.looks?.lockHook != null || legacy.looks?.lockCaptions != null) ? { looks: { lockHook: legacy.looks?.lockHook === true, lockCaptions: legacy.looks?.lockCaptions === true } } : {}),
+    ...(Object.keys(locks).length ? { looks: locks } : {}),
     // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
     graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : { every: 10, max: 6 }), clearStart: 0 },
     // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
-    broll: { world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim(), max: 3, every: 12, clearStart: 0 },
+    broll: { ...broll, engine: brollEngine, world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
     carousel: { handle: identity.handle || "", style: String(compat.carouselStyle ?? b.carouselStyle ?? "").trim() },
     lowerThird: { name: identity.name, handle: identity.handle || "" },
   };

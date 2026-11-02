@@ -150,7 +150,13 @@ export function hookBlockHeight(words, { W = 1080, H = 1920, fontPx, widthFrac =
  */
 export function placeCaptions(head, { fontSizeFrac = 0.04, lines = 2, lineHeight = 1.08, gap = 0.03, min = 0.56, max = 0.76, defaultPosition = 0.6 } = {}) {
   const half = (fontSizeFrac * lineHeight * lines) / 2;
-  if (!head) return { position: defaultPosition, top: round(defaultPosition - half), zone: "default" };
+  // The renderer offsets the block by -0.6em, not half its height. Wrapped rows must clear the bottom UI too.
+  const below = fontSizeFrac * (lineHeight * lines + 0.02 * Math.max(0, lines - 1) - 0.6);
+  max = Math.min(max, Math.floor((0.84 - below) * 1000) / 1000);
+  if (!head) {
+    const position = Math.min(defaultPosition, max);
+    return { position, top: round(position - half), zone: "default" };
+  }
   const wanted = head.bottom + gap + half;
   const position = round(Math.min(max, Math.max(min, wanted)));
   return { position, top: round(position - half), zone: wanted > max ? "capped" : wanted < min ? "safe-zone" : "below-chin" };

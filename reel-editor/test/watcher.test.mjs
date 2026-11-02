@@ -76,7 +76,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null } = {}) {
+function fakeDrops({ brollShots = 2, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -117,7 +117,7 @@ echo '{"performance":{}}' > "$work/analytics-features.json"`);
   for (const m of music) fs.writeFileSync(path.join(musicDir, m), "audio");
   const done = path.join(home, "Done");
   spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], {
-    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_RAW_LONG: dirs.long, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: caption ? "1" : "0" },
+    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_RAW_LONG: dirs.long, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: caption ? "1" : "0", ...(brollEngine != null ? { REEL_BROLL_ENGINE: brollEngine } : {}) },
     stdio: "pipe",
   });
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
@@ -139,11 +139,28 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   assert.equal(JSON.parse(fs.readFileSync(path.join(r.done, `${r.day} Reel 1`, ".reel.json"), "utf8")).coverMs, 1733, "the scored frame time reaches publishing metadata");
   // The plain reel never asks for b-roll; the carousel never renders a reel.
   const lines = r.calls.trim().split("\n");
+  assert.doesNotMatch(r.calls, /--broll-engine/, "Greg's folders keep the engine from their preset");
   assert.ok(lines.some((l) => /^edit .*\/raw\/clip\.mov .*--no-graphics --caption-style pop/.test(l) && !/--broll/.test(l)), "plain reel: classic captions, no cards");
   assert.ok(lines.some((l) => /^edit .*raw-broll\/clip\.mov .*--broll --graphics --caption-style reveal/.test(l)), "b-roll reel: the full look");
   assert.ok(lines.some((l) => /^edit .*raw-carousel\/clip\.mov .*--no-render/.test(l)));
   assert.ok(lines.some((l) => /^carousel .*clip-carousel --out .*Carousel 1 --images 3$/.test(l)));
   assert.deepEqual(r.seen.map((m) => m.replace(/@.*(\.done|\.failed)$/, "$1")).filter((m) => !m.startsWith(".")), ["broll-clip.mov.done", "carousel-clip.mov.done", "clip.mov.done"]);
+});
+
+test("the b-roll drop passes the configured engine to the CLI; other modes keep their own settings", () => {
+  const cli = fs.readFileSync(new URL("../src/cli.mjs", import.meta.url), "utf8");
+  assert.match(cli, /"broll-engine": \{ type: "string" \}/);
+  for (const brollEngine of ["runway", "codex", ""]) {
+    const r = fakeDrops({ brollEngine, brollShots: 0, clips: { reel: ["plain.mov"], broll: ["cutaway.mov"], carousel: ["slides.mov"], long: ["talk.mov"] } });
+    try {
+      const lines = r.calls.trim().split("\n");
+      const broll = lines.find((l) => /^edit .*raw-broll\/cutaway.mov /.test(l));
+      assert.ok(broll);
+      if (brollEngine) assert.match(broll, new RegExp(`--broll-engine ${brollEngine}( |$)`));
+      else assert.doesNotMatch(broll, /--broll-engine/, "empty means no override");
+      assert.ok(lines.filter((l) => l !== broll).every((l) => !l.includes("--broll-engine")), "plain reels, carousels and long clips are unchanged");
+    } finally { fs.rmSync(r.home, { recursive: true, force: true }); }
+  }
 });
 
 test("no b-roll back from Codex leaves a note; a failed carousel leaves a note and is marked failed", () => {

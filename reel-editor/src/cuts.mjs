@@ -6,8 +6,8 @@ import { run, r3, log, warn } from "./util.mjs";
 
 export const PACE = { off: Infinity, slow: 1.0, medium: 0.6, fast: 0.35, tight: 0.2 };
 const FILLERS = new Set(["um", "uh", "uhm", "umm", "uhh", "erm", "hmm", "mm", "ah", "er", "mhm"]);
-// Function words where an immediate repeat is almost always a stutter ("I I think", "the the").
-const STUTTER_WORDS = new Set(["i", "the", "a", "an", "to", "and", "so", "but", "we", "you", "it", "is", "in", "of", "for", "if", "what", "when", "they", "he", "she", "my", "our", "this", "that's", "it's"]);
+// Function words where a close repeat is almost always a stutter ("I I think", "How, how was").
+const STUTTER_WORDS = new Set(["i", "the", "a", "an", "to", "and", "so", "but", "we", "you", "it", "is", "in", "of", "for", "if", "what", "when", "they", "he", "she", "my", "our", "this", "that's", "it's", "how", "why", "where", "who", "there", "that", "i'm", "we're", "you're", "they're", "just", "like"]);
 import { norm } from "./text.mjs";
 // Sign-offs: a reel ends on its last point, so a closing "thanks for watching" inside the last seconds is dropped.
 const SIGN_OFFS = ["thanks for watching", "thank you for watching", "see you in the next", "see you next time", "see you on the next", "catch you in the next", "like and subscribe", "like comment subscribe", "hit the follow", "follow for more", "link in bio", "link in my bio", "peace out", "catch you later", "that's it for today", "that's all for today", "until next time"];
@@ -35,15 +35,31 @@ const endsClause = (t) => /[.,!?;:]$/.test(String(t).trim());
  * Returns an array parallel to words: null | "bad-take" | "stutter".
  */
 export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5, maxSpan = 10 } = {}) {
-  const toks = words.map((w) => norm(w.text));
+  const toks = words.map((w) => norm(String(w.text).replace(/’/g, "'")));
   const drop = new Array(words.length).fill(null);
+  const family = (t) => t === "an" ? "a" : t === "it's" ? "it" : t;
+  const commaOnly = (t) => /^[,\s"“”‘’]*$/.test(String(t).replace(/[\p{L}\p{N}']/gu, ""));
+  for (let m = 0; m < toks.length;) {
+    let end = m + 1;
+    // Scribe puts commas between hesitations. Sentence ends and other clause marks still protect repetition.
+    while (end < toks.length && STUTTER_WORDS.has(toks[m]) && family(toks[end]) === family(toks[m]) && commaOnly(words[end - 1].text) && words[end].start - words[end - 1].end < 0.6) end++;
+    for (let k = m; k < end - 1; k++) {
+      // "it, it's" completes a word; "it's it" can be a finished contraction followed by a new thought.
+      if (toks[k] !== "it's" || toks[end - 1] !== "it") drop[k] = "stutter";
+    }
+    m = end;
+  }
+  for (let m = 0; m + 1 < toks.length; m++) {
+    // A cut-off word ("W-", "o-") is always a false start; the next word can come after a breath (1.02 s at 0:20 of the jungle reel).
+    if (/[-–—]$/.test(String(words[m].text).trim()) && words[m + 1].start - words[m].end <= 1.5) drop[m] = "stutter";
+  }
   let i = 0;
   while (i < toks.length) {
     let found = null;
     for (let k = Math.min(maxPhrase, toks.length - i); k >= minPhrase && !found; k--) {
       for (let j = i + 1; j <= Math.min(toks.length - k, i + k + maxTail); j++) {
         let ok = true;
-        for (let m = 0; m < k; m++) if (toks[i + m] !== toks[j + m]) { ok = false; break; }
+        for (let m = 0; m < k; m++) if (drop[i + m] || drop[j + m] || toks[i + m] !== toks[j + m]) { ok = false; break; }
         if (!ok) continue;
         if (words[j].start - words[i].start > maxSpan) continue;
         // A clause boundary anywhere in the abandoned span means a deliberate repetition, not a restart.
@@ -58,12 +74,6 @@ export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5,
       for (let m = i; m < found.j; m++) drop[m] = "bad-take";
       i = found.j;
     } else i++;
-  }
-  for (let m = 0; m + 1 < toks.length; m++) {
-    if (drop[m] || drop[m + 1]) continue;
-    // "...look at you. You can..." ends one sentence and starts the next: not a stutter.
-    if (endsClause(words[m].text)) continue;
-    if (toks[m] === toks[m + 1] && STUTTER_WORDS.has(toks[m]) && words[m + 1].start - words[m].end < 0.6) drop[m] = "stutter";
   }
   return drop;
 }
