@@ -342,3 +342,16 @@ test("intro bleed lets shape/image/video layers fill the active picture but neve
   assert.ok(!run({ ...scrim, bleed: true }).some((p) => /safe margin|outside the active picture|bleed/.test(p.message)));
   assert.ok(run({ id: "t", kind: "text", identity: "name", from: 0, to: 60, rect: { x: 0, y: 0, w: 1920, h: 200 }, bleed: true }).some((p) => /bleed must be boolean on a shape, image or video/.test(p.message)));
 });
+
+test("intro proof text can show one field of the proof's supplied attribution, never invented copy", () => {
+  const m = structuredClone(manifest);
+  m.proof.push({ id: 'organizer', kind: 'quote', text: 'Julee is a storyteller.', attribution: { name: 'Dolores Hirschmann', title: 'TEDx Organizer, Speaker Strategist', org: '' }, rights: 'r' });
+  const quote = (extra) => text({ identity: undefined, proofId: 'organizer', fontSize: 64, ...extra });
+  const p = plan([quote({ id: 'q' }), quote({ id: 'who', proofField: 'name', from: 30, to: 60 }), quote({ id: 'role', proofField: 'title', font: 'body', fontSize: 40, rect: { x: 144, y: 500, w: 1200, h: 80 }, from: 30, to: 60 })]);
+  const r = resolve(p, m); assert.deepEqual(errors(r), []);
+  assert.deepEqual(r.card.layers.map((l) => l.text), ['Julee is a storyteller.', 'Dolores Hirschmann', 'TEDx Organizer, Speaker Strategist']);
+  assert.equal(r.card.layers[1].proofField, 'name');
+  for (const bad of [{ proofField: 'quote' }, { proofField: 'org' }, { proofId: undefined, identity: 'name', proofField: 'name' }]) {
+    assert.ok(errors(resolve(plan([quote({ id: 'x', ...bad })]), m)).length, JSON.stringify(bad));
+  }
+});

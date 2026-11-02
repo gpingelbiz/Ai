@@ -94,3 +94,11 @@ test("PQ source on macOS: VideoToolbox tone-maps to BT.709 and keeps a portrait 
 });
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test("odd-sized sources are trimmed to even before yuv420p conversion; even sources are untouched", async () => {
+  const { evenFilters } = await import("../src/hdr.mjs");
+  assert.deepEqual(evenFilters(10000, 6667), ["crop=trunc(iw/2)*2:trunc(ih/2)*2"]);
+  assert.deepEqual(evenFilters(3647, 5472), ["crop=trunc(iw/2)*2:trunc(ih/2)*2"]);
+  assert.deepEqual(evenFilters(3648, 5472), []);
+  assert.deepEqual(evenFilters(1920, 1080), []);
+});

@@ -37,6 +37,11 @@ export function rotateFilters(cw) {
   return [];
 }
 
+/** yuv420p conversions need even dimensions; trim the last odd row/column of a source such as a 10000x6667 photo. Even sources get no filter, so their cache keys are unchanged. */
+export function evenFilters(width, height) {
+  return (Number(width) % 2 || Number(height) % 2) ? ["crop=trunc(iw/2)*2:trunc(ih/2)*2"] : [];
+}
+
 /** Legacy BT.2020 conversion, retained for existing plans and the daily pipeline. */
 export const SDR_FILTER = "colorspace=iall=bt2020:all=bt709:format=yuv420p";
 

@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { assetPath } from "./speaker-intake.mjs";
 import { activeBox, sourceCropOptions, prepareGrade } from "./speaker-look.mjs";
-import { SDR_FILTER, SDR_TAGS, rotateFilters, hlgToSdrFilter, hasZscale, toneMapToSdr } from "./hdr.mjs";
+import { SDR_FILTER, SDR_TAGS, rotateFilters, evenFilters, hlgToSdrFilter, hasZscale, toneMapToSdr } from "./hdr.mjs";
 import { personBinary } from "./cover.mjs";
 import { probeSource } from "./speaker-index.mjs";
 import { run, ensureDir } from "./util.mjs";
@@ -15,6 +15,8 @@ export const INTRO_FACE_MAX_FRAMES = 6;
 const KINDS = ["text", "image", "video", "shape"];
 export const INTRO_ANIMATIONS = ["rise", "slam", "wipe", "drift", "settle", "fade", "cut"];
 const COLORS = ["ink", "surface", "accent", "paper"];
+// A proof text layer shows the proof text by default, or one field of its supplied attribution.
+const PROOF_FIELDS = ["text", "name", "title", "org"];
 const row = (index, id) => index?.sources?.[id] || index?.[id];
 const hash = (v) => createHash("sha256").update(v).digest("hex");
 const js = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
@@ -95,7 +97,7 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) { add("layers must be objects"); continue; }
     const l = structuredClone(raw), label = l.id || "layer", fail = (s) => add(`${label}: ${s}`);
     const shared = ["id", "kind", "from", "to", "rect", "animations", "allowOverFace", "bleed"];
-    const fields = { text: ["identity", "proofId", "itemId", "sourceWordRange", "wordByWord", "sourceTypography", "words", "font", "fontSize", "color", "accentWord", "lineBreaks"], image: ["sourceId", "proofId", "fit", "crop", "cutout"], video: ["sourceId", "in", "out", "fit", "crop", "radius"], shape: ["shape", "color", "opacity", "direction"] };
+    const fields = { text: ["identity", "proofId", "itemId", "sourceWordRange", "wordByWord", "sourceTypography", "words", "font", "fontSize", "color", "accentWord", "lineBreaks", "proofField"], image: ["sourceId", "proofId", "fit", "crop", "cutout"], video: ["sourceId", "in", "out", "fit", "crop", "radius"], shape: ["shape", "color", "opacity", "direction"] };
     if (!KINDS.includes(l.kind)) fail("unknown kind");
     for (const key of Object.keys(l)) if (![...shared, ...(fields[l.kind] || [])].includes(key)) fail(`unsupported field ${key}`);
     if (!/^[a-zA-Z0-9_-]+$/.test(l.id || "") || ids.has(l.id)) fail("id must be safe and unique");
@@ -135,7 +137,11 @@ export function resolveIntro(input, { manifest = {}, index, plan, entry, clientD
         if (["headshot", "headshotRights"].includes(l.identity) || typeof manifest.identity?.[l.identity] !== "string") fail("identity must name a manifest identity string");
         else text = manifest.identity[l.identity];
       }
-      if (l.proofId != null) text = manifest.proof?.find((p) => p.id === l.proofId)?.text || "";
+      if (l.proofField != null && (l.proofId == null || !PROOF_FIELDS.includes(l.proofField))) fail("proofField needs proofId and one of text, name, title or org");
+      if (l.proofId != null) {
+        const proof = manifest.proof?.find((p) => p.id === l.proofId);
+        text = (l.proofField && l.proofField !== "text" ? proof?.attribution?.[l.proofField] : proof?.text) || "";
+      }
       if (l.sourceWordRange != null) {
         const item = introItems(plan).find((i) => i.id === l.itemId), range = l.sourceWordRange;
         const transcript = row(index, item?.sourceId)?.words;
@@ -313,7 +319,7 @@ export async function prepareIntroAssets(plan, { manifest, index, clientDir, pro
       const hlg = hdr && meta.hdrKind === "hlg" && plan.look?.hlg === "review";
       const review = hlg && await zscaleImpl();
       if (hlg && !review) { const warning = `${entry.id}/${l.id}: zscale unavailable; using legacy HLG conversion`; warnings.push(warning); print(`WARNING ${warning}`); }
-      preFilter = [...rotateFilters(rotation), hdr ? review ? hlgToSdrFilter() : SDR_FILTER : ["smpte170m", "bt470bg"].includes(meta.colorSpace) ? `colorspace=iall=${meta.colorSpace}:all=bt709:format=yuv420p` : ""].filter(Boolean).join(",");
+      preFilter = [...rotateFilters(rotation), ...evenFilters(meta.width, meta.height), hdr ? review ? hlgToSdrFilter() : SDR_FILTER : ["smpte170m", "bt470bg"].includes(meta.colorSpace) ? `colorspace=iall=${meta.colorSpace}:all=bt709:format=yuv420p` : ""].filter(Boolean).join(",");
       if ((plan.look?.grade ?? "auto") === "auto") {
         const g = await gradeImpl(file, { sourceKey: sourceHash, meta, preFilter, ranges: l.kind === "video" ? [{ in: l.in, out: l.out }] : undefined, overrides: plan.look?.sources?.[l.sourceId] || {}, cacheDir: path.join(dir, "grade"), print });
         grade = g.filter || "";
@@ -402,7 +408,7 @@ export function renderIntro(card, { id, span, tokens, assets = {}, offsetY = 0 }
     timeline.push(`tl.set(${js(target)},{autoAlpha:1},${first / FPS});`);
     for (const a of l.animations) timeline.push(animationCode(a.out ? target : `${target} > .si-motion`, a, span.startFrame));
     timeline.push(`tl.set(${js(target)},{autoAlpha:0},${end / FPS});`);
-    review.push({ id: l.id, kind: l.kind, firstFrame: first, lastFrame: end - 1, rect: r, bounds: l.bounds, sourceId: l.sourceId, proofId: l.proofId, identity: l.identity, sourceWordRange: l.sourceWordRange, itemId: l.itemId, wordFrames: l.wordFrames?.map((f) => span.startFrame + f), sourceIn: l.in, sourceOut: l.out, crop: l.crop, fit: l.fit, allowOverFace: l.allowOverFace === true, bleed: l.bleed === true, sourceTypography: l.sourceTypography, sourceText: l.sourceText, text: l.text, animations: l.animations, ...assets[l.id] });
+    review.push({ id: l.id, kind: l.kind, firstFrame: first, lastFrame: end - 1, rect: r, bounds: l.bounds, sourceId: l.sourceId, proofId: l.proofId, proofField: l.proofField, identity: l.identity, sourceWordRange: l.sourceWordRange, itemId: l.itemId, wordFrames: l.wordFrames?.map((f) => span.startFrame + f), sourceIn: l.in, sourceOut: l.out, crop: l.crop, fit: l.fit, allowOverFace: l.allowOverFace === true, bleed: l.bleed === true, sourceTypography: l.sourceTypography, sourceText: l.sourceText, text: l.text, animations: l.animations, ...assets[l.id] });
   }
   return { html: html.join("\n"), css: ".speaker-intro-layer{position:absolute;opacity:0;visibility:hidden;pointer-events:none;z-index:4}.si-motion{width:100%;height:100%;transform-origin:center}.si-text{background:none;padding:0;text-shadow:0 2px 12px #0006}", timeline: timeline.join("\n"), assets: [], warnings: [], layout: { fits: true, activeAware: true }, text: card.layers.filter((l) => l.kind === "text").map((l) => l.text), layers: review };
 }

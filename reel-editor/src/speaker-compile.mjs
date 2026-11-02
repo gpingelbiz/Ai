@@ -3,7 +3,7 @@ import path from "node:path";
 import { assetPath, assertNoGreg, LOGO_RELATIONSHIPS, headshotProblems } from "./speaker-intake.mjs";
 import { probeSource } from "./speaker-index.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
-import { SDR_FILTER, SDR_TAGS, rotateFilters, toneMapToSdr, hlgToSdrFilter, hasZscale } from "./hdr.mjs";
+import { SDR_FILTER, SDR_TAGS, rotateFilters, evenFilters, toneMapToSdr, hlgToSdrFilter, hasZscale } from "./hdr.mjs";
 import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, foregroundSize, sourceCropOptions, prepareGrade, stabilizeRange, lookReviewFrames, pushScale } from "./speaker-look.mjs";
 import { measureLoudness } from "./preflight.mjs";
 import { repairOptions, prepareRepair, loadRepairReactions } from "./speaker-enhance.mjs";
@@ -542,7 +542,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
         filters.push(`[${inputCount++}:v]setsar=1[${label}]`); return;
       }
       const hdrFilter = data.meta.hdrKind === "hlg" && hlgReview ? hlgToSdrFilter() : data.hdr ? SDR_FILTER : null;
-      const preFilter = [...rotateFilters(data.rotation), hdrFilter || (["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null)].filter(Boolean).join(",");
+      const preFilter = [...rotateFilters(data.rotation), ...evenFilters(data.meta.width, data.meta.height), hdrFilter || (["smpte170m", "bt470bg"].includes(data.meta.colorSpace) ? `colorspace=iall=${data.meta.colorSpace}:all=bt709:format=yuv420p` : null)].filter(Boolean).join(",");
       let grade = null;
       if ((entry.look?.grade ?? resolved.look.grade) === "auto") {
         const sourceTrim = gradeOverrides(sourceTrims.get(entry.sourceId));
