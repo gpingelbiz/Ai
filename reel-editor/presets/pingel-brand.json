@@ -105,7 +105,7 @@
     "lastFrame": false,
     "sfx": true,
     "sfxUnderSpeechDb": 12,
-    "stock": ["pexels", "pixabay"],
+    "stock": ["pexels", "pixabay", "wikimedia"],
     "library": true,
     "animate": false
   },

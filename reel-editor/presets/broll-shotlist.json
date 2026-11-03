@@ -1,0 +1,378 @@
+[
+  {
+    "world": "truck",
+    "shots": [
+      {
+        "shows": "truck tailgate",
+        "action": "lowers onto its hinges",
+        "scene": "parked truck outdoors",
+        "framing": "Close side view of the full tailgate travel",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "truck door",
+        "action": "opens outward",
+        "scene": "parked truck in daylight",
+        "framing": "Close view of handle and door edge",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "truck door",
+        "action": "closes fully",
+        "scene": "parked truck in daylight",
+        "framing": "Locked side view with the latch visible",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "truck keys",
+        "action": "set down in a tray",
+        "scene": "parked truck interior",
+        "framing": "Overhead view of hand and blank keys",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "work gloves",
+        "action": "lifted from the truck bed",
+        "scene": "parked truck outdoors",
+        "framing": "Close view above the bed rail",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "tool bag",
+        "action": "set down on the tailgate",
+        "scene": "parked truck outdoors",
+        "framing": "Waist-level close view with hands only",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      }
+    ]
+  },
+  {
+    "world": "phone",
+    "shots": [
+      {
+        "shows": "phone",
+        "action": "picked up from a table",
+        "scene": "plain table in daylight",
+        "framing": "Close side view of hand and phone back",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "phone",
+        "action": "placed face down",
+        "scene": "plain desk in daylight",
+        "framing": "Overhead view; display stays hidden",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "phone",
+        "action": "slides into a pocket",
+        "scene": "plain wall backdrop",
+        "framing": "Waist-level crop below the shoulders",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "phone charger",
+        "action": "plugs into the phone",
+        "scene": "plain desk with display face down",
+        "framing": "Tight view of the charging port",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "phone stand",
+        "action": "unfolds on a desk",
+        "scene": "uncluttered desk",
+        "framing": "Close view of hands and hinge",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "phone",
+        "action": "placed on a stand",
+        "scene": "uncluttered desk",
+        "framing": "Side view with display facing away",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      }
+    ]
+  },
+  {
+    "world": "desk",
+    "shots": [
+      {
+        "shows": "notebook",
+        "action": "opens to a blank page",
+        "scene": "plain desk",
+        "framing": "Overhead hands-only view",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "pen",
+        "action": "draws a check mark on blank paper",
+        "scene": "plain desk",
+        "framing": "Tight overhead view of the mark",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "sticky notes",
+        "action": "stacked into a neat pile",
+        "scene": "plain desk",
+        "framing": "Overhead view of blank notes",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "desk drawer",
+        "action": "slides closed",
+        "scene": "uncluttered office",
+        "framing": "Close side view of drawer front",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "paper sheets",
+        "action": "sorted into two stacks",
+        "scene": "plain desk",
+        "framing": "Overhead view of blank paper",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "timer",
+        "action": "turned to start",
+        "scene": "plain desk",
+        "framing": "Close side view of an unmarked mechanical timer",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      }
+    ]
+  },
+  {
+    "world": "coffee",
+    "shots": [
+      {
+        "shows": "coffee",
+        "action": "pours into a plain mug",
+        "scene": "kitchen counter",
+        "framing": "Side close-up of the full stream",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "coffee beans",
+        "action": "scooped into a grinder",
+        "scene": "kitchen counter",
+        "framing": "Overhead close-up with labels hidden",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "coffee spoon",
+        "action": "stirs coffee in a mug",
+        "scene": "kitchen counter",
+        "framing": "Close overhead view with hands only",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "coffee mug",
+        "action": "lifted from the counter",
+        "scene": "kitchen in morning light",
+        "framing": "Tight side view ending below the shoulders",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "coffee filter",
+        "action": "placed into a dripper",
+        "scene": "kitchen counter",
+        "framing": "Close overhead view",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "coffee kettle",
+        "action": "set down beside a mug",
+        "scene": "kitchen counter",
+        "framing": "Close side view of hands and base",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      }
+    ]
+  },
+  {
+    "world": "gym",
+    "shots": [
+      {
+        "shows": "dumbbell",
+        "action": "set down on a rubber mat",
+        "scene": "empty gym corner",
+        "framing": "Low locked view of hand and weight",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "weight plate",
+        "action": "slides onto a rack peg",
+        "scene": "empty gym corner",
+        "framing": "Tight side view of peg and plate",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "gym towel",
+        "action": "folds on a bench",
+        "scene": "empty gym corner",
+        "framing": "Overhead view with hands only",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "water bottle",
+        "action": "fills under a tap",
+        "scene": "plain sink",
+        "framing": "Close side view with labels hidden",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "gym shoes",
+        "action": "laces tied into a bow",
+        "scene": "empty gym bench",
+        "framing": "Low close-up of shoes and hands",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "exercise mat",
+        "action": "unrolls across the floor",
+        "scene": "empty workout room",
+        "framing": "Low side view of the full mat",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      }
+    ]
+  },
+  {
+    "world": "coaching",
+    "shots": [
+      {
+        "shows": "blank index cards",
+        "action": "laid out in three columns",
+        "scene": "coaching desk",
+        "framing": "Overhead view of hands and cards",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "marker",
+        "action": "draws an arrow between two circles",
+        "scene": "blank whiteboard",
+        "framing": "Tight board view with arm only",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "meeting chair",
+        "action": "pulled out from a table",
+        "scene": "empty meeting room",
+        "framing": "Side view below shoulder height",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "notebook",
+        "action": "passes across a table",
+        "scene": "empty coaching desk",
+        "framing": "Tight hands-only view of a blank cover",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "wooden blocks",
+        "action": "stacked into a tower",
+        "scene": "coaching desk",
+        "framing": "Close view with the whole tower visible",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "blank checklist",
+        "action": "receives three check marks",
+        "scene": "coaching desk",
+        "framing": "Overhead view with no other writing",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      }
+    ]
+  },
+  {
+    "world": "home",
+    "shots": [
+      {
+        "shows": "curtains",
+        "action": "pulled open to daylight",
+        "scene": "home window",
+        "framing": "Side view with reflections avoided",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "front door",
+        "action": "opens into daylight",
+        "scene": "empty home entry",
+        "framing": "Close view below shoulder height",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "plant",
+        "action": "watered from a small jug",
+        "scene": "home windowsill",
+        "framing": "Close side view with soil visible",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "blanket",
+        "action": "folds on a couch",
+        "scene": "plain living room",
+        "framing": "Overhead hands-only view",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "shoes",
+        "action": "set beside the door",
+        "scene": "home entry",
+        "framing": "Low locked view of shoes and hands",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "light switch",
+        "action": "flips on a lamp",
+        "scene": "plain home wall",
+        "framing": "Close view with lamp in the background",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      }
+    ]
+  },
+  {
+    "world": "jungle-reel props",
+    "shots": [
+      {
+        "shows": "coconut",
+        "action": "drops onto sand",
+        "scene": "empty sandy patch outdoors",
+        "framing": "Locked side view of release, landing and settle",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "cream",
+        "action": "squeezed onto a palm",
+        "scene": "plain outdoor tabletop",
+        "framing": "Tight hands-only view with plain container",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "two by four",
+        "action": "set down on mud",
+        "scene": "empty muddy patch outdoors",
+        "framing": "Low locked view; lumber stays on the ground",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "boots",
+        "action": "lift out of shallow mud",
+        "scene": "empty muddy patch outdoors",
+        "framing": "Low close-up below the knees",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "leaf",
+        "action": "brushed aside by a hand",
+        "scene": "garden with broad leaves",
+        "framing": "Close view of hand and leaf movement",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      },
+      {
+        "shows": "coconut",
+        "action": "rolls to a stop on sand",
+        "scene": "empty sandy patch outdoors",
+        "framing": "Low locked view of roll and settle",
+        "exclusion": "No faces, private screen details, earnings figures, violence or rope."
+      }
+    ]
+  }
+]

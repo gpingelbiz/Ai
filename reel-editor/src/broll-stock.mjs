@@ -9,11 +9,67 @@ import { reviewMovingClip, saveLibraryClip, readLibrary, recentLibraryReels } fr
 import { readJSON, writeJSON, sha1, run, warn, r3 } from "./util.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
+const MB = 1024 * 1024;
+const WIKIMEDIA_AGENT = "reel-editor/1.0 (gpingelbiz private editor; contact via https://github.com/gpingelbiz)";
+let wikimediaActive = 0;
+const wikimediaQueue = [];
+// Searches and asset bodies share the same three slots, including across reels in this process.
+async function wikimediaSlot(task) {
+  if (wikimediaActive >= 3) await new Promise((resolve) => wikimediaQueue.push(resolve));
+  else wikimediaActive++;
+  try { return await task(); }
+  finally { const next = wikimediaQueue.shift(); if (next) next(); else wikimediaActive--; }
+}
+const retryAfterAt = (response, now) => {
+  const retry = response.headers?.get("retry-after");
+  return retry ? (/^\d+(\.\d+)?$/.test(retry) ? now() + Number(retry) * 1000 : Date.parse(retry)) || 0 : 0;
+};
+function writeWikimediaRate(file, rate) {
+  let previous; try { previous = readJSON(file); } catch {}
+  writeJSON(file, { ...rate, blockedUntil: Math.max(rate.blockedUntil || 0, previous?.blockedUntil || 0) });
+}
+const plainText = (value) => String(value || "").replace(/<[^>]*>/g, " ").replace(/&(#x[\da-f]+|#\d+|amp|quot|apos|lt|gt|nbsp|ndash|mdash);/gi, (entity, code) => {
+  if (code.startsWith("#")) { const n = code[1].toLowerCase() === "x" ? parseInt(code.slice(2), 16) : Number(code.slice(1)); return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : " "; }
+  return { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ", ndash: "–", mdash: "—" }[code.toLowerCase()] || entity;
+}).replace(/\s+/g, " ").trim();
+const metadataText = (metadata, key) => plainText(metadata?.[key]?.value);
+
+/** Only licences this editor can publish with complete credits enter the candidate pool. */
+export function wikimediaLicence(metadata = {}) {
+  const names = ["LicenseShortName", "License", "UsageTerms"].map((key) => metadataText(metadata, key));
+  const terms = names.join(" ").toLowerCase();
+  if (/\b(sa|nc|nd|share[ -]?alike|non[ -]?commercial|no[ -]?derivatives?|fair use)\b/.test(terms)) return null;
+  const allowed = names.find((name) => /^(public domain(?: mark)?(?: 1\.0)?|pd(?:-[a-z\d-]+)?|cc0(?: 1\.0)?|cc-zero|cc[ -]by(?:[ -]\d+(?:\.\d+)?)?|creative commons attribution(?: \d+(?:\.\d+)?)?(?: international)?)$/i.test(name));
+  if (!allowed) return null;
+  const creator = metadataText(metadata, "Artist"), licenseUrl = metadataText(metadata, "LicenseUrl");
+  if (/^(cc[ -]by|creative commons attribution)/i.test(allowed) && (!creator || !/^https?:\/\//i.test(licenseUrl))) return null;
+  return { creator, licenseShortName: names[0] || allowed, licenseUrl };
+}
+
+function normaliseWikimedia(body) {
+  return Object.values(body.query?.pages || {}).flatMap((page) => {
+    const info = page.videoinfo?.[0] || page.imageinfo?.[0];
+    if (!info) return [];
+    const licence = wikimediaLicence(info.extmetadata);
+    const duration = Number(info.duration);
+    if (!licence || !/^(video\/(webm|ogg|mp4)|application\/ogg)$/.test(info.mime) || info.mediatype !== "VIDEO" ||
+        !info.url || !(info.size > 0 && info.size <= 200 * MB) || !Number.isFinite(duration) || duration < 2 || !(Math.min(info.width, info.height) >= 480)) return [];
+    const derivatives = (info.derivatives || []).filter((d) => d.src && d.src !== info.url && /^video\/(webm|mp4)\b/.test(d.type) && d.width > 0 && d.height > 0)
+      .sort((a, b) => a.width * a.height - b.width * b.height || (a.bandwidth || 0) - (b.bandwidth || 0));
+    return [{ provider: "wikimedia", id: page.pageid, pageUrl: info.descriptionurl || `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title.replace(/ /g, "_"))}`,
+      ...licence, duration, width: info.width, height: info.height, thumb: info.thumburl,
+      tags: plainText([page.title, metadataText(info.extmetadata, "ImageDescription"), metadataText(info.extmetadata, "Categories"), ...(page.categories || []).map((c) => c.title)].join(" ")),
+      preview: derivatives[0]?.src || (info.size < 40 * MB ? info.url : undefined),
+      files: [{ url: info.url, width: info.width, height: info.height, fps: null }] }];
+  }).filter((c) => c.thumb);
+}
+
 export const stockCacheDir = (env = process.env) => path.join(env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-stock");
 const suitableFile = (f) => f.url && (f.height > f.width ? f.width >= 720 : f.width >= 1280);
 // Pexels has no tags, but its page slug names the clip ("/video/a-gorilla-eating-123/").
 const slugWords = (url) => String(url || "").split("/").filter(Boolean).pop()?.replace(/-?\d+$/, "").replace(/-/g, " ") || "";
 export function normaliseStock(provider, body) {
+  if (provider === "wikimedia") return normaliseWikimedia(body);
   const clips = provider === "pexels" ? (body.videos || []).map((v) => ({
     provider, id: v.id, pageUrl: v.url, creator: v.user?.name || "", duration: v.duration, width: v.width, height: v.height, tags: slugWords(v.url),
     files: (v.video_files || []).filter((f) => f.file_type === "video/mp4").map((f) => ({ url: f.link, width: f.width, height: f.height, fps: f.fps ?? null })), thumb: v.image,
@@ -43,33 +99,44 @@ export function stockRelevance(clip, subject) {
 export function createStockSearch({ env = process.env, fetchFn = fetch, now = Date.now, warnFn = warn, maxSearches = 20, stockCandidates = 12 } = {}) {
   const missing = new Set();
   let searches = 0;
-  async function search(provider, query, orientation) {
+  const search = (provider, query, orientation) => provider === "wikimedia" ? wikimediaSlot(() => searchProvider(provider, query, orientation)) : searchProvider(provider, query, orientation);
+  async function searchProvider(provider, query, orientation) {
     const key = env[provider === "pexels" ? "PEXELS_API_KEY" : "PIXABAY_API_KEY"];
-    if (!key) { if (!missing.has(provider)) { missing.add(provider); warnFn(`b-roll: ${provider} key missing; stock provider skipped`); } return []; }
+    if (provider !== "wikimedia" && !key) { if (!missing.has(provider)) { missing.add(provider); warnFn(`b-roll: ${provider} key missing; stock provider skipped`); } return []; }
     const cache = stockCacheDir(env), file = path.join(cache, `${sha1(`${provider}|${query}|${orientation || "any"}`)}.json`), rateFile = path.join(cache, `${provider}-rate.json`);
     let saved, rate;
     try { saved = readJSON(file); } catch {}
     if (saved && now() - saved.at < DAY) return normaliseStock(provider, saved.body);
     try { rate = readJSON(rateFile); } catch {}
     if (rate?.blockedUntil > now() || searches >= maxSearches) return [];
-    const url = new URL(provider === "pexels" ? "https://api.pexels.com/videos/search" : "https://pixabay.com/api/videos/");
-    url.searchParams.set(provider === "pexels" ? "query" : "q", query.slice(0, 100));
-    url.searchParams.set("per_page", provider === "pixabay" ? "40" : "20");
-    if (provider === "pexels") { if (orientation) url.searchParams.set("orientation", orientation); }
-    else { url.searchParams.set("key", key); url.searchParams.set("video_type", "film"); url.searchParams.set("safesearch", "true"); }
+    const url = new URL(provider === "wikimedia" ? "https://commons.wikimedia.org/w/api.php" : provider === "pexels" ? "https://api.pexels.com/videos/search" : "https://pixabay.com/api/videos/");
+    if (provider === "wikimedia") {
+      const params = { action: "query", format: "json", formatversion: "2", generator: "search", gsrnamespace: "6", gsrlimit: "20",
+        // CirrusSearch ignores OR between filemime filters and returns nothing; filetype:video covers webm, ogv and mp4.
+        gsrsearch: `${query.slice(0, 100)} filetype:video`,
+        prop: "videoinfo|categories", viprop: "url|size|mime|mediatype|extmetadata|derivatives", viurlwidth: "320", cllimit: "max" };
+      for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+    } else {
+      url.searchParams.set(provider === "pexels" ? "query" : "q", query.slice(0, 100));
+      url.searchParams.set("per_page", provider === "pixabay" ? "40" : "20");
+      if (provider === "pexels") { if (orientation) url.searchParams.set("orientation", orientation); }
+      else { url.searchParams.set("key", key); url.searchParams.set("video_type", "film"); url.searchParams.set("safesearch", "true"); }
+    }
     searches++;
     try {
-      const response = await fetchFn(url.toString(), { headers: provider === "pexels" ? { Authorization: key } : {}, signal: AbortSignal.timeout(30000) });
+      const response = await fetchFn(url.toString(), { headers: provider === "wikimedia" ? { "User-Agent": WIKIMEDIA_AGENT } : provider === "pexels" ? { Authorization: key } : {}, signal: AbortSignal.timeout(30000) });
       const header = (name) => response.headers?.get(name);
       const remaining = header("x-ratelimit-remaining"), reset = Number(header("x-ratelimit-reset"));
       const resetAt = reset > 0 ? provider === "pexels" ? reset * 1000 : now() + reset * 1000 : 0;
-      const retry = header("retry-after");
-      const retryAt = retry ? (/^\d+(\.\d+)?$/.test(retry) ? now() + Number(retry) * 1000 : Date.parse(retry)) : 0;
+      const retryAt = retryAfterAt(response, now);
       const resetOrRetry = Math.max(resetAt, retryAt || 0);
-      const blockedUntil = response.status === 429 || remaining === "0" ? resetOrRetry > now() ? resetOrRetry : now() + (provider === "pexels" ? 3600000 : 60000) : 0;
-      writeJSON(rateFile, { limit: header("x-ratelimit-limit"), remaining, resetAt, blockedUntil });
+      const blockedUntil = response.status === 429 || remaining === "0" ? resetOrRetry > now() ? resetOrRetry : now() + (provider === "wikimedia" ? 5000 : provider === "pexels" ? 3600000 : 60000) : 0;
+      const rateState = { limit: header("x-ratelimit-limit"), remaining, resetAt, blockedUntil };
+      if (provider === "wikimedia") writeWikimediaRate(rateFile, { ...rateState, blockedUntil: Math.max(blockedUntil, retryAt) });
+      else writeJSON(rateFile, rateState);
       if (!response.ok) { warnFn(`b-roll: ${provider} search HTTP ${response.status}; skipped`); return []; }
       const body = await response.json();
+      if (body.error) throw new Error("stock API error");
       writeJSON(file, { at: now(), body });
       return normaliseStock(provider, body);
     } catch { warnFn(`b-roll: ${provider} search unavailable; skipped`); return []; }
@@ -88,30 +155,47 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
       Number(b.files[0].height > b.files[0].width) - Number(a.files[0].height > a.files[0].width));
     const synonyms = Array.isArray(stockSynonyms) ? stockSynonyms.filter((s) => typeof s === "string" && s.trim()).slice(0, 3) : [];
     const queries = [subject.join(" "), stockQuery, ...synonyms], perQuery = Math.ceil(stockCandidates * 2 / 3);
-    for (const query of [...new Set(queries.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
-      const synonym = synonyms.some((s) => s.trim().toLowerCase() === query) ? query.split(/\s+/) : [];
-      for (const provider of providers.filter((p) => ["pexels", "pixabay"].includes(p))) {
-        for (const orientation of provider === "pexels" ? ["portrait", null] : [null]) {
-          let taken = 0;
-          for (const c of await search(provider, query, orientation)) {
-            if (taken >= perQuery) break;
-            const primary = stockRelevance(c, subject), relevance = primary === "match" || synonym.length && stockRelevance(c, synonym) === "match" ? "match" : primary;
-            if (relevance === "miss") continue;
-            const id = `${c.provider}:${c.id}`, existing = seen.get(id);
-            if (existing) { if (relevance === "match") existing.relevance = relevance; }
-            else { const eligible = { ...c, relevance }; seen.set(id, eligible); clips.push(eligible); taken++; }
+    async function collect(sources, fallback = false) {
+      for (const query of [...new Set(queries.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
+        if (fallback && clips.length >= stockCandidates) break;
+        const synonym = synonyms.some((s) => s.trim().toLowerCase() === query) ? query.split(/\s+/) : [];
+        for (const provider of sources) {
+          for (const orientation of provider === "pexels" ? ["portrait", null] : [null]) {
+            let taken = 0;
+            for (const c of await search(provider, query, orientation)) {
+              if (taken >= perQuery || fallback && clips.length >= stockCandidates) break;
+              const primary = stockRelevance(c, subject), relevance = primary === "match" || synonym.length && stockRelevance(c, synonym) === "match" ? "match" : primary;
+              if (relevance === "miss") continue;
+              const id = `${c.provider}:${c.id}`, existing = seen.get(id);
+              if (existing) { if (relevance === "match") existing.relevance = relevance; }
+              else { const eligible = { ...c, relevance }; seen.set(id, eligible); clips.push(eligible); taken++; }
+            }
           }
         }
       }
     }
+    await collect(providers.filter((p) => ["pexels", "pixabay"].includes(p)));
+    if (providers.includes("wikimedia") && clips.length < stockCandidates) await collect(["wikimedia"], true);
     return ranked().slice(0, stockCandidates);
   };
 }
 
-async function download(url, file, fetchFn) {
-  const response = await fetchFn(url, { signal: AbortSignal.timeout(60000) });
-  if (!response.ok) throw new Error("stock asset download failed");
-  fs.writeFileSync(file, Buffer.from(await response.arrayBuffer()));
+async function download(url, file, fetchFn, provider, env = process.env, now = Date.now) {
+  const task = async () => {
+    const rateFile = path.join(stockCacheDir(env), "wikimedia-rate.json");
+    if (provider === "wikimedia") {
+      let rate; try { rate = readJSON(rateFile); } catch {}
+      if (rate?.blockedUntil > now()) throw new Error("stock provider cooling down");
+    }
+    const response = await fetchFn(url, { ...(provider === "wikimedia" ? { headers: { "User-Agent": WIKIMEDIA_AGENT } } : {}), signal: AbortSignal.timeout(60000) });
+    if (provider === "wikimedia") {
+      const retryAt = retryAfterAt(response, now);
+      if (response.status === 429 || retryAt > now()) writeWikimediaRate(rateFile, { blockedUntil: retryAt > now() ? retryAt : now() + 5000 });
+    }
+    if (!response.ok) throw new Error("stock asset download failed");
+    fs.writeFileSync(file, Buffer.from(await response.arrayBuffer()));
+  };
+  return provider === "wikimedia" ? wikimediaSlot(task) : task();
 }
 
 /** Preview failures leave the thumbnail usable; a successful measurement can exclude a frozen source. */
@@ -125,7 +209,7 @@ export async function previewStockCandidates(candidates, { pick, dir, settings =
       const file = path.join(cache, `${c.provider}-${c.id}.preview.mp4`);
       if (!fs.existsSync(file) || now() - fs.statSync(file).mtimeMs >= DAY) {
         const pending = `${file}.tmp`;
-        try { await download(c.preview, pending, deps.fetchFn || fetch); fs.renameSync(pending, file); fs.utimesSync(file, now() / 1000, now() / 1000); }
+        try { await download(c.preview, pending, deps.fetchFn || fetch, c.provider, env, now); fs.renameSync(pending, file); fs.utimesSync(file, now() / 1000, now() / 1000); }
         finally { fs.rmSync(pending, { force: true }); }
       }
       const motion = await (deps.measureMotion || measureMotion)(file, c.duration, { runFn: runner, dir });
@@ -155,7 +239,7 @@ export async function stockContactSheet(candidates, { dir, deps = {} }) {
     let frames = c.previewFrames;
     if (!frames?.length) {
       const thumb = path.join(dir, `thumb-${i + 1}.jpg`);
-      await download(c.thumb, thumb, deps.fetchFn || fetch);
+      await download(c.thumb, thumb, deps.fetchFn || fetch, c.provider, deps.env, deps.now);
       frames = [thumb];
     }
     timeLabel(i + 1, label, 180);
@@ -227,17 +311,18 @@ Reply JSON only: {"choice":N|"none","event":"...","shows":true|false,"safe":true
       try {
         const original = path.join(evidence, `${c.provider}-${c.id}.download.mp4`), file = path.join(evidence, `${c.provider}-${c.id}.mp4`);
         stage = "download";
-        await download(variant.url, original, deps.fetchFn || fetch);
+        await download(variant.url, original, deps.fetchFn || fetch, c.provider, env, deps.now);
         stage = "conform";
         await (deps.conformStockClip || conformStockClip)(original, file, { runFn: deps.runFn });
         stage = "duration probe";
         const probe = await (deps.runFn || run)("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file], { capture: true });
         const duration = Number(probe.out?.trim());
-        if (!(duration >= 3 && duration <= 20)) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: duration must be 3–20 seconds`, deps); continue; }
+        if (!(c.provider === "wikimedia" ? Number.isFinite(duration) && duration >= 2 : duration >= 3 && duration <= 20)) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: duration must be ${c.provider === "wikimedia" ? "at least 2" : "3–20"} seconds`, deps); continue; }
         stage = "full and trimmed clip inspection";
         const accepted = await reviewMovingClip({ file, duration, pick: checked, shot, groups, dir: evidence, deps });
         if (!accepted) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: full or trimmed clip failed event/look inspection (${JSON.stringify(event)})`, deps); continue; }
-        const licence = { provider: c.provider, id: c.id, pageUrl: c.pageUrl, creator: c.creator, downloadedAt: new Date((deps.now || Date.now)()).toISOString() };
+        const licence = { provider: c.provider, id: c.id, pageUrl: c.pageUrl, creator: c.creator,
+          ...(c.provider === "wikimedia" ? { licenseShortName: c.licenseShortName, licenseUrl: c.licenseUrl } : {}), downloadedAt: new Date((deps.now || Date.now)()).toISOString() };
         const output = { ...accepted, source: c.provider, licence };
         if (settings.library || fill) {
           try {

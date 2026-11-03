@@ -101,7 +101,7 @@ test("legacy render snapshots: no signature and no house list keep every existin
     speaker: "02fd8099cebdcecbf752ed364a994eb4b9b706388112c8db6eedc3512df3f83a",
     youtube: "1e0120f8f3c4dc3eb9b118ca35c0c75fdda699f6089095cbc22e7ab8baa4278f",
   };
-  for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_")).sort()) {
+  for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_") && name !== "broll-shotlist.json").sort()) {
     const name = file.slice(0, -5);
     const style = loadPreset(name);
     // Freeze the legacy still finish; moving presets now omit the focus blur.

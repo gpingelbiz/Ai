@@ -39,6 +39,9 @@ Usage
                                     edit.v3.json). Captions off by default (--captions burns them in)
   reel broll-fill [--subjects <file>] [--max-new 20] [--dry-run]  fill the free stock library
   reel broll-generate --prompts <file> [--dry-run]  generate local candidates and inspect them for the library
+  reel broll-add <file|folder>... [--shows <subject>] [--action <action>] [--scene <scene>] [--dry-run]
+                                    bank your own footage (keeps an original copy; never moves your file)
+  reel broll-shotlist [--missing]   filmable starter actions; --missing skips approved own actions
   reel usage                        what the paid generations (Runway b-roll) cost this month and last, and the balance
   reel clips <long video> [--count 5] [--plan-only] [--replan] [--no-layout] [edit options]
                                     one long recording into several reels: Claude picks 30-90 s windows with a
@@ -324,6 +327,18 @@ export async function main(argv) {
       const { generateBrollLibrary, BROLL_GENERATE_HELP } = await import("./broll-localgen.mjs");
       if (opts.help) return console.log(BROLL_GENERATE_HELP);
       return generateBrollLibrary({ promptsFile: opts.prompts, dryRun: opts.dryRun });
+    }
+    case "broll-add": {
+      const { opts, positionals } = parse(rest, { shows: { type: "string" }, action: { type: "string" }, scene: { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { addOwnBroll, BROLL_ADD_HELP } = await import("./broll-own.mjs");
+      if (opts.help) return console.log(BROLL_ADD_HELP);
+      return addOwnBroll({ inputs: positionals, ...opts });
+    }
+    case "broll-shotlist": {
+      const { opts } = parse(rest, { missing: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { brollShotlist, BROLL_SHOTLIST_HELP } = await import("./broll-own.mjs");
+      if (opts.help) return console.log(BROLL_SHOTLIST_HELP);
+      return brollShotlist(opts);
     }
     case "broll-fill": {
       const { opts } = parse(rest, { subjects: { type: "string" }, "max-new": { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
