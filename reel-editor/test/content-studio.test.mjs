@@ -847,9 +847,10 @@ test("kit: Start Here lists every service to sign up for with a clickable link; 
   }
   assert.match(studio, /<a href="https:\/\/metricool\.com\/pricing\/">Metricool<\/a><\/td><td>Needed<\/td>/);
   assert.doesNotMatch(reel, /metricool\.com\/pricing/, "a reel-only kit does not post, so no Metricool");
-  assert.deepEqual(signupsFor({ studio: true }).map((s) => s.id), ["claude", "metricool", "epidemic", "chatgpt", "elevenlabs", "runway", "sandcastles"]);
+  assert.deepEqual(signupsFor({ studio: true }).map((s) => s.id), ["claude", "metricool", "epidemic", "chatgpt", "elevenlabs", "pixabay", "runway", "sandcastles"]);
   const links = signupLinks({ studio: true });
-  assert.equal(Object.keys(links).length, 7);
+  assert.equal(Object.keys(links).length, 8);
+  assert.match(links["Pixabay (free).webloc"], /<string>https:\/\/pixabay\.com\/api\/docs\/<\/string>/);
   assert.match(links["Metricool.webloc"], /<string>https:\/\/metricool\.com\/pricing\/<\/string>/);
   assert.ok(!("Metricool.webloc" in signupLinks()), "reel kit: no Metricool link");
 });
