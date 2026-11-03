@@ -1,0 +1,82 @@
+[
+  {
+    "id": "coconut-1",
+    "shows": "coconut",
+    "scene": "One brown coconut suspended just above pale sand, medium close view at ground level.",
+    "action": "The coconut drops straight down onto the sand and comes to rest.",
+    "seed": 1101,
+    "prompt": "One brown coconut suspended just above pale sand, medium close view at ground level. The coconut drops straight down onto the sand and comes to rest. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+  },
+  {
+    "id": "coconut-2",
+    "shows": "coconut",
+    "scene": "One brown coconut at the edge of a low sandy bank above an empty patch of sand, side view.",
+    "action": "The coconut tips over the edge, drops onto the sand below and settles.",
+    "seed": 1102,
+    "prompt": "One brown coconut at the edge of a low sandy bank above an empty patch of sand, side view. The coconut tips over the edge, drops onto the sand below and settles. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+  },
+  {
+    "id": "cream-1",
+    "shows": "cream",
+    "scene": "Close view of white skin cream at the nozzle of a plain unmarked tube above an isolated open palm.",
+    "action": "The tube compresses once and a short ribbon of white cream lands in the stationary palm.",
+    "seed": 2201,
+    "prompt": "Close view of white skin cream at the nozzle of a plain unmarked tube above an isolated open palm. The tube compresses once and a short ribbon of white cream lands in the stationary palm. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. Only the isolated palm is visible; no face, body, other people or text."
+  },
+  {
+    "id": "cream-2",
+    "shows": "cream",
+    "scene": "Side close view of a plain cream tube angled down above an isolated stationary open palm.",
+    "action": "The tube compresses once and a small dollop of white cream dispenses into the palm.",
+    "seed": 2202,
+    "prompt": "Side close view of a plain cream tube angled down above an isolated stationary open palm. The tube compresses once and a small dollop of white cream dispenses into the palm. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. Only the isolated palm is visible; no face, body, other people or text."
+  },
+  {
+    "id": "gorilla-1",
+    "shows": "gorilla",
+    "scene": "One calm adult gorilla on a flat open forest path, whole body visible with clear space ahead.",
+    "action": "The gorilla walks naturally two steps toward the camera on all fours.",
+    "seed": 3301,
+    "prompt": "One calm adult gorilla on a flat open forest path, whole body visible with clear space ahead. The gorilla walks naturally two steps toward the camera on all fours. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+  },
+  {
+    "id": "gorilla-2",
+    "shows": "gorilla",
+    "scene": "One calm adult gorilla in a sunlit forest clearing, full body viewed from slightly to one side.",
+    "action": "The gorilla takes two slow natural steps diagonally toward the camera on all fours.",
+    "seed": 3302,
+    "prompt": "One calm adult gorilla in a sunlit forest clearing, full body viewed from slightly to one side. The gorilla takes two slow natural steps diagonally toward the camera on all fours. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+  },
+  {
+    "id": "snake-1",
+    "shows": "snake",
+    "scene": "One green snake resting lengthwise on a gently downward sloping branch, close side view.",
+    "action": "The snake slides slowly down the branch while its body stays supported by the wood.",
+    "seed": 4401,
+    "prompt": "One green snake resting lengthwise on a gently downward sloping branch, close side view. The snake slides slowly down the branch while its body stays supported by the wood. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+  },
+  {
+    "id": "snake-2",
+    "shows": "snake",
+    "scene": "One brown snake on a broad downward sloping branch above green leaves, clear side view.",
+    "action": "The snake slithers forward down the branch in one smooth continuous movement.",
+    "seed": 4402,
+    "prompt": "One brown snake on a broad downward sloping branch above green leaves, clear side view. The snake slithers forward down the branch in one smooth continuous movement. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+  },
+  {
+    "id": "wave-1",
+    "shows": "wave",
+    "scene": "One small turquoise ocean wave near an empty sandy shoreline, clear side view.",
+    "action": "The wave crests and breaks forward into white foam on the sand.",
+    "seed": 5501,
+    "prompt": "One small turquoise ocean wave near an empty sandy shoreline, clear side view. The wave crests and breaks forward into white foam on the sand. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+  },
+  {
+    "id": "wave-2",
+    "shows": "wave",
+    "scene": "One low blue ocean wave approaching an empty beach, view angled slightly along the shore.",
+    "action": "The wave curls once and collapses into a thin sheet of white foam moving up the sand.",
+    "seed": 5502,
+    "prompt": "One low blue ocean wave approaching an empty beach, view angled slightly along the shore. The wave curls once and collapses into a thin sheet of white foam moving up the sand. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+  }
+]
