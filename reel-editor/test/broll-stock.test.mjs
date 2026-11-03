@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createStockSearch, stockRelevance, normaliseStock, stockContactSheet, conformStockClip, makeStockClip, stockCacheDir, previewStockCandidates } from "../src/broll-stock.mjs";
+import { createStockSearch, stockRelevance, normaliseStock, stockContactSheet, conformStockClip, makeStockClip, stockCacheDir, previewStockCandidates, wikimediaLicence } from "../src/broll-stock.mjs";
 import { libraryDir, readLibrary, saveLibraryClip, findLibraryClip, reviewMovingClip, writeBrollCredits } from "../src/broll-library.mjs";
 import { makeBroll, picksPrompt, recentFile, rememberScenes, readRecent, PICKS_SCHEMA, normaliseStockPicks } from "../src/broll.mjs";
 import { makeRunwayBroll, runwayPicksPrompt } from "../src/broll-runway.mjs";
@@ -457,7 +457,7 @@ test("Runway folder reuses a library clip before credit checks, even without a R
 });
 
 test("house presets enable free footage only on Codex; clients default to neither source", () => {
-  assert.deepEqual(loadPreset("pingel-brand").broll.stock, ["pexels", "pixabay"]);
+  assert.deepEqual(loadPreset("pingel-brand").broll.stock, ["pexels", "pixabay", "wikimedia"]);
   assert.equal(loadPreset("pingel-brand").broll.library, true); assert.equal(loadPreset("pingel-brand").broll.animate, false);
   assert.deepEqual(loadPreset("pingel-runway").broll.stock, []); assert.equal(loadPreset("pingel-runway").broll.library, true);
   assert.deepEqual(CLIENT_BASE.broll, { animate: false, stock: [], library: false });
@@ -786,4 +786,220 @@ test("fill reads subject files and keeps action words out of the subject filter"
   assert.equal((await fillBrollLibrary({ subjectsFile: file, dryRun: true, deps: f.deps })).subjects[0].shows, "gorilla");
   assert.deepEqual(fillSubjects([{ shows: "coffee", scene: "Coffee pours into a mug.", action: "Coffee pours.", stockQuery: "coffee pouring" }])[0].shows, "coffee");
   await assert.rejects(main(["broll-fill", "--subjects", file, "--max-new", "nope", "--dry-run"]), /positive integer/);
+});
+
+const commonsMetadata = (name = "CC BY 4.0", extra = {}) => ({
+  LicenseShortName: { value: name }, Artist: { value: '<a href="https://creator.test">Camera &amp; Crew</a>' },
+  LicenseUrl: { value: "https://creativecommons.org/licenses/by/4.0/" }, ...extra,
+});
+const commonsPage = (id = 1, info = {}, page = {}) => ({ pageid: id, title: `File:Coconut ${id}.webm`,
+  categories: [{ title: "Category:Videos of coconuts" }], videoinfo: [{ url: `https://clip.test/${id}.webm`,
+    descriptionurl: `https://commons.wikimedia.org/wiki/File:Coconut_${id}.webm`, thumburl: `https://thumb.test/${id}.jpg`,
+    mime: "video/webm", mediatype: "VIDEO", size: 10 * 1024 * 1024, duration: 28, width: 1920, height: 1080,
+    extmetadata: commonsMetadata(), derivatives: [], ...info }], ...page });
+const commonsBody = (...pages) => ({ query: { pages } });
+
+test("Commons licences admit PD, CC0 and CC BY versions, reject restricted or unknown terms and require attribution", () => {
+  for (const name of ["Public domain", "Public domain mark 1.0", "PD", "CC0", "CC0 1.0", "cc-zero", "CC BY", "CC BY 1.0", "CC BY 2.0", "CC BY 2.5", "CC BY 3.0", "CC BY 4.0", "cc-by-4.0"]) {
+    assert.ok(wikimediaLicence(commonsMetadata(name)), name);
+  }
+  for (const name of ["CC BY-SA 4.0", "cc-by-sa-3.0", "CC BY-NC 4.0", "CC BY-ND 4.0", "GFDL", "Fair use", "unknown", ""]) {
+    assert.equal(wikimediaLicence(commonsMetadata(name)), null, name);
+  }
+  assert.equal(wikimediaLicence(), null);
+  for (const terms of ["Creative Commons Attribution ShareAlike", "Noncommercial", "No derivatives", "Fair use"]) {
+    assert.equal(wikimediaLicence(commonsMetadata("CC BY 4.0", { UsageTerms: { value: terms } })), null);
+  }
+  for (const key of ["License", "UsageTerms"]) {
+    assert.ok(wikimediaLicence({ ...commonsMetadata(""), [key]: { value: "cc-by-2.0" } }));
+  }
+  for (const missing of ["Artist", "LicenseUrl"]) {
+    assert.equal(wikimediaLicence(commonsMetadata("CC BY 4.0", { [missing]: { value: "" } })), null);
+    assert.ok(wikimediaLicence(commonsMetadata("Public domain", { [missing]: { value: "" } })));
+  }
+  assert.ok(wikimediaLicence(commonsMetadata("CC BY 4.0", { License: { value: "GFDL" } })), "a CC BY option is sufficient alongside GFDL");
+  const licence = wikimediaLicence(commonsMetadata("CC BY 4.0", { Artist: { value: '<b>Jos&#233;</b> &amp; <a>Team&#x21;</a>' } }));
+  assert.equal(licence.creator, "José & Team!");
+  assert.equal(licence.licenseShortName, "CC BY 4.0");
+});
+
+test("Commons normalisation filters size, duration, short-side resolution and media type before downloading", () => {
+  for (const info of [{ size: 200 * 1024 * 1024 + 1 }, { size: 0 }, { size: undefined }, { duration: 1.99 }, { duration: undefined },
+    { duration: Infinity }, { width: 479 }, { height: 479 }, { width: undefined }, { mime: "image/jpeg" }, { mediatype: "AUDIO" },
+    { thumburl: "" }, { url: "" }, { extmetadata: {} }]) {
+    assert.deepEqual(normaliseStock("wikimedia", commonsBody(commonsPage(1, info))), [], JSON.stringify(info));
+  }
+  for (const mime of ["video/webm", "video/ogg", "video/mp4"]) {
+    const [c] = normaliseStock("wikimedia", commonsBody(commonsPage(1, { mime, size: 200 * 1024 * 1024, duration: 2, width: 640, height: 480 })));
+    assert.equal(c.duration, 2); assert.equal(c.files[0].width, 640); assert.equal(c.preview, undefined);
+  }
+  const page = commonsPage(1, { descriptionurl: "" });
+  const [c] = normaliseStock("wikimedia", { query: { pages: { 1: page } } });
+  assert.match(c.pageUrl, /^https:\/\/commons.wikimedia.org\/wiki\/File%3ACoconut_1.webm$/);
+  assert.equal(c.creator, "Camera & Crew"); assert.equal(c.duration, 28);
+});
+
+test("Commons requests File videos in subject, action, synonym order with tags from title, description and categories", async () => {
+  const f = fixture(), queries = [];
+  const search = createStockSearch({ env: { REEL_CACHE: f.dir }, warnFn: fail, fetchFn: async (url, init) => {
+    const u = new URL(url), q = u.searchParams.get("gsrsearch"); queries.push(q.replace(/ filetype:video$/, ""));
+    assert.equal(u.origin + u.pathname, "https://commons.wikimedia.org/w/api.php");
+    assert.match(q, / filetype:video$/);
+    assert.equal(u.searchParams.get("gsrnamespace"), "6"); assert.equal(u.searchParams.get("generator"), "search");
+    assert.equal(u.searchParams.get("prop"), "videoinfo|categories");
+    assert.equal(u.searchParams.get("viprop"), "url|size|mime|mediatype|extmetadata|derivatives");
+    assert.equal(u.searchParams.get("viurlwidth"), "320"); assert.equal(u.searchParams.get("cllimit"), "max");
+    assert.equal(init.headers["User-Agent"], "reel-editor/1.0 (gpingelbiz private editor; contact via https://github.com/gpingelbiz)");
+    const pages = [commonsPage(1, {}, { title: "File:Gorilla.webm" }),
+      commonsPage(2, { extmetadata: { ...commonsMetadata(), ImageDescription: { value: "<p>A gorilla walks</p>" } } }, { title: "File:Wildlife.webm" }),
+      commonsPage(3, {}, { title: "File:Zoo.webm", categories: [{ title: "Category:Gorillas walking" }] }),
+      commonsPage(4, {}, { title: "File:Lion.webm" })];
+    if (q.startsWith("ape ")) pages.push(commonsPage(5, {}, { title: "File:Ape.webm" }));
+    return json(commonsBody(...pages));
+  } });
+  const found = await search({ shows: "gorilla", stockQuery: "gorilla walking", stockSynonyms: ["ape"] }, ["wikimedia"]);
+  assert.deepEqual(queries, ["gorilla", "gorilla walking", "ape"]);
+  assert.deepEqual(found.map((c) => c.id).sort(), [1, 2, 3, 5]);
+  assert.doesNotMatch(found.find((c) => c.id === 2).tags, /<p>/);
+  assert.equal(f.calls.downloads.length, 0);
+});
+
+test("Commons is opt-in and runs only after the earlier providers leave room, sharing the reel budget", async () => {
+  for (const filled of [false, true]) {
+    const f = fixture(), providers = [];
+    const search = createStockSearch({ env: f.env, stockCandidates: 3, fetchFn: async (url) => {
+      const u = new URL(url); providers.push(u.hostname);
+      if (u.hostname === "api.pexels.com") return json({ videos: filled ? [pexel(1), pexel(2)] : [] });
+      if (u.hostname === "pixabay.com") return json({ hits: filled ? [pixabay({ id: 3 })] : [] });
+      return json(commonsBody(commonsPage()));
+    } });
+    await search(pick, ["pexels", "pixabay", "wikimedia"]);
+    assert.equal(providers.includes("commons.wikimedia.org"), !filled);
+    if (!filled) assert.deepEqual(providers.slice(0, 6), ["api.pexels.com", "api.pexels.com", "pixabay.com", "api.pexels.com", "api.pexels.com", "pixabay.com"]);
+  }
+  const f = fixture(), providers = [];
+  const search = createStockSearch({ env: f.env, maxSearches: 4, fetchFn: async (url) => { providers.push(new URL(url).hostname); return json({}); } });
+  await search({ shows: "coconut" }, ["pexels", "pixabay", "wikimedia"]);
+  assert.equal(providers.at(-1), "commons.wikimedia.org"); assert.equal(providers.length, 4);
+  await search({ shows: "gorilla" }, ["wikimedia"]); assert.equal(providers.length, 4);
+  const g = fixture();
+  await createStockSearch({ env: g.env, fetchFn: async (url) => { assert.notEqual(new URL(url).hostname, "commons.wikimedia.org"); return json({}); } })(pick);
+});
+
+test("Commons search keeps the 24-hour disk cache and cache hits do not spend the search budget", async () => {
+  const f = fixture(); let clock = 1800000000000, requests = 0;
+  const options = { env: { REEL_CACHE: f.dir }, now: () => clock, maxSearches: 1, fetchFn: async () => { requests++; return json(commonsBody(commonsPage())); } };
+  await createStockSearch(options)({ shows: "coconut" }, ["wikimedia"]);
+  clock += 86400000 - 1;
+  const next = createStockSearch(options);
+  await next({ shows: "coconut" }, ["wikimedia"]); assert.equal(requests, 1);
+  await next({ shows: "snake" }, ["wikimedia"]); assert.equal(requests, 2);
+  clock += 2;
+  await createStockSearch(options)({ shows: "coconut" }, ["wikimedia"]); assert.equal(requests, 3);
+});
+
+test("Commons API errors do not poison the search cache", async () => {
+  const f = fixture(), warnings = []; let requests = 0;
+  const search = createStockSearch({ env: f.env, warnFn: (s) => warnings.push(s), fetchFn: async () => json(++requests === 1 ? { error: { code: "internal_api_error" } } : commonsBody(commonsPage())) });
+  assert.deepEqual(await search({ shows: "coconut" }, ["wikimedia"]), []);
+  assert.equal((await search({ shows: "coconut" }, ["wikimedia"])).length, 1);
+  assert.equal(requests, 2); assert.equal(warnings.length, 1);
+});
+
+test("Commons persists Retry-After seconds and HTTP dates, with at least five seconds when absent or invalid", async () => {
+  for (const retry of [null, "2", "Wed, 18 May 2027 08:00:20 GMT", "invalid"]) {
+    const f = fixture(); let clock = Date.parse("Wed, 18 May 2027 08:00:00 GMT"), requests = 0;
+    const wait = retry === "2" ? 2000 : retry?.endsWith("GMT") ? 20000 : 5000;
+    const options = { env: { REEL_CACHE: f.dir }, now: () => clock, warnFn: () => {}, fetchFn: async () => { requests++; return json({}, 429, retry ? { "Retry-After": retry } : {}); } };
+    await createStockSearch(options)({ shows: "coconut" }, ["wikimedia"]);
+    clock += wait - 1;
+    await createStockSearch(options)({ shows: "gorilla" }, ["wikimedia"]); assert.equal(requests, 1);
+    clock++;
+    await createStockSearch(options)({ shows: "snake" }, ["wikimedia"]); assert.equal(requests, 2);
+  }
+});
+
+test("Commons limits concurrent requests to three until response bodies finish", async () => {
+  const f = fixture(), releases = []; let active = 0, peak = 0;
+  const search = createStockSearch({ env: f.env, fetchFn: async () => {
+    active++; peak = Math.max(peak, active);
+    return { ...json({}), json: () => new Promise((resolve) => releases.push(() => { active--; resolve({}); })) };
+  } });
+  const pending = Array.from({ length: 8 }, (_, i) => search({ shows: `subject${i}` }, ["wikimedia"]));
+  await new Promise(setImmediate);
+  assert.equal(active, 3);
+  while (releases.length) { releases.shift()(); await new Promise(setImmediate); }
+  await Promise.all(pending);
+  assert.equal(active, 0); assert.equal(peak, 3);
+});
+
+test("a concurrent Commons success cannot clear another request's cooldown", async () => {
+  const f = fixture(); let release, requests = 0;
+  const search = createStockSearch({ env: f.env, now: f.deps.now, warnFn: () => {}, fetchFn: async () => {
+    if (++requests === 1) return new Promise((resolve) => { release = () => resolve(json({})); });
+    return json({}, 429, { "Retry-After": "8" });
+  } });
+  const pending = search({ shows: "coconut" }, ["wikimedia"]);
+  await search({ shows: "snake" }, ["wikimedia"]);
+  release(); await pending;
+  await search({ shows: "gorilla" }, ["wikimedia"]);
+  assert.equal(requests, 2);
+});
+
+const commonsDerivatives = [
+  { src: "https://preview.test/large.mp4", type: "video/mp4", width: 640, height: 360 },
+  { src: "https://preview.test/small.webm", type: 'video/webm; codecs="vp9"', width: 256, height: 144 },
+  { src: "https://preview.test/audio.ogg", type: "audio/ogg", width: 0, height: 0 },
+  { src: "https://preview.test/manifest.m3u8", type: "application/vnd.apple.mpegurl", width: 128, height: 72 },
+];
+
+test("Commons previews use the smallest WebM/MP4 derivative, otherwise only an original under 40 MB", async () => {
+  const f = fixture();
+  const [c] = normaliseStock("wikimedia", commonsBody(commonsPage(1, { derivatives: commonsDerivatives, size: 100 * 1024 * 1024 })));
+  assert.equal(c.preview, "https://preview.test/small.webm");
+  const [mp4] = normaliseStock("wikimedia", commonsBody(commonsPage(2, { derivatives: [commonsDerivatives[0]] })));
+  assert.equal(mp4.preview, "https://preview.test/large.mp4");
+  for (const [id, size, preview] of [[3, 40 * 1024 * 1024 - 1, "https://clip.test/3.webm"], [4, 40 * 1024 * 1024, undefined]]) {
+    const [fallback] = normaliseStock("wikimedia", commonsBody(commonsPage(id, { size })));
+    assert.equal(fallback.preview, preview);
+  }
+  f.deps.fetchFn = async (url, init) => { f.calls.previews.push(url); assert.match(init.headers["User-Agent"], /^reel-editor\/1.0/); return json({}); };
+  const [out] = await previewStockCandidates([c], { pick, dir: f.dir, deps: f.deps });
+  assert.deepEqual(f.calls.previews, ["https://preview.test/small.webm"]); assert.equal(out.previewFrames.length, 3);
+});
+
+test("Commons preview download cooldown also defers searches and later asset requests", async () => {
+  const f = fixture(); let requests = 0;
+  const candidates = normaliseStock("wikimedia", commonsBody(commonsPage(1), commonsPage(2)));
+  f.deps.fetchFn = async () => { requests++; return json({}, 429, { "Retry-After": "8" }); };
+  await previewStockCandidates(candidates, { pick, dir: f.dir, deps: f.deps });
+  assert.equal(requests, 1);
+  await createStockSearch({ env: f.env, now: f.deps.now, fetchFn: f.deps.fetchFn })({ shows: "coconut" }, ["wikimedia"]);
+  assert.equal(requests, 1);
+});
+
+test("Commons selected originals are conformed once, retain long and two-second footage, and export library attribution", async () => {
+  for (const duration of [2, 28]) {
+    const f = fixture(); let conformed = 0;
+    f.args.search = async () => normaliseStock("wikimedia", commonsBody(commonsPage(1, { derivatives: commonsDerivatives, duration }), commonsPage(2, { derivatives: commonsDerivatives })));
+    f.deps.conformStockClip = async (input, file, options) => {
+      conformed++; assert.equal(fs.readFileSync(input, "utf8"), "asset");
+      await conformStockClip(input, file, options);
+    };
+    const runner = f.deps.runFn;
+    f.deps.runFn = async (cmd, args) => cmd === "ffprobe" ? { out: String(duration) } : runner(cmd, args);
+    const out = await makeStockClip(f.args);
+    assert.ok(out); assert.equal(conformed, 1);
+    assert.deepEqual(f.calls.downloads, ["https://clip.test/1.webm"]);
+    assert.ok(f.calls.runs.some((r) => r.args.includes("libx264") && r.args.at(-1).endsWith("wikimedia-1.mp4")));
+    assert.equal(out.licence.creator, "Camera & Crew"); assert.equal(out.licence.licenseShortName, "CC BY 4.0");
+    assert.equal(out.licence.licenseUrl, "https://creativecommons.org/licenses/by/4.0/");
+    assert.deepEqual(readLibrary(f.env).clips[0].licence, out.licence);
+    writeBrollCredits(f.dir, [out]);
+    const credit = fs.readFileSync(path.join(f.dir, "broll credits.txt"), "utf8");
+    assert.match(credit, /Creator: Camera & Crew/); assert.match(credit, /Licence: CC BY 4.0/);
+    assert.match(credit, /Licence URL: https:\/\/creativecommons.org\/licenses\/by\/4.0\//);
+    assert.match(credit, /Page: https:\/\/commons.wikimedia.org\/wiki\/File:Coconut_1.webm/);
+    assert.match(credit, /Changes: cropped, trimmed, muted and conformed/);
+  }
 });
