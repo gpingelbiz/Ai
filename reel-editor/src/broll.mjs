@@ -9,7 +9,7 @@ import { conformStill, hasRunway } from "./runway.mjs";
 import { createStockSearch, makeStockClip } from "./broll-stock.mjs";
 import { findLibraryClip, writeBrollCredits } from "./broll-library.mjs";
 
-export const PROMPT_VERSION = "literal-codex-v5";
+export const PROMPT_VERSION = "literal-codex-v6";
 
 let testCache;
 /** Tests get one disposable scene history and clip bank per worker, unless they supply explicit paths. */
@@ -175,6 +175,8 @@ const WORD_REF_SCHEMA = {
 /** A null reads like a field Codex left out (codexExec strips them too; injected test replies may not). */
 export const withoutNulls = (picks) => picks.map((p) => Object.fromEntries(Object.entries(p).filter(([, v]) => v !== null)));
 
+export const normaliseStockPicks = (picks) => withoutNulls(picks).map((p) => ({ stockSynonyms: [], ...p }));
+
 export const PICKS_SCHEMA = {
   type: "object",
   properties: {
@@ -183,14 +185,14 @@ export const PICKS_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          stockQuery: { type: "string" }, line: { type: "integer" }, scene: { type: "string" }, shows: { type: "string" }, file: { type: "string" },
+          stockSynonyms: { type: "array", items: { type: "string" }, minItems: 0, maxItems: 3 }, stockQuery: { type: "string" }, line: { type: "integer" }, scene: { type: "string" }, shows: { type: "string" }, file: { type: "string" },
           duration: { type: "number" }, kind: { type: "string", enum: ["action", "ambient"] },
           action: { type: "string" }, motion: { type: "string" }, endScene: { type: "string" },
           sound: { type: "string" }, soundRole: { type: "string", enum: ["impact", "movement", "none"] },
           sequenceGroup: { type: "string" }, endsAt: WORD_REF_SCHEMA, endsBefore: WORD_REF_SCHEMA,
         },
         // Optional fields stay optional here; codexExec's strictSchema makes them nullable for OpenAI.
-        required: ["stockQuery", "line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
+        required: ["stockSynonyms", "stockQuery", "line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
         additionalProperties: false,
       },
     },
@@ -213,7 +215,7 @@ export function codexStillInstructions({ aspect = "9:16", style = "", file, assi
 export function picksPrompt(options) {
   const file = options.sourcesFirst ? "" : "broll-1.png";
   const instructions = options.sourcesFirst ? "Plan only. Do not draw images or use tools. Set file to an empty string; a still is drawn later only if footage is unavailable." : codexStillInstructions(options);
-  return runwayPicksPrompt({ ...options, instructions: `${instructions}\nstockQuery: 2-4 plain search words naming the same subject and its harmless action, such as snake on branch, coconut falling or gorilla walking.`, reply: PICKS_REPLY.replace('"line":N,"shows"', `"file":${JSON.stringify(file)},"stockQuery":"snake on branch","line":N,"shows"`) });
+  return runwayPicksPrompt({ ...options, instructions: `${instructions}\nstockQuery: 2-4 plain search words naming the same subject and its harmless action, such as snake on branch, coconut falling or gorilla walking.\nstockSynonyms: 0 to 3 plain single words or short nouns naming the SAME subject, for example gorilla -> ape, silverback. Use [] when none apply.`, reply: PICKS_REPLY.replace('"line":N,"shows"', `"file":${JSON.stringify(file)},"stockQuery":"snake on branch","stockSynonyms":["serpent"],"line":N,"shows"`) });
 }
 
 /** Codex supplies first frames; the shared engine owns checks, spending, animation, recovery and sound. */
@@ -230,7 +232,7 @@ async function makeAnimatedBroll(args) {
     planPicks: async (request, dir) => {
       ready();
       for (const file of fs.readdirSync(dir)) if (/^broll-\d+\.(png|jpe?g|webp)$/i.test(file)) fs.rmSync(path.join(dir, file), { force: true });
-      return withoutNulls(JSON.parse(await exec(picksPrompt({ ...request, aspect: settings.aspect || "9:16" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 })).picks || []);
+      return normaliseStockPicks(JSON.parse(await exec(picksPrompt({ ...request, aspect: settings.aspect || "9:16" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 })).picks || []);
     },
     drawStill: async ({ file, prompt, pick, reason, attempt, kind }) => {
       const dir = path.dirname(file);
@@ -294,7 +296,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
     log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"}${sourcesFirst ? " for library and stock" : " and drawing the stills"}…`);
     const transcript = groups.map((g) => g.text).join(" ");
     const reply = await exec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: gap, duration: len, style: settings.style || "", recent: readRecent(recentFile(deps.env)), sourcesFirst, aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
-    picks = withoutNulls(JSON.parse(reply).picks || []);
+    picks = normaliseStockPicks(JSON.parse(reply).picks || []);
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);
     return [];
@@ -304,7 +306,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   const imageFor = (p) => p.file ? savedImage(dir, path.basename(String(p.file))) : null;
   const planned = sourcesFirst ? valid : valid.filter(imageFor);
   for (const p of valid) if (!planned.includes(p)) brollStep(p, "dropped: Codex saved no opening image", deps);
-  const search = createStockSearch({ env: deps.env, fetchFn: deps.fetchFn, now: deps.now, maxSearches: settings.stockMaxSearches ?? 6 });
+  const search = createStockSearch({ env: deps.env, fetchFn: deps.fetchFn, now: deps.now, maxSearches: settings.stockMaxSearches ?? 20, stockCandidates: settings.stockCandidates ?? 12 });
   const placed = placePlannedBroll(planned, candidates, { gap, max, timing });
   for (const p of planned) if (!placed.some((s) => s.rank === p.rank)) brollStep(p, `dropped: no room within ${gap}s spacing and ${max}-shot limit before the next subject`, deps);
   const placeStill = ({ pick, shot, k }, file) => {

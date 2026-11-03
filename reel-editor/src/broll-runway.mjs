@@ -408,7 +408,7 @@ const hasSeen = (r) => typeof r.seen === "string" && !!r.seen.trim();
 const hasBools = (fields) => (r) => fields.every((f) => typeof r[f] === "boolean");
 
 /** A moving camera alone is insufficient: the named subject and its action must survive the used part. */
-export async function checkRunwayVideo({ file, shot, pick, groups, inPoint = 0, dir = path.dirname(file), threshold = 1, deps = {} }) {
+export async function checkRunwayVideo({ file, shot, pick, groups, inPoint = 0, dir = path.dirname(file), threshold = 1, eventOnly = false, deps = {} }) {
   const runner = deps.runFn || run, look = deps.claudeLook || claudeLook;
   const evidence = fs.mkdtempSync(path.join(dir, "clip-check-"));
   try {
@@ -416,13 +416,15 @@ export async function checkRunwayVideo({ file, shot, pick, groups, inPoint = 0, 
     const { frames, sheet } = await contactSheet(file, shot.duration, { dir: evidence, peakTime: motion.peakTime, inPoint, runFn: runner });
     const relativeSheet = path.relative(dir, sheet);
     const open = await lookJSON(clipOpenPrompt(frames, relativeSheet), hasSeen, look, dir);
-    const result = await lookJSON(clipCheckPrompt({ seen: open.seen, frames, sheet: relativeSheet, pick, shot, groups, inPoint }), (r) => validTimeline(r, shot.duration), look, dir);
+    const prompt = clipCheckPrompt({ seen: open.seen, frames, sheet: relativeSheet, pick, shot, groups, inPoint });
+    const result = await lookJSON(eventOnly ? `${prompt}
+This full-source pass only locates the event for a later cut. Report all defects, but set shows and action from whether the named subject and event are visible somewhere in the source. Defects elsewhere do not invalidate that event. The exact used window will receive a separate complete inspection.` : prompt, (r) => validTimeline(r, shot.duration), look, dir);
     const frozen = motion.mean < threshold;
     const contactRequired = /\b(drop|drops|fall|falls|land|lands|hit|hits|impact)\b/i.test(pick.action || "");
-    const ok = (!contactRequired || result.contact !== null) && !frozen && result.shows && result.action && !result.dark && result.physicsPlausible && result.identityStable && !result.artifacts && result.directionPlausible && !result.humanFaces && !result.readableText;
+    const ok = eventOnly ? result.shows && result.action : (!contactRequired || result.contact !== null) && !frozen && result.shows && result.action && !result.dark && result.physicsPlausible && result.identityStable && !result.artifacts && result.directionPlausible && !result.humanFaces && !result.readableText;
     let local;
-    if (ok) local = await (deps.localClipCheck || localClipCheck)(frames, { dir, runFn: runner, look, pick });
-    const verdict = { ...result, look: "pass", motion, frames, sheet, local, ok: ok && local?.ok === true, why: frozen ? "frozen clip after background compensation" : local?.ok === false ? local.why : `${result.why || "event inspected"}; ${result.defects.join("; ")}` };
+    if (ok && !eventOnly) local = await (deps.localClipCheck || localClipCheck)(frames, { dir, runFn: runner, look, pick });
+    const verdict = { ...result, look: "pass", motion, frames, sheet, local, ok: ok && (eventOnly || local?.ok === true), why: frozen ? "frozen clip after background compensation" : local?.ok === false ? local.why : `${result.why || "event inspected"}; ${result.defects.join("; ")}` };
     writeJSON(path.join(evidence, "verdict.json"), verdict);
     return verdict;
   } catch (e) {

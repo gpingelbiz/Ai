@@ -37,6 +37,7 @@ Usage
                                     sparse cards and b-roll, 112% punch-ins, end-screen-safe ending, and the package
                                     (description with chapters, titles, captions.srt, thumbnails, endscreen.json,
                                     edit.v3.json). Captions off by default (--captions burns them in)
+  reel broll-fill [--subjects <file>] [--max-new 20] [--dry-run]  fill the free stock library
   reel usage                        what the paid generations (Runway b-roll) cost this month and last, and the balance
   reel clips <long video> [--count 5] [--plan-only] [--replan] [--no-layout] [edit options]
                                     one long recording into several reels: Claude picks 30-90 s windows with a
@@ -317,6 +318,13 @@ export async function main(argv) {
   const [cmd, ...rest] = argv;
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return console.log(USAGE);
   switch (cmd) {
+    case "broll-fill": {
+      const { opts } = parse(rest, { subjects: { type: "string" }, "max-new": { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { fillBrollLibrary, BROLL_FILL_HELP } = await import("./broll-fill.mjs");
+      if (opts.help) return console.log(BROLL_FILL_HELP);
+      const settings = loadPreset().broll || {};
+      return fillBrollLibrary({ settings: { ...settings, stock: settings.stock?.length ? settings.stock : ["pexels", "pixabay"] }, subjectsFile: opts.subjects, maxNew: opts.maxNew == null ? 20 : Number(opts.maxNew), dryRun: opts.dryRun });
+    }
     case "speaker": {
       const { speakerMain } = await import("./speaker.mjs");
       return speakerMain(rest);
