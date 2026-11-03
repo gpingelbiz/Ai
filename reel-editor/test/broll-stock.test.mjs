@@ -456,18 +456,29 @@ test("Runway folder reuses a library clip before credit checks, even without a R
   assert.equal(accepted.source, "library"); assert.equal(accepted.video, true);
 });
 
-test("house presets enable free footage only on Codex; clients default to neither source", () => {
+test("house and client cheap folders enable free footage; explicit brand choices still win", () => {
   assert.deepEqual(loadPreset("pingel-brand").broll.stock, ["pexels", "pixabay", "wikimedia"]);
   assert.equal(loadPreset("pingel-brand").broll.library, true); assert.equal(loadPreset("pingel-brand").broll.animate, false);
   assert.deepEqual(loadPreset("pingel-runway").broll.stock, []); assert.equal(loadPreset("pingel-runway").broll.library, true);
-  assert.deepEqual(CLIENT_BASE.broll, { animate: false, stock: [], library: false });
+  assert.deepEqual(CLIENT_BASE.broll, { animate: false, stock: ["pexels", "pixabay", "wikimedia"], library: true, stillFallback: false });
   const f = fixture(), own = path.join(f.dir, "brand.json");
   fs.writeFileSync(own, JSON.stringify({ name: "brand-example", extends: "pingel-brand" }));
+  assert.deepEqual(loadPreset(own).broll.stock, ["pexels", "pixabay", "wikimedia"]); assert.equal(loadPreset(own).broll.library, true);
+  assert.equal(loadPreset(own).broll.stillFallback, false);
+  fs.writeFileSync(own, JSON.stringify({ name: "brand-example", extends: "pingel-brand", broll: { stock: [], library: false, stillFallback: true } }));
   assert.deepEqual(loadPreset(own).broll.stock, []); assert.equal(loadPreset(own).broll.library, false);
-  fs.writeFileSync(own, JSON.stringify({ name: "brand-example", extends: "pingel-brand", broll: { stock: ["pexels"], library: true } }));
-  assert.deepEqual(loadPreset(own).broll.stock, ["pexels"]); assert.equal(loadPreset(own).broll.library, true);
+  assert.equal(loadPreset(own).broll.stillFallback, true);
   const client = brandPreset({ name: "Client", handle: "@client", brollEngine: "runway" });
   assert.deepEqual(client.broll.stock, []); assert.equal(client.broll.library, false);
+  const free = brandPreset({ name: "Client", handle: "@client" });
+  fs.writeFileSync(own, JSON.stringify(free));
+  assert.deepEqual(loadPreset(own).broll.stock, CLIENT_BASE.broll.stock);
+  assert.equal(loadPreset(own).broll.library, true);
+  assert.equal(loadPreset(own).broll.stillFallback, false);
+  const brand = { ...free.brand, compat: { reel: { stock: [], library: false, stillFallback: true } } };
+  const explicit = brandPreset(brand);
+  assert.deepEqual(explicit.broll.stock, []); assert.equal(explicit.broll.library, false);
+  assert.equal(explicit.broll.stillFallback, true);
 });
 
 test("Codex adds a literal stock query while retaining shared subject, weapon and daylight rules", () => {

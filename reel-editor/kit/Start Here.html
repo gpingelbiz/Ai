@@ -45,7 +45,8 @@
         <tr><td>Your look</td><td><b>2</b> for plain white captions, or <b>3</b> for your own colors (two hex codes, like <code>#00AAFF</code>). Pick <b>1</b> only if you make content for Greg Pingel.</td></tr>
         <tr><td>ElevenLabs key</td><td>Paste it, or press Return to skip. Get one at elevenlabs.io, under Developers, API Keys.</td></tr>
         <tr><td>Drop folder</td><td>Press Return for yes.</td></tr>
-        <tr><td>Codex</td><td>Press Return for yes if you have a ChatGPT account, then sign in in the browser window. It adds b-roll and a carousel to every reel.</td></tr>
+        <tr><td>Codex</td><td>Press Return for yes if you have a ChatGPT account, then sign in in the browser window. It picks matching B-roll moments and adds generated carousel images.</td></tr>
+        <tr><td>Free stock keys</td><td>Optional: use your own Pixabay or Pexels key for free stock video. Links and filming instructions are in the B-roll section below.</td></tr>
         <tr><td>Runway key</td><td>Paste it, or press Return to skip. Make one at dev.runwayml.com (buy credits there first). It turns on Raw - Reel with Runway B-roll.</td></tr>
         <tr><td>Claude</td><td>Press Return for yes, then sign in with your Claude account (Pro or Max) when it opens and type <code>/exit</code> to come back. It adds graphic cards, captions and hook ideas.<!-- studio --> A Content Studio kit asks this later, in the Content Studio part.<!-- /studio --></td></tr>
       </table>
@@ -67,14 +68,14 @@
 
   <h2>2. Make a reel</h2>
   <ol>
-    <li>Drop a clip into one of the three Raw folders in <b>Desktop/Reels</b>. The folder decides what you get.</li>
+    <li>Drop a clip into one of the Raw folders in <b>Desktop/Reels</b>. The folder decides what you get.</li>
     <li>Wait for the notification. A 1-minute clip takes about 3 minutes.</li>
     <li>Open the new folder in <b>Desktop/Reels</b>, named by date and number.</li>
   </ol>
   <table>
     <tr><th>Drop into</th><th>You get</th></tr>
     <tr><td>Raw - Reel</td><td><code>2026-10-21 Reel 1</code>: the edited reel in the classic look (bold outlined captions), named after its hook</td></tr>
-    <tr><td>Raw - Reel with B-roll</td><td><code>2026-10-21 Reel 2 with B-roll</code>: the full look: graphic cards that show what you say, captions that light up word by word with a hand-drawn marker on the key word, big climax words that stamp in as you say them, the hook running behind your head and shoulders, and generated pictures cut in for a couple of seconds each, plus those pictures. Cards need Claude Code; pictures need Codex (below).</td></tr>
+    <tr><td>Raw - Reel with B-roll</td><td><code>2026-10-21 Reel 2 with B-roll</code>: the full look: graphic cards that show what you say, captions that light up word by word with a hand-drawn marker on the key word, big climax words that stamp in as you say them, the hook running behind your head and shoulders, and real moving clips that fit what you say. Your own clips come first, then free stock video; otherwise you stay on screen. Cards need Claude Code.</td></tr>
     <tr><td>Raw - Full YouTube Edit</td><td><code>2026-10-22 YouTube 1</code>: the whole long video edited for YouTube: chapters with title cards, re-hooks, sparse cards and pictures, punch-ins, a clean last 20 seconds for the end screen, plus the description with chapters, three titles, the captions file, three thumbnail frames and the end-screen plan. Captions are off by default; put <code>#captions</code> in the file name to burn them in.</td></tr>
     <tr><td>Raw - Reel with Runway B-roll</td><td><code>2026-10-22 Reel 3 with Runway</code>: the full look with short generated video clips as the b-roll instead of pictures. Needs a Runway API key with credits (about 30 cents a clip); the folder gets a note with what the reel cost.</td></tr>
     <tr><td>Raw - Clips from Long Video</td><td><code>2026-10-22 Clips 1</code>: a podcast, a live or a training cut into up to 5 reels, each with the full look. Wide footage follows whoever is talking and splits the screen when two people trade lines. Each clip comes with its cover, caption and the words to check; <code>clips.txt</code> lists the moments.</td></tr>
@@ -102,7 +103,13 @@
     <tr><td><code>clip #music:calm.mov</code> / <code>clip #nomusic.mov</code></td><td>Use the Music track whose name has "calm", or no music</td></tr>
     <tr><td><code>clip #fast.mov</code></td><td>Faster pacing: a new shot every second or so, the first cut within a second, one or two words of caption at a time</td></tr>
   </table>
-  <p class="muted">B-roll and carousels use Codex: say yes when the installer offers it, and sign in with your ChatGPT account. Without it, Raw - Reel still works. Codex has usage limits; when it hits one, b-roll reels come without b-roll for 20 minutes and a carousel leaves a note to drop it again.</p>
+  <p class="muted">Generated carousels use Codex: say yes when the installer offers it, and sign in with your ChatGPT account. Codex has usage limits; when it hits one, a carousel leaves a note to drop it again. Free B-roll uses Codex to pick matching moments and Claude Code to check the clips; sign in to both.</p>
+
+  <h3>B-roll: use your own clips and free video</h3>
+  <p><b>Raw - Reel with B-roll</b> tries your own approved clips first, then free stock video. If no real moving clip fits what you say, you stay on screen. It never fills the gap with a still picture.</p>
+  <p>To add your own clips, film <b>6 to 10 seconds</b>, with the action in the middle and <b>no faces</b>. Name each file <code>subject - action.mov</code>, such as <code>coffee - pours into a mug.mov</code>, and drop it in <b>Desktop/Reels/Raw - My B-roll clips</b>. A short result note appears beside it: approved, or rejected with the reason. Your original is kept there.</p>
+  <p>Open <b>Desktop/Reels/B-roll shot list.html</b> for ideas. Print it from your browser and check off each shot as you film.</p>
+  <p>For more free stock, add your own optional <a href="https://pixabay.com/api/docs/">Pixabay key</a> (free account; your key appears on that page when logged in) or <a href="https://www.pexels.com/api/">Pexels key</a> (new sign-ups may be paused) when installing. Everyone uses their own key. Re-running the installer keeps keys you already saved.</p>
 
   <h2>3. Make it yours</h2>
   <ul>

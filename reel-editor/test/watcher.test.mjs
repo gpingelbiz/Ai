@@ -17,6 +17,36 @@ test("watcher scripts parse under /bin/bash", () => {
   }
 });
 
+test("own B-roll drops run broll-add once, keep originals and record failed starts", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "own-drops-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const bin = path.join(home, ".local", "bin"), raw = path.join(home, "my clips");
+  fs.mkdirSync(bin, { recursive: true }); fs.mkdirSync(raw);
+  fs.writeFileSync(path.join(bin, "reel"), `#!/bin/bash
+printf '%s\\n' "$@" >> "$HOME/calls"
+[ "$1" = broll-add ] && [ "$3" = --note ] || exit 2
+case "$2" in *rejected*) printf 'Rejected: the action is not visible.\\n' > "$2.result.txt"; exit 1;; *broken*) exit 1;; esac
+printf 'Approved: added to your B-roll library.\\n' > "$2.result.txt"
+`);
+  fs.chmodSync(path.join(bin, "reel"), 0o755);
+  const names = ["coffee - pours.MOV", "rejected - hidden.mp4", "broken - unreadable.mov"];
+  for (const name of names) fs.writeFileSync(path.join(raw, name), "original bytes");
+  const env = { HOME: home, PATH: process.env.PATH, REEL_WATCH_RAW_OWN_BROLL: raw, REEL_WATCH_FAST: "1", REEL_CACHE: path.join(home, "cache"), REEL_BROLL_RECENT: path.join(home, "recent.json") };
+  const run = () => spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], { env, encoding: "utf8" });
+  assert.equal(run().status, 0);
+  const calls = fs.readFileSync(path.join(home, "calls"), "utf8");
+  assert.equal(calls.split("\n").filter((s) => s === "broll-add").length, 3);
+  assert.match(fs.readFileSync(path.join(raw, `${names[0]}.result.txt`), "utf8"), /^Approved:/);
+  assert.match(fs.readFileSync(path.join(raw, `${names[1]}.result.txt`), "utf8"), /^Rejected: the action/);
+  assert.match(fs.readFileSync(path.join(raw, `${names[2]}.result.txt`), "utf8"), /^Rejected: the clip could not be checked/);
+  for (const name of names) assert.equal(fs.readFileSync(path.join(raw, name), "utf8"), "original bytes");
+  const seen = fs.readdirSync(path.join(home, "Reels", "videos", ".seen"));
+  assert.equal(seen.filter((s) => s.endsWith(".done")).length, 1);
+  assert.equal(seen.filter((s) => s.endsWith(".failed")).length, 2);
+  assert.equal(run().status, 0);
+  assert.equal(fs.readFileSync(path.join(home, "calls"), "utf8"), calls);
+});
+
 test("evidence images use the same two-pass stable-size gate before they become CLI inputs", () => {
   assert.match(script, /wait_image\(\)/);
   assert.match(script, /size=\$\(filesize "\$image"\).*age=/s);

@@ -19,8 +19,8 @@ export function listPresets() {
  * before this change. Chin clearance still inherits the current placement fix.
  */
 export const CLIENT_CAPTIONS = { uppercase: false, fontSizeFrac: 0.0355, animation: "cut", autoKeywords: false, annotate: false, dimFuture: false, keywordColorOnFootage: false, maxKeywordsPerLine: 1 };
-// Clients opt into stock, the clip library or paid animation in their own brand.
-export const CLIENT_BASE = { captions: CLIENT_CAPTIONS, zooms: { minSpacing: 10, maxPer30: 3 }, broll: { animate: false, stock: [], library: false } };
+// Clients use real free footage first; an unmatched line stays on the speaker.
+export const CLIENT_BASE = { captions: CLIENT_CAPTIONS, zooms: { minSpacing: 10, maxPer30: 3 }, broll: { animate: false, stock: ["pexels", "pixabay", "wikimedia"], library: true, stillFallback: false } };
 export const isClientBrand = (own = {}) => own.extends === "pingel-brand" && /^brand-/.test(String(own.name || ""));
 
 /** Default preset: REEL_PRESET (a name in presets/ or a path to a .json, set by install.sh), else pingel-brand. */

@@ -9,7 +9,7 @@ import { deepMerge, readJSON } from "./util.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
 import { assertNoGreg } from "./speaker-intake.mjs";
 // Client captions keep the quieter October 30 look as Greg restores his bigger, gold captions.
-import { CLIENT_CAPTIONS } from "./presets.mjs";
+import { CLIENT_CAPTIONS, CLIENT_BASE } from "./presets.mjs";
 
 /**
  * Brand kits: one brand file (kit/brand-template.json) becomes a Reel Editor Kit zip for someone else, with their
@@ -121,8 +121,8 @@ export function brandPreset(b, { fonts = {} } = {}) {
     // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
     graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : { every: 10, max: 6 }), clearStart: 0 },
-    // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
-    broll: { ...broll, stock: compat.stock ?? [], library: compat.library === true, engine: brollEngine, world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
+    // Their footage brief uses their world; the free sources can still be overridden by the brand.
+    broll: { ...broll, stock: compat.stock ?? (brollEngine === "runway" ? [] : [...CLIENT_BASE.broll.stock]), library: compat.library ?? (brollEngine !== "runway"), ...(compat.stillFallback != null ? { stillFallback: compat.stillFallback } : {}), engine: brollEngine, world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
     carousel: { handle: identity.handle || "", style: String(compat.carouselStyle ?? b.carouselStyle ?? "").trim() },
     lowerThird: { name: identity.name, handle: identity.handle || "" },
   };

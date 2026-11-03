@@ -3,6 +3,7 @@
 # Usage: watch-reel.sh /path/to/clip.mov [reel|broll|carousel]
 #   reel      the edited reel, classic look (Anton pop captions, no cards)        -> "<date> Reel <n>/"
 #   broll     the full look: graphic cards, reveal captions, the configured b-roll engine -> "<date> Reel <n> with B-roll/"
+#   own-broll import an own clip into the library; leave the original and a result note in its drop folder
 #   carousel  an IG carousel from the video     -> "<date> Carousel <n>/"
 #   long      a long recording (a podcast, a live, a training) cut into several reels with the full look, the
 #             crop following whoever is talking, split screen when two people trade lines -> "<date> Clips <n>/"
@@ -34,7 +35,7 @@ FILE="${1:-}"
 MODE="${2:-reel}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
-case "$MODE" in reel|broll|carousel|long|youtube|runway) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube or runway"}'; exit 1;; esac
+case "$MODE" in reel|broll|carousel|long|youtube|runway|own-broll) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube, runway or own-broll"}'; exit 1;; esac
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
@@ -90,9 +91,19 @@ if [ "${REEL_WATCH_FAST:-0}" != 1 ]; then
   done
   if [ "$good" -lt 2 ]; then
     echo "$(date '+%F %T') FAIL  $(basename "$FILE"): still copying or not a readable video after 5 minutes" >> "${REEL_WATCH_ROOT:-$HOME/Reels}/watch.log"
+    [ "$MODE" != own-broll ] || printf 'Rejected: the file did not finish copying or could not be read as a video. Rename it to try again.\n' > "$FILE.result.txt"
     printf '{"ok":false,"input":"%s","error":"file never finished copying"}\n' "$FILE"
     exit 1
   fi
+fi
+
+# Own footage is imported in place; the command leaves its result note beside the original.
+if [ "$MODE" = own-broll ]; then
+  rm -f "$FILE.result.txt"
+  if reel broll-add "$FILE" --note >> "$REELS/watch.log" 2>&1; then exit 0; fi
+  # A startup failure may happen before broll-add can write its own explanation.
+  [ -s "$FILE.result.txt" ] || printf 'Rejected: the clip could not be checked. See ~/Reels/watch.log, then rename it to try again.\n' > "$FILE.result.txt"
+  exit 1
 fi
 
 # Mac notification (shows on the Mini; harmless when there is no GUI session).

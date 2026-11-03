@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { addOwnBroll, ownClipMetadata, ownVideoFiles, ownClipCovers, brollShotlist } from "../src/broll-own.mjs";
+import { addOwnBroll, ownClipMetadata, ownVideoFiles, ownClipCovers, brollShotlist, brollShotlistPage } from "../src/broll-own.mjs";
 import { ownLibraryDir, libraryDir, libraryClipPath, readLibrary, findLibraryClip, rankLibraryClips } from "../src/broll-library.mjs";
 import { fillBrollLibrary } from "../src/broll-fill.mjs";
 import { DEFECT_QUESTIONS } from "../src/broll-qc.mjs";
@@ -64,7 +64,7 @@ test("own import copies the original unchanged, saves a full proxy and timeline 
   const out = await addOwnBroll({ ...f.args, scene: "beach" });
   assert.equal(out.approved.length, 1); assert.equal(out.results[0].status, "approved");
   const clip = out.approved[0];
-  assert.equal(clip.source, "own"); assert.deepEqual(clip.licence, { provider: "own", creator: "Greg Pingel" });
+  assert.equal(clip.source, "own"); assert.deepEqual(clip.licence, { provider: "own", creator: "Clip owner" });
   assert.equal(clip.contentHash, crypto.createHash("sha256").update(bytes).digest("hex"));
   assert.equal(path.isAbsolute(clip.file), false); assert.equal(path.isAbsolute(clip.originalFile), false);
   assert.deepEqual(fs.readFileSync(f.file), bytes); assert.equal(fs.statSync(f.file).mtimeMs, stat.mtimeMs);
@@ -214,6 +214,49 @@ test("shotlist has 48 filmable shots across eight worlds with framing and exclus
   }
   assert.ok(!shots.some((s) => s.shows.includes("rope")));
   assert.equal(listPresets().includes("broll-shotlist"), false);
+});
+
+test("drop imports leave approved, duplicate and rejected notes without changing the original", async () => {
+  const f = fixture(), bytes = fs.readFileSync(f.file), before = fs.statSync(f.file);
+  await addOwnBroll({ ...f.args, note: true });
+  const note = `${f.file}.result.txt`;
+  assert.match(fs.readFileSync(note, "utf8"), /^Approved: added/);
+  await addOwnBroll({ ...f.args, note: true });
+  assert.match(fs.readFileSync(note, "utf8"), /^Approved: this clip is already/);
+  await addOwnBroll({ ...f.args, note: true, dryRun: true });
+  assert.match(fs.readFileSync(note, "utf8"), /^Preview only:/);
+  writeJSON(f.file.replace(/\.mov$/, ".json"), { shows: "" });
+  await addOwnBroll({ ...f.args, note: true });
+  assert.match(fs.readFileSync(note, "utf8"), /^Rejected: metadata needs shows/);
+  assert.deepEqual(fs.readFileSync(f.file), bytes);
+  assert.equal(fs.statSync(f.file).mtimeMs, before.mtimeMs);
+});
+
+test("broll-add --note exits unsuccessfully on rejection and writes its reason without running tools", async (t) => {
+  const f = fixture();
+  writeJSON(f.file.replace(/\.mov$/, ".json"), { shows: "" });
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync(process.execPath, [new URL("../bin/reel.mjs", import.meta.url).pathname, "broll-add", f.file, "--note"], {
+    env: { ...process.env, ...f.env, REEL_CLAUDE_BIN: "/no-claude", PATH: "/no-tools" }, encoding: "utf8",
+  });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(fs.readFileSync(`${f.file}.result.txt`, "utf8"), /^Rejected: metadata needs shows/);
+});
+
+test("client printable shot lists exclude the house props and escape shot text", () => {
+  const f = fixture(), html = path.join(f.dir, "shot list.html");
+  const worlds = brollShotlist({ client: true, html, deps: f.deps });
+  assert.equal(worlds.length, 7);
+  assert.equal(worlds.flatMap((w) => w.shots).length, 42);
+  const page = fs.readFileSync(html, "utf8");
+  assert.doesNotMatch(page, /jungle|coconut|gorilla|snake/i);
+  assert.match(page, /@media print/);
+  assert.match(page, /6 to 10 seconds/);
+  assert.match(page, /subject - action.mov/);
+  assert.match(page, /truck tailgate/);
+  assert.match(brollShotlistPage([{ world: "<test>", shots: [{ shows: "<clip>", action: "a & b", scene: "", framing: "", exclusion: "" }] }]), /&lt;clip&gt; - a &amp; b/);
+  brollShotlist({ html, deps: f.deps });
+  assert.match(fs.readFileSync(html, "utf8"), /jungle-reel props/);
 });
 
 test("--missing requires an approved own clip with the action and an existing resolved file", async () => {
