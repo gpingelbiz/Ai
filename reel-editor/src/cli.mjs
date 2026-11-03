@@ -38,6 +38,7 @@ Usage
                                     (description with chapters, titles, captions.srt, thumbnails, endscreen.json,
                                     edit.v3.json). Captions off by default (--captions burns them in)
   reel broll-fill [--subjects <file>] [--max-new 20] [--dry-run]  fill the free stock library
+  reel broll-generate --prompts <file> [--dry-run]  generate local candidates and inspect them for the library
   reel usage                        what the paid generations (Runway b-roll) cost this month and last, and the balance
   reel clips <long video> [--count 5] [--plan-only] [--replan] [--no-layout] [edit options]
                                     one long recording into several reels: Claude picks 30-90 s windows with a
@@ -318,6 +319,12 @@ export async function main(argv) {
   const [cmd, ...rest] = argv;
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return console.log(USAGE);
   switch (cmd) {
+    case "broll-generate": {
+      const { opts } = parse(rest, { prompts: { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { generateBrollLibrary, BROLL_GENERATE_HELP } = await import("./broll-localgen.mjs");
+      if (opts.help) return console.log(BROLL_GENERATE_HELP);
+      return generateBrollLibrary({ promptsFile: opts.prompts, dryRun: opts.dryRun });
+    }
     case "broll-fill": {
       const { opts } = parse(rest, { subjects: { type: "string" }, "max-new": { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
       const { fillBrollLibrary, BROLL_FILL_HELP } = await import("./broll-fill.mjs");
