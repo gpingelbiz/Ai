@@ -8,7 +8,7 @@ const PRESET_DIR = path.join(PKG_ROOT, "presets");
 export function listPresets() {
   return fs
     .readdirSync(PRESET_DIR)
-    .filter((f) => f.endsWith(".json") && !f.startsWith("_") && !f.startsWith("pace-") && f !== "broll-subjects.json")
+    .filter((f) => f.endsWith(".json") && !f.startsWith("_") && !f.startsWith("pace-"))
     .map((f) => f.replace(/\.json$/, ""));
 }
 

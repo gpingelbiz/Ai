@@ -326,6 +326,9 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
       brollStep(pick, `placed ${moving.source} clip at ${moving.start}s for ${moving.duration}s`, deps);
       continue;
     }
+    // Greg's rule: real moving B-roll or none. With footage sources on, a miss keeps the speaker on screen unless
+    // the preset opts back into drawn stills (broll.stillFallback).
+    if (sourcesFirst && settings.stillFallback !== true) { brollStep(pick, "kept the speaker on screen: no real moving clip passed", deps); continue; }
     const file = imageFor(pick);
     if (file) { brollStep(pick, "still drawn: opening image saved", deps); placeStill({ pick, shot, k }, file); }
     else fallbacks.push({ pick, shot, k, name: `broll-${k + 1}.png` });
@@ -354,7 +357,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, stillSource: "codex", shots });
   writeBrollCredits(workDir, shots);
   if (shots.length) rememberScenes(shots.map((s) => s.scene), recentFile(deps.env));
-  if (shots.length < picks.length) warn(`b-roll: ${picks.length - shots.length} of ${picks.length} picks had no image or no room`);
+  if (shots.length < picks.length) warn(`b-roll: ${picks.length - shots.length} of ${picks.length} picks had no ${sourcesFirst && settings.stillFallback !== true ? "real moving clip" : "image"} or no room`);
   log(`b-roll: ${shots.length} shots ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
   return shots;
 }

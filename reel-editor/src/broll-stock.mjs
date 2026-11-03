@@ -75,7 +75,8 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
     } catch { warnFn(`b-roll: ${provider} search unavailable; skipped`); return []; }
   }
   // The bare subject goes first: a longer query such as "gorilla walking" matches crowds walking before gorillas.
-  // Clips whose tags name a different subject are dropped; tagged matches rank ahead of untagged clips.
+  // Clips whose tags name a different subject are dropped; tagged matches rank ahead of untagged clips. No query may
+  // fill more than two thirds of the pool, so the action query ("gorilla running") always gets places of its own.
   return async ({ stockQuery, stockSynonyms = [], shows, scene, action }, providers = ["pexels", "pixabay"]) => {
     const subject = subjectWords(shows, scene || shows), clips = [], seen = new Map();
     const actionWords = String(`${action || ""} ${stockQuery || ""}`).toLowerCase().split(/[^\p{L}\p{N}]+/u)
@@ -86,19 +87,20 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
       Number(actionMatch(b)) - Number(actionMatch(a)) || Number(!!b.editorsChoice) - Number(!!a.editorsChoice) ||
       Number(b.files[0].height > b.files[0].width) - Number(a.files[0].height > a.files[0].width));
     const synonyms = Array.isArray(stockSynonyms) ? stockSynonyms.filter((s) => typeof s === "string" && s.trim()).slice(0, 3) : [];
-    const queries = [subject.join(" "), ...synonyms, stockQuery];
+    const queries = [subject.join(" "), stockQuery, ...synonyms], perQuery = Math.ceil(stockCandidates * 2 / 3);
     for (const query of [...new Set(queries.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
       const synonym = synonyms.some((s) => s.trim().toLowerCase() === query) ? query.split(/\s+/) : [];
       for (const provider of providers.filter((p) => ["pexels", "pixabay"].includes(p))) {
         for (const orientation of provider === "pexels" ? ["portrait", null] : [null]) {
+          let taken = 0;
           for (const c of await search(provider, query, orientation)) {
+            if (taken >= perQuery) break;
             const primary = stockRelevance(c, subject), relevance = primary === "match" || synonym.length && stockRelevance(c, synonym) === "match" ? "match" : primary;
             if (relevance === "miss") continue;
             const id = `${c.provider}:${c.id}`, existing = seen.get(id);
             if (existing) { if (relevance === "match") existing.relevance = relevance; }
-            else { const eligible = { ...c, relevance }; seen.set(id, eligible); clips.push(eligible); }
+            else { const eligible = { ...c, relevance }; seen.set(id, eligible); clips.push(eligible); taken++; }
           }
-          if (clips.length >= stockCandidates) return ranked().slice(0, stockCandidates);
         }
       }
     }

@@ -78,7 +78,7 @@ test("search uses portrait then any, film on Pixabay, subject then query, dedupe
   assert.equal((await search({ stockQuery: "gorilla walking", shows: "gorilla" })).length, 0, "one request budget covers the entire reel");
   const g = fixture(); let requests = 0;
   const enough = createStockSearch({ env: g.env, fetchFn: async () => { requests++; return json({ videos: Array.from({ length: 16 }, (_, i) => pexel(i)) }); } });
-  assert.equal((await enough(pick)).length, 12); assert.equal(requests, 1);
+  assert.equal((await enough(pick)).length, 12); assert.ok(requests > 1 && requests <= 6, "the action query runs even when the subject alone could fill the pool");
 });
 
 test("search drops clips tagged with another subject, ranks tagged matches first and reads Pexels slugs", async () => {
@@ -107,10 +107,11 @@ test("stock checks the full clip for the event Claude saw in the chosen image", 
 
 test("search cache survives a new client for 24 hours and expires; disk never includes API keys", async () => {
   const f = fixture(); let clock = 1800000000000, requests = 0;
-  const options = { env: f.env, now: () => clock, maxSearches: 1, fetchFn: async () => { requests++; return json({ videos: Array.from({ length: 12 }, (_, i) => pexel(i)) }); } };
-  await createStockSearch(options)(pick, ["pexels"]);
-  clock += 86400000 - 1; await createStockSearch(options)(pick, ["pexels"]); assert.equal(requests, 1);
-  clock += 2; await createStockSearch(options)(pick, ["pexels"]); assert.equal(requests, 2);
+  const options = { env: f.env, now: () => clock, maxSearches: 1, fetchFn: async () => { requests++; return json({ hits: Array.from({ length: 12 }, (_, i) => pixabay({ id: i })) }); } };
+  const one = { ...pick, stockQuery: "" };
+  await createStockSearch(options)(one, ["pixabay"]);
+  clock += 86400000 - 1; await createStockSearch(options)(one, ["pixabay"]); assert.equal(requests, 1);
+  clock += 2; await createStockSearch(options)(one, ["pixabay"]); assert.equal(requests, 2);
   for (const file of fs.readdirSync(stockCacheDir(f.env))) assert.doesNotMatch(fs.readFileSync(path.join(stockCacheDir(f.env), file), "utf8"), /secret/);
 });
 
@@ -272,7 +273,7 @@ test("no keys or no stock fit draws today's Codex still as the last fallback", a
     if (noKeys) f.deps.env = { REEL_CACHE: f.dir };
     f.deps.fetchFn = noKeys ? fail : async () => json({ videos: [] });
     f.deps.codexExec = async (prompt, { cwd }) => { codex++; if (codex === 2) { assert.match(prompt, /Draw this approved scene only/); fs.writeFileSync(path.join(cwd, "broll-1.png"), Buffer.alloc(2000)); } return JSON.stringify({ picks: [pick] }); };
-    const [accepted] = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { animate: false, library: true, stock: ["pexels", "pixabay"] }, deps: f.deps });
+    const [accepted] = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { animate: false, library: true, stock: ["pexels", "pixabay"], stillFallback: true }, deps: f.deps });
     assert.match(accepted.file, /broll-1.png$/); assert.equal(accepted.stillSource, "codex"); assert.equal(codex, 2);
     assert.equal(f.calls.checks.length, 0);
   }
@@ -302,7 +303,7 @@ test("all stock choices refused: quicksand and cream fall back together in one C
     for (const name of ["broll-1.png", "broll-2.png"]) fs.writeFileSync(path.join(cwd, name), Buffer.alloc(2000));
     return JSON.stringify({ picks: picks.map((p, i) => ({ ...p, file: `broll-${i + 1}.png` })) });
   };
-  const shots = await makeBroll({ workDir: f.dir, groups: source, duration: 32, settings: { library: true, stock: ["pixabay"], gap: 3 }, deps: f.deps });
+  const shots = await makeBroll({ workDir: f.dir, groups: source, duration: 32, settings: { library: true, stock: ["pixabay"], gap: 3, stillFallback: true }, deps: f.deps });
   assert.equal(sessions.length, 2, "one planning session plus one session for all fallback images");
   assert.deepEqual(shots.map((s) => s.shows), ["quicksand", "cream"]);
   assert.ok(shots.every((s) => s.stillSource === "codex" && fs.statSync(s.file).isFile()));
@@ -325,7 +326,7 @@ test("fallback reports missing images and CLI errors, preserves partial output a
       if (fails) throw new Error("image tool failed: secret-two\nextra detail");
       return JSON.stringify({ picks: [pick] });
     };
-    const shots = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { library: true, stock: ["pexels"] }, deps: f.deps });
+    const shots = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { library: true, stock: ["pexels"], stillFallback: true }, deps: f.deps });
     assert.deepEqual(shots, []); assert.equal(sessions, 2);
     const logs = f.calls.logs.join("\n");
     assert.match(logs, /stock pexels: 0 candidates found, 0 eligible/);
@@ -340,7 +341,28 @@ test("fallback reports missing images and CLI errors, preserves partial output a
     fs.writeFileSync(path.join(cwd, "broll-1.png"), Buffer.alloc(2000));
     throw new Error("session interrupted after drawing");
   };
-  assert.equal((await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps })).length, 1);
+  assert.equal((await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"], stillFallback: true }, deps: f.deps })).length, 1);
+});
+
+test("a footage miss keeps the speaker on screen: no still is drawn unless the preset opts in", async () => {
+  const f = fixture(); let codex = 0;
+  f.deps.fetchFn = async () => json({ videos: [] });
+  f.deps.codexExec = async () => { codex++; return JSON.stringify({ picks: [pick] }); };
+  const logs = [];
+  f.deps.logFn = (s) => logs.push(s);
+  assert.deepEqual(await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { animate: false, library: true, stock: ["pexels"] }, deps: f.deps }), []);
+  assert.equal(codex, 1, "only the picks call; no still session");
+  assert.ok(logs.some((s) => /kept the speaker on screen/.test(s)));
+});
+
+test("the action query keeps its own places when the bare subject fills the pool", async () => {
+  const f = fixture();
+  const search = createStockSearch({ env: f.env, fetchFn: async (url) => {
+    const q = new URL(url).searchParams.get("q");
+    return json({ hits: Array.from({ length: 20 }, (_, i) => pixabay({ id: (q === "gorilla" ? 100 : 200) + i, tags: q === "gorilla" ? "gorilla" : "gorilla running" })) });
+  } });
+  const found = await search({ shows: "gorilla", stockQuery: "gorilla running" }, ["pixabay"]);
+  assert.equal(found.length, 12); assert.ok(found.filter((c) => c.id >= 200).length >= 4);
 });
 
 test("unplaced alternatives log their drop and never request a fallback image", async () => {
@@ -351,7 +373,7 @@ test("unplaced alternatives log their drop and never request a fallback image", 
     fs.writeFileSync(path.join(cwd, "broll-1.png"), Buffer.alloc(2000));
     return JSON.stringify({ picks: [pick] });
   };
-  const shots = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps });
+  const shots = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"], stillFallback: true }, deps: f.deps });
   assert.equal(shots.length, 1); assert.equal(sessions, 2);
   assert.ok(f.calls.logs.some((s) => /dropped: no room within 6s spacing and 1-shot limit/.test(s)));
   assert.equal(f.calls.logs.filter((s) => /still requested/.test(s)).length, 1);
@@ -556,7 +578,7 @@ test("normalisation retains the tiny preview even below render resolution", () =
   assert.equal(q.preview, "https://preview.test/1.mp4"); assert.equal(q.files[0].width, 720);
 });
 
-test("synonym queries follow the subject, filter tags by that query, and rank matching actions first", async () => {
+test("the action query and then synonyms follow the subject, filter tags by that query, and rank matching actions first", async () => {
   const f = fixture(), queries = [];
   const hits = {
     gorilla: [pixabay({ id: 1, tags: "gorilla, eating", editors_choice: true }), pixabay({ id: 2, tags: "gorilla, angry, charging" }), pixabay({ id: 3, tags: "gorilla, resting" }), pixabay({ id: 4, tags: "" }), pixabay({ id: 5, tags: "ape" })],
@@ -568,7 +590,7 @@ test("synonym queries follow the subject, filter tags by that query, and rank ma
     assert.equal(u.searchParams.get("per_page"), "40"); return json({ hits: hits[query] || [] });
   } });
   const found = await search({ shows: "gorilla", scene: "A gorilla in daylight.", action: "The gorilla walks forward.", stockSynonyms: ["ape", "silverback"], stockQuery: "gorilla angry charging" }, ["pixabay"]);
-  assert.deepEqual(queries, ["gorilla", "ape", "silverback", "gorilla angry charging"]);
+  assert.deepEqual(queries, ["gorilla", "gorilla angry charging", "ape", "silverback"]);
   assert.deepEqual(found.map((c) => c.id), [2, 6, 9, 1, 3, 7, 4]);
 });
 
@@ -691,9 +713,7 @@ test("fill shares the search budget across subjects, validates input and keeps t
   assert.throws(() => fillSubjects({}), /JSON array/);
   assert.throws(() => fillSubjects([{ shows: "snake" }]), /shows, scene and action/);
   await assert.rejects(fillBrollLibrary({ subjects: [], maxNew: 0, deps: f.deps }), /positive integer/);
-  assert.ok(!listPresets().includes("broll-subjects"));
-  const defaults = fillSubjects(JSON.parse(fs.readFileSync(new URL("../presets/broll-subjects.json", import.meta.url))));
-  assert.equal(defaults.length, 31); assert.ok(defaults.some((p) => p.shows === "gorilla"));
+  await assert.rejects(fillBrollLibrary({ deps: f.deps }), /needs --subjects/, "no unattended default list: stock terms forbid bulk copying");
 });
 
 test("broll-fill help is wired through the CLI", async () => {
@@ -712,13 +732,11 @@ test("stock ranking puts action before editor flags, editor flags before portrai
   assert.deepEqual((await search({ shows: "gorilla", stockQuery: "gorilla walking" }, ["pixabay"])).map((c) => c.id), [4, 3, 2, 1, 5]);
 });
 
-test("fill reads subject files and default topics keep action words out of the subject filter", async () => {
+test("fill reads subject files and keeps action words out of the subject filter", async () => {
   const f = fixture(), file = path.join(f.dir, "subjects.json");
   fs.writeFileSync(file, JSON.stringify([{ shows: "gorilla", scene: "A gorilla walks in daylight.", action: "The gorilla walks.", stockQuery: "gorilla walking" }]));
   f.deps.search = async (pick) => { assert.equal(pick.stockQuery, "gorilla walking"); return []; };
   assert.equal((await fillBrollLibrary({ subjectsFile: file, dryRun: true, deps: f.deps })).subjects[0].shows, "gorilla");
-  const defaults = fillSubjects(JSON.parse(fs.readFileSync(new URL("../presets/broll-subjects.json", import.meta.url))));
-  assert.equal(defaults.find((p) => p.stockQuery === "coffee pouring").shows, "coffee");
-  assert.equal(defaults.find((p) => p.stockQuery === "pickup truck driving").shows, "pickup truck");
+  assert.deepEqual(fillSubjects([{ shows: "coffee", scene: "Coffee pours into a mug.", action: "Coffee pours.", stockQuery: "coffee pouring" }])[0].shows, "coffee");
   await assert.rejects(main(["broll-fill", "--subjects", file, "--max-new", "nope", "--dry-run"]), /positive integer/);
 });

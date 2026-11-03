@@ -4,11 +4,12 @@ import path from "node:path";
 import { createStockSearch, makeStockClip, previewStockCandidates, stockRelevance } from "./broll-stock.mjs";
 import { libraryDir, readLibrary, writeBrollCredits } from "./broll-library.mjs";
 import { checkPick, subjectWords } from "./broll.mjs";
-import { PKG_ROOT, readJSON, log } from "./util.mjs";
+import { readJSON, log } from "./util.mjs";
 
 export const BROLL_FILL_HELP = `Usage: reel broll-fill [--subjects <file>] [--max-new N] [--dry-run]
   --subjects <file>  JSON array of { shows, scene, action } objects or subject strings
-                    (default: presets/broll-subjects.json)
+                    (required; Pixabay and Pexels terms forbid bulk or systematic copying,
+                    so fill only the subjects an upcoming reel needs)
   --max-new N        maximum new approved clips per run (default: 20)
   --dry-run          search and list preview candidates; no Claude or full downloads
 `;
@@ -25,7 +26,8 @@ export function fillSubjects(value) {
 /** Fill uses the reel's stock inspections, but does not register a reel or change scene history. A subject tops up to 3 clips. */
 export async function fillBrollLibrary({ subjects, subjectsFile, maxNew = 20, dryRun = false, settings = {}, deps = {} } = {}) {
   if (!Number.isInteger(maxNew) || maxNew < 1) throw new Error("max-new must be a positive integer");
-  const picks = fillSubjects(subjects ?? readJSON(subjectsFile || path.join(PKG_ROOT, "presets", "broll-subjects.json")));
+  if (!subjects && !subjectsFile) throw new Error("broll-fill needs --subjects <file>: stock terms forbid bulk copying, so fill only what a reel needs");
+  const picks = fillSubjects(subjects ?? readJSON(subjectsFile));
   const env = deps.env || process.env, logger = deps.logFn || log;
   const search = deps.search || createStockSearch({ env, fetchFn: deps.fetchFn, now: deps.now, warnFn: deps.warnFn, maxSearches: settings.stockMaxSearches ?? 20, stockCandidates: settings.stockCandidates ?? 12 });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-broll-fill-")), approved = [], results = [];
