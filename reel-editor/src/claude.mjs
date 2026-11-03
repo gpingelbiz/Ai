@@ -7,28 +7,42 @@ import path from "node:path";
  * Claude Code headless (`claude -p`) for text-only jobs: no built-in tools and no MCP servers, so it can only
  * read the prompt and answer. Runs on the signed-in Claude account. REEL_CLAUDE_BIN overrides the binary.
  */
-export function hasClaude(env = process.env) {
-  const bin = env.REEL_CLAUDE_BIN || "claude";
-  if (bin.includes("/")) return fs.existsSync(bin);
-  return (env.PATH || "").split(":").some((d) => d && fs.existsSync(path.join(d, bin)));
+function executable(file, disk) {
+  try { disk.accessSync(file, fs.constants.X_OK); return disk.statSync(file).isFile(); } catch { return false; }
 }
 
-export function claudeText(prompt, { timeoutMs = 240000, model } = {}) {
-  return claudeRun(["-p", prompt, "--tools", "", "--strict-mcp-config", "--output-format", "text"], { timeoutMs, model, cwd: os.tmpdir() });
+/** Background shells may not load the profile that adds Claude's installer directory to PATH. */
+export function claudeBinary(env = process.env, { fs: disk = fs, homedir = os.homedir } = {}) {
+  if (env.REEL_CLAUDE_BIN) return env.REEL_CLAUDE_BIN;
+  const candidates = (env.PATH || "").split(path.delimiter).filter(Boolean).map((d) => path.resolve(d, "claude"));
+  const home = env.HOME || homedir();
+  candidates.push(path.join(home, ".local/bin/claude"), path.join(home, ".claude/local/claude"));
+  return candidates.find((file) => executable(file, disk)) || "claude";
+}
+
+export function hasClaude(env = process.env, deps = {}) {
+  const bin = claudeBinary(env, deps), disk = deps.fs || fs;
+  if (bin.includes("/")) return executable(bin, disk);
+  return (env.PATH || "").split(path.delimiter).some((d) => d && executable(path.join(d, bin), disk));
+}
+
+export function claudeText(prompt, { timeoutMs = 240000, model, deps = {} } = {}) {
+  return claudeRun(["-p", prompt, "--tools", "", "--strict-mcp-config", "--output-format", "text"], { timeoutMs, model, cwd: os.tmpdir(), deps });
 }
 
 /**
  * The same, with only the Read tool, run inside `cwd`: for jobs that have to look at pictures there (frames of a
  * b-roll clip). The prompt names the files to read.
  */
-export function claudeLook(prompt, { cwd, timeoutMs = 180000, model } = {}) {
-  return claudeRun(["-p", prompt, "--tools", "Read", "--allowedTools", "Read", "--strict-mcp-config", "--output-format", "text"], { timeoutMs, model, cwd });
+export function claudeLook(prompt, { cwd, timeoutMs = 180000, model, deps = {} } = {}) {
+  return claudeRun(["-p", prompt, "--tools", "Read", "--allowedTools", "Read", "--strict-mcp-config", "--output-format", "text"], { timeoutMs, model, cwd, deps });
 }
 
-function claudeRun(args, { timeoutMs, model, cwd }) {
+function claudeRun(args, { timeoutMs, model, cwd, deps }) {
   return new Promise((resolve, reject) => {
-    if (model || process.env.REEL_CLAUDE_MODEL) args.push("--model", model || process.env.REEL_CLAUDE_MODEL);
-    const child = spawn(process.env.REEL_CLAUDE_BIN || "claude", args, { stdio: ["ignore", "pipe", "pipe"], cwd });
+    const env = deps.env || process.env;
+    if (model || env.REEL_CLAUDE_MODEL) args.push("--model", model || env.REEL_CLAUDE_MODEL);
+    const child = (deps.spawn || spawn)(claudeBinary(env, deps), args, { stdio: ["ignore", "pipe", "pipe"], cwd, env });
     let out = "", err = "";
     const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error(`claude timed out after ${Math.round(timeoutMs / 1000)}s`)); }, timeoutMs);
     child.stdout.on("data", (d) => (out += d));

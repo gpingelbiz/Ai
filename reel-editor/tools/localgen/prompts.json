@@ -2,34 +2,34 @@
   {
     "id": "coconut-1",
     "shows": "coconut",
-    "scene": "One brown coconut suspended just above pale sand, medium close view at ground level.",
-    "action": "The coconut drops straight down onto the sand and comes to rest.",
+    "scene": "One unattached brown coconut already falling, entering from the top of the frame at the first frame, above pale sand, medium close view at ground level.",
+    "action": "The coconut lands on the sand within the first second and comes to rest.",
     "seed": 1101,
-    "prompt": "One brown coconut suspended just above pale sand, medium close view at ground level. The coconut drops straight down onto the sand and comes to rest. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+    "prompt": "One unattached brown coconut already falling, entering from the top of the frame at the first frame, above pale sand, medium close view at ground level. The coconut lands on the sand within the first second and comes to rest. Nothing attached: no stick, no stem, no rope, no string. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
   },
   {
     "id": "coconut-2",
     "shows": "coconut",
-    "scene": "One brown coconut at the edge of a low sandy bank above an empty patch of sand, side view.",
-    "action": "The coconut tips over the edge, drops onto the sand below and settles.",
+    "scene": "One unattached brown coconut already falling, entering from the top of the frame at the first frame, above pale sand, close side view.",
+    "action": "The coconut lands on the sand within the first second and comes to rest.",
     "seed": 1102,
-    "prompt": "One brown coconut at the edge of a low sandy bank above an empty patch of sand, side view. The coconut tips over the edge, drops onto the sand below and settles. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+    "prompt": "One unattached brown coconut already falling, entering from the top of the frame at the first frame, above pale sand, close side view. The coconut lands on the sand within the first second and comes to rest. Nothing attached: no stick, no stem, no rope, no string. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
   },
   {
     "id": "cream-1",
     "shows": "cream",
-    "scene": "Close view of white skin cream at the nozzle of a plain unmarked tube above an isolated open palm.",
-    "action": "The tube compresses once and a short ribbon of white cream lands in the stationary palm.",
+    "scene": "Close view of a plain blank unlabelled tube, no text, no logo, angled down above an isolated stationary open palm.",
+    "action": "White cream is already flowing at the first frame; a short ribbon lands in the stationary palm.",
     "seed": 2201,
-    "prompt": "Close view of white skin cream at the nozzle of a plain unmarked tube above an isolated open palm. The tube compresses once and a short ribbon of white cream lands in the stationary palm. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. Only the isolated palm is visible; no face, body, other people or text."
+    "prompt": "Close view of a plain blank unlabelled tube, no text, no logo, angled down above an isolated stationary open palm. White cream is already flowing at the first frame; a short ribbon lands in the stationary palm. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. Only the isolated palm is visible; no face, body, other people or text."
   },
   {
     "id": "cream-2",
     "shows": "cream",
-    "scene": "Side close view of a plain cream tube angled down above an isolated stationary open palm.",
-    "action": "The tube compresses once and a small dollop of white cream dispenses into the palm.",
+    "scene": "Side close view of a plain blank unlabelled tube, no text, no logo, angled down above an isolated stationary open palm.",
+    "action": "White cream is already flowing at the first frame; a short ribbon lands in the stationary palm.",
     "seed": 2202,
-    "prompt": "Side close view of a plain cream tube angled down above an isolated stationary open palm. The tube compresses once and a small dollop of white cream dispenses into the palm. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. Only the isolated palm is visible; no face, body, other people or text."
+    "prompt": "Side close view of a plain blank unlabelled tube, no text, no logo, angled down above an isolated stationary open palm. White cream is already flowing at the first frame; a short ribbon lands in the stationary palm. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. Only the isolated palm is visible; no face, body, other people or text."
   },
   {
     "id": "gorilla-1",
@@ -42,10 +42,10 @@
   {
     "id": "gorilla-2",
     "shows": "gorilla",
-    "scene": "One calm adult gorilla in a sunlit forest clearing, full body viewed from slightly to one side.",
+    "scene": "One calm adult gorilla with consistent dark black fur in a sunlit forest clearing, full body viewed from slightly to one side.",
     "action": "The gorilla takes two slow natural steps diagonally toward the camera on all fours.",
     "seed": 3302,
-    "prompt": "One calm adult gorilla in a sunlit forest clearing, full body viewed from slightly to one side. The gorilla takes two slow natural steps diagonally toward the camera on all fours. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+    "prompt": "One calm adult gorilla with consistent dark black fur in a sunlit forest clearing, full body viewed from slightly to one side. The gorilla takes two slow natural steps diagonally toward the camera on all fours. The same animal look and consistent dark black fur throughout. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
   },
   {
     "id": "snake-1",
@@ -77,6 +77,6 @@
     "scene": "One low blue ocean wave approaching an empty beach, view angled slightly along the shore.",
     "action": "The wave curls once and collapses into a thin sheet of white foam moving up the sand.",
     "seed": 5502,
-    "prompt": "One low blue ocean wave approaching an empty beach, view angled slightly along the shore. The wave curls once and collapses into a thin sheet of white foam moving up the sand. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
+    "prompt": "Photorealistic documentary footage. One low blue ocean wave approaching an empty beach, view angled slightly along the shore. The wave curls once and collapses into a thin sheet of white foam moving up the sand. Camera locked off. Natural daylight, realistic colour, one continuous shot, portrait composition with the whole action visible. No people or text."
   }
 ]
