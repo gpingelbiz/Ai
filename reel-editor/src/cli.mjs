@@ -330,13 +330,15 @@ export async function main(argv) {
       return generateBrollLibrary({ promptsFile: opts.prompts, admit: opts.admit, generateOnly: opts.generateOnly, dryRun: opts.dryRun });
     }
     case "broll-add": {
-      const { opts, positionals } = parse(rest, { shows: { type: "string" }, action: { type: "string" }, scene: { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts, positionals } = parse(rest, { shows: { type: "string" }, action: { type: "string" }, scene: { type: "string" }, "dry-run": { type: "boolean" }, note: { type: "boolean" }, help: { type: "boolean", short: "h" } });
       const { addOwnBroll, BROLL_ADD_HELP } = await import("./broll-own.mjs");
       if (opts.help) return console.log(BROLL_ADD_HELP);
-      return addOwnBroll({ inputs: positionals, ...opts });
+      const result = await addOwnBroll({ inputs: positionals, ...opts });
+      if (opts.note && result.results.some((r) => r.status === "rejected")) process.exitCode = 1;
+      return result;
     }
     case "broll-shotlist": {
-      const { opts } = parse(rest, { missing: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts } = parse(rest, { missing: { type: "boolean" }, client: { type: "boolean" }, html: { type: "string" }, help: { type: "boolean", short: "h" } });
       const { brollShotlist, BROLL_SHOTLIST_HELP } = await import("./broll-own.mjs");
       if (opts.help) return console.log(BROLL_SHOTLIST_HELP);
       return brollShotlist(opts);

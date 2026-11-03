@@ -195,6 +195,24 @@ else
   ask_secret "Paste your Runway API key, or press Return to skip:"
   RWKEY="$REPLY"
 fi
+PBKEY=""
+if grep -q '^export PIXABAY_API_KEY=' "$ZSHRC" 2>/dev/null; then
+  ok "Pixabay key already set (kept)"
+else
+  note "Pixabay adds free stock video for Raw - Reel with B-roll."
+  note "Use your own key: make a free account at https://pixabay.com/api/docs/; your key is shown on that page once logged in."
+  ask_secret "Paste your Pixabay API key, or press Return to skip:"
+  PBKEY="$REPLY"
+fi
+PXKEY=""
+if grep -q '^export PEXELS_API_KEY=' "$ZSHRC" 2>/dev/null; then
+  ok "Pexels key already set (kept)"
+else
+  note "Pexels adds free stock video for Raw - Reel with B-roll."
+  note "Use your own key from https://www.pexels.com/api/ (free; new sign-ups may be paused)."
+  ask_secret "Paste your Pexels API key, or press Return to skip:"
+  PXKEY="$REPLY"
+fi
 [ -n "$WATCH" ] || { ask "Turn on the drop folder (drop a clip, get a reel)? [Y/n]:" y; case "$REPLY" in n*|N*) WATCH=n ;; *) WATCH=y ;; esac; }
 
 # Codex makes the b-roll stills and carousels, on the person's own ChatGPT plan. Optional: without it, reels
@@ -246,6 +264,8 @@ CTA_LINE="$(grep '^export REEL_WATCH_CTA=' "$ZSHRC" 2>/dev/null | tail -1 || tru
 # Keys saved by an earlier run sit inside our block, which is rewritten below: carry them over.
 EL_LINE="$(grep '^export ELEVENLABS_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
 RW_LINE="$(grep '^export RUNWAY_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
+PB_LINE="$(grep '^export PIXABAY_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
+PX_LINE="$(grep '^export PEXELS_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
 [ -n "$CTA_LINE" ] || CTA_LINE='export REEL_WATCH_CTA=""   # call-to-action for drop-folder reels, e.g. "Comment WORD"'
 # Replace our block (and loose reel lines from older setups); leave everything else in ~/.zshrc alone.
 tmp="$(mktemp)"
@@ -265,6 +285,8 @@ awk '/^# >>> reel-editor >>>/{skip=1} !skip && !/^export (REEL_[A-Z_]+|PRODUCER_
   fi
   if [ -n "$KEY" ]; then echo "export ELEVENLABS_API_KEY=\"$KEY\""; elif [ -n "$EL_LINE" ] && ! grep -q '^export ELEVENLABS_API_KEY=' "$tmp"; then echo "$EL_LINE"; fi
   if [ -n "$RWKEY" ]; then echo "export RUNWAY_API_KEY=\"$RWKEY\""; elif [ -n "$RW_LINE" ] && ! grep -q '^export RUNWAY_API_KEY=' "$tmp"; then echo "$RW_LINE"; fi
+  if [ -n "$PBKEY" ]; then echo "export PIXABAY_API_KEY=\"$PBKEY\""; elif [ -n "$PB_LINE" ] && ! grep -q '^export PIXABAY_API_KEY=' "$tmp"; then echo "$PB_LINE"; fi
+  if [ -n "$PXKEY" ]; then echo "export PEXELS_API_KEY=\"$PXKEY\""; elif [ -n "$PX_LINE" ] && ! grep -q '^export PEXELS_API_KEY=' "$tmp"; then echo "$PX_LINE"; fi
   echo "# <<< reel-editor <<<"
 } >> "$tmp"
 cat "$tmp" > "$ZSHRC" && rm -f "$tmp"
@@ -274,15 +296,24 @@ export REEL_PYTHON="$VENV/bin/python" PRODUCER_BROWSER_GPU_MODE=hardware REEL_PR
 [ -z "$DICT" ] || export REEL_DICTIONARY="$DICT"
 [ -z "$KEY" ] || export ELEVENLABS_API_KEY="$KEY"
 [ -z "$RWKEY" ] || export RUNWAY_API_KEY="$RWKEY"
+[ -z "$PBKEY" ] || export PIXABAY_API_KEY="$PBKEY"
+[ -z "$PXKEY" ] || export PEXELS_API_KEY="$PXKEY"
+
+# The jungle-reel props group belongs only to the house shot list; clients get the general groups.
+mkdir -p "$HOME/Desktop/Reels"
+SHOTLIST_ARGS=()
+[ "$LOOK" = greg ] || SHOTLIST_ARGS+=(--client)
+node "$APP/bin/reel.mjs" broll-shotlist --html "$HOME/Desktop/Reels/B-roll shot list.html" ${SHOTLIST_ARGS[@]+"${SHOTLIST_ARGS[@]}"}
 
 if [ "$WATCH" = y ]; then
-  mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-carousel" "$HOME/Reels/raw-long" "$HOME/Reels/raw-youtube" "$HOME/Reels/raw-runway" "$HOME/Reels/music" "$HOME/Desktop/Reels"
+  mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-own-broll" "$HOME/Reels/raw-carousel" "$HOME/Reels/raw-long" "$HOME/Reels/raw-youtube" "$HOME/Reels/raw-runway" "$HOME/Reels/music" "$HOME/Desktop/Reels"
   # macOS blocks background jobs from reading the Desktop, so the real drop folders live in ~/Reels and the
   # Desktop gets shortcuts. An older single "Raw" shortcut becomes "Raw - Reel".
   D="$HOME/Desktop/Reels"
   if [ -L "$D/Raw" ] && [ ! -e "$D/Raw - Reel" ]; then mv "$D/Raw" "$D/Raw - Reel"; fi
   [ -e "$D/Raw - Reel" ] || ln -s "$HOME/Reels/raw" "$D/Raw - Reel"
   [ -e "$D/Raw - Reel with B-roll" ] || ln -s "$HOME/Reels/raw-broll" "$D/Raw - Reel with B-roll"
+  [ -e "$D/Raw - My B-roll clips" ] || ln -s "$HOME/Reels/raw-own-broll" "$D/Raw - My B-roll clips"
   [ -e "$D/Raw - Carousel" ] || ln -s "$HOME/Reels/raw-carousel" "$D/Raw - Carousel"
   [ -e "$D/Raw - Clips from Long Video" ] || ln -s "$HOME/Reels/raw-long" "$D/Raw - Clips from Long Video"
   [ -e "$D/Raw - Full YouTube Edit" ] || ln -s "$HOME/Reels/raw-youtube" "$D/Raw - Full YouTube Edit"
@@ -291,7 +322,7 @@ if [ "$WATCH" = y ]; then
   # Their music is their own: the folder gets a note and clickable links to where Greg's comes from (src/music-source.mjs).
   node --input-type=module -e 'const [mod, dir] = process.argv.slice(1); import(mod).then((m) => m.setUpMusicFolder(dir))' "$APP/src/music-source.mjs" "$HOME/Reels/music" >/dev/null 2>&1 || true
   REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh" >/dev/null
-  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit, Raw - Reel with Runway B-roll (music from Desktop/Reels/Music: links to Epidemic Sound inside)"
+  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - My B-roll clips, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit, Raw - Reel with Runway B-roll (music from Desktop/Reels/Music: links to Epidemic Sound inside)"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it

@@ -129,7 +129,7 @@ test("brand.json: b-roll defaults to Codex; Runway copies the current clip rules
   const codex = brandPreset(brand);
   assert.equal(codex.broll.engine, "codex");
   assert.deepEqual(codex, brandPreset({ ...brand, brollEngine: "codex" }));
-  assert.deepEqual(codex.broll, { engine: "codex", world: "Her car.", worldInPrompt: true, style: "Warm daylight.", max: 3, every: 12, clearStart: 0, stock: [], library: false });
+  assert.deepEqual(codex.broll, { engine: "codex", world: "Her car.", worldInPrompt: true, style: "Warm daylight.", max: 3, every: 12, clearStart: 0, stock: ["pexels", "pixabay", "wikimedia"], library: true });
   assert.equal(codex.looks.lockBrollGrade, undefined);
   for (const input of [brand, upgradeBrandV1(brand)]) {
     const built = brandPreset({ ...input, brollEngine: "runway" });
