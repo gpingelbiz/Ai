@@ -10,7 +10,7 @@ import { esc } from "./text.mjs";
 import { ensureDir, PKG_ROOT, run, warn } from "./util.mjs";
 
 export const SLIDE_WIDTH = 1080;
-export const SLIDE_HEIGHTS = new Set([1080, 1350]);
+export const SLIDE_HEIGHTS = new Set([1080, 1350, 1920]);
 export const LEGACY_SLIDE_KINDS = ["photo", "photosplit", "phototop", "splittop", "cover", "body", "cta", "static", "static-light"];
 export const FAMILY_SLIDE_KINDS = ["checklist", "compare", "postcard", "notes", "story", "evidence", "stat", "steps", "quote", "cover-top", "cover-doc", "cover-card", "cover-compare", "cover-list", "verdict", "note", "script"];
 export const SLIDE_KINDS = [...LEGACY_SLIDE_KINDS, ...FAMILY_SLIDE_KINDS];
@@ -158,7 +158,7 @@ export function normalizeSlideSpec(spec) {
   if (!Array.isArray(spec.slides) || !spec.slides.length) throw new Error("slide spec needs a non-empty slides array");
   const width = Number(spec.width || SLIDE_WIDTH);
   const height = Number(spec.height || (spec.square ? 1080 : 1350));
-  if (width !== SLIDE_WIDTH || !SLIDE_HEIGHTS.has(height)) throw new Error("slide size must be 1080x1350 or 1080x1080");
+  if (width !== SLIDE_WIDTH || !SLIDE_HEIGHTS.has(height)) throw new Error("slide size must be 1080x1350, 1080x1080 or 1080x1920");
   const slides = spec.slides.map((source, index) => {
     if (!source || typeof source !== "object" || Array.isArray(source)) throw new Error(`slide ${index + 1} must be an object`);
     const kind = kindOf(source);

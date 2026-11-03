@@ -216,6 +216,15 @@ async function main() {
   config.sandcastles = !!connectors.sandcastles?.connected;
   ok(`times set${config.sandcastles ? "; Sandcastles is connected, so hooks follow what is winning" : ""}`);
 
+  note('New studios schedule each reel normally and also as a separate Trial Reel. Existing reel settings are kept.');
+  note('Story games are OFF. Fill in brand/brand-guide.md, then set stories.enabled to true in studio.json.');
+  note('Stories ask viewers to spot a problem, pick A/B, or keep/kill a note, at 08:00, 11:00 and 17:00. They never take a feed slot.');
+  note('Each Sunday, Filming packs gets six short prompts and three B-roll ideas for Monday. Fill in your guide first.');
+  note('Health checks run three times a day: missed daily runs, failed posts, disconnected accounts and reels waiting over a day.');
+  note('Alerts appear on this Mac and in Content Studio/STATUS.txt. Nothing is sent to Greg.');
+  const pingUrl = opt("--health-ping") || await ask("Optional health ping URL (your own healthchecks.io-style https URL; Return skips):", before.health.pingUrl || "");
+  config.health = { ...before.health, pingUrl };
+
   // ------------------------------------------------------------ 6. write and turn on
   bold("6/6  Turning it on");
   initStudio(root, { brandFrom, config });

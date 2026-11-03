@@ -107,7 +107,11 @@ node_major=$(node -p 'process.versions.node.split(".")[0]')
 
 # ---------------------------------------------------------------- 3. Code
 bold "3/7  Reel Editor code"
-if [ -d "$DIR/.git" ]; then
+if [ -e "$DIR/.git" ]; then
+  # A client kit must never pull over edits in its code folder.
+  if [ -n "$BRAND" ] && [ -n "$(git -C "$DIR" status --porcelain --untracked-files=all)" ]; then
+    die "Your code folder has uncommitted changes. Keep or commit them before re-running the installer. Nothing was updated."
+  fi
   git -C "$DIR" pull --ff-only -q && ok "updated $DIR"
 else
   git clone -q "$REPO" "$DIR" && ok "downloaded to $DIR"
@@ -144,7 +148,14 @@ case "$LOOK" in
     # A brand kit (scripts/brand-kit.mjs): their look, YouTube look, fonts, words and voice, ready made.
     [ -f "$BRAND/my-brand.json" ] || die "No brand in $BRAND (my-brand.json is missing)."
     mkdir -p "$CONF/fonts"
-    cp -f "$BRAND/my-brand.json" "$CONF/my-brand.json"
+    # Their own edits win; an untouched copy (same as the last kit's) takes the new kit's look and b-roll settings.
+    if [ -f "$CONF/my-brand.json" ] && [ -f "$CONF/.kit-my-brand.json" ] && ! cmp -s "$CONF/my-brand.json" "$CONF/.kit-my-brand.json" && ! cmp -s "$CONF/my-brand.json" "$BRAND/my-brand.json"; then
+      cp -f "$BRAND/my-brand.json" "$CONF/my-brand.kit-new.json"
+      note "kept your edited ~/.reel/my-brand.json; this kit's version is next to it as my-brand.kit-new.json"
+    else
+      cp -f "$BRAND/my-brand.json" "$CONF/my-brand.json"
+    fi
+    cp -f "$BRAND/my-brand.json" "$CONF/.kit-my-brand.json"
     [ -f "$BRAND/my-youtube.json" ] && cp -f "$BRAND/my-youtube.json" "$CONF/my-youtube.json" && YTPRESET="$CONF/my-youtube.json"
     [ -f "$BRAND/brand.json" ] && cp -f "$BRAND/brand.json" "$CONF/brand.json"
     for f in "$BRAND"/fonts/*; do [ -f "$f" ] && cp -f "$f" "$CONF/fonts/"; done
@@ -342,6 +353,17 @@ if [ "$STUDIO" = 1 ]; then
   bold "Content Studio"
   STUDIO_ARGS=(--brand "$BRAND"); [ "$YES" = 1 ] && STUDIO_ARGS+=(--yes)
   node "$APP/scripts/studio-setup.mjs" "${STUDIO_ARGS[@]}" || die "The Content Studio setup stopped. Read the message above, then run the installer again."
+fi
+
+# Only client kits opt in; Greg's presets and installer path keep their existing jobs.
+if [ "$LOOK" = brand ]; then
+  MAINTENANCE_ARGS=(install --app "$APP")
+  [ "$STUDIO" != 1 ] || MAINTENANCE_ARGS+=(--studio)
+  [ "$WATCH" = y ] || MAINTENANCE_ARGS+=(--no-watch)
+  node "$APP/scripts/client-maintenance.mjs" "${MAINTENANCE_ARGS[@]}"
+  ok "weekly fixes on: your settings and brand stay yours; local code edits pause updates"
+  note "Updates are checked offline and rolled back if the check fails. Notes: ~/.reel/maintenance/updates.log"
+  [ "$STUDIO" = 1 ] || note "Waiting reels are checked three times a day. Alerts appear on this Mac; notes: ~/.reel/maintenance/STATUS.txt"
 fi
 
 bold "Done."
