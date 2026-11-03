@@ -66,6 +66,10 @@
   </div>
   <p class="muted">If a window asks to install Apple's command line tools, click Install, wait for it to finish, then run the installer again. If Homebrew is missing, the installer adds it and asks for your Mac password once.</p>
 
+  <h3>Fixes and waiting-reel alerts</h3>
+  <p>Your client kit checks for fixes every week on this Mac. It keeps your settings, voice, brand guide, dictionary and look. It installs packages only when the package files changed, checks the update without contacting a service, and returns to the previous version if the check fails. You get a notification when something changed or needs attention. Updates pause while the code folder has unsaved changes. Re-running the installer keeps one update job.</p>
+  <p>The Reel Editor kit also checks the drop folders three times a day for reels waiting over a day. A Mac notification and <code>~/.reel/maintenance/STATUS.txt</code> tell you what needs attention. Update notes are in <code>~/.reel/maintenance/updates.log</code>.</p>
+
   <h2>2. Make a reel</h2>
   <ol>
     <li>Drop a clip into one of the Raw folders in <b>Desktop/Reels</b>. The folder decides what you get.</li>
@@ -149,6 +153,15 @@
     <tr><td><b>3. Dropbox</b></td><td>The same with a <b>Content Studio uploads</b> folder in your Dropbox; Claude makes the share link for each file.</td><td>The Dropbox app on this Mac; the Dropbox connector in Claude (claude.ai, Settings, Connectors).</td></tr>
   </table>
   <p class="muted">The Content Studio itself runs on a Mac (it uses the Mac's face finder and background jobs). Without a Mac, the posts can't be made; the image route only decides where the finished files go.</p>
+
+  <h3>Your daily safety net</h3>
+  <p>Three times a day the studio checks whether the daily run finished, Claude and Metricool are connected, a Metricool post failed, or a reel has waited over a day in Publish or Raw Reels. A Mac notification and <b>STATUS.txt</b> at the top of your studio tell you what to do. The installer offers an optional health ping URL: use your own healthchecks.io-style HTTPS address, or press Return to skip. It sends only a check-in (with <code>/fail</code> on problems), never your content. Nothing goes to Greg or an address you did not choose.</p>
+  <h3>Normal reels plus Trial Reels</h3>
+  <p>New studios use <code>reels.trial: "both"</code>: a normal reel plus a separate Instagram Trial Reel copy. The trial never uses up a normal reel day. Both keep at least two hours from other posts. Existing settings stay as they are; <code>true</code> means trial only, <code>false</code> means normal only. Other connected networks keep the normal copy.</p>
+  <h3>Optional daily story games</h3>
+  <p>Stories start OFF. Write your own <b>brand/brand-guide.md</b>, then set <code>stories.enabled</code> to <code>true</code> in studio.json. The default <code>stories.slots</code> are <code>["08:00", "11:00", "17:00"]</code>. Your colors, fonts and voice become vertical story frames: spot what's wrong, pick A/B, or keep/kill a note. Viewers reply with their pick; these are not poll stickers. They schedule through your Metricool as Instagram stories and never take a feed slot. They refuse to run while the guide says <b>NOT FILLED IN YET</b>.</p>
+  <h3>Sunday filming pack</h3>
+  <p>Each Sunday's daily run writes <b>Filming packs/&lt;Monday&gt; filming pack.md</b>: six prompts from your guide, each with a short opening, three beats and a last line for 25 to 45 seconds, plus three B-roll ideas for 5 to 10 seconds. Recent angles are avoided. Story prompts ask questions so you supply your real experience. The same filming box reminds you: eye-level phone, window light, one take, drop into Raw Reels or Desktop/Reels/Raw - Reel with B-roll. An unfinished guide skips the pack and leaves a note in STATUS.txt. We never invent your brand or your results.</p>
 
   <h3>Your folder</h3>
   <table>

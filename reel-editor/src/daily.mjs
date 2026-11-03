@@ -59,7 +59,7 @@ export function proofScreenshots(root) {
 export function openSlots({ config, posts = [], scheduled = [], now = new Date(), leadMin = 180, day: onlyDay = null }) {
   const tz = config.timezone;
   const { day: today, minutes } = zonedNow(tz, now);
-  const taken = new Set(posts.filter((p) => p.status !== "failed").map((p) => `${p.day} ${p.time}`));
+  const taken = new Set(posts.filter((p) => p.status !== "failed" && p.format !== "story" && !p.trial && p.format !== "trial").map((p) => `${p.day} ${p.time}`));
   const out = [];
   // One named day (reel daily --day): only that day's slots, however far ahead.
   const days = onlyDay ? (onlyDay >= today ? [onlyDay] : []) : Array.from({ length: Number(config.daysAhead) + 1 }, (_, k) => addDays(today, k));
@@ -71,8 +71,9 @@ export function openSlots({ config, posts = [], scheduled = [], now = new Date()
       if (k === 0 && at < minutes + leadMin) continue;
       const time = hhmm(t);
       if (taken.has(`${day} ${time}`)) continue;
-      const clash = scheduled.some((p) => p.day === day && !/REEL/.test(p.type) && Math.abs(p.hour * 60 + p.minute - at) < 120);
-      if (clash) continue;
+      const clash = scheduled.some((p) => p.day === day && !["REEL", "STORY"].includes(p.type) && Math.abs(p.hour * 60 + p.minute - at) < 120);
+      const trialClash = posts.some((p) => p.day === day && (p.trial || p.format === "trial") && p.status !== "failed" && Math.abs(parseTime(p.time).h * 60 + parseTime(p.time).m - at) < 120);
+      if (clash || trialClash) continue;
       out.push({ day, time, format: s.format });
     }
   }
@@ -86,7 +87,7 @@ export function retryable(posts, { tz, now = new Date() }) {
 }
 
 /** Headless Claude for the copy: no tools, or only Sandcastles' hook lookups when the client has the connector. */
-function claudeCopy(prompt, { sandcastles = "" } = {}) {
+export function claudeCopy(prompt, { sandcastles = "" } = {}) {
   const tools = sandcastles ? [`mcp__claude_ai_${sandcastles.replace(/[^A-Za-z0-9]+/g, "_")}__top_hooks`, `mcp__claude_ai_${sandcastles.replace(/[^A-Za-z0-9]+/g, "_")}__top_formats`] : [];
   const args = tools.length
     ? ["-p", prompt, "--allowedTools", tools.join(","), "--disallowedTools", [...DENY, "Read"].join(","), "--output-format", "text"]
@@ -382,12 +383,16 @@ function uniqueDir(p) {
 
 /** Schedule a made post into the client's Metricool. Returns the updated record. */
 export async function publishPost(studio, record, { connectors = {}, deps = {} } = {}) {
+  if (["reel", "trial"].includes(record.format)) {
+    const { publishReel } = await import("./studio-reels.mjs");
+    return publishReel(studio, record, { deps });
+  }
   if (record.preflight?.verdict !== "schedule") throw new Error("the slide preflight did not approve this post");
   const c = studio.config;
   const draft = c.publish.mode === "draft" || !!record.draftWhy;
   const host = await (deps.hostFiles || hostFiles)(record.files, { hosting: c.hosting, postId: record.id, connectors });
   try {
-    const input = postInput({ blogId: c.metricool.blogId, day: record.day, time: record.time, tz: c.timezone, text: record.text, media: host.urls, altText: record.altText, kind: record.format, ai: record.ai, draft, networks: c.metricool.networks, title: record.hook, coverMs: record.coverMs });
+    const input = postInput({ blogId: c.metricool.blogId, day: record.day, time: record.time, tz: c.timezone, text: record.text, media: host.urls, altText: record.altText, kind: record.format, ai: record.ai, draft, networks: record.format === "story" ? ["instagram"] : c.metricool.networks, title: record.hook, coverMs: record.coverMs });
     const r = await (deps.createPost || createPost)(c.metricool.connector || connectors.metricool, input);
     const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: record.draftWhy || (draft ? "the studio is set to drafts" : "") };
     fs.writeFileSync(path.join(record.made, "Scheduled.txt"), [
@@ -414,6 +419,7 @@ export async function runDaily(dir, { dryRun = false, noPublish = false, only = 
   const release = dryRun ? () => {} : takeLock(studio.paths, "daily");
   if (!release) { log("studio: another run is going; nothing to do"); return { made: [], skipped: "locked" }; }
   try {
+    if (!dryRun) writeJSON(path.join(studio.paths.state, "daily.json"), { started: now.toISOString(), error: "The daily run started but did not finish. Check .studio/launchd.log." });
     const publishing = c.publish.mode !== "off" && !noPublish;
     let connectors = { metricool: c.metricool.connector };
     if (c.sandcastles || c.hosting.route === "dropbox") { try { connectors = { ...(await (deps.detectConnectors || detectConnectors)()), metricool: c.metricool.connector }; connectors = Object.fromEntries(Object.entries(connectors).map(([k, v]) => [k, typeof v === "object" ? (v?.connected ? v.name : "") : v])); } catch {} }
@@ -427,6 +433,13 @@ export async function runDaily(dir, { dryRun = false, noPublish = false, only = 
     const slots = openSlots({ config: c, posts, scheduled, now, day }).filter((s) => !only || s.format === only).slice(0, Number(limit || c.maxPerRun));
     if (dryRun) return { slots, retries: retryable(posts, { tz: c.timezone, now }) };
     const results = [];
+    // These lanes do not need feed slots or photos. They run even when every feed slot is full.
+    const { runFilmingPack, runStories } = await import("./studio-extras.mjs");
+    if (!only && !day) {
+      const filming = await runFilmingPack(studio, { now, deps });
+      if (filming.status === "failed") results.push({ day: today, time: "", format: "filming", ...filming });
+      results.push(...await runStories(studio, { now, noPublish: !publishing, deps }));
+    }
     // Posts made earlier that never reached Metricool go first.
     if (publishing) for (const p of retryable(posts, { tz: c.timezone, now })) {
       try { results.push(await publishPost(studio, p, { connectors, deps })); }
@@ -447,6 +460,7 @@ export async function runDaily(dir, { dryRun = false, noPublish = false, only = 
       try { results.push(await publishPost(studio, record, { connectors, deps })); }
       catch (e) { results.push(failPublish(studio, record, e)); }
     }
+    writeJSON(path.join(studio.paths.state, "daily.json"), { day: today, completed: now.toISOString(), error: results.filter((r) => ["failed", "not-posted", "held"].includes(r.status)).map((r) => r.why || r.status).join("; ") });
     return { slots, made: results };
   } finally {
     release();

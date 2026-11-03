@@ -66,6 +66,9 @@ export const STUDIO_DEFAULTS = {
   maxPerRun: 4,
   carouselSlides: [5, 8],
   reels: { enabled: true, earliest: 8, latest: 20, fallbackHour: 12, gapHours: 2, look: "auto", trial: false },
+  stories: { enabled: false, slots: ["08:00", "11:00", "17:00"] },
+  filming: { enabled: false },
+  health: { pingUrl: "" },
   metricool: { brand: "", blogId: "", networks: ["instagram"], connector: "" },
   publish: { mode: "schedule" },
   hosting: { route: "tunnel", folder: "" },
@@ -134,7 +137,13 @@ export function checkStudio(config, { publishing = true } = {}) {
   if (!nets.length || nets.some((n) => !NETWORKS.includes(n))) out.push(`metricool.networks lists where posts go: ${NETWORKS.join(", ")}`);
   if (!["auto", "always"].includes(c.ai?.label)) out.push('ai.label is "auto" (labelled when a picture is AI-made) or "always"; AI pictures are always labelled');
   if (![true, false, "auto"].includes(c.ai?.broll)) out.push('ai.broll is true, false or "auto" (AI pictures only when Codex is set up)');
-  if (typeof c.reels?.trial !== "boolean") out.push("reels.trial is true (every reel posts as an Instagram Trial Reel) or false");
+  if (![true, false, "both"].includes(c.reels?.trial)) out.push('reels.trial is true (Trial Reel only), false (normal reel), or "both" (normal plus a separate Trial Reel)');
+  if (typeof c.stories?.enabled !== "boolean" || !Array.isArray(c.stories?.slots) || c.stories.slots.some((s) => !parseTime(s))) out.push("stories needs enabled (true or false) and slots like [\"08:00\",\"11:00\",\"17:00\"]");
+  if (typeof c.filming?.enabled !== "boolean") out.push("filming.enabled is true (a Sunday filming pack) or false");
+  if (c.health?.pingUrl) {
+    try { const u = new URL(c.health.pingUrl); if (u.protocol !== "https:" || u.username || u.password || u.hash) throw new Error(); }
+    catch { out.push("health.pingUrl must be an https URL without a login or fragment"); }
+  }
   const sc = c.slideColors;
   if (!sc || typeof sc !== "object" || Array.isArray(sc)) out.push('slideColors is like {"bg": "#FFF3EE", "text": "#111111", "accent": "#FFB27D"}');
   else {
@@ -269,8 +278,14 @@ export function initStudio(dir, { config = {}, brandFrom = null } = {}) {
     for (const f of ["brand.json", "voice.md", "brand-guide.md", "my-brand.json", "my-youtube.json", "dictionary.json"]) {
       const src = path.join(brandFrom, f);
       // The voice, guide and word list are the client's to edit: a re-run keeps their edited copies.
-      const keep = ["voice.md", "brand-guide.md", "dictionary.json"].includes(f) && fs.existsSync(path.join(paths.brand, f));
-      if (fs.existsSync(src) && !keep) fs.copyFileSync(src, path.join(paths.brand, f));
+      const dest = path.join(paths.brand, f), last = path.join(paths.brand, ".kit-my-brand.json");
+      // my-brand.json is kept only when they edited it since the last kit; an untouched copy takes the new kit's settings.
+      const edited = f === "my-brand.json" && fs.existsSync(dest) && fs.existsSync(last) && fs.existsSync(src)
+        && fs.readFileSync(dest, "utf8") !== fs.readFileSync(last, "utf8") && fs.readFileSync(dest, "utf8") !== fs.readFileSync(src, "utf8");
+      const keep = edited || (["voice.md", "brand-guide.md", "dictionary.json"].includes(f) && fs.existsSync(dest));
+      if (fs.existsSync(src) && !keep) fs.copyFileSync(src, dest);
+      if (edited) fs.copyFileSync(src, path.join(paths.brand, "my-brand.kit-new.json"));
+      if (f === "my-brand.json" && fs.existsSync(src)) fs.copyFileSync(src, last);
     }
     const fonts = path.join(brandFrom, "fonts");
     if (fs.existsSync(fonts)) {
@@ -279,7 +294,10 @@ export function initStudio(dir, { config = {}, brandFrom = null } = {}) {
     }
   }
   const existing = fs.existsSync(paths.config) ? readJSON(paths.config) : {};
-  const next = merge(merge(structuredClone(STUDIO_DEFAULTS), existing), config);
+  // Defaults at creation are separate from runtime defaults: old configs with no trial key keep normal reels.
+  const defaults = structuredClone(STUDIO_DEFAULTS);
+  if (!fs.existsSync(paths.config)) { defaults.reels.trial = "both"; defaults.filming.enabled = true; }
+  const next = merge(merge(defaults, existing), config);
   writeJSON(paths.config, { _how: "Content Studio settings. Edit and save; the next run uses them. Times are in timezone. Re-run the installer to change the Metricool brand or the image route.", ...next });
   if (photosDir(next, paths) === paths.photos) ensureDir(paths.photos);
   return paths;

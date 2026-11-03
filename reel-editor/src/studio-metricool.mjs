@@ -97,6 +97,21 @@ export async function scheduledPosts(connector, { blogId, from, to, tz }) {
   return normalizeScheduled(r);
 }
 
+/** Provider failures can live below a post's overall status. Keep them for health alerts. */
+export function scheduledError(post) {
+  if (!post || typeof post !== "object") return "";
+  for (const [key, value] of Object.entries(post)) {
+    if (/^(error|errorMessage|errorText)$/i.test(key) && value && (typeof value !== "object" || Object.keys(value).length)) return typeof value === "string" ? value : JSON.stringify(value);
+  }
+  for (const value of Object.values(post)) {
+    if (value && typeof value === "object") { const error = scheduledError(value); if (error) return error; }
+  }
+  for (const [key, value] of Object.entries(post)) {
+    if (/status|state/i.test(key) && typeof value === "string" && /error|fail/i.test(value)) return value;
+  }
+  return "";
+}
+
 /** Pure: Metricool's scheduled-post list as {day, hour, minute, type, draft}. */
 export function normalizeScheduled(r) {
   const list = Array.isArray(r?.data) ? r.data : Array.isArray(r) ? r : Array.isArray(r?.posts) ? r.posts : [];
@@ -104,7 +119,7 @@ export function normalizeScheduled(r) {
     const dt = String(p.publicationDate?.dateTime || p.publicationDate || p.date || "");
     const m = dt.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
     if (!m) return null;
-    return { day: m[1], hour: Number(m[2]), minute: Number(m[3]), type: String(p.instagramData?.type || p.type || "POST").toUpperCase(), draft: !!p.draft, text: String(p.text || "").slice(0, 80), id: p.id ?? p.uuid ?? null };
+    return { day: m[1], hour: Number(m[2]), minute: Number(m[3]), type: String(p.instagramData?.type || p.type || "POST").toUpperCase(), draft: !!p.draft, text: String(p.text || "").slice(0, 80), id: p.id ?? p.uuid ?? null, ...(p.status || p.publicationStatus ? { status: String(p.status || p.publicationStatus) } : {}), ...(scheduledError(p) ? { error: scheduledError(p) } : {}) };
   }).filter(Boolean);
 }
 
@@ -114,6 +129,7 @@ export function normalizeScheduled(r) {
  */
 export function postInput({ blogId, day, time, tz, text, media, altText = [], kind, ai = false, draft = false, trial = false, networks = ["instagram"], title = "", coverMs = null }) {
   const reel = kind === "reel";
+  if (kind === "story") networks = ["instagram"];
   const providers = networks.map((network) => ({ network }));
   const info = {
     autoPublish: true,
@@ -130,7 +146,7 @@ export function postInput({ blogId, day, time, tz, text, media, altText = [], ki
     text,
   };
   if (reel && Number.isFinite(coverMs)) info.videoCoverMilliseconds = Math.max(0, Math.round(coverMs));
-  if (networks.includes("instagram")) info.instagramData = { autoPublish: true, type: reel ? (trial ? "TRIAL_REEL" : "REEL") : "POST", showReelOnFeed: true, isAiGenerated: !!ai };
+  if (networks.includes("instagram")) info.instagramData = { autoPublish: true, type: reel ? (trial ? "TRIAL_REEL" : "REEL") : kind === "story" ? "STORY" : "POST", showReelOnFeed: !trial, isAiGenerated: !!ai };
   if (networks.includes("facebook")) info.facebookData = { type: reel ? "REEL" : "POST" };
   if (networks.includes("linkedin")) info.linkedinData = kind === "carousel" ? { documentTitle: title.slice(0, 100), publishImagesAsPDF: true, previewIncluded: true, type: "post" } : { previewIncluded: true, type: "post" };
   if (networks.includes("tiktok")) info.tiktokData = { isAigc: !!ai };

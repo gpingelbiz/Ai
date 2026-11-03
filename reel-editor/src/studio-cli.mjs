@@ -18,6 +18,7 @@ export const STUDIO_USAGE = `Content Studio (a client's folder that makes and sc
                                     copy in the client's voice (Claude), unused photos, slides in their brand,
                                     a copy in Made/, scheduled into their Metricool
   reel studio init <dir> [--brand <Brand folder>] [--client "<name>"]   make a studio folder
+  reel studio health [--studio <dir>]                                    check daily run, logins, failed posts and waiting reels
   reel studio status [--studio <dir>]                                    settings check, last posts, photo pool
   reel studio reels [--studio <dir>]                                     edit and schedule the clips in Raw Reels
   reel studio agents [--studio <dir>] [--uninstall]                      the daily job and the Raw Reels watcher (launchd)
@@ -120,6 +121,7 @@ ${extra}
   return [
     { label: `com.pingel.content-studio.daily.${slugged}`, plist: plist({ label: `com.pingel.content-studio.daily.${slugged}`, args: [node, bin, "daily", "--studio", root], extra: `  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>${hour}</integer><key>Minute</key><integer>${minute}</integer></dict>\n  <key>RunAtLoad</key><false/>` }) },
     { label: `com.pingel.content-studio.reels.${slugged}`, plist: plist({ label: `com.pingel.content-studio.reels.${slugged}`, args: [node, bin, "studio", "reels", "--studio", root], extra: `  <key>WatchPaths</key><array><string>${xml(path.join(root, "Raw Reels"))}</string><string>${xml(path.join(root, "Publish"))}</string></array>\n  <key>StartInterval</key><integer>3600</integer>\n  <key>ThrottleInterval</key><integer>60</integer>\n  <key>RunAtLoad</key><false/>` }) },
+    { label: `com.pingel.content-studio.health.${slugged}`, plist: plist({ label: `com.pingel.content-studio.health.${slugged}`, args: [node, bin, "studio", "health", "--studio", root], extra: `  <key>StartCalendarInterval</key><array>${[9, 13, 18].map((h) => `<dict><key>Hour</key><integer>${h}</integer><key>Minute</key><integer>23</integer></dict>`).join("")}</array>` }) },
   ];
 }
 
@@ -129,7 +131,7 @@ export function installAgents(root, { uninstall = false } = {}) {
   const out = [];
   // Agents installed before agentSlug under the generic "content-studio" name for THIS studio: removed, so the
   // folder never has two watchers.
-  for (const kind of ["daily", "reels"]) {
+  for (const kind of ["daily", "reels", "health"]) {
     const label = `com.pingel.content-studio.${kind}.content-studio`;
     const file = path.join(dir, `${label}.plist`);
     if (studioAgents(root)[0].label.endsWith(".content-studio") || !fs.existsSync(file)) continue;
@@ -168,6 +170,14 @@ export async function studioCommand(args) {
     const posts = readPosts(paths).sort((a, b) => `${a.day} ${a.time}`.localeCompare(`${b.day} ${b.time}`)).slice(-10);
     for (const p of posts) console.log(`  ${p.day} ${p.time} ${p.format.padEnd(8)} ${p.status.padEnd(10)} ${p.hook || ""}${p.why ? ` (${p.why})` : ""}`);
     await photosCommand(["status", "--studio", paths.root]);
+    return;
+  }
+  if (cmd === "health") {
+    const { values } = opt(rest, {});
+    const { studioHealth } = await import("./studio-health.mjs");
+    const r = await studioHealth(values.studio);
+    console.log(r.message);
+    if (r.issues.length) process.exitCode = 1;
     return;
   }
   if (cmd === "reels") {
