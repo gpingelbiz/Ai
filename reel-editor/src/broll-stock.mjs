@@ -95,6 +95,13 @@ export function stockRelevance(clip, subject) {
   return subject.every((w) => tags.some((t) => t.startsWith(w) || w.startsWith(t) && t.length >= 4)) ? "match" : "miss";
 }
 
+/** Setting searches still need matching tags; a place name alone is never a filmable query. */
+export function stockFallbackQueries({ stockQuery, scene, action }) {
+  const stop = new Set("a an the and of in on at to from with its it this that is are through across large clear close shot view camera locked portrait framing angle daylight natural colour light photographic shows visibly".split(" "));
+  const compact = (text) => [...new Set(String(text || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2 && !stop.has(w)))].slice(0, 8).join(" ");
+  return [...new Set([stockQuery, compact(action), compact(scene)].map((q) => String(q || "").trim().toLowerCase()).filter(Boolean))];
+}
+
 /** A reel has one small search allowance; cache hits do not consume API requests. 429s defer future work. */
 export function createStockSearch({ env = process.env, fetchFn = fetch, now = Date.now, warnFn = warn, maxSearches = 20, stockCandidates = 12 } = {}) {
   const missing = new Set();
@@ -144,7 +151,7 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
   // The bare subject goes first: a longer query such as "gorilla walking" matches crowds walking before gorillas.
   // Clips whose tags name a different subject are dropped; tagged matches rank ahead of untagged clips. No query may
   // fill more than two thirds of the pool, so the action query ("gorilla running") always gets places of its own.
-  return async ({ stockQuery, stockSynonyms = [], shows, scene, action }, providers = ["pexels", "pixabay"]) => {
+  return async ({ stockQuery, stockSynonyms = [], shows, scene, action }, providers = ["pexels", "pixabay"], { eligible = () => true, onQuery } = {}) => {
     const subject = subjectWords(shows, scene || shows), clips = [], seen = new Map();
     const actionWords = String(`${action || ""} ${stockQuery || ""}`).toLowerCase().split(/[^\p{L}\p{N}]+/u)
       .filter((w) => w.length >= 4 && !subject.some((s) => s.startsWith(w) || w.startsWith(s)));
@@ -155,20 +162,26 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
       Number(b.files[0].height > b.files[0].width) - Number(a.files[0].height > a.files[0].width));
     const synonyms = Array.isArray(stockSynonyms) ? stockSynonyms.filter((s) => typeof s === "string" && s.trim()).slice(0, 3) : [];
     const queries = [subject.join(" "), stockQuery, ...synonyms], perQuery = Math.ceil(stockCandidates * 2 / 3);
-    async function collect(sources, fallback = false) {
-      for (const query of [...new Set(queries.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
+    async function collect(sources, fallback = false, setting = false) {
+      const list = setting ? stockFallbackQueries({ stockQuery, scene, action }) : queries;
+      for (const query of [...new Set(list.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
         if (fallback && clips.length >= stockCandidates) break;
         const synonym = synonyms.some((s) => s.trim().toLowerCase() === query) ? query.split(/\s+/) : [];
         for (const provider of sources) {
           for (const orientation of provider === "pexels" ? ["portrait", null] : [null]) {
             let taken = 0;
-            for (const c of await search(provider, query, orientation)) {
+            const found = await search(provider, query, orientation);
+            const matching = found.flatMap((c) => {
+              const primary = stockRelevance(c, subject);
+              const relevance = setting ? stockRelevance(c, query.split(/\s+/)) : primary === "match" || synonym.length && stockRelevance(c, synonym) === "match" ? "match" : primary;
+              return (setting ? relevance === "match" : relevance !== "miss") && eligible(c) ? [{ ...c, relevance }] : [];
+            });
+            onQuery?.({ query, provider, orientation, mode: setting ? "setting" : "subject", returnedCount: found.length, candidateCount: matching.length });
+            for (const c of matching) {
               if (taken >= perQuery || fallback && clips.length >= stockCandidates) break;
-              const primary = stockRelevance(c, subject), relevance = primary === "match" || synonym.length && stockRelevance(c, synonym) === "match" ? "match" : primary;
-              if (relevance === "miss") continue;
               const id = `${c.provider}:${c.id}`, existing = seen.get(id);
-              if (existing) { if (relevance === "match") existing.relevance = relevance; }
-              else { const eligible = { ...c, relevance }; seen.set(id, eligible); clips.push(eligible); taken++; }
+              if (existing) { if (c.relevance === "match") existing.relevance = c.relevance; }
+              else { seen.set(id, c); clips.push(c); taken++; }
             }
           }
         }
@@ -176,6 +189,7 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
     }
     await collect(providers.filter((p) => ["pexels", "pixabay"].includes(p)));
     if (providers.includes("wikimedia") && clips.length < stockCandidates) await collect(["wikimedia"], true);
+    if (!clips.length) await collect(providers, true, true);
     return ranked().slice(0, stockCandidates);
   };
 }
@@ -264,22 +278,23 @@ export async function conformStockClip(input, file, { runFn = run } = {}) {
 }
 
 export async function makeStockClip({ pick, shot, groups, workDir, dir, settings = {}, search, fill = false, maxNew = 20, deps = {} }) {
-  const why = checkPick(pick, shot, groups, { len: shot.duration });
+  const why = checkPick(pick, shot, groups, { len: shot.duration, stock: true });
   if (why) { brollStep(pick, `stock skipped: ${why}`, deps); return null; }
   const env = deps.env || process.env, look = deps.claudeLook || claudeLook;
   const approved = [];
   let stage = "search";
   try {
     const bank = readLibrary(env), recent = recentLibraryReels(bank, workDir);
-    const found = await search(pick, settings.stock);
-    let candidates = found.filter((c) => !bank.clips.some((l) => l.licence?.provider === c.provider && String(l.licence.id) === String(c.id) && (fill || (l.usedIn || []).some((use) => recent.has(use.reel))))).slice(0, settings.stockCandidates ?? 12);
+    const eligible = (c) => !bank.clips.some((l) => l.licence?.provider === c.provider && String(l.licence.id) === String(c.id) && (fill || (l.usedIn || []).some((use) => recent.has(use.reel))));
+    const found = await search(pick, settings.stock, { eligible, onQuery: deps.onStockQuery });
+    let candidates = found.filter(eligible).slice(0, settings.stockCandidates ?? 12);
     for (const provider of new Set([...(settings.stock || ["pexels", "pixabay"]), ...found.map((c) => c.provider)])) {
       brollStep(pick, `stock ${provider}: ${found.filter((c) => c.provider === provider).length} candidates found, ${candidates.filter((c) => c.provider === provider).length} eligible`, deps);
     }
     if (!candidates.length) { brollStep(pick, "stock choice none: no eligible candidates after search and recent-clip exclusion", deps); return null; }
     const evidence = fs.mkdtempSync(path.join(dir, "stock-"));
     candidates = await previewStockCandidates(candidates, { pick, dir: evidence, settings, deps });
-    if (!candidates.length) return fill ? approved : null;
+    if (!candidates.length) { brollStep(pick, "stock outcome none: every preview was still or frozen", deps); return fill ? approved : null; }
     stage = "contact sheet";
     const sheet = await (deps.stockContactSheet || stockContactSheet)(candidates, { dir: evidence, deps });
     stage = "Claude description";
@@ -293,7 +308,7 @@ export async function makeStockClip({ pick, shot, groups, workDir, dir, settings
       const result = firstJSON(await look(`Inspect ${JSON.stringify(path.basename(sheet))}. Your independent description: ${JSON.stringify(open.seen)}.
 Required subject: ${JSON.stringify(pick.shows)}. Planned event (a guide, not a requirement): ${JSON.stringify(pick.action)}.
 Spoken context: ${JSON.stringify(groups.filter((g) => g.start >= shot.start - 3 && g.start <= shot.start + shot.duration + 3).map((g) => g.text).join(" "))}.
-Choose the image that unmistakably shows the named subject, large and clear, doing something real and harmless. Stock footage rarely shows the planned event, so a different harmless event is fine when it does not contradict the spoken words; prefer one that fits them (for "coming after me", a walk or a stare toward the lens beats eating). Name the harmless event this clip most likely shows (for example "the gorilla stares into the lens and shifts its weight"); the full clip is then checked for it. Prefer real filmed footage, natural colour, portrait framing, a large clear subject and the complete action area above captions. Reject human faces (animal faces are allowed), readable text, logos, watermarks, animation, harm, neck contact, hanging loops, threats and unsafe associations with those words. If uncertain, answer none.
+${pick.kind === "ambient" ? "Choose the real spoken setting with sustained visible movement. No discrete event is required; event may describe road passing, clouds drifting or other real setting movement. Reject a frozen setting and apply every safety and defect check below." : "Choose the image that unmistakably shows the named subject, large and clear, doing something real and harmless."} Stock footage rarely shows the planned event, so a different harmless event is fine when it does not contradict the spoken words; prefer one that fits them (for "coming after me", a walk or a stare toward the lens beats eating). Name the harmless event this clip most likely shows (for example "the gorilla stares into the lens and shifts its weight"); the full clip is then checked for it. Prefer real filmed footage, natural colour, portrait framing, a large clear subject and the complete action area above captions. Reject human faces (animal faces are allowed), readable text, logos, watermarks, animation, harm, neck contact, hanging loops, threats and unsafe associations with those words. If uncertain, answer none.
 Preview motion means: ${candidates.map((c, i) => `${i + 1}: ${c.previewMotion ?? "unavailable (thumbnail only)"}`).join(", ")}.
 Candidate numbers are 1 through ${candidates.length}, labelled as decimals. Excluded after selection or failed clip checks: ${JSON.stringify(rejected)}.
 Reply JSON only: {"choice":N|"none","event":"...","shows":true|false,"safe":true|false,"humanFaces":true|false,"readableText":true|false,"logos":true|false,"watermarks":true|false,"why":"..."}`, { cwd: evidence }));

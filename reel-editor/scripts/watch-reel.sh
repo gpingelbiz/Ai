@@ -284,6 +284,7 @@ if [ -z "$hook" ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 
     fi
   fi
 fi
+rm -f "$work/No b-roll this time.txt"
 run_start=$(( $(wc -l < "$log" 2>/dev/null || echo 0) + 1 ))
 # shellcheck disable=SC2086
 # ${flags[@]+...}: macOS bash 3.2 treats an empty array as unbound under set -u (a plain drop has no flags).
@@ -331,7 +332,7 @@ else
   [ -s "$work/analytics-features.json" ] && cp -f "$work/analytics-features.json" "$folder/.reel-features.json"
   # The stills, cover, music pick, words to check and preflight note all stay in the work folder ($work: broll/,
   # covers/, music.txt, review.txt, preflight.txt). Only the reason a b-roll reel came out without b-roll is new here.
-  rm -f "$work/No b-roll this time.txt"
+  [ -n "$shots" ] && rm -f "$work/No b-roll this time.txt"
   if [ -z "$shots" ] && [ "$MODE" = runway ]; then
     # Say why from the editor's own lines: a short or wordless clip never asks Runway, so it is not a balance problem.
     if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
@@ -343,7 +344,9 @@ else
     fi
   elif [ -z "$shots" ] && [ "$MODE" = broll ]; then
     # Say why, from the editor's own lines for this run, instead of guessing at Codex.
-    if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
+    if [ -s "$work/No b-roll this time.txt" ]; then
+      : # The editor recorded each moment's search and inspection reasons.
+    elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
       printf 'No b-roll this time: the clip is under 8 seconds, too short for a still.\n' > "$work/No b-roll this time.txt"
     elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: no room after the hook"; then
       printf 'No b-roll this time: no room for a 2-second still between the hook and the end of this clip.\n' > "$work/No b-roll this time.txt"

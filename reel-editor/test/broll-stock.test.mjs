@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createStockSearch, stockRelevance, normaliseStock, stockContactSheet, conformStockClip, makeStockClip, stockCacheDir, previewStockCandidates, wikimediaLicence } from "../src/broll-stock.mjs";
 import { libraryDir, readLibrary, saveLibraryClip, findLibraryClip, reviewMovingClip, writeBrollCredits } from "../src/broll-library.mjs";
-import { makeBroll, picksPrompt, recentFile, rememberScenes, readRecent, PICKS_SCHEMA, normaliseStockPicks } from "../src/broll.mjs";
+import { makeBroll, picksPrompt, recentFile, rememberScenes, readRecent, PICKS_SCHEMA, normaliseStockPicks, approvedShotMatch, codexPicks } from "../src/broll.mjs";
 import { makeRunwayBroll, runwayPicksPrompt } from "../src/broll-runway.mjs";
 import { loadPreset, CLIENT_BASE } from "../src/presets.mjs";
 import { brandPreset } from "../src/brandkit.mjs";
@@ -625,6 +625,43 @@ test("Codex synonym schema is required and bounded, absent synonyms default empt
   assert.deepEqual(normaliseStockPicks([pick])[0].stockSynonyms, []);
 });
 
+test("a real driving pick reaches stock inspection and a footage veto still keeps the speaker", async () => {
+  const f = fixture();
+  const { groups, pick } = JSON.parse(fs.readFileSync(new URL("./fixtures/broll/img-6056-timing.json", import.meta.url))).cases.find((c) => c.name === "greg line 16: driving");
+  let searches = 0;
+  const shots = await makeBroll({ workDir: f.dir, groups, duration: 60, settings: { max: 1, stock: ["pexels"] }, deps: {
+    ...f.deps,
+    codexExec: async () => JSON.stringify({ picks: [pick] }),
+    stockSearch: async () => { searches++; return normaliseStock("pexels", { videos: [pexel()] }); },
+    claudeLook: async (prompt) => prompt.includes('"seen":"..."') ? '{"seen":"a car travelling on a desert highway"}' : choose(),
+    checkRunwayVideo: async (args) => { f.calls.checks.push(args); return { ...verdict, shows: false, ok: false, look: "fail", why: "the actual footage does not show driving" }; },
+  } });
+  assert.equal(searches, 1);
+  assert.ok(f.calls.checks.length > 0, "the scene description must not block the actual clip check");
+  assert.deepEqual(shots, []);
+  assert.ok(f.calls.logs.some((s) => /actual footage does not show driving/.test(s)));
+});
+
+test("library precheck accepts a synonym description and still inspects its footage", async () => {
+  const f = fixture(), p = { ...pick, scene: "A round tropical fruit drops onto sand.", stockSynonyms: ["fruit"] };
+  seed(f); ageLibrary(f);
+  const found = await findLibraryClip({ ...f.args, pick: p });
+  assert.ok(found, "library footage matching the spoken subject remains eligible");
+  assert.ok(f.calls.checks.length > 0);
+});
+
+test("a stock synonym does not authorize a generated fallback without the named subject", async () => {
+  const f = fixture(); let draws = 0;
+  const p = { ...pick, scene: "A round tropical fruit on sand.", stockSynonyms: ["fruit"] };
+  const shots = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { max: 1, stock: ["pexels"], stillFallback: true }, deps: {
+    ...f.deps, codexExec: async (prompt) => { if (prompt.includes("Draw every approved scene below")) draws++; return JSON.stringify({ picks: [p] }); },
+    stockSearch: async () => [],
+  } });
+  assert.deepEqual(shots, []);
+  assert.equal(draws, 0);
+  assert.match(JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json"))).picks[0].reason, /generated still: scene does not contain coconut/);
+});
+
 // Exercise the real verdict rules using generated pixel buffers and stubbed frame extraction.
 function realReview(f, full = {}, trimmed = {}) {
   let checks = 0, locals = 0;
@@ -1002,4 +1039,133 @@ test("Commons selected originals are conformed once, retain long and two-second 
     assert.match(credit, /Page: https:\/\/commons.wikimedia.org\/wiki\/File:Coconut_1.webm/);
     assert.match(credit, /Changes: cropped, trimmed, muted and conformed/);
   }
+});
+
+
+test("a written hook regroups captions but retains the same approved reel clip before picking", async () => {
+  const f = fixture();
+  f.deps.fetchFn = async (url) => url.includes("api.pexels.com") ? json({ videos: [pexel()] }) : json({});
+  f.deps.codexExec = async () => JSON.stringify({ picks: [pick] });
+  const args = { workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps };
+  const [first] = await makeBroll(args);
+  assert.ok(first);
+  const regrouped = [groups[0], { ...groups[1], text: "a", words: groups[1].words.slice(0, 1) },
+    { start: 6.4, text: "coconut drops onto sand", words: groups[1].words.slice(1) }, groups[2]];
+  f.deps.codexExec = fail; f.deps.fetchFn = fail; f.deps.checkRunwayVideo = fail;
+  const [kept] = await makeBroll({ ...args, groups: regrouped, hook: { start: 0, duration: 3, text: "A new written hook" } });
+  assert.equal(kept.file, first.file);
+  assert.equal(kept.line, 2);
+  assert.equal(kept.licence.id, first.licence.id);
+  const plan = JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json")));
+  assert.equal(plan.picks[0].outcome, "reused");
+  assert.match(plan.picks[0].reason, /same spoken words and time/);
+  assert.equal(fs.existsSync(path.join(f.dir, "No b-roll this time.txt")), false);
+  assert.equal(approvedShotMatch(first, groups, groups.map((g) => ({ ...g, words: g.words.map((w) => ({ ...w, start: w.start + 10, end: w.end + 10 })) }))), null, "a different occurrence is not the same approved moment");
+  assert.equal(approvedShotMatch(first, groups, groups.map((g) => ({ ...g, words: g.words.map((w) => ({ ...w, text: w.text === "coconut" ? "dog" : w.text })) }))), null);
+});
+
+test("legacy approved shots match words and times from their old plan key and recut compressed timing", async () => {
+  const f = fixture(), dir = path.join(f.dir, "broll"); fs.mkdirSync(dir);
+  const file = path.join(dir, "approved.mp4"), full = path.join(dir, "approved.full.mp4");
+  fs.writeFileSync(file, "old checked interval"); fs.writeFileSync(full, "full moving source");
+  const approved = { ...shot, file, full, sourceDuration: 6, video: true, moves: verdict, source: "pixabay" };
+  writeJSON(path.join(dir, "broll.json"), { promptVersion: "literal-codex-v6", key: `literal-codex-v6|${JSON.stringify({ groups })}`, shots: [approved] });
+  const compressed = groups.map((g, i) => i !== 1 ? g : ({ ...g, words: g.words.map((w) => ({ ...w, start: 6 + (w.start - 6) * 0.9, end: 6 + (w.end - 6) * 0.9 })) }));
+  f.deps.codexExec = fail; f.deps.fetchFn = fail;
+  const [kept] = await makeBroll({ workDir: f.dir, groups: compressed, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps });
+  assert.ok(kept); assert.ok(kept.duration < approved.duration);
+  assert.equal(f.calls.trims.length, 1);
+  assert.equal(f.calls.trims[0].duration, kept.duration);
+  assert.equal(f.calls.checks.length, 2, "the full source and the new exact cut are checked");
+  assert.equal(fs.readFileSync(file, "utf8"), "old checked interval", "recutting preserves the previously approved file");
+});
+
+test("rebuild keeps approved footage and asks only for the remaining moments", async () => {
+  const f = fixture();
+  f.deps.codexExec = async () => JSON.stringify({ picks: [pick] });
+  f.deps.fetchFn = async (url) => url.includes("api.pexels.com") ? json({ videos: [pexel()] }) : json({});
+  const args = { workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps };
+  await makeBroll(args);
+  const source = [...groups, { start: 22, text: "mountains moving below clouds", words: ["mountains", "moving", "below", "clouds"].map((text, i) => ({ text, start: 22 + i * 0.5, end: 22.5 + i * 0.5 })) }];
+  let calls = 0;
+  f.deps.codexExec = async (prompt) => { calls++; assert.match(prompt, /Return 1 useful candidates/); assert.doesNotMatch(prompt.split("Available caption lines and times:")[1], /1: 6\.0s/); return '{"picks":[]}'; };
+  const shots = await makeBroll({ ...args, groups: source, duration: 32 });
+  assert.equal(shots.length, 1); assert.equal(calls, 2, "one bounded missing-picks retry");
+  assert.equal((await makeBroll({ ...args, groups: source, duration: 32 })).length, 1);
+  assert.equal(calls, 4, "an identical partial rebuild also picks only the remaining slots");
+});
+
+test("every pick records search counts and inspection or room reasons, also in the no-footage note", async () => {
+  const f = fixture();
+  const invalid = { ...pick, line: 2, shows: "walking", scene: "walking along a path" };
+  f.deps.codexExec = async () => JSON.stringify({ picks: [pick, invalid] });
+  f.deps.fetchFn = async () => json({ videos: [pexel()] });
+  f.deps.checkRunwayVideo = async () => ({ ...verdict, action: false, ok: false, why: "the dog sits still; no visible movement" });
+  f.deps.claudeLook = async (prompt) => prompt.includes('"seen":"..."') ? '{"seen":"a coconut on sand"}' : choose(1);
+  await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps });
+  const plan = JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json")));
+  assert.equal(plan.picks.length, 2);
+  const [searched, dropped] = plan.picks;
+  for (const field of ["line", "words", "shows", "scene", "action", "kind", "stockQuery", "synonyms", "queries", "outcome", "reason"]) assert.ok(Object.hasOwn(searched, field), field);
+  assert.ok(searched.queries.length > 0);
+  assert.ok(searched.queries.every((q) => typeof q.query === "string" && Number.isInteger(q.candidateCount)));
+  assert.equal(searched.outcome, "no-clip");
+  assert.equal(dropped.outcome, "rejected");
+  assert.match(dropped.reason, /invalid endsAt word reference/);
+  const note = fs.readFileSync(path.join(f.dir, "No b-roll this time.txt"), "utf8");
+  assert.match(note, /coconut drops onto sand/); assert.match(note, /no visible movement/); assert.match(note, /invalid endsAt word reference/);
+  assert.ok(f.calls.logs.some((s) => /dropped: invalid endsAt word reference/.test(s)));
+});
+
+test("place-name stock fallback searches the real setting with matching tags and records each query", async () => {
+  const f = fixture(), queries = [];
+  const search = createStockSearch({ env: f.env, fetchFn: async () => json({ hits: [pixabay({ id: 1, tags: "desert highway driving" }), pixabay({ id: 2, tags: "people in office" }), pixabay({ id: 3, tags: "" })] }) });
+  const found = await search({ shows: "Albuquerque", scene: "Desert highway driving", action: "Highway driving", stockQuery: "desert highway driving" }, ["pixabay"], { onQuery: (q) => queries.push(q) });
+  // Untagged clips remain eligible in the subject pass, so exclude them to exercise a true zero-eligible fallback.
+  const onlyTagged = await search({ shows: "Arizona", scene: "Desert highway driving", action: "Highway driving", stockQuery: "desert highway driving" }, ["pixabay"], { eligible: (c) => !!c.tags, onQuery: (q) => queries.push(q) });
+  assert.ok(found.length > 0);
+  assert.deepEqual(onlyTagged.map((c) => c.id), [1]);
+  assert.ok(queries.some((q) => q.mode === "subject" && q.query === "arizona" && q.candidateCount === 0));
+  assert.ok(queries.some((q) => q.mode === "setting" && q.query === "desert highway driving" && q.candidateCount === 1));
+  const text = picksPrompt({ candidates: [], count: 5 });
+  assert.match(text, /Never use a bare place or person name as shows/); assert.match(text, /at least one kind="ambient"/); assert.match(text, /desert highway driving/);
+});
+
+test("missing-picks retry adds distinct moments once and preserves the original picks on retry failure", async () => {
+  const candidates = Array.from({ length: 5 }, (_, i) => ({ i, start: 6 + i * 10, text: "a real moving scene" }));
+  const request = { candidates, count: 5, sourcesFirst: true };
+  const prompts = [];
+  const picks = await codexPicks(request, { dir: folder(), exec: async (prompt) => {
+    prompts.push(prompt);
+    return JSON.stringify({ picks: (prompts.length === 1 ? [0, 1] : [1, 2, 3, 4]).map((line) => ({ ...pick, line })) });
+  } });
+  assert.deepEqual(picks.map((p) => p.line), [0, 1, 2, 3, 4]); assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /Return 3 additional filmable moments/);
+  let calls = 0;
+  assert.equal((await codexPicks(request, { dir: folder(), exec: async () => { if (++calls === 2) throw new Error("unavailable"); return JSON.stringify({ picks: [pick] }); } })).length, 1);
+  assert.equal(calls, 2);
+});
+
+
+test("retry duplicates and unavailable lines are recorded with their drop reasons", async () => {
+  const f = fixture(); let calls = 0;
+  f.deps.fetchFn = async () => json({ videos: [] });
+  f.deps.codexExec = async () => JSON.stringify({ picks: ++calls === 1 ? [pick] : [pick, { ...pick, line: 99 }] });
+  await makeBroll({ workDir: f.dir, groups, duration: 32, settings: { stock: ["pexels"] }, deps: f.deps });
+  const plan = JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json")));
+  assert.equal(plan.picks.length, 3);
+  assert.match(plan.picks[1].reason, /repeated an already picked line/);
+  assert.match(plan.picks[2].reason, /line not offered/);
+  assert.ok(plan.picks.every((p) => p.outcome !== "pending"));
+});
+
+test("scene and action queries recover settings only after subject matches and recent exclusions leave nothing", async () => {
+  const f = fixture(), queries = [];
+  const search = createStockSearch({ env: f.env, fetchFn: async (url) => {
+    const q = new URL(url).searchParams.get("q");
+    return json({ hits: [pixabay({ id: 1, tags: "mountains" }), ...(q === "clouds drifting mountains" ? [pixabay({ id: 2, tags: "clouds drifting mountains" }), pixabay({ id: 3, tags: "drifting smoke" }), pixabay({ id: 4, tags: "" })] : [])] });
+  } });
+  const found = await search({ shows: "mountains", stockQuery: "mountain weather", scene: "Clouds drifting mountains", action: "Clouds drifting mountains" }, ["pixabay"], { eligible: (c) => c.id !== 1 && !!c.tags, onQuery: (q) => queries.push(q) });
+  assert.deepEqual(found.map((c) => c.id), [2]);
+  assert.ok(queries.some((q) => q.mode === "setting" && q.query === "clouds drifting mountains" && q.candidateCount === 1));
 });

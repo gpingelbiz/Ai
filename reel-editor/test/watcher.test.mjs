@@ -76,7 +76,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null } = {}) {
+function fakeDrops({ brollShots = 2, brollNote = null, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -100,6 +100,7 @@ case "$*" in *--no-render*) ;; *) echo "$name" > "$work/renders/$name.mp4";; esa
 case "$*" in *--music-dir*) all="$*"; d="\${all#*--music-dir }"; d="\${d%% *}"; w=""; case "$*" in *--music-want*) w="\${all#*--music-want }"; w="\${w%% *}";; esac; t="$(ls "$d"/*.mp3 "$d"/*.wav 2>/dev/null | { if [ -n "$w" ]; then grep -i -- "$w" | head -1; else head -1; fi; })"; [ -n "$t" ] && echo "Music: $(basename "$t")" > "$work/music.txt";; esac
 files=""
 case "$*" in *--broll*)
+  ${brollNote ? `printf '%s\\n' '${brollNote}' > "$work/No b-roll this time.txt"` : ""}
   i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
 esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"style\\":{\\"name\\":\\"pingel-brand\\"},\\"captions\\":[{\\"text\\":\\"Own it first. Nobody is coming.\\"}],\\"cover\\":{\\"frameTimeMs\\":1733},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
@@ -239,4 +240,13 @@ test("a finished reel folder holds the reel and a paste-ready caption.txt; the h
   const notes = fs.readFileSync(path.join(r.home, "Reels", "videos", "clip", "post notes.txt"), "utf8");
   assert.match(notes, /2\. Nobody is coming to save you/, "the hook options wait in the work folder");
   assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 1`, ".reel.json")), "the hidden publish metadata stays");
+});
+
+
+test("the watcher preserves the editor's per-moment no-broll reasons", () => {
+  const brollNote = "No b-roll this time: The highway search found no matching clips. The dog clip was frozen.";
+  const r = fakeDrops({ brollShots: 0, brollNote });
+  try {
+    assert.equal(fs.readFileSync(path.join(r.home, "Reels", "videos", "clip-broll", "No b-roll this time.txt"), "utf8").trim(), brollNote);
+  } finally { fs.rmSync(r.home, { recursive: true, force: true }); }
 });

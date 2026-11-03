@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { checkRunwayVideo, trimRunwayClip } from "./broll-runway.mjs";
-import { checkPick, subjectWords, brollTestCache } from "./broll.mjs";
+import { checkPick, subjectWords, brollTestCache, brollStep } from "./broll.mjs";
 import { eventInPoint, momentInPoint, validTimeline } from "./broll-qc.mjs";
 import { ensureDir, readJSON, writeJSON, sha1, warn } from "./util.mjs";
 
@@ -68,7 +68,7 @@ export function rankLibraryClips(clips, pick) {
 }
 
 function wholeEventInPoint(timeline, duration, clipDuration) {
-  const start = eventInPoint(timeline, duration, clipDuration);
+  const start = eventInPoint(timeline, duration, clipDuration, 0, timeline.motion);
   const end = timeline.completion ?? timeline.contact;
   // Found drops that outlast the cut need the contact window, rather than an onset-only window.
   if (start !== null && timeline.eventType === "drop-land" && Number.isFinite(end) &&
@@ -80,21 +80,27 @@ function wholeEventInPoint(timeline, duration, clipDuration) {
 export async function reviewMovingClip({ file, duration, pick, shot, groups, dir, deps = {} }) {
   const check = deps.checkRunwayVideo || checkRunwayVideo;
   const inspected = await check({ file, pick, shot: { ...shot, duration }, groups, dir, eventOnly: true, deps });
-  if (inspected.unavailable || inspected.look !== "pass" || inspected.shows !== true || inspected.action !== true || !validTimeline(inspected, duration)) return null;
+  if (inspected.unavailable || inspected.look !== "pass" || inspected.shows !== true || inspected.action !== true || !validTimeline(inspected, duration)) {
+    brollStep(pick, `clip rejected: ${inspected.why || "subject, movement or inspection evidence missing"}`, deps);
+    return null;
+  }
   const timeline = pick.kind === "ambient" ? undefined : inspected;
   // Found footage rarely fits its whole event into a short cutaway; then the cut holds the key moment instead.
   const whole = timeline ? wholeEventInPoint(timeline, shot.duration, duration) : null;
-  const inPoint = timeline ? whole ?? momentInPoint(timeline, shot.duration, duration) : undefined;
+  const inPoint = timeline ? whole ?? momentInPoint(timeline, shot.duration, duration, inspected.motion) : undefined;
   if (timeline && inPoint === null) return null;
   const trimmed = await (deps.trimRunwayClip || trimRunwayClip)(file, shot.duration, { dir, runFn: deps.runFn, timeline, inPoint });
   const moves = await check({ file, pick, shot, groups, dir, inPoint: trimmed.inPoint, deps });
   const landed = !timeline || (whole !== null ? wholeEventInPoint(moves, shot.duration, shot.duration) !== null : timeline.contact == null || moves.contact !== null);
-  if (!moves.ok || moves.look !== "pass" || !landed) return null;
+  if (!moves.ok || moves.look !== "pass" || !landed) {
+    brollStep(pick, `used clip rejected: ${moves.why || (!landed ? "the event is outside the cut" : "movement or visual inspection failed")}`, deps);
+    return null;
+  }
   return { ...shot, ...trimmed, file, sourceDuration: duration, sourceTimeline: { onset: inspected.onset, contact: inspected.contact, completion: inspected.completion }, video: true, move: "none", motion: "none", kind: pick.kind, action: pick.action, moves };
 }
 
 export async function findLibraryClip({ pick, shot, groups, workDir, dir, deps = {} }) {
-  if (checkPick(pick, shot, groups, { len: shot.duration })) return null;
+  if (checkPick(pick, shot, groups, { len: shot.duration, stock: true })) return null;
   const env = deps.env || process.env, index = readLibrary(env), reel = registerReel(index, workDir);
   // Count distinct reels, including ones that searched the bank but had no suitable clip.
   const recent = recentLibraryReels(index, workDir);
