@@ -38,7 +38,8 @@ Usage
                                     (description with chapters, titles, captions.srt, thumbnails, endscreen.json,
                                     edit.v3.json). Captions off by default (--captions burns them in)
   reel broll-fill [--subjects <file>] [--max-new 20] [--dry-run]  fill the free stock library
-  reel broll-generate --prompts <file> [--dry-run]  generate local candidates and inspect them for the library
+  reel broll-generate --prompts <file> [--generate-only] [--dry-run]  generate local library candidates
+  reel broll-generate --admit <batch folder>  inspect an existing batch for the local library
   reel broll-add <file|folder>... [--shows <subject>] [--action <action>] [--scene <scene>] [--dry-run]
                                     bank your own footage (keeps an original copy; never moves your file)
   reel broll-shotlist [--missing]   filmable starter actions; --missing skips approved own actions
@@ -323,10 +324,10 @@ export async function main(argv) {
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return console.log(USAGE);
   switch (cmd) {
     case "broll-generate": {
-      const { opts } = parse(rest, { prompts: { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts } = parse(rest, { prompts: { type: "string" }, admit: { type: "string" }, "generate-only": { type: "boolean" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
       const { generateBrollLibrary, BROLL_GENERATE_HELP } = await import("./broll-localgen.mjs");
       if (opts.help) return console.log(BROLL_GENERATE_HELP);
-      return generateBrollLibrary({ promptsFile: opts.prompts, dryRun: opts.dryRun });
+      return generateBrollLibrary({ promptsFile: opts.prompts, admit: opts.admit, generateOnly: opts.generateOnly, dryRun: opts.dryRun });
     }
     case "broll-add": {
       const { opts, positionals } = parse(rest, { shows: { type: "string" }, action: { type: "string" }, scene: { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
