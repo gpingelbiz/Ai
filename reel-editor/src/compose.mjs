@@ -16,7 +16,7 @@ import { keywordColorOnFootage } from "./captions.mjs";
 // light clothes or hair (Julee's cream serif on a striped shirt, 2026-11-03); "soft" is the October 30 look.
 export const QUIET_SHADOWS = {
   soft: "0 0.03em 0.08em rgba(0,0,0,0.45), 0 0.04em 0.24em rgba(0,0,0,0.4)",
-  strong: "0 0.02em 0.03em rgba(0,0,0,0.8), 0 0.03em 0.12em rgba(0,0,0,0.65), 0 0 0.45em rgba(0,0,0,0.45)",
+  strong: "0 0 0.06em rgba(0,0,0,0.85), 0 0 0.06em rgba(0,0,0,0.85), 0 0.03em 0.14em rgba(0,0,0,0.7), 0 0 0.5em rgba(0,0,0,0.45)",
 };
 
 export function canvasFor(mode, meta) {
