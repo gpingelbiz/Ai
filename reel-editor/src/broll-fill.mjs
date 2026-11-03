@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createStockSearch, makeStockClip, previewStockCandidates, stockRelevance } from "./broll-stock.mjs";
-import { libraryDir, readLibrary, writeBrollCredits } from "./broll-library.mjs";
+import { libraryDir, libraryClipPath, readLibrary, writeBrollCredits } from "./broll-library.mjs";
 import { checkPick, subjectWords } from "./broll.mjs";
 import { readJSON, log } from "./util.mjs";
 
@@ -35,7 +35,7 @@ export async function fillBrollLibrary({ subjects, subjectsFile, maxNew = 20, dr
     for (const pick of picks) {
       if (approved.length >= maxNew) break;
       const subject = subjectWords(pick.shows, pick.scene), bank = readLibrary(env);
-      const held = bank.clips.filter((c) => fs.existsSync(c.file) && stockRelevance({ tags: (c.subjectWords || []).join(" ") }, subject) === "match");
+      const held = bank.clips.filter((c) => libraryClipPath(c, env) && fs.existsSync(libraryClipPath(c, env)) && stockRelevance({ tags: (c.subjectWords || []).join(" ") }, subject) === "match");
       const shot = { line: 0, start: 0, duration: 1.6, text: pick.shows, shows: pick.shows, scene: pick.scene }, groups = [{ start: 0, text: pick.shows }];
       const why = held.length >= 3 ? "library already has 3 approved clips" : checkPick(pick, shot, groups, { len: shot.duration });
       if (why) {
