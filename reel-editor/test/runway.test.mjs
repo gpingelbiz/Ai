@@ -93,13 +93,13 @@ test("runway b-roll: budget checks, picks via Claude, clips made, usage recorded
 
 test("Runway planner uses the synthesis with ranked alternatives, literal subjects and phrase anchors", () => {
   const p = runwayPicksPrompt({ candidates: [{ i: 4, start: 10, text: "a snake" }], count: 3, spacing: 3, duration: 2.5, transcript: "a snake in a jungle", voice: "a garage", recent: [...Array.from({ length: 16 }, (_, i) => `scene-${i}`), "scene-4"] });
-  assert.match(p, /Return up to 5 useful candidates, ranked strongest first/);
-  assert.match(p, /Fewer candidates, including zero/);
+  assert.match(p, /Return 3 useful candidates when the passage has that many filmable moments/);
+  assert.match(p, /Return fewer only when the passage truly has fewer literal filmable moments/);
   assert.match(p, /3 seconds from one shot's END to the next START/);
   assert.match(p, /A jungle stays a jungle; a snake stays a snake; a coconut stays a coconut/);
   assert.match(p, /Read the whole passage first/);
   assert.match(p, /Preserve Greg's reactions, conviction, personal admissions and final/);
-  assert.match(p, /immediately following caption/);
+  assert.match(p, /across following caption lines/);
   assert.match(p, /1.2 and 2.5 seconds/);
   assert.match(p, /Default: "Locked camera/);
   assert.match(p, /"soundRole":"impact"/, "the JSON example must include the role that makes physical sound eligible");
@@ -636,7 +636,7 @@ test("unavailable clip vision retries once then holds the paid clip without anot
   }
 });
 
-test("cross-caption phrases anchor exact ordered words, with only the next caption eligible", async () => {
+test("cross-caption phrases anchor exact ordered words starting in the chosen caption", async () => {
   const groups = [
     { start: 10, text: "Bring a green", words: [{ start: 10, text: "Bring" }, { start: 10.1, text: "a" }, { start: 10.3, text: "green" }] },
     { start: 10.7, text: "jungle snake", words: [{ start: 10.7, text: "jungle" }, { start: 10.9, text: "snake" }] },
@@ -713,7 +713,7 @@ test("ambient picks use the ambient model and never buy an end still or sound wi
   assert.equal(shots[0].kind, "ambient"); assert.equal(shots[0].videoModel, "gen4_turbo");
   assert.equal(f.images.length, 1); assert.equal(f.sounds.length, 0);
   assert.equal("sfx" in shots[0], false);
-  assert.match(f.videoLooked[0].prompt, /sustained subject motion/);
+  assert.match(f.videoLooked[0].prompt, /sustained setting motion/);
 });
 
 test("end identity rejection uses only the approved first still; its credits stay in the reel cap", async () => {

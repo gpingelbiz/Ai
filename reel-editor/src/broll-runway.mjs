@@ -3,14 +3,14 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { claudeText, claudeLook, firstJSON, hasClaude } from "./claude.mjs";
 import { brollCount, brollCandidates, checkPick, subjectWords, spokenInShot, readRecent, rememberScenes, uniqueScenes } from "./broll.mjs";
-import { visionJSON, subjectMotion, landingMotion, QC_MEASUREMENTS, videoFrames, contactSheet, motionCrops, landingCrops, DEFECT_QUESTIONS, validTimeline, eventInPoint, phonePreviews, localClipCheck, verifySound } from "./broll-qc.mjs";
+import { visionJSON, subjectMotion, landingMotion, QC_MEASUREMENTS, videoFrames, contactSheet, motionCrops, landingCrops, DEFECT_QUESTIONS, validTimeline, eventInPoint, motionWindowInPoint, phonePreviews, localClipCheck, verifySound } from "./broll-qc.mjs";
 import { norm } from "./text.mjs";
 import { CREDIT_USD, dataURI, failurePolicy, hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt, modelInfo, makeSound } from "./runway.mjs";
 import { recordUsage, reelUsageNote } from "./usage.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3 } from "./util.mjs";
 import { findLibraryClip, saveLibraryClip, writeBrollCredits } from "./broll-library.mjs";
 
-export const PROMPT_VERSION = "literal-video-v6";
+export const PROMPT_VERSION = "literal-video-v7";
 
 /** Stable across retries; a new prompt version intentionally starts a new comparison. */
 export function shotSeed(workDir, line) {
@@ -74,25 +74,32 @@ clear physical sound. Ambient shots usually omit this field.
 
 line: An available caption-line number containing the first anchor word.
 
-shows: One to three exact spoken words naming the visible subject: the noun itself, no article or verb ("snake", "coconut", "two by four").
-A phrase may continue into the immediately following caption.
+shows: One to three exact spoken words naming the visible subject: the noun itself, no article or verb ("snake", "coconut", "two by four") for an action pick.
+For an ambient setting, an exact spoken activity or setting word such as "driving", "road" or "mountains" may anchor the real moving setting. Never use a bare place or person name as shows; describe a filmable setting in scene.
+A phrase may continue across following caption lines, even when each line holds only one word.
 Preserve the phrase exactly and anchor its first word.
 
 duration: This shot's useful screen time, independently chosen between
 1.2 and MAX_DURATION seconds. Fit one readable event inside the relevant words.
 Never extend a picture merely to fill a standard slot.
+If the spoken payoff ends in less than 1.2 seconds, allow a readable shot to continue into
+the following related words, up to the normal duration, but always stop before endsBefore.
+Choose endsBefore at the first truly unrelated idea, not simply the next caption line.
 
 scene: A compact opening-image prompt using this house order:
 photographic framing and angle; named subject and literal setting;
 opening physical position and space for the event; light and colour;
 useful focus and portrait composition.
 The named subject is recognizable in the opening frame and big: it fills at least a third of the frame height.
+Write the shows word literally in scene, including activities: "a car driving along a desert highway",
+"an airplane flight taking off". A setting description alone does not name the generated subject.
 Stage it ready for the event.
 For this daylight reel, use natural daylight, believable colour,
 readable shadows and ordinary phone-camera perspective.
 Keep the complete action area visible and important details above captions.
 
-action: One concrete, harmless physical event involving the named subject.
+action: For an ambient setting, describe real sustained setting movement with no discrete event required.
+For an action pick, one concrete, harmless physical event involving the named subject.
 It begins immediately and visibly happens within the first second.
 Describe direction and a readable result.
 For action picks, camera movement, changing light and drifting atmosphere alone do not count.
@@ -127,9 +134,12 @@ ${instructions}
 Read the whole passage first. Understand its story, setting, analogy,
 joke and lesson before choosing pictures.
 
-Return up to ${count + 2} useful candidates, ranked strongest first.
-The editor may use at most ${count}. Fewer candidates, including zero,
-are correct. Nearby alternatives may compete for one slot.
+Return ${count} useful candidates when the passage has that many filmable moments, ranked strongest first.
+You may include up to ${count + 2} candidates to give the editor alternatives.
+The editor may use at most ${count}. Return fewer only when the passage truly has fewer literal filmable moments.
+For a story happening somewhere (a drive, gym or office), include at least one kind="ambient"
+setting pick when the words establish that setting. Show the real setting moving: road passing,
+clouds over mountains, or activity in that gym or office. Never add brand-world filler.
 Accepted shots require ${spacing} seconds from one shot's END to the next START.
 
 ${PICKS_RULES.replace("MAX_DURATION", String(Math.min(2.5, duration)))}
@@ -150,16 +160,19 @@ Reply exactly in this shape, ranked strongest first:
 ${reply}`;
 }
 
-/** Start on an exact subject phrase, which may finish in the next caption. */
-export function runwayTiming(pick, candidate, groups, { len = 2.4, until = Infinity, busy = [], clear = 1.5 } = {}) {
+/** Start on an exact subject phrase across caption lines; report the limit that prevents a readable shot. */
+export function runwayTiming(pick, candidate, groups, { len = 2.4, until = Infinity, busy = [], clear = 1.5, onReject } = {}) {
+  const reject = (why) => { onReject?.(why); return null; };
+  if (!candidate) return reject("line is not a candidate");
   const words = (s) => String(s || "").split(/\s+/).map(norm).filter(Boolean);
   const subject = subjectWords(pick.shows, pick.scene), line = words(candidate.text);
-  if (!subject.length) return null;
-  const joined = [...line, ...words(groups[candidate.i + 1]?.text)];
+  if (!subject.length) return reject("shows missing");
+  const following = groups.slice(candidate.i + 1).flatMap((g) => words(g.text)).slice(0, subject.length - 1);
+  const joined = [...line, ...following];
   const anchor = line.findIndex((_, i) => subject.every((w, k) => joined[i + k] === w));
-  if (anchor < 0) return null;
+  if (anchor < 0) return reject(`anchor not found across caption lines: ${subject.join(" ")}`);
   const word = candidate.words?.filter((w) => norm(w.text))[anchor];
-  if (candidate.words?.length && !word) return null;
+  if (candidate.words?.length && !word) return reject(`anchor has no word time: ${subject.join(" ")}`);
   const start = word?.start ?? candidate.start;
   const requested = Number.isFinite(pick.duration) ? pick.duration : len;
   const card = Math.min(...busy.filter((b) => b.start + b.duration + clear > start).map((b) => b.start - clear), Infinity);
@@ -170,10 +183,20 @@ export function runwayTiming(pick, candidate, groups, { len = 2.4, until = Infin
     return w && norm(w.text) === norm(ref.text) && (inclusive ? w.end : w.start) >= start ? (inclusive ? w.end : w.start) : NaN;
   };
   const ideaEnd = boundary(pick.endsAt, true), unrelated = boundary(pick.endsBefore, false);
-  if (Number.isNaN(ideaEnd) || Number.isNaN(unrelated) || ideaEnd > unrelated) return null;
-  const end = Math.min(start + Math.max(minimum, Math.min(pick.rapidList ? 1.2 : len, requested)), ideaEnd, unrelated, until, card);
+  if (Number.isNaN(ideaEnd)) return reject("invalid endsAt word reference");
+  if (Number.isNaN(unrelated)) return reject("invalid endsBefore word reference");
+  if (ideaEnd > unrelated) return reject("endsAt is after endsBefore");
+  // A fast payoff may use the related words after it; unrelated words, cards and the reel end remain hard limits.
+  const limits = [
+    { name: "endsBefore", end: unrelated },
+    { name: "until (reel/CTA)", end: until },
+    { name: "busy/clear", end: card },
+  ];
+  const limit = limits.reduce((a, b) => b.end < a.end ? b : a);
+  const ideaLimit = ideaEnd - start < minimum - 0.000001 ? Infinity : ideaEnd;
+  const end = Math.min(start + Math.max(minimum, Math.min(pick.rapidList ? 1.2 : len, requested)), ideaLimit, limit.end);
   const duration = end - start;
-  if (duration < minimum - 0.000001) return null;
+  if (duration < minimum - 0.000001) return reject(`${limit.name} limit at ${r3(limit.end)}s leaves ${r3(Math.max(0, duration))}s from ${r3(start)}s; needs ${minimum}s`);
   return { start, duration };
 }
 
@@ -275,7 +298,9 @@ export async function trimRunwayClip(file, duration, { runFn = run, dir = path.d
     if (!(clipDuration > 0)) throw new Error("clip duration unavailable");
     const raw = path.join(tmp, "frames.gray");
     await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", full, "-vf", "fps=8,scale=64:64,format=gray", "-f", "rawvideo", raw], { quiet: true });
-    const inPoint = chosen ?? eventInPoint(timeline, duration, clipDuration, actionInPoint(fs.readFileSync(raw), duration, clipDuration));
+    const pixels = fs.readFileSync(raw), motion = subjectMotion(pixels);
+    const moving = timeline?.eventType === "continuous" ? motionWindowInPoint(timeline, duration, clipDuration, motion) : null;
+    const inPoint = moving ?? chosen ?? eventInPoint(timeline, duration, clipDuration, actionInPoint(pixels, duration, clipDuration), motion);
     if (inPoint === null) throw Object.assign(new Error("complete event cannot fit spoken interval"), { code: "EVENT_WINDOW" });
     await runFn("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(inPoint), "-i", full, "-t", String(duration), "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-r", "30", "-g", "30", "-pix_fmt", "yuv420p", "-movflags", "+faststart", file], { quiet: true });
     return { inPoint, full };
@@ -349,10 +374,14 @@ Decoded pixel measurements (independent of the action hint): ${JSON.stringify(me
 Camera speed and subject size growth are measured over sustained half-second windows after background registration. A measured outward surface spray is physical displacement, even when the first impact frame looks bright and symmetric. Do not label that spray a generated collar based on its brightness or fluffy texture.
 Required subject: ${JSON.stringify(pick.shows)}.
 Action hint only, NOT a script or acceptance requirement: ${JSON.stringify(pick.action)}.
-Shot kind: ${pick.kind || "action"}. Ambient shots need sustained subject motion.
+Shot kind: ${pick.kind || "action"}. Ambient shots need sustained setting motion.
 Overlapping words and captions: ${JSON.stringify(spokenInShot(shot, groups, { len: shot.duration }))}.
 Neighbouring words: ${JSON.stringify(neighbouringWords(shot, groups))}.
-The verdict is about the WORDS: is the named subject unmistakable, and does it visibly do something that fits those words?
+${pick.kind === "ambient" ? `The verdict is about this reel's spoken setting: is this unmistakably that real setting, visibly moving?
+For an ambient setting, action=true means real sustained movement in that setting (road passing during a drive, clouds over mountains, leaves moving). No discrete event, payoff or word-fitting event is required.
+A calm or frozen scene fails. A moving travel view may establish the setting; camera swing and every other defect below still reject it.
+Use eventType="continuous", onset=0, contact=null and completion=null for sustained setting movement. Set shows=false if the setting is unrelated to the spoken story.
+Approve only when the real spoken setting is unmistakable and moving inside this interval, with no defect.` : `The verdict is about the WORDS: is the named subject unmistakable, and does it visibly do something that fits those words?
 Judge the actual physical change, not exact compliance with the action hint. Pressing a board into mud fits "hold it on the quicksand" even if it starts low instead of being lowered from above.
 A harmless literal cutaway can complete an analogy: a coconut falling out of a palm fits a coconut hitting the speaker; do not require an on-screen person, injury or a visible landing outside the frame. A gorilla walking naturally in either direction can fit the joke; a frozen body with only slight arm sway does not establish walking.
 Is the same subject intact and recognizable throughout these frames?
@@ -361,7 +390,7 @@ Camera movement and lighting alone do not count. Set eventType="drop-land" only 
 Identify event onset, first contact/landing (null if inapplicable or not visible), and completion/settle (null if absent), in SECONDS RELATIVE TO THE FIRST FRAME (0), not absolute source time.
 Onset/contact/settle only guide the in-point for drop-and-land events. Never reject a clip for missing settle or completion, or a continuous action for having no contact. Continuous actions can keep moving through the cut; they need no staged ending or complete step cycle.
 Approve when the named subject is unmistakable and visibly does something that fits the words inside this interval, with no defect.
-${selecting ? "This is the full source for choosing an in-point. Late onset alone is allowed here; the selected used interval will be checked separately." : "This is the used interval. Meaningful word-fitting subject action must begin within its first 1 second. Set action=false otherwise."}
+${selecting ? "This is the full source for choosing an in-point. Late onset alone is allowed here; the selected used interval will be checked separately." : "This is the used interval. Meaningful word-fitting subject action must begin within its first 1 second. Set action=false otherwise."}`}
 Answer EACH defect question independently with yes/no. For every yes give the exact printed SOURCE frame time and a specific observation. For no use time=null and explain what you compared across the timeline. Any yes rejects the clip, even when the subject/action otherwise fits. Do not infer safety or clean physics from the hint.
 ${Object.entries(DEFECT_QUESTIONS).map(([key, question]) => `${key}: ${question}`).join("\n")}
 Reject uncertain subject identity or action. Do not invent defects from normal blur, physical sand displacement or natural occlusion.
@@ -400,13 +429,14 @@ export function rapidListPicks(picks, candidates, groups) {
 }
 
 /** Validate and rank the same spoken ideas for either first-frame engine. */
-export function validateBrollPicks(picks, candidates, groups, timing, settings = {}) {
+export function validateBrollPicks(picks, candidates, groups, timing, settings = {}, deps = {}) {
   const ranked = picks.map((p, i) => ({ ...p, rank: i + 1 }));
   const planned = settings.rapidLists === false ? ranked : rapidListPicks(ranked, candidates, groups);
   return planned.filter((p) => {
-    const c = candidates.find((c) => c.i === p.line), t = c && timing(p, c);
-    const why = !p.endsAt || !p.endsBefore ? "missing spoken idea boundaries" : !t ? "no room for this subject" : checkPick(p, { ...c, start: t.start }, groups, { len: t.duration });
-    if (why) warn(`b-roll: rejected line ${p.line}: ${why}`);
+    let timingReason;
+    const c = candidates.find((c) => c.i === p.line), t = c && timing(p, c, (why) => { timingReason = why; });
+    const why = !c ? "line is not a candidate" : !p.endsAt || !p.endsBefore ? "missing spoken idea boundaries" : !t ? timingReason || "timing rejected without a reason" : checkPick(p, { ...c, start: t.start }, groups, { len: t.duration, stock: deps.stock === true });
+    if (why) { warn(`b-roll: rejected line ${p.line}: ${why}`); deps.onReject?.(p, why); }
     return !why;
   });
 }
@@ -477,7 +507,7 @@ export async function checkRunwayVideo({ file, shot, pick, groups, inPoint = 0, 
     const details = crops.map((c) => ({ name: c.name, time: c.time, region: c.region, sheets: c.sheets.map((s) => path.relative(dir, s)), times: c.frames.map((f) => f.time) }));
     const prompt = clipCheckPrompt({ seen: open.seen, frames, sheets: relativeSheets, crops: details, pick, shot, groups, inPoint, selecting: selecting || eventOnly, measurements: { sustained: motion.sustained, local: motion.local, cameraSpeed: motion.cameraSpeed, approachGrowth: motion.approachGrowth, surface } });
     const result = await lookJSON(eventOnly ? `${prompt}
-This full-source pass only locates the event for a later cut. Report all defects, but set shows and action from whether the named subject and event are visible somewhere in the source. Defects elsewhere do not invalidate that event. The exact used window will receive a separate complete inspection.` : prompt,
+${pick.kind === "ambient" ? "This full-source pass locates the real moving spoken setting, without requiring an event. Report every defect; the exact used window receives a separate complete inspection." : `This full-source pass only locates the event for a later cut. Report all defects, but set shows and action from whether the named subject and event are visible somewhere in the source. Defects elsewhere do not invalidate that event. The exact used window will receive a separate complete inspection.`}` : prompt,
       (r) => validTimeline(r, shot.duration, inPoint) && (!r.artifacts || r.defects.length > 0 || r.checks.contactArtifact.yes || r.checks.identityChange.yes), look, dir);
     const frozen = motion.mean < threshold;
     const defects = [...result.defects, ...Object.entries(result.checks).filter(([, answer]) => answer.yes).map(([key, answer]) => `${key} at ${answer.time}s: ${answer.why}`)];
@@ -485,7 +515,7 @@ This full-source pass only locates the event for a later cut. Report all defects
     if (result.eventType === "continuous" && (motion.sustained ?? motion.mean) < continuousMinMotion && !(motion.local >= limits.localMinMotion)) defects.push(`continuous action motion ${motion.mean.toFixed(3)} below minimum ${continuousMinMotion.toFixed(1)} after background compensation; sustained ${motion.sustained}, local ${motion.local}`);
     if (motion.cameraSpeed > limits.maxCameraSpeed) defects.push(`sustained camera movement ${motion.cameraSpeed.toFixed(3)} frame widths/s exceeds ${limits.maxCameraSpeed}`);
     if (result.eventType === "continuous" && motion.approachGrowth > limits.maxApproachGrowth) defects.push(`rapid subject size growth ${motion.approachGrowth.toFixed(3)}/s exceeds ${limits.maxApproachGrowth}`);
-    if (!selecting && result.onset > 1) defects.push("word-fitting action begins after the first second of the used interval");
+    if (pick.kind !== "ambient" && !selecting && result.onset > 1) defects.push("word-fitting action begins after the first second of the used interval");
     let ok = eventOnly ? result.shows && result.action : !defects.length && result.shows && result.action && !result.dark && result.physicsPlausible && result.identityStable && !result.artifacts && result.directionPlausible && !result.humanFaces && !result.readableText;
     let landing;
     if (ok && !eventOnly && open.contact !== null) {
@@ -532,7 +562,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   if (!max) return [];
   const candidates = brollCandidates(groups, duration, { hook, cta, len: settings.rapidLists === false ? 1.2 : 0.8, busy, tail, clearStart: settings.clearStart ?? 0 });
   if (!candidates.length) return [];
-  const timing = (p, c) => runwayTiming(p, c, groups, { len, until: Math.min(duration - tail, cta?.start ?? Infinity), busy });
+  const timing = (p, c, onReject) => runwayTiming(p, c, groups, { len, until: Math.min(duration - tail, cta?.start ?? Infinity), busy, onReject });
   const key = `${PROMPT_VERSION}|${JSON.stringify({ candidates, groups, settings, hook, cta, duration, busy, tail, footage, caption, stillSource })}`;
   const previous = fs.existsSync(planPath) ? readJSON(planPath) : {};
   const reusable = (s) => /\.mp4$/i.test(s.file || "") && s.move === "none" && s.moves?.ok && s.moves.look === "pass" && !s.soundPending && fs.existsSync(s.file) && (!s.sfx || fs.existsSync(s.sfx));
