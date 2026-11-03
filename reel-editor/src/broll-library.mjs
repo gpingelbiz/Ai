@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { checkRunwayVideo, trimRunwayClip } from "./broll-runway.mjs";
 import { checkPick, subjectWords, brollTestCache } from "./broll.mjs";
-import { eventInPoint, momentInPoint } from "./broll-qc.mjs";
+import { eventInPoint, momentInPoint, validTimeline } from "./broll-qc.mjs";
 import { ensureDir, readJSON, writeJSON, sha1, warn } from "./util.mjs";
 
 export const libraryDir = (env = process.env) => env.REEL_BROLL_LIBRARY || path.join(env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT ? brollTestCache() : env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-library");
@@ -20,20 +20,20 @@ function registerReel(index, workDir) {
 }
 
 /** Only approved moving sources enter the bank; a still is never a substitute for an approved clip. */
-export function saveLibraryClip({ shot, pick, workDir, licence, source = shot.source || "runway", duration, env = process.env, now = Date.now() }) {
+export function saveLibraryClip({ shot, pick, workDir, licence, source = shot.source || "runway", duration, recordUse = true, env = process.env, now = Date.now() }) {
   if (!shot.video || shot.moves?.ok !== true || shot.moves.look !== "pass") return null;
   const original = shot.full || shot.file;
   if (!original || !fs.existsSync(original)) return null;
-  const index = readLibrary(env), reel = registerReel(index, workDir), date = new Date(now).toISOString();
+  const index = readLibrary(env), reel = recordUse ? registerReel(index, workDir) : null, date = new Date(now).toISOString();
   const id = licence?.provider && licence.id != null ? sha1(`${licence.provider}:${licence.id}`) : sha1(fs.readFileSync(original));
   let clip = index.clips.find((c) => c.id === id);
   if (!clip) {
     const file = path.join(ensureDir(libraryDir(env)), `${id}.mp4`);
     fs.copyFileSync(original, file);
-    clip = { id, shows: pick.shows, subjectWords: subjectWords(pick.shows, pick.scene), stockQuery: pick.stockQuery || "", scene: pick.scene, description: pick.action || shot.seen || "", source, licence, file, duration: duration ?? shot.sourceDuration ?? shot.duration, approvedAt: date, usedIn: [] };
+    clip = { id, shows: pick.shows, subjectWords: subjectWords(pick.shows, pick.scene), stockQuery: pick.stockQuery || "", scene: pick.scene, description: pick.action || shot.seen || "", source, licence, file, duration: duration ?? shot.sourceDuration ?? shot.duration, timeline: shot.sourceTimeline, approvedAt: date, usedIn: [] };
     index.clips.push(clip);
   }
-  if (!clip.usedIn.some((use) => use.reel === reel)) clip.usedIn.push({ reel, date });
+  if (recordUse && !clip.usedIn.some((use) => use.reel === reel)) clip.usedIn.push({ reel, date });
   writeJSON(indexFile(env), index);
   return clip;
 }
@@ -41,8 +41,8 @@ export function saveLibraryClip({ shot, pick, workDir, licence, source = shot.so
 /** Inspect the full source, select an event in-point, then inspect the exact interval the renderer will use. */
 export async function reviewMovingClip({ file, duration, pick, shot, groups, dir, deps = {} }) {
   const check = deps.checkRunwayVideo || checkRunwayVideo;
-  const inspected = await check({ file, pick, shot: { ...shot, duration }, groups, dir, deps });
-  if (!inspected.ok || inspected.look !== "pass") return null;
+  const inspected = await check({ file, pick, shot: { ...shot, duration }, groups, dir, eventOnly: true, deps });
+  if (inspected.unavailable || inspected.look !== "pass" || inspected.shows !== true || inspected.action !== true || !validTimeline(inspected, duration)) return null;
   const timeline = pick.kind === "ambient" ? undefined : inspected;
   // Found footage rarely fits its whole event into a short cutaway; then the cut holds the key moment instead.
   const whole = timeline ? eventInPoint(timeline, shot.duration, duration) : null;
@@ -52,7 +52,7 @@ export async function reviewMovingClip({ file, duration, pick, shot, groups, dir
   const moves = await check({ file, pick, shot, groups, dir, inPoint: trimmed.inPoint, deps });
   const landed = !timeline || (whole !== null ? eventInPoint(moves, shot.duration, shot.duration) !== null : timeline.contact == null || moves.contact !== null);
   if (!moves.ok || moves.look !== "pass" || !landed) return null;
-  return { ...shot, ...trimmed, file, sourceDuration: duration, video: true, move: "none", motion: "none", kind: pick.kind, action: pick.action, moves };
+  return { ...shot, ...trimmed, file, sourceDuration: duration, sourceTimeline: { onset: inspected.onset, contact: inspected.contact, completion: inspected.completion }, video: true, move: "none", motion: "none", kind: pick.kind, action: pick.action, moves };
 }
 
 export async function findLibraryClip({ pick, shot, groups, workDir, dir, deps = {} }) {

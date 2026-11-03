@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { claudeLook, firstJSON } from "./claude.mjs";
+import { measureMotion } from "./broll-runway.mjs";
 import { timeLabel } from "./broll-qc.mjs";
 import { checkPick, brollStep, subjectWords } from "./broll.mjs";
 import { reviewMovingClip, saveLibraryClip, readLibrary, recentLibraryReels } from "./broll-library.mjs";
@@ -16,10 +17,11 @@ export function normaliseStock(provider, body) {
   const clips = provider === "pexels" ? (body.videos || []).map((v) => ({
     provider, id: v.id, pageUrl: v.url, creator: v.user?.name || "", duration: v.duration, width: v.width, height: v.height, tags: slugWords(v.url),
     files: (v.video_files || []).filter((f) => f.file_type === "video/mp4").map((f) => ({ url: f.link, width: f.width, height: f.height, fps: f.fps ?? null })), thumb: v.image,
+    preview: [...(v.video_files || [])].filter((f) => f.file_type === "video/mp4" && f.link).sort((a, b) => a.width * a.height - b.width * b.height)[0]?.link,
   })) : (body.hits || []).filter((v) => v.type === "film").map((v) => {
     const variants = Object.values(v.videos || {}).filter((f) => f.url);
     const largest = [...variants].sort((a, b) => b.width - a.width)[0] || {};
-    return { provider, id: v.id, pageUrl: v.pageURL, creator: v.user || "", duration: v.duration, width: largest.width, height: largest.height, tags: v.tags || "",
+    return { provider, id: v.id, pageUrl: v.pageURL, creator: v.user || "", duration: v.duration, width: largest.width, height: largest.height, tags: v.tags || "", editorsChoice: !!(v.editors_choice || v.editorsChoice || v.is_editors_choice), preview: v.videos?.tiny?.url || [...variants].sort((a, b) => a.width * a.height - b.width * b.height)[0]?.url,
       files: variants.map((f) => ({ url: f.url, width: f.width, height: f.height, fps: f.fps ?? null })), thumb: largest.thumbnail || variants.find((f) => f.thumbnail)?.thumbnail };
   });
   return clips.map((c) => ({ ...c, files: c.files.filter(suitableFile).sort((a, b) => Number(b.height > b.width) - Number(a.height > a.width) || a.width - b.width) }))
@@ -38,7 +40,7 @@ export function stockRelevance(clip, subject) {
 }
 
 /** A reel has one small search allowance; cache hits do not consume API requests. 429s defer future work. */
-export function createStockSearch({ env = process.env, fetchFn = fetch, now = Date.now, warnFn = warn, maxSearches = 6 } = {}) {
+export function createStockSearch({ env = process.env, fetchFn = fetch, now = Date.now, warnFn = warn, maxSearches = 20, stockCandidates = 12 } = {}) {
   const missing = new Set();
   let searches = 0;
   async function search(provider, query, orientation) {
@@ -52,7 +54,7 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
     if (rate?.blockedUntil > now() || searches >= maxSearches) return [];
     const url = new URL(provider === "pexels" ? "https://api.pexels.com/videos/search" : "https://pixabay.com/api/videos/");
     url.searchParams.set(provider === "pexels" ? "query" : "q", query.slice(0, 100));
-    url.searchParams.set("per_page", "20");
+    url.searchParams.set("per_page", provider === "pixabay" ? "40" : "20");
     if (provider === "pexels") { if (orientation) url.searchParams.set("orientation", orientation); }
     else { url.searchParams.set("key", key); url.searchParams.set("video_type", "film"); url.searchParams.set("safesearch", "true"); }
     searches++;
@@ -73,22 +75,36 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
     } catch { warnFn(`b-roll: ${provider} search unavailable; skipped`); return []; }
   }
   // The bare subject goes first: a longer query such as "gorilla walking" matches crowds walking before gorillas.
-  // Clips whose tags name a different subject are dropped; tagged matches rank ahead of untagged clips.
-  return async ({ stockQuery, shows, scene }, providers = ["pexels", "pixabay"]) => {
-    const subject = subjectWords(shows, scene || shows), clips = [], seen = new Set();
-    const ranked = () => [...clips.filter((c) => stockRelevance(c, subject) === "match"), ...clips.filter((c) => stockRelevance(c, subject) === "unknown")];
-    for (const query of [...new Set([subject.join(" "), shows, stockQuery].map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
+  // Clips whose tags name a different subject are dropped; tagged matches rank ahead of untagged clips. No query may
+  // fill more than two thirds of the pool, so the action query ("gorilla running") always gets places of its own.
+  return async ({ stockQuery, stockSynonyms = [], shows, scene, action }, providers = ["pexels", "pixabay"]) => {
+    const subject = subjectWords(shows, scene || shows), clips = [], seen = new Map();
+    const actionWords = String(`${action || ""} ${stockQuery || ""}`).toLowerCase().split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w.length >= 4 && !subject.some((s) => s.startsWith(w) || w.startsWith(s)));
+    const actionMatch = (c) => String(c.tags || "").toLowerCase().split(/[^\p{L}\p{N}]+/u)
+      .some((t) => t.length >= 4 && actionWords.some((w) => t.startsWith(w.slice(0, 4))));
+    const ranked = () => [...clips].sort((a, b) => Number(b.relevance === "match") - Number(a.relevance === "match") ||
+      Number(actionMatch(b)) - Number(actionMatch(a)) || Number(!!b.editorsChoice) - Number(!!a.editorsChoice) ||
+      Number(b.files[0].height > b.files[0].width) - Number(a.files[0].height > a.files[0].width));
+    const synonyms = Array.isArray(stockSynonyms) ? stockSynonyms.filter((s) => typeof s === "string" && s.trim()).slice(0, 3) : [];
+    const queries = [subject.join(" "), stockQuery, ...synonyms], perQuery = Math.ceil(stockCandidates * 2 / 3);
+    for (const query of [...new Set(queries.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
+      const synonym = synonyms.some((s) => s.trim().toLowerCase() === query) ? query.split(/\s+/) : [];
       for (const provider of providers.filter((p) => ["pexels", "pixabay"].includes(p))) {
         for (const orientation of provider === "pexels" ? ["portrait", null] : [null]) {
+          let taken = 0;
           for (const c of await search(provider, query, orientation)) {
-            const id = `${c.provider}:${c.id}`;
-            if (!seen.has(id)) { seen.add(id); clips.push(c); }
+            if (taken >= perQuery) break;
+            const primary = stockRelevance(c, subject), relevance = primary === "match" || synonym.length && stockRelevance(c, synonym) === "match" ? "match" : primary;
+            if (relevance === "miss") continue;
+            const id = `${c.provider}:${c.id}`, existing = seen.get(id);
+            if (existing) { if (relevance === "match") existing.relevance = relevance; }
+            else { const eligible = { ...c, relevance }; seen.set(id, eligible); clips.push(eligible); taken++; }
           }
-          if (ranked().length >= 6) return ranked().slice(0, 6);
         }
       }
     }
-    return ranked().slice(0, 6);
+    return ranked().slice(0, stockCandidates);
   };
 }
 
@@ -98,18 +114,58 @@ async function download(url, file, fetchFn) {
   fs.writeFileSync(file, Buffer.from(await response.arrayBuffer()));
 }
 
+/** Preview failures leave the thumbnail usable; a successful measurement can exclude a frozen source. */
+export async function previewStockCandidates(candidates, { pick, dir, settings = {}, deps = {} }) {
+  const env = deps.env || process.env, runner = deps.runFn || run, now = deps.now || Date.now, eligible = [];
+  const cache = stockCacheDir(env);
+  for (const c of candidates) {
+    try {
+      if (!c.preview) throw new Error("no preview");
+      fs.mkdirSync(cache, { recursive: true });
+      const file = path.join(cache, `${c.provider}-${c.id}.preview.mp4`);
+      if (!fs.existsSync(file) || now() - fs.statSync(file).mtimeMs >= DAY) {
+        const pending = `${file}.tmp`;
+        try { await download(c.preview, pending, deps.fetchFn || fetch); fs.renameSync(pending, file); fs.utimesSync(file, now() / 1000, now() / 1000); }
+        finally { fs.rmSync(pending, { force: true }); }
+      }
+      const motion = await (deps.measureMotion || measureMotion)(file, c.duration, { runFn: runner, dir });
+      if (!Number.isFinite(motion.mean)) throw new Error("motion unavailable");
+      if (motion.mean < (settings.stockMinMotion ?? 2.5)) {
+        brollStep(pick, `stock ${c.provider}:${c.id} skipped: still clip (motion ${r3(motion.mean)})`, deps);
+        continue;
+      }
+      const frames = [];
+      for (const fraction of [0.2, 0.5, 0.8]) {
+        const frame = path.join(dir, `${c.provider}-${c.id}-${fraction}.jpg`);
+        await runner("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(r3(c.duration * fraction)), "-i", file, "-frames:v", "1", frame], { quiet: true });
+        if (!fs.existsSync(frame)) throw new Error("preview frame missing");
+        frames.push(frame);
+      }
+      eligible.push({ ...c, previewFrames: frames, previewMotion: r3(motion.mean) });
+    } catch { eligible.push(c); }
+  }
+  return eligible;
+}
+
 /** Candidate numbers are drawn locally, so this works on ffmpeg builds without the drawtext filter. */
 export async function stockContactSheet(candidates, { dir, deps = {} }) {
-  const runner = deps.runFn || run, tiles = [];
+  const runner = deps.runFn || run, tiles = [], width = 540;
   for (const [i, c] of candidates.entries()) {
-    const thumb = path.join(dir, `thumb-${i + 1}.jpg`), label = path.join(dir, `number-${i + 1}.ppm`), tile = path.join(dir, `tile-${i + 1}.png`);
-    await download(c.thumb, thumb, deps.fetchFn || fetch);
-    timeLabel(i + 1, label, 240);
-    await runner("ffmpeg", ["-y", "-loglevel", "error", "-i", thumb, "-i", label, "-filter_complex", "[0:v]scale=240:320:force_original_aspect_ratio=decrease,pad=240:320:(ow-iw)/2:(oh-ih)/2[v];[v][1:v]vstack=inputs=2[out]", "-map", "[out]", "-frames:v", "1", tile], { quiet: true });
+    const label = path.join(dir, `number-${i + 1}.ppm`), tile = path.join(dir, `tile-${i + 1}.png`);
+    let frames = c.previewFrames;
+    if (!frames?.length) {
+      const thumb = path.join(dir, `thumb-${i + 1}.jpg`);
+      await download(c.thumb, thumb, deps.fetchFn || fetch);
+      frames = [thumb];
+    }
+    timeLabel(i + 1, label, 180);
+    const scaled = frames.map((_, n) => `[${n}:v]scale=${width / frames.length}:320:force_original_aspect_ratio=decrease,pad=${width / frames.length}:320:(ow-iw)/2:(oh-ih)/2[v${n}]`).join(";");
+    const strip = frames.length === 1 ? "[v0]null[v]" : `${frames.map((_, n) => `[v${n}]`).join("")}hstack=inputs=${frames.length}[v]`;
+    await runner("ffmpeg", ["-y", "-loglevel", "error", ...frames.flatMap((f) => ["-i", f]), "-i", label, "-filter_complex", `${scaled};${strip};[${frames.length}:v]scale=${width}:60[label];[v][label]vstack=inputs=2[out]`, "-map", "[out]", "-frames:v", "1", tile], { quiet: true });
     tiles.push(tile);
   }
   const sheet = path.join(dir, "candidates.png");
-  const filter = tiles.length === 1 ? "[0:v]null[out]" : `${tiles.map((_, i) => `[${i}:v]`).join("")}xstack=inputs=${tiles.length}:layout=${tiles.map((_, i) => `${i % 3 * 240}_${Math.floor(i / 3) * 340}`).join("|")}[out]`;
+  const filter = tiles.length === 1 ? "[0:v]null[out]" : `${tiles.map((_, i) => `[${i}:v]`).join("")}xstack=inputs=${tiles.length}:layout=${tiles.map((_, i) => `${i % 4 * width}_${Math.floor(i / 4) * 380}`).join("|")}[out]`;
   await runner("ffmpeg", ["-y", "-loglevel", "error", ...tiles.flatMap((t) => ["-i", t]), "-filter_complex", filter, "-map", "[out]", "-frames:v", "1", sheet], { quiet: true });
   if (!fs.existsSync(sheet)) throw new Error("stock contact sheet missing");
   return sheet;
@@ -123,35 +179,39 @@ export async function conformStockClip(input, file, { runFn = run } = {}) {
   await runFn("ffmpeg", ["-y", "-loglevel", "error", ...edges, "-i", input, "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280", "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-r", "30", "-g", "30", "-pix_fmt", "yuv420p", "-movflags", "+faststart", file], { quiet: true });
 }
 
-export async function makeStockClip({ pick, shot, groups, workDir, dir, settings = {}, search, deps = {} }) {
+export async function makeStockClip({ pick, shot, groups, workDir, dir, settings = {}, search, fill = false, maxNew = 20, deps = {} }) {
   const why = checkPick(pick, shot, groups, { len: shot.duration });
   if (why) { brollStep(pick, `stock skipped: ${why}`, deps); return null; }
   const env = deps.env || process.env, look = deps.claudeLook || claudeLook;
+  const approved = [];
   let stage = "search";
   try {
     const bank = readLibrary(env), recent = recentLibraryReels(bank, workDir);
     const found = await search(pick, settings.stock);
-    const candidates = found.filter((c) => !bank.clips.some((l) => l.licence?.provider === c.provider && String(l.licence.id) === String(c.id) && l.usedIn.some((use) => recent.has(use.reel)))).slice(0, 6);
+    let candidates = found.filter((c) => !bank.clips.some((l) => l.licence?.provider === c.provider && String(l.licence.id) === String(c.id) && (fill || (l.usedIn || []).some((use) => recent.has(use.reel))))).slice(0, settings.stockCandidates ?? 12);
     for (const provider of new Set([...(settings.stock || ["pexels", "pixabay"]), ...found.map((c) => c.provider)])) {
       brollStep(pick, `stock ${provider}: ${found.filter((c) => c.provider === provider).length} candidates found, ${candidates.filter((c) => c.provider === provider).length} eligible`, deps);
     }
     if (!candidates.length) { brollStep(pick, "stock choice none: no eligible candidates after search and recent-clip exclusion", deps); return null; }
     const evidence = fs.mkdtempSync(path.join(dir, "stock-"));
+    candidates = await previewStockCandidates(candidates, { pick, dir: evidence, settings, deps });
+    if (!candidates.length) return fill ? approved : null;
     stage = "contact sheet";
     const sheet = await (deps.stockContactSheet || stockContactSheet)(candidates, { dir: evidence, deps });
     stage = "Claude description";
-    const open = firstJSON(await look(`Inspect the numbered contact sheet ${JSON.stringify(path.basename(sheet))}. Describe only what is visibly present in each numbered image: subject, position, surroundings and lighting. State uncertainty. Do not guess intended meaning. Reply JSON only: {"seen":"..."}`, { cwd: evidence }));
+    const open = firstJSON(await look(`Inspect the numbered contact sheet ${JSON.stringify(path.basename(sheet))}. Each numbered tile contains three frames in time order (20%, 50%, 80%) or a single thumbnail when the preview is unavailable. Describe only what is visibly present in each numbered tile: subject, position, surroundings and lighting. State uncertainty. Do not guess intended meaning. Reply JSON only: {"seen":"..."}`, { cwd: evidence }));
     if (typeof open.seen !== "string" || !open.seen.trim()) { brollStep(pick, "stock Claude choice none: missing independent description", deps); return null; }
     const rejected = [], selections = [];
     const saveSelection = () => writeJSON(path.join(evidence, "selection.json"), { candidates, seen: open.seen, selections });
     saveSelection();
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < (fill ? candidates.length : 2); attempt++) {
       stage = "Claude choice";
       const result = firstJSON(await look(`Inspect ${JSON.stringify(path.basename(sheet))}. Your independent description: ${JSON.stringify(open.seen)}.
 Required subject: ${JSON.stringify(pick.shows)}. Planned event (a guide, not a requirement): ${JSON.stringify(pick.action)}.
 Spoken context: ${JSON.stringify(groups.filter((g) => g.start >= shot.start - 3 && g.start <= shot.start + shot.duration + 3).map((g) => g.text).join(" "))}.
 Choose the image that unmistakably shows the named subject, large and clear, doing something real and harmless. Stock footage rarely shows the planned event, so a different harmless event is fine when it does not contradict the spoken words; prefer one that fits them (for "coming after me", a walk or a stare toward the lens beats eating). Name the harmless event this clip most likely shows (for example "the gorilla stares into the lens and shifts its weight"); the full clip is then checked for it. Prefer real filmed footage, natural colour, portrait framing, a large clear subject and the complete action area above captions. Reject human faces (animal faces are allowed), readable text, logos, watermarks, animation, harm, neck contact, hanging loops, threats and unsafe associations with those words. If uncertain, answer none.
-Candidate numbers are 1 through ${candidates.length}, labelled as decimals. Excluded after failed clip checks: ${JSON.stringify(rejected)}.
+Preview motion means: ${candidates.map((c, i) => `${i + 1}: ${c.previewMotion ?? "unavailable (thumbnail only)"}`).join(", ")}.
+Candidate numbers are 1 through ${candidates.length}, labelled as decimals. Excluded after selection or failed clip checks: ${JSON.stringify(rejected)}.
 Reply JSON only: {"choice":N|"none","event":"...","shows":true|false,"safe":true|false,"humanFaces":true|false,"readableText":true|false,"logos":true|false,"watermarks":true|false,"why":"..."}`, { cwd: evidence }));
       selections.push(result); saveSelection();
       const candidate = Number.isInteger(result.choice) && candidates[result.choice - 1];
@@ -159,7 +219,7 @@ Reply JSON only: {"choice":N|"none","event":"...","shows":true|false,"safe":true
       brollStep(pick, `stock Claude choice ${choice}: ${result.why || "no reason supplied"}`, deps);
       if (!candidate || rejected.includes(result.choice) || result.shows !== true || result.safe !== true || ["humanFaces", "readableText", "logos", "watermarks"].some((f) => result[f] !== false)) {
         brollStep(pick, "stock outcome none: Claude declined or the choice failed subject/safety checks", deps);
-        return null;
+        return fill ? approved : null;
       }
       rejected.push(result.choice);
       const c = candidates[result.choice - 1], variant = c.files[0];
@@ -179,17 +239,20 @@ Reply JSON only: {"choice":N|"none","event":"...","shows":true|false,"safe":true
         if (!accepted) { brollStep(pick, `stock ${c.provider}:${c.id} rejected: full or trimmed clip failed event/look inspection (${JSON.stringify(event)})`, deps); continue; }
         const licence = { provider: c.provider, id: c.id, pageUrl: c.pageUrl, creator: c.creator, downloadedAt: new Date((deps.now || Date.now)()).toISOString() };
         const output = { ...accepted, source: c.provider, licence };
-        if (settings.library) {
+        if (settings.library || fill) {
           try {
-            const saved = saveLibraryClip({ shot: output, pick: checked, workDir, licence, env, now: (deps.now || Date.now)() });
+            const saved = saveLibraryClip({ shot: output, pick: checked, workDir, licence, recordUse: !fill, env, now: (deps.now || Date.now)() });
             if (saved) output.libraryId = saved.id;
           } catch { warn("b-roll: approved stock clip could not be saved to the library"); }
         }
         brollStep(pick, `stock ${c.provider}:${c.id} accepted: full and trimmed clip passed`, deps);
-        return output;
+        if (!fill) return output;
+        if (!output.libraryId) continue;
+        approved.push(output);
+        if (approved.length >= maxNew) return approved;
       } catch (e) { brollStep(pick, `stock ${c.provider}:${c.id} failed at ${stage}: ${String(e.message).split("\n")[0]}; trying the next candidate`, deps); }
     }
-    brollStep(pick, "stock outcome none: both chosen clips failed", deps);
+    if (!approved.length) brollStep(pick, fill ? "stock outcome none: no chosen clip passed" : "stock outcome none: both chosen clips failed", deps);
   } catch (e) { brollStep(pick, `stock choice none: ${stage} failed: ${String(e.message).split("\n")[0]}`, deps); }
-  return null;
+  return fill ? approved : null;
 }
