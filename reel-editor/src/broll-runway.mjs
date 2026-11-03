@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { claudeText, claudeLook, firstJSON, hasClaude } from "./claude.mjs";
 import { brollCount, brollCandidates, checkPick, subjectWords, spokenInShot, readRecent, rememberScenes, uniqueScenes } from "./broll.mjs";
-import { subjectMotion, contactSheet, validTimeline, eventInPoint, phonePreviews, localClipCheck, verifySound } from "./broll-qc.mjs";
+import { visionJSON, subjectMotion, landingMotion, QC_MEASUREMENTS, videoFrames, contactSheet, motionCrops, landingCrops, DEFECT_QUESTIONS, validTimeline, eventInPoint, phonePreviews, localClipCheck, verifySound } from "./broll-qc.mjs";
 import { norm } from "./text.mjs";
 import { CREDIT_USD, dataURI, failurePolicy, hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt, modelInfo, makeSound } from "./runway.mjs";
 import { recordUsage, reelUsageNote } from "./usage.mjs";
@@ -235,9 +235,17 @@ export async function measureMotion(file, duration, { runFn = run, dir = path.di
   const tmp = fs.mkdtempSync(path.join(dir, "motion-"));
   try {
     const raw = path.join(tmp, "frames.gray");
-    await runFn("ffmpeg", ["-y", "-loglevel", "error", "-t", String(duration), "-i", file, "-vf", "fps=8,scale=64:64,format=gray", "-f", "rawvideo", raw], { quiet: true });
+    await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-vf", `setpts=PTS-STARTPTS,fps=8:start_time=0:round=near,trim=duration=${duration},scale=360:640:force_original_aspect_ratio=increase,crop=360:640,scale=64:64,format=gray`, "-f", "rawvideo", raw], { quiet: true });
     return subjectMotion(fs.readFileSync(raw));
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
+export async function measureLanding(file, duration, { runFn = run, dir = path.dirname(file), contact, point, minSprayDrift } = {}) {
+  const raw = path.join(dir, "landing.gray");
+  try {
+    await runFn("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-vf", `setpts=PTS-STARTPTS,fps=24:start_time=0:round=near,trim=duration=${duration},scale=180:320:force_original_aspect_ratio=increase,crop=180:320,format=gray`, "-f", "rawvideo", raw], { quiet: true });
+    return landingMotion(fs.readFileSync(raw), { contact, point, minSprayDrift });
+  } finally { fs.rmSync(raw, { force: true }); }
 }
 
 /** Find the first above-median change, leaving a short readable opening and room for the shot. */
@@ -313,32 +321,53 @@ Reply JSON only:
 {"shows":true|false,"dark":true|false,"detailReadable":true|false,"actionAreaVisible":true|false,"captionOcclusion":true|false,"subjectLarge":true|false,"why":"..."}`;
 }
 
-export const clipOpenPrompt = (frames, sheet) => `Inspect the timestamped contact sheet ${JSON.stringify(sheet)} in row-major time order.
+export const clipOpenPrompt = (frames, sheets) => `Inspect the timestamped contact sheets ${JSON.stringify(sheets)} in page order, each in row-major time order. Read EVERY page.
 Frames: ${frames.map((f) => `${f.time}s`).join(", ")}.
 Describe only the visible subject and physical changes. Distinguish subject movement from camera movement.
-State uncertainty. Reply JSON only: {"seen":"..."}`;
+Describe what you see first, without guessing the intended subject or story.
+Locate the first physical contact/landing if one is visible, in seconds RELATIVE TO THE FIRST FRAME; otherwise use null.
+For a visible contact, give contactPoint at the object's BASE where it touches the surface, using normalized x/y coordinates (0 to 1) in the portrait frame, measured from the top left. Use null when no contact is visible.
+State uncertainty. Reply JSON only: {"seen":"...","contact":S|null,"contactPoint":{"x":N,"y":N}|null}`;
 
-export function clipCheckPrompt({ seen, frames, sheet, pick, shot, groups, inPoint = 0 }) {
+export function landingCheckPrompt({ sheets, crop }) {
+  return `Inspect the landing surface separately. Read the whole-frame timelines ${JSON.stringify(sheets)} for context and EVERY fixed 3x contact-region crop ${JSON.stringify(crop.sheets)}.
+Contact is at source time ${crop.time}s. Crop source times: ${crop.times.join(", ")}s. These compare just before contact with 0.2-0.4 seconds after it, where available. Judge only visible frames; a landing outside the frame or a missing after-frame is not itself a defect.
+Does a white or bright ring, collar, disc, halo or outline appear around the object's base after contact, symmetrical or cotton-like rather than sand or dust spraying away?
+Describe where the object sits relative to this material: inside it, on top of it, surrounded by it, or beside a spray moving away. Compare the surface before contact with its shape and texture afterwards.
+Defective example: a coconut lands inside a white, symmetrical collar of fluffy material around its base, like cotton or foam. The coconut appears seated inside or on this bright ring instead of simply resting on sand. This is a generated landing artifact even if the coconut's own contour stays intact.
+Natural example: a coconut falls off a ledge onto sand and throws textured sand sideways in one direction. The grains or dust move away from the contact point and disperse; they do not form a cotton-like collar hugging the base. This is allowed. Brightness alone or an outward-moving dust burst is not enough to call a defect.
+Inspect this clip on its own evidence. Reply JSON only: {"collar":true|false,"objectPosition":"where the object sits relative to the material","why":"specific before/after shape, texture and movement observations"}`;
+}
+
+export function clipCheckPrompt({ seen, frames, sheets, crops, pick, shot, groups, inPoint = 0, selecting = false, measurements }) {
   return `Used source interval: ${inPoint} to ${inPoint + shot.duration}.
-Inspect the one contact sheet ${JSON.stringify(sheet)}, frames in row-major order at ${frames.map((f) => f.time).join(", ")} seconds.
+Inspect ALL contact sheets ${JSON.stringify(sheets)}, in page order, each in row-major order at ${frames.map((f) => f.time).join(", ")} seconds.
+These pages have 360x640 cells. Also read EVERY 2x detail page (fixed crop within each burst): ${JSON.stringify(crops)}.
+Every frame has its source time printed below it. Compare the whole-frame timeline with the detail bursts; a crop alone cannot establish camera movement or absence of a subject.
 Independent description: ${JSON.stringify(seen)}.
+Decoded pixel measurements (independent of the action hint): ${JSON.stringify(measurements || {})}.
+Camera speed and subject size growth are measured over sustained half-second windows after background registration. A measured outward surface spray is physical displacement, even when the first impact frame looks bright and symmetric. Do not label that spray a generated collar based on its brightness or fluffy texture.
 Required subject: ${JSON.stringify(pick.shows)}.
-Required physical event: ${JSON.stringify(pick.action)}.
+Action hint only, NOT a script or acceptance requirement: ${JSON.stringify(pick.action)}.
 Shot kind: ${pick.kind || "action"}. Ambient shots need sustained subject motion.
 Overlapping words and captions: ${JSON.stringify(spokenInShot(shot, groups, { len: shot.duration }))}.
 Neighbouring words: ${JSON.stringify(neighbouringWords(shot, groups))}.
+The verdict is about the WORDS: is the named subject unmistakable, and does it visibly do something that fits those words?
+Judge the actual physical change, not exact compliance with the action hint. Pressing a board into mud fits "hold it on the quicksand" even if it starts low instead of being lowered from above.
+A harmless literal cutaway can complete an analogy: a coconut falling out of a palm fits a coconut hitting the speaker; do not require an on-screen person, injury or a visible landing outside the frame. A gorilla walking naturally in either direction can fit the joke; a frozen body with only slight arm sway does not establish walking.
 Is the same subject intact and recognizable throughout these frames?
-Does its position or state change relative to the background, establishing the required event inside this interval?
-Camera movement and lighting alone do not count. Identify event onset, first contact/landing (null if inapplicable),
-and completion/settle, in SECONDS RELATIVE TO THE FIRST FRAME (0), not absolute source time.
-Explicitly inspect rings, smears, extra limbs, disappearing parts, morphing, pass-through contact,
-and objects hopping upward against gravity before contact. Natural sand displacement and motion blur are allowed.
-Reject any artifact, implausible direction or uncertain identity/action. A bounce AFTER contact is allowed.
-Check human faces and readable lettering. Animal faces are allowed.
-Could any frame with these words suggest a noose, self-harm, death, an attack, weapon use or anyone hurt?
+Does its position or state change relative to the background, establishing a word-fitting event inside this interval?
+Camera movement and lighting alone do not count. Set eventType="drop-land" only for a discrete drop-and-land event; otherwise use "continuous" (walking, uncoiling/sliding, pressing/holding a board, squeezing cream).
+Identify event onset, first contact/landing (null if inapplicable or not visible), and completion/settle (null if absent), in SECONDS RELATIVE TO THE FIRST FRAME (0), not absolute source time.
+Onset/contact/settle only guide the in-point for drop-and-land events. Never reject a clip for missing settle or completion, or a continuous action for having no contact. Continuous actions can keep moving through the cut; they need no staged ending or complete step cycle.
+Approve when the named subject is unmistakable and visibly does something that fits the words inside this interval, with no defect.
+${selecting ? "This is the full source for choosing an in-point. Late onset alone is allowed here; the selected used interval will be checked separately." : "This is the used interval. Meaningful word-fitting subject action must begin within its first 1 second. Set action=false otherwise."}
+Answer EACH defect question independently with yes/no. For every yes give the exact printed SOURCE frame time and a specific observation. For no use time=null and explain what you compared across the timeline. Any yes rejects the clip, even when the subject/action otherwise fits. Do not infer safety or clean physics from the hint.
+${Object.entries(DEFECT_QUESTIONS).map(([key, question]) => `${key}: ${question}`).join("\n")}
+Reject uncertain subject identity or action. Do not invent defects from normal blur, physical sand displacement or natural occlusion.
 Name specific defects and give a positive corrective instruction in correction.
 Reply JSON only:
-{"shows":true|false,"action":true|false,"dark":true|false,"physicsPlausible":true|false,"identityStable":true|false,"artifacts":true|false,"directionPlausible":true|false,"humanFaces":true|false,"readableText":true|false,"onset":S,"contact":S|null,"completion":S,"defects":["..."],"correction":"...","why":"..."}`;
+{"shows":true|false,"action":true|false,"dark":true|false,"physicsPlausible":true|false,"identityStable":true|false,"artifacts":true|false,"directionPlausible":true|false,"humanFaces":true|false,"readableText":true|false,"eventType":"continuous"|"drop-land","onset":S,"contact":S|null,"completion":S|null,"checks":{${Object.keys(DEFECT_QUESTIONS).map((key) => `${JSON.stringify(key)}:{"yes":true|false,"time":S|null,"why":"..."}`).join(",")}},"defects":["..."],"correction":"...","why":"..."}`;
 }
 
 export function motionCorrection(pick, defect) {
@@ -396,39 +425,86 @@ export function placePlannedBroll(picks, candidates, { gap, max, timing }) {
 
 /** Retry unavailable vision once; a valid negative answer is final. */
 async function lookJSON(prompt, valid, look, dir) {
+  let next = prompt;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const result = firstJSON(await look(prompt, { cwd: dir, timeoutMs: 180000 }));
-      if (!valid(result)) throw new Error("invalid vision reply");
+      const reply = await look(next, { cwd: dir, timeoutMs: 180000 });
+      let result;
+      try { result = visionJSON(reply); } catch (e) {
+        next = `${prompt}\nYour last reply was not valid JSON; reply with the same answer as valid JSON only.\nYour last reply: ${JSON.stringify(reply)}`;
+        throw e;
+      }
+      if (!valid(result)) {
+        next = `${prompt}\nYour last reply was incomplete or contradictory. Reinspect the images and return all required fields consistently. Any artifacts=true verdict needs a specific defect or a timed yes in contactArtifact or identityChange.\nYour last reply: ${JSON.stringify(reply)}`;
+        throw new Error("invalid vision reply");
+      }
       return result;
     } catch (e) { if (attempt) throw e; }
   }
 }
 const hasSeen = (r) => typeof r.seen === "string" && !!r.seen.trim();
 const hasBools = (fields) => (r) => fields.every((f) => typeof r[f] === "boolean");
+const hasContact = (r, duration) => r.contact === null || Number.isFinite(r.contact) && r.contact >= 0 && r.contact <= duration &&
+  [r.contactPoint?.x, r.contactPoint?.y].every((n) => Number.isFinite(n) && n >= 0 && n <= 1);
 
-/** A moving camera alone is insufficient: the named subject and its action must survive the used part. */
-export async function checkRunwayVideo({ file, shot, pick, groups, inPoint = 0, dir = path.dirname(file), threshold = 1, eventOnly = false, deps = {} }) {
+/** An inconclusive surface measurement needs agreement, rather than one texture guess. */
+async function reviewLanding(prompt, look, dir) {
+  const reviews = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await lookJSON(prompt, (r) => typeof r.collar === "boolean" && [r.objectPosition, r.why].every((s) => typeof s === "string" && !!s.trim()), look, dir);
+    reviews.push(result);
+    const agreeing = reviews.filter((r) => r.collar === result.collar);
+    if (agreeing.length >= 2) return { ...result, reviews };
+  }
+}
+
+/** A moving camera alone is insufficient: the named subject must visibly support the spoken words. */
+export async function checkRunwayVideo({ file, shot, pick, groups, inPoint = 0, dir = path.dirname(file), threshold = 1, continuousMinMotion = 3, qcMeasurements = {}, selecting = false, eventOnly = false, deps = {} }) {
   const runner = deps.runFn || run, look = deps.claudeLook || claudeLook;
   const evidence = fs.mkdtempSync(path.join(dir, "clip-check-"));
+  let motion;
   try {
-    const motion = await measureMotion(file, shot.duration, { runFn: runner, dir: evidence });
-    const { frames, sheet } = await contactSheet(file, shot.duration, { dir: evidence, peakTime: motion.peakTime, inPoint, runFn: runner });
-    const relativeSheet = path.relative(dir, sheet);
-    const open = await lookJSON(clipOpenPrompt(frames, relativeSheet), hasSeen, look, dir);
-    const prompt = clipCheckPrompt({ seen: open.seen, frames, sheet: relativeSheet, pick, shot, groups, inPoint });
+    const limits = { ...QC_MEASUREMENTS, ...qcMeasurements };
+    if (Object.values(limits).some((n) => !Number.isFinite(n) || n < 0)) throw new Error("invalid QC measurement limits");
+    motion = await (deps.measureMotion || measureMotion)(file, shot.duration, { runFn: runner, dir: evidence });
+    (deps.log || log)(`${path.basename(file)}: background-compensated subject motion ${motion.mean.toFixed(3)} (continuous minimum ${continuousMinMotion.toFixed(1)}, frozen threshold ${threshold})`);
+    const samples = await videoFrames(file, { runFn: runner });
+    const { frames, sheet, sheets } = await contactSheet(file, shot.duration, { dir: evidence, peakTime: motion.peakTime, inPoint, samples, runFn: runner });
+    const relativeSheets = sheets.map((s) => path.relative(dir, s));
+    const open = await lookJSON(clipOpenPrompt(frames, relativeSheets), (r) => hasSeen(r) && hasContact(r, shot.duration), look, dir);
+    const surface = open.contact === null ? undefined : await (deps.measureLanding || measureLanding)(file, shot.duration, { runFn: runner, dir: evidence, contact: open.contact, point: open.contactPoint, minSprayDrift: limits.minSprayDrift });
+    const crops = await motionCrops(file, shot.duration, { dir: evidence, motion, contact: open.contact, inPoint, samples, runFn: runner });
+    const details = crops.map((c) => ({ name: c.name, time: c.time, region: c.region, sheets: c.sheets.map((s) => path.relative(dir, s)), times: c.frames.map((f) => f.time) }));
+    const prompt = clipCheckPrompt({ seen: open.seen, frames, sheets: relativeSheets, crops: details, pick, shot, groups, inPoint, selecting: selecting || eventOnly, measurements: { sustained: motion.sustained, local: motion.local, cameraSpeed: motion.cameraSpeed, approachGrowth: motion.approachGrowth, surface } });
     const result = await lookJSON(eventOnly ? `${prompt}
-This full-source pass only locates the event for a later cut. Report all defects, but set shows and action from whether the named subject and event are visible somewhere in the source. Defects elsewhere do not invalidate that event. The exact used window will receive a separate complete inspection.` : prompt, (r) => validTimeline(r, shot.duration), look, dir);
+This full-source pass only locates the event for a later cut. Report all defects, but set shows and action from whether the named subject and event are visible somewhere in the source. Defects elsewhere do not invalidate that event. The exact used window will receive a separate complete inspection.` : prompt,
+      (r) => validTimeline(r, shot.duration, inPoint) && (!r.artifacts || r.defects.length > 0 || r.checks.contactArtifact.yes || r.checks.identityChange.yes), look, dir);
     const frozen = motion.mean < threshold;
-    const contactRequired = /\b(drop|drops|fall|falls|land|lands|hit|hits|impact)\b/i.test(pick.action || "");
-    const ok = eventOnly ? result.shows && result.action : (!contactRequired || result.contact !== null) && !frozen && result.shows && result.action && !result.dark && result.physicsPlausible && result.identityStable && !result.artifacts && result.directionPlausible && !result.humanFaces && !result.readableText;
+    const defects = [...result.defects, ...Object.entries(result.checks).filter(([, answer]) => answer.yes).map(([key, answer]) => `${key} at ${answer.time}s: ${answer.why}`)];
+    if (frozen) defects.push(`frozen clip after background compensation: motion ${motion.mean.toFixed(3)} below ${threshold}`);
+    if (result.eventType === "continuous" && (motion.sustained ?? motion.mean) < continuousMinMotion && !(motion.local >= limits.localMinMotion)) defects.push(`continuous action motion ${motion.mean.toFixed(3)} below minimum ${continuousMinMotion.toFixed(1)} after background compensation; sustained ${motion.sustained}, local ${motion.local}`);
+    if (motion.cameraSpeed > limits.maxCameraSpeed) defects.push(`sustained camera movement ${motion.cameraSpeed.toFixed(3)} frame widths/s exceeds ${limits.maxCameraSpeed}`);
+    if (result.eventType === "continuous" && motion.approachGrowth > limits.maxApproachGrowth) defects.push(`rapid subject size growth ${motion.approachGrowth.toFixed(3)}/s exceeds ${limits.maxApproachGrowth}`);
+    if (!selecting && result.onset > 1) defects.push("word-fitting action begins after the first second of the used interval");
+    let ok = eventOnly ? result.shows && result.action : !defects.length && result.shows && result.action && !result.dark && result.physicsPlausible && result.identityStable && !result.artifacts && result.directionPlausible && !result.humanFaces && !result.readableText;
+    let landing;
+    if (ok && !eventOnly && open.contact !== null) {
+      const crop = await landingCrops(file, shot.duration, { dir: evidence, contact: open.contact, point: open.contactPoint, inPoint, samples, runFn: runner });
+      crops.push(crop);
+      landing = surface?.spray ? { collar: false, objectPosition: "beside measured outward surface displacement", why: `surface centroid travels ${surface.drift.toFixed(3)} frame widths and expands ${surface.expansion.toFixed(3)}`, measured: true } : await reviewLanding(landingCheckPrompt({ sheets: relativeSheets, crop: { time: crop.time, sheets: crop.sheets.map((s) => path.relative(dir, s)), times: crop.frames.map((f) => f.time) } }), look, dir);
+      if (landing.collar) {
+        defects.push(`landing collar at ${crop.time}s: ${landing.why}; object position: ${landing.objectPosition}`);
+        ok = false;
+      }
+    }
     let local;
     if (ok && !eventOnly) local = await (deps.localClipCheck || localClipCheck)(frames, { dir, runFn: runner, look, pick });
-    const verdict = { ...result, look: "pass", motion, frames, sheet, local, ok: ok && (eventOnly || local?.ok === true), why: frozen ? "frozen clip after background compensation" : local?.ok === false ? local.why : `${result.why || "event inspected"}; ${result.defects.join("; ")}` };
+    const rejected = [!result.shows && "required subject absent", !result.action && "word-fitting action absent", result.dark && "unsafe association", !result.physicsPlausible && "implausible physics", !result.identityStable && "unstable identity", result.artifacts && "visual artifacts", !result.directionPlausible && "implausible direction", result.humanFaces && "human faces", result.readableText && "readable text"].filter(Boolean);
+    const verdict = { ...result, defects, seen: open.seen, look: "pass", motion, frames, sheet, sheets, crops, landing, surface, local, ok: ok && (eventOnly || local?.ok === true), why: [result.why || (ok ? "word-fitting event inspected" : "subject, action or visual quality rejected"), ...rejected, ...defects, ...(local?.ok === false ? [local.why] : [])].join("; ") };
     writeJSON(path.join(evidence, "verdict.json"), verdict);
     return verdict;
   } catch (e) {
-    const verdict = { ok: false, unavailable: true, look: "unavailable", why: `video verification unavailable after retry: ${String(e.message).split("\n")[0]}`, evidence };
+    const verdict = { ok: false, unavailable: true, look: "unavailable", why: `video verification unavailable after retry: ${String(e.message).split("\n")[0]}`, motion, evidence };
     writeJSON(path.join(evidence, "verdict.json"), verdict);
     return verdict;
   }
@@ -582,19 +658,18 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
           const clipDuration = Number(probe.out?.trim());
           clip.sourceDuration = clipDuration;
           if (!(clipDuration > 0)) throw Object.assign(new Error("clip duration unavailable"), { code: "LOCAL_PROCESS" });
-          const inspected = await checkRunwayVideo({ file: full, shot: { ...s, duration: clipDuration }, pick: { ...p, kind: models.kind }, groups, dir, threshold: settings.motionThreshold ?? 1, deps });
+          const inspected = await checkRunwayVideo({ file: full, shot: { ...s, duration: clipDuration }, pick: { ...p, kind: models.kind }, groups, dir, selecting: true, threshold: settings.motionThreshold ?? 1, continuousMinMotion: settings.continuousMinMotion ?? 3, qcMeasurements: settings.qcMeasurements, deps });
           if (inspected.unavailable) { state.review = inspected; throw Object.assign(new Error(inspected.why), { code: "CHECK_UNAVAILABLE" }); }
           moves = inspected;
           if (inspected.ok) {
-            clip.sourceTimeline = { onset: inspected.onset, contact: inspected.contact, completion: inspected.completion };
+            clip.sourceTimeline = { eventType: inspected.eventType, onset: inspected.onset, contact: inspected.contact, completion: inspected.completion };
             const timeline = models.kind === "action" ? inspected : null;
             try {
               Object.assign(clip, await trimRunwayClip(clip.mp4, s.duration, { runFn: runner, dir, timeline }));
-              moves = await checkRunwayVideo({ file: clip.mp4, shot: s, pick: { ...p, kind: models.kind }, groups, dir, inPoint: clip.inPoint, threshold: settings.motionThreshold ?? 1, deps });
+              moves = await checkRunwayVideo({ file: clip.mp4, shot: s, pick: { ...p, kind: models.kind }, groups, dir, inPoint: clip.inPoint, threshold: settings.motionThreshold ?? 1, continuousMinMotion: settings.continuousMinMotion ?? 3, qcMeasurements: settings.qcMeasurements, deps });
             } catch (e) { moves = { ok: false, unavailable: e.code !== "EVENT_WINDOW", why: `local selection unavailable: ${e.message}` }; }
           }
         }
-        if (moves.ok && models.kind === "action" && eventInPoint(moves, s.duration, s.duration) === null) moves = { ...moves, ok: false, why: "trimmed event has no readable settle before the cut" };
         state.review = moves; save();
         if (moves.unavailable) throw Object.assign(new Error(moves.why), { code: "CHECK_UNAVAILABLE" });
         if (moves.ok) {
