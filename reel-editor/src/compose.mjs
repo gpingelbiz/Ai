@@ -12,6 +12,13 @@ import { evidenceCSS, evidenceHTML, EVIDENCE_JS } from "./evidence.mjs";
 import { timeLabelHTML, TIME_LABELS_JS } from "./time-labels.mjs";
 import { keywordColorOnFootage } from "./captions.mjs";
 
+// The quiet and serif captions' shadow. "strong" (captions.quietShadow) is darker and tighter, for thin light type over
+// light clothes or hair (Julee's cream serif on a striped shirt, 2026-11-03); "soft" is the October 30 look.
+export const QUIET_SHADOWS = {
+  soft: "0 0.03em 0.08em rgba(0,0,0,0.45), 0 0.04em 0.24em rgba(0,0,0,0.4)",
+  strong: "0 0.02em 0.03em rgba(0,0,0,0.8), 0 0.03em 0.12em rgba(0,0,0,0.65), 0 0 0.45em rgba(0,0,0,0.45)",
+};
+
 export function canvasFor(mode, meta) {
   const m = mode === "auto" || !mode ? (meta.height > meta.width ? "portrait" : meta.width > meta.height ? "landscape" : "square") : mode;
   if (m === "portrait") return { width: 1080, height: 1920, mode: m };
@@ -569,7 +576,7 @@ ${premiseHasIcons ? `      .premise-section-icon { flex: 0 0 ${premise.sectionFo
       .cap .w.k { ${colorKeywords ? `color: ${c.accent};` : "color: inherit; font-weight: 950; font-size: 1.06em;"} }
 ${reveal ? `      .cap-line { font-family: "Inter", sans-serif; font-weight: 850; line-height: 1.04; letter-spacing: -0.01em; -webkit-text-stroke: 0; text-shadow: 0 0.04em 0.28em rgba(0,0,0,0.6), 0 0 0.8em rgba(0,0,0,0.3); gap: 0.02em 0.24em; max-width: 86%; }
 ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
-      .cap-line { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2; letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: 0 0.03em 0.08em rgba(0,0,0,0.45), 0 0.04em 0.24em rgba(0,0,0,0.4); gap: 0.06em 0.26em; }
+      .cap-line { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2; letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: ${QUIET_SHADOWS[cap.quietShadow] || QUIET_SHADOWS.soft}; gap: 0.06em 0.26em; }
       .cap .w.k { ${colorKeywords ? `color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none;` : "color: inherit; background: none; padding: 0; border-radius: 0; font-weight: 950; font-size: 1.06em;"} }${cap.serif ? `
       .cap-line { font-family: "Look Serif", "Anton", serif; font-weight: 500; line-height: 1.14; letter-spacing: 0; }
       .cap .w.k { font-weight: 500; }` : ""}` : ""}
