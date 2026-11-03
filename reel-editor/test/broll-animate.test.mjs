@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { makeBroll, PICKS_SCHEMA, checkPick, picksPrompt, planBrollOpen } from "../src/broll.mjs";
 import { planShotBudget, runwayPicksPrompt } from "../src/broll-runway.mjs";
+import { DEFECT_QUESTIONS } from "../src/broll-qc.mjs";
 import { loadPreset } from "../src/presets.mjs";
 import { applyTheme } from "../src/looks.mjs";
 
@@ -15,7 +16,7 @@ process.env.REEL_BROLL_RECENT = path.join(root, "recent.json");
 after(() => fs.rmSync(root, { recursive: true, force: true }));
 const folder = () => fs.mkdtempSync(path.join(root, "case-"));
 const json = (body) => ({ ok: true, json: async () => body, arrayBuffer: async () => Buffer.alloc(2000, 7) });
-const videoPass = { shows: true, action: true, dark: false, physicsPlausible: true, identityStable: true, artifacts: false, directionPlausible: true, humanFaces: false, readableText: false, onset: 0.2, contact: 0.7, completion: 1.1, defects: [] };
+const videoPass = { shows: true, action: true, dark: false, physicsPlausible: true, identityStable: true, artifacts: false, directionPlausible: true, humanFaces: false, readableText: false, eventType: "drop-land", onset: 0.2, contact: 0.7, completion: 1.1, checks: Object.fromEntries(Object.keys(DEFECT_QUESTIONS).map((key) => [key, { yes: false, time: null, why: "frames compared; absent" }])), defects: [] };
 const stillPass = { shows: true, dark: false, detailReadable: true, actionAreaVisible: true, captionOcclusion: false, subjectLarge: true };
 const groups = [
   { start: 0, text: "work feels wild" },
@@ -50,10 +51,10 @@ function fixture({ picks = [pick()], checks = [], videoChecks = [], settings = {
   };
   const runFn = async (cmd, args) => {
     calls.run.push({ cmd, args });
-    if (cmd === "ffprobe") return { out: "3" };
+    if (cmd === "ffprobe") return args.includes("-show_frames") ? { out: JSON.stringify({ frames: Array.from({ length: 90 }, (_, i) => ({ best_effort_timestamp_time: String(i / 30) })) }) } : { out: "3" };
     assert.equal(cmd, "ffmpeg");
     const out = args.at(-1);
-    fs.writeFileSync(out, out.endsWith(".gray") ? Buffer.concat(Array.from({ length: 24 }, (_, i) => Buffer.alloc(4096, i % 2 ? 15 : 0))) : Buffer.alloc(2000, 5));
+    fs.writeFileSync(out, out.endsWith("landing.gray") ? Buffer.alloc(180 * 320 * 72, 220) : out.endsWith(".gray") ? Buffer.concat(Array.from({ length: 24 }, (_, i) => Buffer.alloc(4096, i % 2 ? 15 : 0))) : Buffer.alloc(2000, 5));
   };
   const deps = {
     hasCodex: () => true, codexPausedUntil: () => 0, hasRunway: () => true, hasClaude: () => true,
@@ -77,7 +78,8 @@ function fixture({ picks = [pick()], checks = [], videoChecks = [], settings = {
         if (verdict instanceof Error) throw verdict;
         return JSON.stringify({ ...videoPass, ...verdict });
       }
-      if (prompt.startsWith("Inspect the timestamped contact sheet")) return '{"seen":"a coconut drops and settles"}';
+      if (prompt.startsWith("Inspect the timestamped contact sheet")) return '{"seen":"a coconut drops and settles","contact":0.7,"contactPoint":{"x":0.5,"y":0.8}}';
+      if (prompt.startsWith("Inspect the landing")) return '{"collar":false,"objectPosition":"on sand","why":"surface stays natural before and after contact"}';
       if (prompt.includes('"seen":"..."')) return '{"seen":"a large coconut on sand in daylight"}';
       const verdict = checks[stillIndex++] || {};
       if (verdict instanceof Error) throw verdict;

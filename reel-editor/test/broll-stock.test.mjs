@@ -14,6 +14,7 @@ import { main } from "../src/cli.mjs";
 import { checkRunwayVideo } from "../src/broll-runway.mjs";
 import { listPresets } from "../src/presets.mjs";
 import { writeJSON } from "../src/util.mjs";
+import { DEFECT_QUESTIONS } from "../src/broll-qc.mjs";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "stock-tests-"));
 process.env.REEL_CACHE = root;
@@ -33,7 +34,7 @@ const groups = [
 ].map((g) => ({ ...g, words: g.text.split(" ").map((text, i) => ({ text, start: g.start + i * 0.4, end: g.start + i * 0.4 + 0.4 })) }));
 const pick = { line: 1, shows: "coconut", stockQuery: "coconut falling", scene: "A large coconut on a sandy ledge in daylight.", kind: "action", action: "The coconut drops onto sand and settles.", motion: "Locked camera.", duration: 1.6, file: "", endsAt: { line: 1, wordIndex: 4, text: "sand" }, endsBefore: { line: 2, wordIndex: 0, text: "then" } };
 const shot = { line: 1, start: 6.4, duration: 1.6, text: groups[1].text, shows: pick.shows, scene: pick.scene };
-const verdict = { shows: true, action: true, dark: false, physicsPlausible: true, identityStable: true, artifacts: false, directionPlausible: true, humanFaces: false, readableText: false, defects: [], ok: true, look: "pass", onset: 0.2, contact: 0.6, completion: 1.1 };
+const verdict = { shows: true, action: true, dark: false, physicsPlausible: true, identityStable: true, artifacts: false, directionPlausible: true, humanFaces: false, readableText: false, eventType: "drop-land", checks: Object.fromEntries(Object.keys(DEFECT_QUESTIONS).map((key) => [key, { yes: false, time: null, why: "frames compared; absent" }])), defects: [], ok: true, look: "pass", onset: 0.2, contact: 0.6, completion: 1.1 };
 const choose = (choice = 1, over = {}) => JSON.stringify({ choice, shows: true, safe: true, humanFaces: false, readableText: false, logos: false, watermarks: false, ...over });
 function fixture() {
   const dir = folder(), calls = { checks: [], downloads: [], previews: [], looks: [], trims: [], runs: [], logs: [] }, env = { REEL_CACHE: dir, REEL_BROLL_LIBRARY: path.join(dir, "broll-library"), REEL_BROLL_RECENT: path.join(dir, "recent.json"), PEXELS_API_KEY: "secret", PIXABAY_API_KEY: "secret-two" };
@@ -45,7 +46,7 @@ function fixture() {
     runFn: async (cmd, args) => { calls.runs.push({ cmd, args }); if (cmd === "ffprobe") return { out: "6" }; fs.writeFileSync(args.at(-1), "frame"); return {}; },
     claudeLook: async (prompt) => { calls.looks.push(prompt); return prompt.includes('"seen":"..."') ? '{"seen":"a coconut above sand in daylight"}' : choose(); },
     checkRunwayVideo: async (args) => { calls.checks.push(args); return verdict; },
-    trimRunwayClip: async (file, duration, options) => { calls.trims.push({ file, duration, options }); const full = file.replace(/\.mp4$/, ".full.mp4"); fs.copyFileSync(file, full); return { full, inPoint: 0.05 }; },
+    trimRunwayClip: async (file, duration, options) => { calls.trims.push({ file, duration, options }); const full = file.replace(/\.mp4$/, ".full.mp4"); fs.copyFileSync(file, full); return { full, inPoint: options.inPoint ?? 0.05 }; },
     stockContactSheet: async (_c, { dir }) => { const file = path.join(dir, "candidates.png"); fs.writeFileSync(file, "sheet"); return file; },
     conformStockClip: async (_input, file) => fs.writeFileSync(file, "moving"),
   };
@@ -213,6 +214,19 @@ test("found footage whose event outlasts the cutaway is cut around the contact m
   const g = fixture(), whole = path.join(g.dir, "clip.mp4"); fs.writeFileSync(whole, "motion");
   await reviewMovingClip({ ...g.args, file: whole, duration: 6 });
   assert.equal(g.calls.trims[0].options.inPoint, 0.05, "an event that fits keeps the whole-event cut");
+});
+
+test("found footage selects continuous and contact windows without requiring completion hints", async () => {
+  for (const [timeline, expected] of [
+    [{ eventType: "continuous", onset: 2.5, contact: null, completion: null }, 2.35],
+    [{ eventType: "drop-land", onset: 0.2, contact: 3, completion: null }, 2.4],
+    [{ eventType: "drop-land", onset: 0.2, contact: null, completion: null }, 0.05],
+  ]) {
+    const f = fixture(), file = path.join(f.dir, "source.mp4"); fs.writeFileSync(file, "source");
+    f.deps.checkRunwayVideo = async (args) => args.eventOnly ? { ...verdict, ...timeline } : { ...verdict, eventType: timeline.eventType, contact: timeline.contact === null ? null : verdict.contact, completion: null };
+    assert.ok(await reviewMovingClip({ ...f.args, file, duration: 6 }));
+    assert.equal(f.calls.trims[0].options.inPoint, expected);
+  }
 });
 
 test("library paths honour overrides; only approved motion is saved and duplicate uses are idempotent", () => {
@@ -614,13 +628,24 @@ test("Codex synonym schema is required and bounded, absent synonyms default empt
 // Exercise the real verdict rules using generated pixel buffers and stubbed frame extraction.
 function realReview(f, full = {}, trimmed = {}) {
   let checks = 0, locals = 0;
-  f.deps.checkRunwayVideo = checkRunwayVideo;
+  f.deps.checkRunwayVideo = async (args) => {
+    const result = await checkRunwayVideo(args);
+    f.calls.checks.push({ ...args, result });
+    return result;
+  };
+  delete f.deps.measureMotion;
   f.deps.runFn = async (cmd, args) => {
-    if (cmd === "ffprobe") return { out: "6" };
-    fs.writeFileSync(args.at(-1), args.at(-1).endsWith(".gray") ? Buffer.concat(Array.from({ length: 16 }, (_, i) => Buffer.alloc(4096, i % 2 ? 15 : 0))) : "frame");
+    if (cmd === "ffprobe") return args.includes("-show_frames") ? { out: JSON.stringify({ frames: Array.from({ length: 180 }, (_, i) => ({ best_effort_timestamp_time: String(i / 30) })) }) } : { out: "6" };
+    fs.writeFileSync(args.at(-1), args.at(-1).endsWith("landing.gray") ? Buffer.alloc(180 * 320 * 48, 220) : args.at(-1).endsWith(".gray") ? Buffer.concat(Array.from({ length: 16 }, (_, i) => Buffer.alloc(4096, i % 2 ? 15 : 0))) : "frame");
     return {};
   };
-  f.deps.claudeLook = async (prompt) => prompt.startsWith("Used source interval:") ? JSON.stringify({ ...verdict, ...(!checks++ ? full : trimmed) }) : '{"seen":"a coconut falls onto sand"}';
+  f.deps.claudeLook = async (prompt) => {
+    if (prompt.startsWith("Used source")) {
+      const result = { ...verdict, ...(!checks++ ? full : trimmed) };
+      return JSON.stringify({ ...result, defects: result.artifacts ? ["double edge at contact"] : result.defects });
+    }
+    return JSON.stringify(prompt.startsWith("Inspect the landing") ? { collar: false, objectPosition: "on sand", why: "surface stays natural before and after contact" } : { seen: "a coconut falls onto sand", contact: 0.6, contactPoint: { x: 0.5, y: 0.8 } });
+  };
   f.deps.localClipCheck = async () => { locals++; return { ok: true }; };
   return () => locals;
 }
@@ -629,14 +654,34 @@ test("found footage full pass only locates the event; the trimmed pass keeps eve
   const f = fixture(), locals = realReview(f, { dark: true, artifacts: true, identityStable: false, physicsPlausible: false, directionPlausible: false, humanFaces: true, readableText: true });
   const file = path.join(f.dir, "source.mp4"); fs.writeFileSync(file, "source");
   assert.ok(await reviewMovingClip({ ...f.args, file, duration: 6 })); assert.equal(locals(), 1, "full pass skips local OCR/faces");
+  assert.equal(f.calls.checks[0].result.ok, true);
+  assert.ok(f.calls.checks[0].result.defects.length, "the locator reports full-source defects without rejecting the event");
   for (const defect of [{ humanFaces: true }, { readableText: true }, { artifacts: true }, { dark: true }, { identityStable: false }, { physicsPlausible: false }, { directionPlausible: false }]) {
     const g = fixture(); realReview(g, {}, defect);
     const source = path.join(g.dir, "source.mp4"); fs.writeFileSync(source, "source");
     assert.equal(await reviewMovingClip({ ...g.args, file: source, duration: 6 }), null);
+    assert.equal(g.calls.checks[1].result.look, "pass", "the exact window gets a completed negative inspection");
+    assert.equal(g.calls.checks[1].result.ok, false);
   }
   const g = fixture(); realReview(g); g.deps.localClipCheck = async () => ({ ok: false, why: "OCR text" });
   const source = path.join(g.dir, "source.mp4"); fs.writeFileSync(source, "source");
   assert.equal(await reviewMovingClip({ ...g.args, file: source, duration: 6 }), null);
+  assert.equal(g.calls.checks[1].result.local.ok, false);
+});
+
+test("found footage ignores full-source defect answers and rejects timed defects in the used source window", async () => {
+  for (const key of Object.keys(DEFECT_QUESTIONS)) {
+    const f = fixture(), file = path.join(f.dir, "source.mp4"); fs.writeFileSync(file, "source");
+    const locals = realReview(f,
+      { onset: 2.5, contact: 3, completion: 5, checks: { ...verdict.checks, [key]: { yes: true, time: 4, why: "visible defect outside the chosen event" } } },
+      { checks: { ...verdict.checks, [key]: { yes: true, time: 3, why: "visible defect in the used window" } } });
+    assert.equal(await reviewMovingClip({ ...f.args, file, duration: 6 }), null, key);
+    assert.equal(f.calls.trims[0].options.inPoint, 2.4);
+    assert.equal(f.calls.checks[1].inPoint, 2.4);
+    assert.deepEqual(f.calls.checks.map((c) => [c.result.look, c.result.ok]), [["pass", true], ["pass", false]], key);
+    assert.match(f.calls.checks[1].result.why, new RegExp(`${key} at 3s`));
+    assert.equal(locals(), 0, "a timed visual defect vetoes before local inspection");
+  }
 });
 
 test("full event locator rejects missing subject/action, invalid timelines and unavailable checks", async () => {
@@ -650,7 +695,9 @@ test("full event locator rejects missing subject/action, invalid timelines and u
 test("default generated-video review still rejects full-clip defects and runs local inspection", async () => {
   const f = fixture(), locals = realReview(f, { artifacts: true });
   const file = path.join(f.dir, "source.mp4"); fs.writeFileSync(file, "source");
-  assert.equal((await checkRunwayVideo({ ...f.args, file })).ok, false); assert.equal(locals(), 0);
+  const rejected = await checkRunwayVideo({ ...f.args, file });
+  assert.equal(rejected.ok, false); assert.equal(locals(), 0);
+  assert.equal(rejected.look, "pass", "full-clip defects produce a completed negative inspection");
   const g = fixture(), cleanLocals = realReview(g);
   assert.equal((await checkRunwayVideo({ ...g.args, file })).ok, true); assert.equal(cleanLocals(), 1);
 });

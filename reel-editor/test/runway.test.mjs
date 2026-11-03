@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { estimateClip, waitForTask, createImage, createVideo, makeClip, animateStill, makeSound, fitPrompt } from "../src/runway.mjs";
 import { makeRunwayBroll, runwayPicksPrompt, runwayTiming, videoMotion, frameChange, measureMotion, checkRunwayVideo, stillPrompt, STILL_STYLE, actionInPoint, trimRunwayClip, placeRunwayBroll, PROMPT_VERSION } from "../src/broll-runway.mjs";
+import { DEFECT_QUESTIONS } from "../src/broll-qc.mjs";
 import { recordUsage, readUsage, usageReport, reelUsageNote } from "../src/usage.mjs";
 
 const cache = fs.mkdtempSync(path.join(os.tmpdir(), "runway-test-"));
@@ -14,7 +15,8 @@ const realRecent = path.join(os.homedir(), ".cache", "reel-editor", "broll-recen
 const snapshot = () => fs.existsSync(realRecent) ? { bytes: fs.readFileSync(realRecent).toString("base64"), mtime: fs.statSync(realRecent).mtimeMs } : null;
 const before = snapshot();
 const stillPass = { shows: true, dark: false, detailReadable: true, actionAreaVisible: true, captionOcclusion: false, subjectLarge: true };
-const timelinePass = { shows: true, action: true, dark: false, physicsPlausible: true, identityStable: true, artifacts: false, directionPlausible: true, humanFaces: false, readableText: false, onset: 0.1, contact: 0.5, completion: 0.8, defects: [] };
+const frameProbe = { out: JSON.stringify({ frames: Array.from({ length: 600 }, (_, i) => ({ best_effort_timestamp_time: String(i / 120) })) }) };
+const timelinePass = { shows: true, action: true, dark: false, physicsPlausible: true, identityStable: true, artifacts: false, directionPlausible: true, humanFaces: false, readableText: false, eventType: "drop-land", onset: 0.1, contact: 0.5, completion: 0.8, checks: Object.fromEntries(Object.keys(DEFECT_QUESTIONS).map((key) => [key, { yes: false, time: null, why: "frames compared; absent" }])), defects: [] };
 const timedGroups = (groups) => groups.map((g, i) => ({ ...g, words: g.words?.length ? g.words : String(g.text).split(/\s+/).map((text) => ({ text, start: g.start, end: g.start + 1.9 })), end: g.end ?? g.start + 1.9 }));
 const boundedPicks = (picks, groups) => picks.map((p) => ({ ...p, soundRole: p.sound ? "impact" : "none", endsAt: p.endsAt || { line: p.line + 1, wordIndex: 0, text: groups[p.line + 1]?.words[0].text }, endsBefore: p.endsBefore || { line: p.line + 2, wordIndex: 0, text: groups[p.line + 2]?.words[0].text } }));
 
@@ -56,11 +58,11 @@ test("runway b-roll: budget checks, picks via Claude, clips made, usage recorded
   const usage = path.join(wd, "usage.json");
   const groups = timedGroups(Array.from({ length: 20 }, (_, i) => ({ start: 3 + i * 2, end: 4.8 + i * 2, text: `line ${i} glove coffee`, words: [] })));
   const made = [];
-  const runFn = async (_cmd, args) => _cmd === "ffprobe" ? { out: "5\n" } : fs.writeFileSync(args.at(-1), args.at(-1).endsWith(".gray") ? Buffer.concat([Buffer.alloc(4096), Buffer.alloc(4096, 10)]) : "frame");
+  const runFn = async (_cmd, args) => _cmd === "ffprobe" ? args.includes("-show_frames") ? frameProbe : { out: "5\n" } : fs.writeFileSync(args.at(-1), args.at(-1).endsWith("landing.gray") ? Buffer.alloc(180 * 320 * 48, 220) : args.at(-1).endsWith(".gray") ? Buffer.concat([Buffer.alloc(4096), Buffer.alloc(4096, 10)]) : "frame");
   const deps = {
     runFn,
     localClipCheck: async () => ({ ok: true }),
-    claudeLook: async () => JSON.stringify({ seen: "a clear subject moving", ...stillPass, ...timelinePass, why: "clear movement" }),
+    claudeLook: async () => JSON.stringify({ seen: "a clear subject moving", contactPoint: { x: 0.5, y: 0.8 }, collar: false, objectPosition: "on sand", ...stillPass, ...timelinePass, why: "clear movement" }),
     hasRunway: () => true,
     hasClaude: () => true,
     claudeText: async (prompt) => { assert.match(prompt, /motion/); return JSON.stringify({ picks: boundedPicks([{line:4,scene:"a worn glove on a step",shows:"glove",motion:"slow push"},{line:12,scene:"a cold coffee",shows:"coffee",motion:"steam drifts"}], groups) }); },
@@ -147,9 +149,11 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
   let measured = 0;
   const runFn = async (cmd, args) => {
     runs.push({ cmd, args });
-    if (cmd === "ffprobe") return { out: String(settings.videoSeconds ?? 5) };
+    if (cmd === "ffprobe") return args.includes("-show_frames") ? frameProbe : { out: String(settings.videoSeconds ?? 5) };
     assert.equal(cmd, "ffmpeg");
-    if (args.at(-1).endsWith(".gray")) {
+    if (args.at(-1).endsWith("landing.gray")) {
+      fs.writeFileSync(args.at(-1), Buffer.alloc(180 * 320 * 120, 220));
+    } else if (args.at(-1).endsWith(".gray")) {
       const action = args.at(-1).includes("action-");
       const level = action ? 10 : motionLevels[measured++] ?? 10;
       const levels = action && actionLevels ? actionLevels : Array.from({ length: 24 }, (_, i) => i % 2 ? level : 0);
@@ -166,14 +170,15 @@ function runwayFixture({ checks = [], openChecks = [], videoChecks = [], videoOp
     claudeText: async (prompt) => { pickPrompts.push(prompt); return JSON.stringify({ picks: boundedPicks(picks, actualGroups) }); },
     claudeLook: async (prompt, options) => {
       assert.equal(options.cwd, path.join(workDir, "broll"));
+      if (prompt.startsWith("Inspect the landing")) return JSON.stringify({ collar: false, objectPosition: "on sand beside a spray moving away", why: "textured grains disperse away from the base" });
       if (prompt.startsWith("Inspect the timestamped contact sheet")) {
         videoOpenLooked.push({ prompt, ...options });
         const files = [...prompt.matchAll(/"([^"\n]+\.png)"/g)].map((m) => m[1]);
-        assert.equal(files.length, 1);
+        assert.ok(files.length > 1);
         assert.ok(files.every((file) => fs.existsSync(path.join(options.cwd, file))));
-        const result = videoOpenChecks[videoOpenLooked.length - 1] ?? { seen: "subject position changes" };
+        const result = videoOpenChecks[videoOpenLooked.length - 1] ?? { seen: "subject position changes", contact: 0.5 };
         if (result instanceof Error) throw result;
-        return JSON.stringify(result);
+        return JSON.stringify({ contactPoint: { x: 0.5, y: 0.8 }, ...result });
       }
       if (prompt.startsWith("Used source interval:")) {
         videoLooked.push({ prompt, ...options });
@@ -421,8 +426,7 @@ test("motion measurement compares camera-compensated eighth-second grey samples 
   const result = await measureMotion("fake.mp4", 1.8, { dir, runFn: async (cmd, args) => {
     called++;
     assert.equal(cmd, "ffmpeg");
-    assert.equal(args[args.indexOf("-t") + 1], "1.8");
-    assert.equal(args[args.indexOf("-vf") + 1], "fps=8,scale=64:64,format=gray");
+    assert.equal(args[args.indexOf("-vf") + 1], "setpts=PTS-STARTPTS,fps=8:start_time=0:round=near,trim=duration=1.8,scale=360:640:force_original_aspect_ratio=increase,crop=360:640,scale=64:64,format=gray");
     fs.writeFileSync(args.at(-1), Buffer.concat([Buffer.alloc(4096), Buffer.alloc(4096, 8)]));
   } });
   assert.equal(result.mean, 8); assert.equal(result.frames, 2); assert.equal(result.shifts.length, 1);
@@ -440,16 +444,20 @@ test("video look reads a dense timed sheet of the full event and rechecks the us
   assert.match(f.videoOpenLooked[0].prompt, /physical changes/);
   assert.match(prompt, /Overlapping words and captions.*a snake a coconut a knife/);
   assert.match(prompt, /intact and recognizable throughout these frames/);
-  assert.match(prompt, /establishing the required event inside this interval/);
+  assert.match(prompt, /establishing a word-fitting event inside this interval/);
   const times = [];
   const dir = fs.mkdtempSync(path.join(cache, "frame-times-"));
   const result = await checkRunwayVideo({ file: "fake.mp4", dir, shot: { start: 10, duration: 2 }, pick: { shows: "snake", action: "snake sways" }, groups: [], deps: {
     runFn: async (_cmd, args) => {
-      if (args.includes("-ss")) times.push(Number(args[args.indexOf("-ss") + 1]));
-      fs.writeFileSync(args.at(-1), args.at(-1).endsWith(".gray") ? Buffer.concat([Buffer.alloc(4096), Buffer.alloc(4096, 10)]) : "frame");
+      if (_cmd === "ffprobe") return frameProbe;
+      if (args.includes("-vf")) {
+        const index = args[args.indexOf("-vf") + 1].match(/select=eq\(n\\,(\d+)\)/)?.[1];
+        if (index !== undefined) times.push(Number(index) / 120);
+      }
+      fs.writeFileSync(args.at(-1), args.at(-1).endsWith("landing.gray") ? Buffer.alloc(180 * 320 * 48, 220) : args.at(-1).endsWith(".gray") ? Buffer.concat([Buffer.alloc(4096), Buffer.alloc(4096, 10)]) : "frame");
     },
     localClipCheck: async () => ({ ok: true }),
-    claudeLook: async () => JSON.stringify({ seen: "subject moves", ...timelinePass }),
+    claudeLook: async () => JSON.stringify({ seen: "subject moves", contactPoint: { x: 0.5, y: 0.8 }, collar: false, objectPosition: "on sand", why: "material disperses naturally", ...timelinePass }),
   } });
   assert.equal(result.ok, true);
   assert.ok([0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75].every((t) => times.includes(t)));
@@ -493,6 +501,17 @@ test("a full-shot reservation respects the cap and account reserve before spendi
   const frozen = runwayFixture({ cap: 60, settings: { motionThreshold: 11 } });
   assert.deepEqual(await frozen.run(), []);
   assert.equal(frozen.videos.length, 2);
+});
+
+test("continuousMinMotion applies to both the full source and the selected interval", async () => {
+  const continuous = { ...timelinePass, eventType: "continuous", contact: null, completion: null };
+  for (const [motionLevels, continuousMinMotion, expected] of [[[2, 2], undefined, 0], [[10, 2, 10, 2], undefined, 0], [[2, 2], 2, 1], [[10, 2], 2, 1]]) {
+    const f = runwayFixture({ cap: 100, motionLevels, settings: { continuousMinMotion }, videoChecks: Array(4).fill(continuous) });
+    const shots = await f.run();
+    assert.equal(shots.length, expected, `motion ${motionLevels}, minimum ${continuousMinMotion}`);
+    if (expected) assert.equal(shots[0].moves.motion.mean, 2);
+    else assert.match(Object.values(f.plan().attempts)[0].review.why, /continuous action motion 2\.000 below minimum 3\.0/);
+  }
 });
 
 test("Runway reuse requires the prompt version, timings and settings, and never accepts a saved still", async () => {
@@ -566,12 +585,12 @@ test("selection preserves the full download, trims with injected ffmpeg, and che
   assert.equal(trim.args[trim.args.indexOf("-i") + 1], shot.full);
   assert.equal(trim.args[trim.args.indexOf("-ss") + 1], "0.85");
   assert.equal(trim.args[trim.args.indexOf("-t") + 1], "1.2");
-  const measure = f.runs.find((r) => r.args.includes("fps=8,scale=64:64,format=gray"));
+  const measure = f.runs.find((r) => r.args.at(-1).endsWith("frames.gray") && r.args[r.args.indexOf("-i") + 1] === shot.file);
   assert.equal(measure.args[measure.args.indexOf("-i") + 1], shot.file);
   assert.match(f.videoOpenLooked[1].prompt, /0.85s/);
   assert.match(f.videoLooked[1].prompt, /Used source interval: 0.85 to 2.05/);
   assert.doesNotMatch(f.videoOpenLooked[0].prompt, /snake|Required subject/);
-  assert.match(f.videoLooked[0].prompt, /clip-check-.*timeline.png/);
+  assert.match(f.videoLooked[0].prompt, /clip-check-.*timeline-1.png/);
 });
 
 test("trim failures retain the full clip and clean temporary sampling files", async () => {

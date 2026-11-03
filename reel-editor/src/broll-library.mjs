@@ -38,6 +38,15 @@ export function saveLibraryClip({ shot, pick, workDir, licence, source = shot.so
   return clip;
 }
 
+function wholeEventInPoint(timeline, duration, clipDuration) {
+  const start = eventInPoint(timeline, duration, clipDuration);
+  const end = timeline.completion ?? timeline.contact;
+  // Found drops that outlast the cut need the contact window, rather than an onset-only window.
+  if (start !== null && timeline.eventType === "drop-land" && Number.isFinite(end) &&
+      (start > timeline.onset || end + 0.2 > start + duration + 0.000001)) return null;
+  return start;
+}
+
 /** Inspect the full source, select an event in-point, then inspect the exact interval the renderer will use. */
 export async function reviewMovingClip({ file, duration, pick, shot, groups, dir, deps = {} }) {
   const check = deps.checkRunwayVideo || checkRunwayVideo;
@@ -45,12 +54,12 @@ export async function reviewMovingClip({ file, duration, pick, shot, groups, dir
   if (inspected.unavailable || inspected.look !== "pass" || inspected.shows !== true || inspected.action !== true || !validTimeline(inspected, duration)) return null;
   const timeline = pick.kind === "ambient" ? undefined : inspected;
   // Found footage rarely fits its whole event into a short cutaway; then the cut holds the key moment instead.
-  const whole = timeline ? eventInPoint(timeline, shot.duration, duration) : null;
+  const whole = timeline ? wholeEventInPoint(timeline, shot.duration, duration) : null;
   const inPoint = timeline ? whole ?? momentInPoint(timeline, shot.duration, duration) : undefined;
   if (timeline && inPoint === null) return null;
   const trimmed = await (deps.trimRunwayClip || trimRunwayClip)(file, shot.duration, { dir, runFn: deps.runFn, timeline, inPoint });
   const moves = await check({ file, pick, shot, groups, dir, inPoint: trimmed.inPoint, deps });
-  const landed = !timeline || (whole !== null ? eventInPoint(moves, shot.duration, shot.duration) !== null : timeline.contact == null || moves.contact !== null);
+  const landed = !timeline || (whole !== null ? wholeEventInPoint(moves, shot.duration, shot.duration) !== null : timeline.contact == null || moves.contact !== null);
   if (!moves.ok || moves.look !== "pass" || !landed) return null;
   return { ...shot, ...trimmed, file, sourceDuration: duration, sourceTimeline: { onset: inspected.onset, contact: inspected.contact, completion: inspected.completion }, video: true, move: "none", motion: "none", kind: pick.kind, action: pick.action, moves };
 }
