@@ -92,7 +92,8 @@ export async function findLibraryClip({ pick, shot, groups, workDir, dir, deps =
 export function writeBrollCredits(workDir, shots) {
   const lines = shots.filter((s) => s.licence).map((s) => {
     const l = s.licence;
-    return [`${s.start}s: ${l.provider || s.source}`, `ID: ${l.id ?? (l.taskIds || []).join(", ")}`, `Page: ${l.pageUrl || ""}`, `Creator: ${l.creator || ""}`, `Downloaded: ${l.downloadedAt || ""}`].join("\n");
+    return [`${s.start}s: ${l.provider || s.source}`, `ID: ${l.id ?? (l.taskIds || []).join(", ")}`, `Page: ${l.pageUrl || ""}`, `Creator: ${l.creator || ""}`,
+      ...(l.licenseShortName ? [`Licence: ${l.licenseShortName}`, `Licence URL: ${l.licenseUrl || ""}`, "Changes: cropped, trimmed, muted and conformed for the reel"] : []), `Downloaded: ${l.downloadedAt || ""}`].join("\n");
   });
   fs.writeFileSync(path.join(workDir, "broll credits.txt"), lines.length ? `${lines.join("\n\n")}\n` : "No stock or library clips used.\n");
 }
