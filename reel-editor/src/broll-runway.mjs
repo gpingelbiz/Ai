@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { claudeText, claudeLook, firstJSON, hasClaude } from "./claude.mjs";
-import { brollCount, brollCandidates, checkPick, subjectWords, spokenInShot, readRecent, rememberScenes, uniqueScenes } from "./broll.mjs";
+import { brollCount, brollCandidates, checkPick, subjectWords, spokenInShot, readRecent, rememberScenes, uniqueScenes, approvedShotMatch } from "./broll.mjs";
 import { visionJSON, subjectMotion, landingMotion, QC_MEASUREMENTS, videoFrames, contactSheet, motionCrops, landingCrops, DEFECT_QUESTIONS, validTimeline, eventInPoint, motionWindowInPoint, phonePreviews, localClipCheck, verifySound } from "./broll-qc.mjs";
 import { norm } from "./text.mjs";
 import { CREDIT_USD, dataURI, failurePolicy, hasRunway, makeClip, animateStill, estimateClip, organization, fitPrompt, modelInfo, makeSound } from "./runway.mjs";
@@ -594,20 +594,52 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   };
   const openReserve = (except) => Object.entries(reservations).filter(([id, r]) => id !== except && r.open).reduce((sum, [id, r]) => sum + Math.max(0, r.total - tasks.filter((t) => t.scope === id).reduce((n, t) => n + (t.credits ?? t.estimatedCredits ?? 0), 0)), 0);
   const io = { runFn: runner, fetchFn: deps.fetchFn, sleepFn: deps.sleepFn, journal };
+  // The build after a --no-render pass regroups the caption lines; clips already paid for and approved for the same spoken words stay.
+  if (!force && previous.key && previous.key !== key) {
+    let oldGroups = [];
+    try { oldGroups = JSON.parse(previous.key.slice(previous.key.indexOf("|") + 1)).groups || []; } catch {}
+    for (const approved of (previous.shots || []).filter(reusable)) {
+      if (shots.length >= max) break;
+      const oldPick = (previous.picks || []).find((q) => q.line === approved.line) || { endsAt: approved.endsAt, endsBefore: approved.endsBefore };
+      const match = approvedShotMatch({ ...approved, pick: oldPick }, oldGroups, groups);
+      // The subject can now sit on a later line than the clip's first word.
+      let pick, c, t;
+      for (let line = match?.line; match && line <= Math.max(match.line, match.endsAt?.line ?? match.line) && !t; line++) {
+        pick = { ...match, line }; c = candidates.find((c) => c.i === line); t = c && timing(pick, c);
+      }
+      if (!t || shots.some((s) => t.start < s.start + s.duration + gap && t.start + t.duration + gap > s.start)) continue;
+      let kept = { ...approved, line: pick.line, start: r3(t.start), duration: r3(t.duration), text: c.text, endsAt: pick.endsAt, endsBefore: pick.endsBefore };
+      if (Math.abs(t.duration - approved.duration) > 0.001) {
+        try {
+          if (!approved.full || !fs.existsSync(approved.full)) throw new Error("the full clip is missing");
+          const keepDir = fs.mkdtempSync(path.join(dir, "keep-")), file = path.join(keepDir, "clip.mp4");
+          fs.copyFileSync(approved.full, path.join(keepDir, "clip.full.mp4"));
+          const cut = await trimRunwayClip(file, t.duration, { runFn: runner, dir: keepDir, timeline: approved.kind === "action" ? approved.sourceTimeline : null });
+          const moves = await checkRunwayVideo({ file, shot: kept, pick: { ...pick, kind: approved.kind }, groups, dir, inPoint: cut.inPoint, threshold: settings.motionThreshold ?? 1, continuousMinMotion: settings.continuousMinMotion ?? 3, qcMeasurements: settings.qcMeasurements, deps });
+          if (!moves.ok) throw new Error(moves.why || "the new cut did not pass inspection");
+          kept = { ...kept, file, full: cut.full, inPoint: cut.inPoint, moves };
+        } catch (e) { warn(`b-roll: approved ${approved.shows || "moving"} clip could not fit the new words (${String(e.message).split("\n")[0]})`); continue; }
+      }
+      shots.push(kept);
+      log(`b-roll: kept approved ${approved.shows || "moving"} clip at ${kept.start}s for ${kept.duration}s`);
+    }
+    save();
+  }
   if (!picks) {
     try {
       const request = { candidates, transcript: groups.map((g) => g.text).join(" "), hook: hook?.text, count: max, spacing: gap, style: settings.style || "", recent: readRecent(), duration: len, world: settings.worldInPrompt ? settings.world || "" : "" };
       const planned = deps.planPicks ? await deps.planPicks(request, dir) : firstJSON(await claude(runwayPicksPrompt(request), { timeoutMs: 240000 })).picks || [];
       picks = validateBrollPicks(planned, candidates, groups, timing, settings);
       save();
-    } catch (e) { warn(`b-roll: planning failed (${e.message})`); return []; }
+    } catch (e) { warn(`b-roll: planning failed (${e.message})`); return shots; }
   }
   const placed = placePlannedBroll(picks, candidates, { gap, max, timing });
   let referenceImages;
   for (const [k, s] of placed.entries()) {
     const p = picks.find((p) => p.line === s.line), models = shotModels(p, settings), seed = shotSeed(workDir, s.line);
     const id = `${namespace}-${s.line}`, name = `broll-${k + 1}-${id}`, budget = planShotBudget(p, s.duration, { ...settings, stillSource });
-    if (shots.some((shot) => shot.line === s.line)) { if (reservations[id]) reservations[id].open = false; continue; }
+    if (shots.some((shot) => shot.line === s.line || s.start < shot.start + shot.duration + gap && s.start + s.duration + gap > shot.start)) { if (reservations[id]) reservations[id].open = false; continue; }
+    if (shots.length >= max) break;
     if (settings.library) {
       const reused = await findLibraryClip({ pick: p, shot: s, groups, workDir, dir, deps });
       if (reused) { shots.push(reused); if (reservations[id]) reservations[id].open = false; save(); continue; }

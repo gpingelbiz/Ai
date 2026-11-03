@@ -81,6 +81,11 @@ test("runway b-roll: budget checks, picks via Claude, clips made, usage recorded
   // Reuse: nothing bought the second time.
   const again = await makeRunwayBroll({ workDir: wd, groups, duration: 50, hook: { start: 0, duration: 3 }, cta: null, settings: { max: 3, every: 12, duration: 4, videoSeconds: 5, maxCreditsPerReel: 150 }, deps: { ...deps, makeClip: async () => { throw new Error("should not buy"); } } });
   assert.equal(again.length, 2);
+  // The build after a --no-render pass writes a hook and regroups the lines; approved clips stay without a purchase.
+  const regrouped = timedGroups(groups.flatMap((g) => { const [a, b] = [g.words.slice(0, 2), g.words.slice(2)]; return [{ start: a[0].start, end: a.at(-1).end, text: a.map((w) => w.text).join(" "), words: a }, { start: b[0].start, end: b.at(-1).end, text: b.map((w) => w.text).join(" "), words: b }]; }));
+  const kept = await makeRunwayBroll({ workDir: wd, groups: regrouped, duration: 50, hook: { start: 0, duration: 3, text: "a written hook" }, cta: null, settings: { max: 3, every: 12, duration: 4, videoSeconds: 5, maxCreditsPerReel: 150 }, deps: { ...deps, claudeText: async () => JSON.stringify({ picks: [] }), makeClip: async () => { throw new Error("should not buy"); } } });
+  assert.deepEqual(kept.map((s) => [s.shows, s.start, s.text]), shots.map((s) => [s.shows, s.start, "glove coffee"]), "both approved clips kept at the same time on the regrouped subject lines");
+  assert.ok(kept.every((s) => fs.existsSync(s.file)));
   // Budget: a balance under one clip buys nothing.
   const poor = await makeRunwayBroll({ workDir: fs.mkdtempSync(path.join(os.tmpdir(), "rw2-")), groups, duration: 50, hook: { start: 0, duration: 3 }, cta: null, settings: {}, deps: { ...deps, organization: async () => ({ creditBalance: 10 }) } });
   assert.equal(poor.length, 0);
