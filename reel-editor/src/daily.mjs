@@ -11,6 +11,7 @@ import { scheduledPosts, postInput, createPost, detectConnectors } from "./studi
 import { hostFiles } from "./studio-host.mjs";
 import { runStudioPreflight, preflightProblems, readPhotoHistory, appendPhotoHistory, writeHeldReport } from "./studio-preflight.mjs";
 import { codexExec, hasCodex, codexPausedUntil, imageInstructions, savedImage } from "./codex.mjs";
+import { claudeBinary } from "./claude.mjs";
 import { ensureDir, writeJSON, log, warn } from "./util.mjs";
 
 /**
@@ -95,7 +96,7 @@ function claudeCopy(prompt, { sandcastles = "" } = {}) {
 
 function runClaude(args, timeoutMs = 300000) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.env.REEL_CLAUDE_BIN || "claude", args, { stdio: ["ignore", "pipe", "pipe"], cwd: os.tmpdir() });
+    const child = spawn(claudeBinary(), args, { stdio: ["ignore", "pipe", "pipe"], cwd: os.tmpdir() });
     let out = "", err = "";
     const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error("claude timed out")); }, timeoutMs);
     child.stdout.on("data", (d) => (out += d));
