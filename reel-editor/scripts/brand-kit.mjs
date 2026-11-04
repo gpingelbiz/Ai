@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkBrand, brandPreset, youtubePreset, brandDictionary, brandVoice, fetchFont, personalizeStartHere } from "../src/brandkit.mjs";
+import { checkBrand, brandPreset, youtubePreset, brandDictionary, brandVoice, fetchFont, personalizeStartHere, personalizeSetupGuide, kitSendOutMessage } from "../src/brandkit.mjs";
 import { PKG_ROOT } from "../src/util.mjs";
 import { signupLinks } from "../src/signups.mjs";
 
@@ -60,6 +60,7 @@ const installer = GUIDE ? "Install Content Studio.command" : "Install Reel Edito
 fs.copyFileSync(path.join(PKG_ROOT, "kit", installer), path.join(kit, installer));
 fs.chmodSync(path.join(kit, installer), 0o755);
 fs.writeFileSync(path.join(kit, "Start Here.html"), personalizeStartHere(fs.readFileSync(path.join(PKG_ROOT, "kit", "Start Here.html"), "utf8"), brand, { studio: !!GUIDE }));
+fs.writeFileSync(path.join(kit, "Setup Guide.html"), personalizeSetupGuide(fs.readFileSync(path.join(PKG_ROOT, "kit", "Setup Guide.html"), "utf8"), brand, { studio: !!GUIDE }));
 // "Sign up here": a double-click link to each service's plans, the same list as Start Here's table.
 fs.mkdirSync(path.join(kit, "Sign up here"), { recursive: true });
 for (const [name, body] of Object.entries(signupLinks({ studio: !!GUIDE }))) fs.writeFileSync(path.join(kit, "Sign up here", name), body);
@@ -73,3 +74,7 @@ const z = spawnSync("ditto", ["-c", "-k", "--norsrc", "--noextattr", "--keepPare
 fs.rmSync(stage, { recursive: true, force: true });
 if (z.status !== 0) { console.error("zip failed"); process.exit(1); }
 console.log(zip);
+
+const message = path.join(OUT, `${kitName} - send-out message.txt`);
+fs.writeFileSync(message, kitSendOutMessage(brand, { studio: !!GUIDE }));
+console.log(message);
