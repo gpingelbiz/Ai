@@ -69,3 +69,13 @@ ${folders}`], { env: { HOME: home, PATH: `${bin}:${process.env.PATH}`, TEST_APP:
   assert.match(plist, /<key>REEL_WATCH_RAW_OWN_BROLL<\/key>/);
   assert.ok(plist.slice(plist.indexOf("<key>WatchPaths</key>")).includes(path.join(home, "Reels", "raw-own-broll")));
 });
+
+test("installer only accepts a Python Whisper can run, and stops if Whisper fails", () => {
+  const sh = fs.readFileSync(new URL("../install.sh", import.meta.url), "utf8");
+  assert.match(sh, /\(3, 10\) <= sys\.version_info\[:2\] <= \(3, 14\)/);
+  assert.match(sh, /brew install python@3\.13/);
+  assert.doesNotMatch(sh, /brew install python >/);
+  assert.match(sh, /--only-binary=av/);
+  assert.match(sh, /"av<17" \|\| die /);
+  assert.match(sh, /! py_ok "\$VENV\/bin\/python"; then rm -rf "\$VENV"/);
+});

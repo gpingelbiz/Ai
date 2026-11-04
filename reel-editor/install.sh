@@ -93,14 +93,17 @@ done
 # Python is judged by its version, not its presence: every Mac with the Apple tools has /usr/bin/python3, and on
 # macOS 15 and 26 that is 3.9, too old. Then Homebrew's Python is installed and used by full path for the venv,
 # so nothing else on the Mac is re-pointed. (2026-10-30: a fresh Mac stopped here before this.)
-py_ok() { "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; }
+# Too new fails as well: Whisper's PyAV has no ready-made build for a Python newer than 3.14, and building it from
+# source stops with "pkg-config is required" (2026-11-04: Homebrew's newest Python on a client's Mac).
+py_ok() { "$1" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 14) else 1)' >/dev/null 2>&1; }
 PY="$(command -v python3 || true)"
 if [ -n "$PY" ] && py_ok "$PY"; then ok "python3 (already installed)"
 else
-  BREW_PY="$(brew --prefix 2>/dev/null)/bin/python3"
-  if ! py_ok "$BREW_PY"; then note "installing python (this Mac's python3 is too old)…"; brew install python >/dev/null; fi
+  # A versioned Homebrew Python, used by full path, so python3 stays what it was for everything else on the Mac.
+  BREW_PY="$(brew --prefix 2>/dev/null)/opt/python@3.13/bin/python3.13"
+  if ! py_ok "$BREW_PY"; then note "installing python 3.13 (this Mac's python3 will not run Whisper)…"; brew install python@3.13 >/dev/null; fi
   PY="$BREW_PY"
-  py_ok "$PY" && ok "python3 ($("$PY" -V 2>&1))" || die "No Python 3.10 or newer. Run: brew install python, then run this again."
+  py_ok "$PY" && ok "python3 ($("$PY" -V 2>&1))" || die "No Python between 3.10 and 3.14. Run: brew install python@3.13, then run this again."
 fi
 node_major=$(node -p 'process.versions.node.split(".")[0]')
 [ "$node_major" -ge 22 ] || die "Node $(node -v) is too old; Reel Editor needs 22 or newer. Run: brew upgrade node"
@@ -122,9 +125,12 @@ if [ "$LINK" = 1 ]; then ( cd "$APP" && npm link --silent >/dev/null 2>&1 ) && o
 
 # ---------------------------------------------------------------- 4. Whisper + render browser
 bold "4/7  Whisper and the render browser"
+# A venv from an earlier run on a Python that cannot run Whisper is rebuilt; nothing but Whisper lives in it.
+if [ -x "$VENV/bin/python" ] && ! py_ok "$VENV/bin/python"; then rm -rf "$VENV"; fi
 [ -x "$VENV/bin/python" ] || "$PY" -m venv "$VENV"
 # av<17: PyAV 19 removed an argument faster-whisper 1.2.1 passes ("unexpected keyword argument metadata_errors").
-"$VENV/bin/pip" install -q --disable-pip-version-check --upgrade faster-whisper "av<17" && ok "Whisper (faster-whisper) installed"
+"$VENV/bin/pip" install -q --disable-pip-version-check --only-binary=av --upgrade faster-whisper "av<17" || die "Whisper did not install. Read the message above, then run this again."
+ok "Whisper (faster-whisper) installed"
 ( cd "$APP" && npx --yes hyperframes browser ensure >/dev/null 2>&1 ) && ok "render browser ready"
 # Studio sound: the DeepFilterNet denoiser is one binary from its official GitHub release (no Python). Optional:
 # without it the spectral denoiser runs and the log says so.
