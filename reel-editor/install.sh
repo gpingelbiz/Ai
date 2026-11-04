@@ -88,7 +88,7 @@ fi
 export HOMEBREW_NO_AUTO_UPDATE=1
 for pair in ffmpeg:ffmpeg node:node git:git; do
   cmd="${pair%%:*}"; formula="${pair#*:}"
-  if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd (already installed)"; else note "installing $formula…"; brew install "$formula" >/dev/null; ok "$cmd"; fi
+  if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd (already installed)"; else note "installing ${formula}…"; brew install "$formula" >/dev/null; ok "$cmd"; fi
 done
 # Python is judged by its version, not its presence: every Mac with the Apple tools has /usr/bin/python3, and on
 # macOS 15 and 26 that is 3.9, too old. Then Homebrew's Python is installed and used by full path for the venv,
