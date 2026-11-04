@@ -1,0 +1,16 @@
+{
+  "name": "@pingel/opus-dropbox",
+  "version": "0.1.0",
+  "description": "Unedited videos dropped in a Dropbox folder go to Opus Clip; the finished clips come back into another Dropbox folder.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "opus-dropbox": "bin/opus-dropbox.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
