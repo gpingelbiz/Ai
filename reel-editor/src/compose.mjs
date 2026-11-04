@@ -377,7 +377,7 @@ export function renderHTML(plan, footage) {
 
   const runtimePlan = {
     duration: D,
-    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(Number.isFinite(plan.hook.headTop) && !behind && !hk.side ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
+    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(hk.side ? { side: true } : {}), ...(Number.isFinite(plan.hook.headTop) && !behind && !hk.side ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
@@ -637,6 +637,18 @@ ${audioHTML}
         // measured and the whole hook moves up until it ends 1.5% of the frame above the head, never above the 7% top
         // bar; only if it still does not fit does it shrink toward its top (to 60% at most). Without a measurement the
         // hook is left as placed.
+        // A plaque beside the head wraps inside its column, and a wrapped box keeps the column's full width; shrink it
+        // to its longest line so no empty strip trails the text.
+        if (PLAN.hook && PLAN.hook.side) {
+          const box = document.getElementById("hook-lines");
+          const ws = box ? [...box.querySelectorAll(".hw")] : [];
+          if (ws.length) {
+            const b = box.getBoundingClientRect();
+            const right = Math.max(...ws.map((w) => w.getBoundingClientRect().right));
+            const rh = document.getElementById("root").getBoundingClientRect().height, k = rh ? rh / PLAN.height : 1;
+            box.style.width = Math.ceil((right - b.left) / k + (parseFloat(getComputedStyle(box).paddingRight) || 0) + 2) + "px";
+          }
+        }
         if (PLAN.hook && Number.isFinite(PLAN.hook.headTop)) {
           const hookEl = document.getElementById("hook");
           const root = document.getElementById("root").getBoundingClientRect();

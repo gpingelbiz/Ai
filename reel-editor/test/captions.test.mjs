@@ -181,6 +181,8 @@ test("the hook plaque uses brand tokens and the footage keyword guard removes co
   const guarded = (st) => renderHTML({ name: "plaque", canvas: { width: 1920, height: 1080 }, style: st, video: { duration: 4, hasAudio: false }, hook: { ...hook, headTop: 0.085, headBottom: 0.534 }, captions, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
   assert.match(guarded(style), /"headTop":0\.085/, "a centred plaque keeps the runtime guard that lifts it off the head");
   assert.doesNotMatch(guarded({ ...style, hook: { ...style.hook, side: { left: 0.601, right: 0.05 } } }), /"headTop"/, "beside the head, the guard would only push it up and shrink it");
+  assert.match(guarded({ ...style, hook: { ...style.hook, side: { left: 0.601, right: 0.05 } } }), /"side":true/, "the box is shrunk to its longest line at render time");
+  assert.doesNotMatch(guarded(style), /"side":true/);
 });
 
 test("caption lines keep phrases whole: no line made of glue words, none ending on one", async () => {
