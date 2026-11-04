@@ -595,7 +595,7 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       }
       #cta-text { display: inline-block; max-width: 100%; transform-origin: 50% 50%; ${ctaLook} }
       .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}${hk.plaque === true ? `
-      #hook.hook-plaque #hook-block { left: 7%; right: 7%; text-align: center; }
+      #hook.hook-plaque #hook-block { ${hk.side ? `left: ${r3(hk.side.left * 100)}%; right: ${r3(hk.side.right * 100)}%; text-align: left;` : "left: 7%; right: 7%; text-align: center;"} }
       #hook.hook-plaque #hook-scrim, #hook.hook-plaque #hook-bar { display: none; }
       #hook.hook-plaque #hook-lines { display: inline-block; box-sizing: border-box; max-width: 100%; padding: 0.24em 0.38em 0.2em; color: ${c.text}; background: ${c.bg}; background-image: none; border: 0; border-left: ${Math.max(1, Math.round(6 * H / 1920))}px solid ${c.accent}; border-radius: 0.14em; box-shadow: none; transform: none; font-family: "Anton", sans-serif; font-style: normal; font-weight: 400; font-size: 1em; line-height: 1.05; letter-spacing: 0.01em; text-transform: ${hk.uppercase === false ? "none" : "uppercase"}; -webkit-text-stroke: 0; paint-order: normal; text-shadow: none; }
       #hook.hook-plaque #hook-lines::before, #hook.hook-plaque #hook-lines::after { display: none; }

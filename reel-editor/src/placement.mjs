@@ -124,6 +124,17 @@ export function headExtent(detection, { zoom = 1, originY = 0.38 } = {}) {
   return { top: Math.max(0, top), bottom: Math.min(1, bottom) };
 }
 
+/** Left and right edge of every face across the frames, with room for hair and ears, after a zoom about originX. */
+export function headSpanX(detection, { zoom = 1, originX = 0.5 } = {}) {
+  const zx = (x) => originX + (x - originX) * zoom;
+  let left = Infinity, right = -Infinity;
+  for (const f of detection?.frames || []) for (const b of f.faces || []) {
+    left = Math.min(left, zx(b.x - 0.12 * b.w));
+    right = Math.max(right, zx(b.x + 1.12 * b.w));
+  }
+  return Number.isFinite(left) ? { left: Math.max(0, left), right: Math.min(1, right) } : null;
+}
+
 /** Rough wrapped height of the hook (fraction of canvas height). Anton caps measure about 0.44em per character
  *  (29 characters filled 965 px at 75.6 px on a real render); 0.46 keeps a little slack. */
 export function hookBlockHeight(words, { W = 1080, H = 1920, fontPx, widthFrac = 0.92, lineHeight = 1.0, goldScale = 1.14, charEm = 0.46, padEm = 0.42 } = {}) {

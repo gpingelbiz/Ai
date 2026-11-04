@@ -12,9 +12,9 @@ import { writeFeatures } from "./features.mjs";
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
-import { detectFaces, headExtent, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
+import { detectFaces, headExtent, headSpanX, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
-import { pickHook, pickCta, hookSeconds, plaqueLayout } from "./hook.mjs";
+import { pickHook, pickCta, hookSeconds, plaqueLayout, sidePlaqueLayout } from "./hook.mjs";
 import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
 import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -336,6 +336,7 @@ export async function runEdit(input, opts = {}) {
       shownGroups = groups.filter((_, i) => !hide.has(i));
       log(`captions: ${hide.size} line${hide.size === 1 ? "" : "s"} hidden while the hook shows the same words`);
     }
+    const hookFrac0 = preset.hook.fontSizeFrac; // the preset size, before the band above the head shrinks it
     if (preset.hook.autoPlace && opts.hookPosition == null && sameShape) {
       const t0 = hook.start, t1 = hook.start + hook.duration;
       const head = zoomedHead(detection, 1.06); // the opening push-in reaches 1.06 by the end of the hook
@@ -353,8 +354,15 @@ export async function runEdit(input, opts = {}) {
     if (preset.hook.plaque === true && opts.hookPosition == null && sameShape) {
       const head = zoomedHead(detection, 1.06);
       const before = preset.hook.fontSizeFrac;
-      const fit = plaqueLayout(hook.words || hook.text.split(/\s+/).map((text) => ({ text })), { headTop: head?.top, headBottom: head?.bottom, captionTop, fontSizeFrac: before, W: canvas0.width, H: canvas0.height });
-      if (fit) {
+      const hookWordList = hook.words || hook.text.split(/\s+/).map((text) => ({ text }));
+      // A wide canvas puts the plaque on the wall beside the head, full size on two or three lines.
+      const span = canvas0.width > canvas0.height && head ? headSpanX(detection, { zoom: framing.scale * 1.06, originX: parseFloat(framing.origin.split(" ")[0]) / 100 || 0.5 }) : null;
+      const side = span && sidePlaqueLayout(hookWordList, { headLeft: span.left, headRight: span.right, headTop: head.top, headBottom: head.bottom, fontSizeFrac: hookFrac0, W: canvas0.width, H: canvas0.height });
+      const fit = side ? null : plaqueLayout(hookWordList, { headTop: head?.top, headBottom: head?.bottom, captionTop, fontSizeFrac: before, W: canvas0.width, H: canvas0.height });
+      if (side) {
+        Object.assign(preset.hook, { fontSizeFrac: side.fontSizeFrac, position: side.position, side: { left: side.left, right: side.right } });
+        log(`hook plaque: beside the head on the ${side.side}, ${side.lines} line${side.lines === 1 ? "" : "s"} at ${Math.round(side.position * 100)}% from the top, text at ${Math.round(100 * side.fontSizeFrac / hookFrac0)}% of the preset size`);
+      } else if (fit) {
         preset.hook.fontSizeFrac = fit.fontSizeFrac;
         preset.hook.position = fit.position;
         log(`hook plaque: ${fit.zone === "below" ? "between the chin and the captions" : "above the head"} at ${Math.round(fit.position * 100)}%${fit.fontSizeFrac < before ? `, text at ${Math.round(100 * fit.fontSizeFrac / before)}%` : ""}`);
