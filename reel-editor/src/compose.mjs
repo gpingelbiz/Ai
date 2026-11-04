@@ -637,7 +637,7 @@ ${audioHTML}
         // measured and the whole hook moves up until it ends 1.5% of the frame above the head, never above the 7% top
         // bar; only if it still does not fit does it shrink toward its top (to 60% at most). Without a measurement the
         // hook is left as placed.
-        // A plaque beside the head wraps inside its column, and a wrapped box keeps the column's full width; shrink it
+${hk.side ? `        // A plaque beside the head wraps inside its column, and a wrapped box keeps the column's full width; shrink it
         // to its longest line so no empty strip trails the text.
         if (PLAN.hook && PLAN.hook.side) {
           const box = document.getElementById("hook-lines");
@@ -649,7 +649,7 @@ ${audioHTML}
             box.style.width = Math.ceil((right - b.left) / k + (parseFloat(getComputedStyle(box).paddingRight) || 0) + 2) + "px";
           }
         }
-        if (PLAN.hook && Number.isFinite(PLAN.hook.headTop)) {
+` : ""}        if (PLAN.hook && Number.isFinite(PLAN.hook.headTop)) {
           const hookEl = document.getElementById("hook");
           const root = document.getElementById("root").getBoundingClientRect();
           const k = root.height ? root.height / PLAN.height : 1;
