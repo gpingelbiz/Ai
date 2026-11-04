@@ -377,7 +377,7 @@ export function renderHTML(plan, footage) {
 
   const runtimePlan = {
     duration: D,
-    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(Number.isFinite(plan.hook.headTop) && !behind ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
+    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(Number.isFinite(plan.hook.headTop) && !behind && !hk.side ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,

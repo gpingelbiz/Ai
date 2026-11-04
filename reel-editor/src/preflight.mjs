@@ -109,13 +109,14 @@ export function layoutChecks(plan) {
     if (portrait && bottom > 1 - SAFE.bottom) items.push({ level: "warn", code: "captions-safe-zone", message: `captions reach ${pct(bottom)}, inside the strip Instagram covers with its caption (keep above ${pct(1 - SAFE.bottom)})` });
   }
   const hk = st.hook || {};
+  // A plaque beside the head (hook.side, wide frames) is placed clear of the face, so only the vertical check is skipped.
   if (plan.hook && head && !plan.behind) {
     const fontPx = Math.round((hk.fontSizeFrac || 0.052) * H * (hk.style === "headline" ? 1.08 : 1));
     const words = plan.hook.words || String(plan.hook.text || "").split(/\s+/).map((t) => ({ text: t }));
     const h = hookBlockHeight(words, { W, H, fontPx });
     const top = hk.position, bottom = hk.position + h;
     const overlap = Math.min(bottom, head.bottom) - Math.max(top, head.top);
-    if (overlap > 0.02) items.push({ level: "warn", code: "hook-face", message: `the hook (${pct(top)}-${pct(bottom)}) sits over the face (${pct(head.top)}-${pct(head.bottom)})` });
+    if (overlap > 0.02 && !hk.side) items.push({ level: "warn", code: "hook-face", message: `the hook (${pct(top)}-${pct(bottom)}) sits over the face (${pct(head.top)}-${pct(head.bottom)})` });
     if (portrait && top < SAFE.top) items.push({ level: "warn", code: "hook-safe-zone", message: `the hook starts at ${pct(top)}, under the top bar` });
   }
   if (plan.cta && portrait) {
