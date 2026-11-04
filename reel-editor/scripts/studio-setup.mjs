@@ -43,6 +43,15 @@ export function protectedFolder(dir, home = HOME) {
   return !rel.startsWith("..") && /^(Desktop|Documents|Downloads|Library\/Mobile Documents)(\/|$)/.test(rel);
 }
 
+export async function askDailySlots(ask, slots) {
+  const next = [];
+  for (const [format, def] of [["carousel", "10:00"], ["static", "18:00"]]) {
+    const t = await ask(`Time for the daily ${format} (like 10:00 or 6:00 PM), or "none" [${slots.find((s) => s.format === format)?.time || def}]:`, slots.find((s) => s.format === format)?.time || def);
+    if (!/^none$/i.test(t)) next.push({ time: t, format });
+  }
+  return next;
+}
+
 function claudeBin() {
   for (const c of [process.env.REEL_CLAUDE_BIN, path.join(HOME, ".local", "bin", "claude"), "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]) if (c && fs.existsSync(c)) return c;
   const r = spawnSync("/bin/bash", ["-lc", "command -v claude"], { encoding: "utf8" });
@@ -206,12 +215,7 @@ async function main() {
   note(`Time zone: ${config.timezone}. Every day: ${slots.map((s) => `a ${s.format} at ${s.time}`).join(" and ")}. Reels you drop go out one a day at the best open hour.`);
   const keep = await ask("Keep these times? [Y/n]:", "y");
   if (/^n/i.test(keep)) {
-    const next = [];
-    for (const [format, def] of [["carousel", "10:00"], ["static", "18:00"]]) {
-      const t = await ask(`Time for the daily ${format} (like 10:00 or 6:00 PM), or "none" [${slots.find((s) => s.format === format)?.time || def}]:`, slots.find((s) => s.format === format)?.time || def);
-      if (!/^none$/i.test(t)) next.push({ time: t, format });
-    }
-    if (next.length) config.slots = next;
+    config.slots = await askDailySlots(ask, slots);
   }
   config.sandcastles = !!connectors.sandcastles?.connected;
   ok(`times set${config.sandcastles ? "; Sandcastles is connected, so hooks follow what is winning" : ""}`);

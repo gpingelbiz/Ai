@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkBrand, brandPreset, youtubePreset, brandDictionary, brandVoice, fetchFont, personalizeStartHere } from "../src/brandkit.mjs";
+import { checkBrand, brandPreset, youtubePreset, brandDictionary, brandVoice, fetchFont, personalizeStartHere, personalizeSetupGuide, kitSendOutMessage } from "../src/brandkit.mjs";
 import { loadPreset } from "../src/presets.mjs";
 import { fontFile, PKG_ROOT } from "../src/util.mjs";
 
@@ -83,4 +83,82 @@ test("Start Here carries their name and no look question", () => {
   assert.match(out, /<h1>Jane Doe's Reel Editor<\/h1>/);
   assert.match(out, /Already set: this kit carries your colors, fonts, caption voice and words/);
   assert.doesNotMatch(out, /Pick <b>1<\/b> only if you make content for Greg Pingel/);
+});
+
+function lintGuide(text) {
+  const withoutFolders = text.replace(/Raw - (?:Reel with Runway B-roll|Reel with B-roll|My B-roll clips|Clips from Long Video|Full YouTube Edit|Carousel|Reel)/g, "folder");
+  assert.doesNotMatch(withoutFolders, /[\u2013\u2014]| - |\bYo\b/i);
+}
+
+for (const studio of [false, true]) {
+  test(`Setup Guide personalization and delivery text: studio=${studio}`, () => {
+    const source = fs.readFileSync(path.join(PKG_ROOT, "kit/Setup Guide.html"), "utf8");
+    const html = personalizeSetupGuide(source, { ...jane, name: 'Jane & Jo' }, { studio });
+    assert.match(html, new RegExp(`<title>Jane &amp; Jo's ${studio ? "Content Studio" : "Reel Editor"}: Setup Guide</title>`));
+    assert.match(html, new RegExp(`<h1>Jane &amp; Jo's ${studio ? "Content Studio" : "Reel Editor"}: Setup Guide</h1>`));
+    assert.ok(html.includes(studio ? "Install Content Studio.command" : "Install Reel Editor.command"));
+    assert.equal(html.includes("Connect Metricool to Claude before installing"), studio);
+    assert.equal(html.includes("Make the first post now"), studio);
+    assert.equal(html.includes("Add Claude for graphic cards"), !studio);
+    assert.doesNotMatch(html, /<!-- \/?studio -->|Your look/);
+    if (!studio) assert.doesNotMatch(html, /Metricool|Content Studio/);
+    lintGuide(source); lintGuide(html);
+    const message = kitSendOutMessage({ ...jane, names: ["Jane Doe", "Jo Smith"] }, { studio });
+    assert.match(message, /^Hi Jane and Jo,/);
+    assert.equal(message.includes("Metricool"), studio);
+    assert.match(message, /AirDrop/); assert.match(message, /Setup Guide.html first/);
+    lintGuide(message);
+    assert.match(kitSendOutMessage(jane), /^Hi, here is/);
+    assert.match(kitSendOutMessage({ ...jane, names: ["Compass", "Compass Construction"] }), /^Hi, here is/);
+  });
+}
+
+import { spawnSync } from "node:child_process";
+import { askDailySlots } from "../scripts/studio-setup.mjs";
+import { initStudio, withDefaults } from "../src/content-studio.mjs";
+
+test('none for both daily post types persists an empty slot list', async () => {
+  const slots = await askDailySlots(async () => "none", []);
+  assert.deepEqual(slots, []);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "kit-slots-"));
+  try {
+    initStudio(root, { config: { slots } });
+    assert.deepEqual(withDefaults(JSON.parse(fs.readFileSync(path.join(root, "studio.json")))).slots, []);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+for (const studio of [false, true]) {
+  test(`brand-kit zip includes guide and adjacent delivery text: studio=${studio}`, () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "kit-output-"));
+    try {
+      const brand = path.join(root, "brand.json"), guide = path.join(root, "guide.md");
+      fs.writeFileSync(brand, JSON.stringify(jane));
+      fs.writeFileSync(guide, "NOT FILLED IN YET\n");
+      const result = spawnSync(process.execPath, ["scripts/brand-kit.mjs", brand, "--out", root, ...(studio ? ["--studio", guide] : [])], { cwd: PKG_ROOT, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+      const kitName = `Jane Doe ${studio ? "Content Studio" : "Reel Editor"} Kit`;
+      const zip = path.join(root, `${kitName}.zip`), message = path.join(root, `${kitName} - send-out message.txt`);
+      const listing = spawnSync("unzip", ["-Z1", zip], { encoding: "utf8" });
+      assert.equal(listing.status, 0, listing.stderr);
+      assert.ok(listing.stdout.includes(`${kitName}/Setup Guide.html`));
+      assert.doesNotMatch(listing.stdout, /send-out message/);
+      const page = spawnSync("unzip", ["-p", zip, `${kitName}/Setup Guide.html`], { encoding: "utf8" }).stdout;
+      assert.equal(page, personalizeSetupGuide(fs.readFileSync(path.join(PKG_ROOT, "kit/Setup Guide.html"), "utf8"), jane, { studio }));
+      lintGuide(fs.readFileSync(message, "utf8"));
+      assert.ok(result.stdout.trim().endsWith(`${zip}\n${message}`));
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test("generic kit includes the beginner guide without studio sections", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "generic-guide-"));
+  try {
+    const result = spawnSync("bash", ["scripts/package-kit.sh", root], { cwd: PKG_ROOT, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const page = spawnSync("unzip", ["-p", path.join(root, "Reel Editor Kit.zip"), "Reel Editor Kit/Setup Guide.html"], { encoding: "utf8" });
+    assert.equal(page.status, 0, page.stderr);
+    assert.match(page.stdout, /Step 0: get the kit onto your Mac/);
+    assert.doesNotMatch(page.stdout, /Metricool|Content Studio|<!-- studio -->/);
+    lintGuide(page.stdout);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
