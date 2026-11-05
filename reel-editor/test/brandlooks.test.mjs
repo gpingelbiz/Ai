@@ -5,7 +5,7 @@ import { BRAND_LOOKS, brandSkinsCSS, noteHTML } from "../src/brandlooks.mjs";
 import { brandPreset, checkBrand, lookChoice, fetchFont } from "../src/brandkit.mjs";
 import { loadPreset } from "../src/presets.mjs";
 import { sceneHTML } from "../src/graphics.mjs";
-import { renderHTML } from "../src/compose.mjs";
+import { renderHTML, QUIET_SHADOWS } from "../src/compose.mjs";
 
 const julee = { name: "Julee Gracey", colors: { text: "#FFFFFF", accent: "#FFB27D", bg: "#111111" } };
 const BRAND = Object.keys(BRAND_LOOKS);
@@ -137,6 +137,15 @@ test("quiet captions, the quiet phone labels and name tag: only for a brand that
   assert.ok(!("plaque" in brandPreset({ ...julee, looks: { only: ["note", "atelier"] } }).hook), "no lock field: the plaque is inherited");
   assert.deepEqual(checkBrand({ ...julee, look: { captions: "serif" } }), []);
   assert.match(checkBrand({ ...julee, look: { captions: "script" } }).join(), /"reveal", "pop", "quiet" or "serif"/);
+  // A strong shadow: darker and tighter under thin light type; left out, the soft October 30 shadow stays.
+  assert.ok(serif.includes(`text-shadow: ${QUIET_SHADOWS.soft}; gap`), "the soft shadow is the default");
+  const strong = renderHTML(base({ captions: { quiet: true, serif: true, quietShadow: "strong" }, graphics: { includeLooks: ["note"] } }), "assets/footage.mp4");
+  assert.ok(strong.includes(`text-shadow: ${QUIET_SHADOWS.strong}; gap`), "captions.quietShadow strong darkens the quiet shadow");
+  assert.equal(brandPreset({ ...julee, look: { captions: "serif", captionShadow: "strong" } }).captions.quietShadow, "strong");
+  assert.equal(brandPreset({ ...julee, look: { captions: "serif" } }).captions.quietShadow, undefined);
+  assert.equal(brandPreset({ ...julee, look: { captions: "reveal", captionShadow: "strong" } }).captions.quietShadow, undefined, "only the quiet captions use it");
+  assert.deepEqual(checkBrand({ ...julee, look: { captions: "serif", captionShadow: "strong" } }), []);
+  assert.match(checkBrand({ ...julee, look: { captionShadow: "heavy" } }).join(), /"soft" or "strong"/);
   const g = loadPreset("pingel-brand");
   assert.equal(mergeOverrides(g, { hookSeconds: "reel" }).hook.duration, "reel");
   assert.equal(mergeOverrides(g, { hookSeconds: "6" }).hook.duration, 6);
