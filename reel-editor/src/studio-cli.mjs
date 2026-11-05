@@ -9,7 +9,7 @@ import { readJSON, PKG_ROOT, ensureDir } from "./util.mjs";
 
 /** `reel photos`, `reel daily` and `reel studio`: the Content Studio commands. */
 
-export const STUDIO_USAGE = `Content Studio (a client's folder that makes and schedules their posts; never Greg's own setup)
+export const STUDIO_USAGE = `Your reels and posts (your folders and posting settings)
   reel photos [status|check|sheet|pick <n>|use <file>...] [--studio <dir>] [--limit 36]
                                     the photo folder: what is usable, what was skipped and why, a contact sheet,
                                     the next picks; "use" marks photos as spent (they are never offered again)
@@ -20,6 +20,7 @@ export const STUDIO_USAGE = `Content Studio (a client's folder that makes and sc
   reel studio init <dir> [--brand <Brand folder>] [--client "<name>"]   make a studio folder
   reel studio health [--studio <dir>]                                    check daily run, logins, failed posts and waiting reels
   reel studio status [--studio <dir>]                                    settings check, last posts, photo pool
+  reel studio posts scan|make|wait|ready|serve|stop|done|fail|finish [--studio <dir>]
   reel studio publish scan|slot|serve|stop|done|fail [--studio <dir>]        commands for the Claude desktop publishing routine
   reel studio reels [--studio <dir>]                                     edit and schedule the clips in Raw Reels
   reel studio agents [--studio <dir>] [--uninstall]                      the daily job and the Raw Reels watcher (launchd)
@@ -74,7 +75,7 @@ export async function dailyCommand(args) {
   if (values.day && !/^\d{4}-\d{2}-\d{2}$/.test(values.day)) throw new Error("--day is a date like 2026-11-02");
   const { runDaily, dailySummary } = await import("./daily.mjs");
   const r = await runDaily(values.studio, { dryRun: values["dry-run"], noPublish: values["no-publish"], only: values.only || null, limit: values.limit ? Number(values.limit) : null, day: values.day || null });
-  console.log(dailySummary(r));
+  if (!r.skipped?.startsWith("The Claude routine")) console.log(dailySummary(r));
   if (r.made?.some((x) => x.status === "failed" || x.status === "not-posted")) process.exitCode = 1;
 }
 
@@ -124,7 +125,7 @@ ${extra}
     { label: `com.pingel.content-studio.daily.${slugged}`, plist: plist({ label: `com.pingel.content-studio.daily.${slugged}`, args: [node, bin, "daily", "--studio", root], extra: `  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>${hour}</integer><key>Minute</key><integer>${minute}</integer></dict>\n  <key>RunAtLoad</key><false/>` }) },
     { label: `com.pingel.content-studio.reels.${slugged}`, plist: plist({ label: `com.pingel.content-studio.reels.${slugged}`, args: [node, bin, "studio", "reels", "--studio", root], extra: `  <key>WatchPaths</key><array><string>${xml(path.join(root, "Raw Reels"))}</string><string>${xml(path.join(root, "Publish"))}</string></array>\n  <key>StartInterval</key><integer>3600</integer>\n  <key>ThrottleInterval</key><integer>60</integer>\n  <key>RunAtLoad</key><false/>` }) },
     { label: `com.pingel.content-studio.health.${slugged}`, plist: plist({ label: `com.pingel.content-studio.health.${slugged}`, args: [node, bin, "studio", "health", "--studio", root], extra: `  <key>StartCalendarInterval</key><array>${[9, 13, 18].map((h) => `<dict><key>Hour</key><integer>${h}</integer><key>Minute</key><integer>23</integer></dict>`).join("")}</array>` }) },
-  ].filter((a) => config.reels.publisher !== "claude" || !a.label.includes(".reels."));
+  ].filter((a) => config.daily.publisher !== "claude" || !a.label.includes(".daily.")).filter((a) => config.reels.publisher !== "claude" || !a.label.includes(".reels."));
 }
 
 export function installAgents(root, { uninstall = false, home = os.homedir(), run = spawnSync } = {}) {
@@ -142,11 +143,13 @@ export function installAgents(root, { uninstall = false, home = os.homedir(), ru
     fs.rmSync(file, { force: true });
     out.push(`removed the old ${label}`);
   }
-  const obsolete = `com.pingel.content-studio.reels.${agentSlug(root, home)}`;
-  if (!studioAgents(root, { home }).some((a) => a.label === obsolete)) {
-    run("launchctl", ["bootout", `gui/${uid}/${obsolete}`], { stdio: "ignore" });
-    fs.rmSync(path.join(dir, `${obsolete}.plist`), { force: true });
-    out.push(`removed ${obsolete}`);
+  for (const kind of ["reels", "daily"]) {
+    const obsolete = `com.pingel.content-studio.${kind}.${agentSlug(root, home)}`;
+    if (!studioAgents(root, { home }).some((a) => a.label === obsolete)) {
+      run("launchctl", ["bootout", `gui/${uid}/${obsolete}`], { stdio: "ignore" });
+      fs.rmSync(path.join(dir, `${obsolete}.plist`), { force: true });
+      out.push(`removed ${obsolete}`);
+    }
   }
   for (const a of studioAgents(root, { home })) {
     const file = path.join(dir, `${a.label}.plist`);
@@ -163,6 +166,7 @@ export function installAgents(root, { uninstall = false, home = os.homedir(), ru
 export async function studioCommand(args) {
   const [cmd, ...rest] = args;
   if (!cmd || cmd === "help" || cmd === "--help") return console.log(STUDIO_USAGE);
+  if (cmd === "posts") return (await import("./studio-posts.mjs")).postsCommand(rest);
   if (cmd === "publish") {
     const { publishCommand } = await import("./studio-publish.mjs");
     return publishCommand(rest);

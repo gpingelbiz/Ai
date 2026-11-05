@@ -1,11 +1,13 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { loadStudio, readPosts, logPost, studioLog, parseTime } from "./content-studio.mjs";
-import { readItem, fileItem, serve, stop, tiktokData, FAILED, SOURCE_ROOTS } from "./publish-folder.mjs";
+import { readItem, fileItem, stop, tiktokData, FAILED, SOURCE_ROOTS } from "./publish-folder.mjs";
 import { reelDetails, reelSlot, trialSlotFor, reelMadeName, recordReelSuccess } from "./studio-reels.mjs";
 import { zonedNow, addDays } from "./daily.mjs";
 import { clientStatus, clientNotify } from "./client-status.mjs";
+import { hostFiles } from "./studio-host.mjs";
 import { PKG_ROOT } from "./util.mjs";
 
 const itemAt = (studio, entry, options = {}) => {
@@ -97,12 +99,45 @@ export async function publishCommand(args) {
   if (cmd === "scan") result = scanPublish(studio);
   else if (cmd === "slot") result = publishSlot(studio, JSON.parse(arg || "{}"));
   else if (cmd === "stop") result = await stop({ state });
+  else if (cmd === "serve-child") {
+    const item = itemAt(studio, arg, { settle: 0 });
+    return hostChild([item.video], { state, hosting: { route: "tunnel" }, postId: item.entry });
+  }
   else if (cmd === "serve") {
     const item = scanPublish(studio).ready.find((r) => r.video === path.resolve(arg || ""));
     if (!item) throw new Error("serve needs a ready video from scan");
-    result = await serve(item.video, { script: path.join(PKG_ROOT, "scripts", "publish-folder.mjs"), state });
+    result = (await detachedHost({ state, args: [path.join(PKG_ROOT, "bin", "reel.mjs"), "studio", "publish", "serve-child", item.entry, "--studio", studio.paths.root], timeoutMs: 120000 })).urls[0];
   } else if (cmd === "done") result = finishPublish(studio, arg, { ...v, trialCopy: v["trial-copy"], trialDate: v["trial-date"], trialPlanner: v["trial-planner"], trialId: v["trial-id"], trialCopyFailed: v["trial-copy-failed"] });
   else if (cmd === "fail") result = failPublish(studio, arg, v.why || "unknown error");
   else throw new Error("publish scan|slot|serve|stop|done|fail --studio <dir>");
   console.log(JSON.stringify(result, null, 2));
+}
+
+/** The routine runs inside a Claude session; a child that calls `claude -p` must not look nested in it. */
+export function outsideClaude(env = process.env) {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => k === "CLAUDE_CODE_OAUTH_TOKEN" || !/^(CLAUDECODE$|CLAUDE_CODE_)/.test(k)));
+}
+
+/** Shared detached hosting lifecycle for app publishing commands. */
+export async function detachedHost({ state, args, timeoutMs = 660000 }) {
+  await stop({ state });
+  const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", env: outsideClaude() });
+  child.unref();
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    await new Promise(r => setTimeout(r, 1000));
+    try { const result = JSON.parse(fs.readFileSync(state, "utf8")); if (result.urls?.every(u => u.startsWith("https://"))) return result; } catch {}
+    try { process.kill(child.pid, 0); } catch { throw new Error("The file host stopped before returning links"); }
+  }
+  try { process.kill(child.pid, "SIGTERM"); } catch {}
+  throw new Error("The file host timed out");
+}
+
+export async function hostChild(files, { state, ...options }) {
+  const host = await hostFiles(files, options);
+  fs.writeFileSync(state, JSON.stringify({ pid: process.pid, urls: host.urls }));
+  const quit = async () => { await host.close(); fs.rmSync(state, { force: true }); process.exit(0); };
+  process.on("SIGTERM", quit);
+  process.on("SIGINT", quit);
+  setTimeout(quit, 20 * 60000);
 }

@@ -1,11 +1,11 @@
 #!/bin/bash
-# Content Studio: double click to install or update (macOS, Apple Silicon).
-# Installs the reel editor with this kit's brand, then sets up the Content Studio: your photo folder, your Claude
+# your reels and posts: double click to install or update (macOS, Apple Silicon).
+# Installs the reel editor with this kit's brand, then sets up your reels and posts: your photo folder, your Claude
 # sign in, your Metricool brand, how images reach Metricool, and your posting times, and turns on the daily run.
 # Running it again later updates everything and keeps your settings.
 clear
-printf '\n\033[1mContent Studio\033[0m\n\n'
-printf 'This sets up your Content Studio on this Mac. It takes about 15 minutes.\n'
+printf '\n\033[1mYour reels and posts\033[0m\n\n'
+printf 'This sets up your reels and posts on this Mac. It takes about 15 minutes.\n'
 printf 'If a window asks to install Apple'"'"'s command line tools, click Install, wait, then double click this file again.\n\n'
 KIT="$(cd "$(dirname "$0")" && pwd)"
 if [ ! -f "$KIT/Brand/brand.json" ]; then

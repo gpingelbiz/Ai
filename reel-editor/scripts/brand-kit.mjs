@@ -27,7 +27,7 @@ const brand = strip(JSON.parse(fs.readFileSync(file, "utf8")));
 const problems = checkBrand(brand);
 if (problems.length) { console.error(`Fix the brand file first:\n- ${problems.join("\n- ")}`); process.exit(1); }
 
-const kitName = `${brand.name} ${GUIDE ? "Content Studio" : "Reel Editor"} Kit`;
+const kitName = `${brand.name} ${GUIDE ? "Reels and Posts" : "Reel Editor"} Kit`;
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), "reel-kit-"));
 const kit = path.join(stage, kitName);
 const B = path.join(kit, "Brand");
@@ -56,7 +56,7 @@ json(path.join(B, "brand.json"), brand);
 if (GUIDE) fs.copyFileSync(GUIDE, path.join(B, "brand-guide.md"));
 if (credits.length) fs.writeFileSync(path.join(B, "fonts", "FONTS.txt"), credits.join("\n\n") + "\n");
 
-const installer = GUIDE ? "Install Content Studio.command" : "Install Reel Editor.command";
+const installer = GUIDE ? "Install Reels.command" : "Install Reel Editor.command";
 fs.copyFileSync(path.join(PKG_ROOT, "kit", installer), path.join(kit, installer));
 fs.chmodSync(path.join(kit, installer), 0o755);
 fs.writeFileSync(path.join(kit, "Start Here.html"), personalizeStartHere(fs.readFileSync(path.join(PKG_ROOT, "kit", "Start Here.html"), "utf8"), brand, { studio: !!GUIDE }));

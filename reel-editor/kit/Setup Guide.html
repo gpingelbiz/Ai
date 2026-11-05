@@ -32,13 +32,13 @@
 <h2>Part 1. What this is</h2>
 <p>Reel Editor runs on your Mac. You film yourself talking and drop the video into a folder. It cuts pauses, adds word captions and a hook title, and can add B-roll (short clips showing what you mean), graphic cards and music. Some features need the optional accounts below. You get a finished video and a written caption to review.</p>
 <!-- studio -->
-<p>Content Studio adds scheduling through your own Metricool account. Film, drop your clip in a Raw folder in Desktop/Reels, watch the finished reel, then drag it into Desktop/Reels/Publish. The Claude app schedules approved reels within the hour during posting hours. Keep your Mac on and the Claude app open. Once you fill in your brand guide, it can also make photo posts, carousels, optional story games and a weekly filming plan.</p>
+<p>Your reels and posts include scheduling through your own Metricool account. Film, drop your clip in a Raw folder in Desktop/Reels, watch the finished reel, then drag it into Desktop/Reels/Publish. The Claude app schedules approved reels within the hour during posting hours. Carousels and statics are made and scheduled by the Claude app at 6 AM and noon. Keep your Mac on and the Claude app open. Once you fill in your brand guide, it can also make photo posts, carousels, optional story games and a weekly filming plan.</p>
 <!-- /studio -->
-<!-- studio --><p>At the end of setup, the Claude app opens and a setup prompt is copied. Open the Code tab, paste, then press Return. Claude sets up your posting routine. Answer yes to its questions, and when it says the routine is on you are done. Keep your Mac on and the Claude app open.</p><!-- /studio -->
+<!-- studio --><p>At the end of setup, the Claude app opens and a setup prompt is copied. Open the Code tab, paste, then press Return. Claude sets up reel-publish and daily-posts. Answer yes to its questions, and when it says the routines are on you are done. Carousels and statics are made and scheduled by the Claude app at 6 AM and noon. Keep your Mac on and the Claude app open.</p><!-- /studio -->
 <h2>Part 2. How it works</h2>
 <ol><li>Film a talking clip on your phone. About 25 to 45 seconds is a useful starting point.</li><li>AirDrop it to your Mac, then move it into a Raw folder inside Desktop/Reels.</li><li>The Mac edits in the background and notifies you when it finishes. Timing depends on the clip, your Mac and the services used.</li><li>Open the finished reel in Desktop/Reels and watch it before sharing it.</li></ol>
 <!-- studio -->
-<p>After watching a finished reel, drag its folder into Desktop/Reels/Publish. That is your approval to post. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open. Made holds copies and scheduling notes. STATUS.txt reports things that need attention. Metricool sends the post to Instagram and any other networks you chose during setup.</p>
+<p>After watching a finished reel, drag its folder into Desktop/Reels/Publish. That is your approval to post. The Claude app schedules it within the hour during posting hours. Carousels and statics are made and scheduled by the Claude app at 6 AM and noon. Keep your Mac on and the Claude app open. Made holds copies and scheduling notes. STATUS.txt reports things that need attention. Metricool sends the post to Instagram and any other networks you chose during setup.</p>
 <!-- /studio -->
 <p>The files and settings live on your Mac. Connected AI services process material for the features you use. Use your own accounts. Greg does not receive your files or health alerts automatically.</p>
 <h2>Part 3. What you need before you start</h2>
@@ -66,7 +66,7 @@
 </table>
 <p>Next it renders a short test reel and opens it. For Reel Editor, setup is then complete.</p>
 <!-- studio -->
-<p>For Content Studio, setup continues after that test:</p>
+<p>Setup for your reels and posts continues after that test:</p>
 <table><tr><th>It asks</th><th>What to do</th></tr>
 <tr><td>Drag your photo folder into this window and press Return, or press Return for Desktop/Reels/Photos:</td><td>Press Return for the default. On a repeat install, the previous photo folder is kept. If you choose a protected folder, it offers to copy the photos into Desktop/Reels/Photos; press Return for yes.</td></tr>
 <tr><td>Press Return to start:</td><td>Starts Claude sign in if needed. Sign in, then type /exit and press Return.</td></tr>
@@ -77,7 +77,7 @@
 <tr><td>Keep these times? [Y/n]:</td><td>Type n, then press Return to change the daily photo post times.</td></tr>
 <tr><td>Time for the daily carousel (like 10:00 or 6:00 PM), or "none" [10:00]:<br>Time for the daily static (like 10:00 or 6:00 PM), or "none" [18:00]:</td><td>The shown times may differ on repeat installs. Type none at each question and press Return. This turns both daily photo post types off while you fill in your guide. It does not turn off reels you drop.</td></tr>
 <tr><td>Optional health ping URL (your own healthchecks.io https URL; Return skips):</td><td>Press Return to skip on first setup. On repeat installs Return keeps the existing URL.</td></tr>
-<tr><td>Make the first post now, to see it work? [Y/n]:</td><td>Type n to skip. Return means yes. This question may be skipped if scheduling is off or posts already exist.</td></tr>
+<tr><td>Claude app routines</td><td>Paste the copied setup prompt into the Code tab. Claude enables reel-publish and daily-posts. Your first posts arrive after the next 6 AM run. You can press Run now on daily-posts in the Claude app.</td></tr>
 </table>
 <!-- /studio -->
 <p>Wait for <b>All set.</b> before closing the window. If it says the install stopped, read the message, fix that issue and run the installer again.</p>
@@ -99,7 +99,7 @@
 <tr><td>Publish</td><td>Finished reels to schedule as they are. Desktop/Reels/Publish is a shortcut here.</td></tr>
 <tr><td>Photos</td><td>The default photo source. Export from the Photos app into this folder. Each photo is used once; unsuitable photos are skipped.</td></tr>
 <tr><td>Made</td><td>Copies of posts, captions, Scheduled.txt and any Not posted.txt notes.</td></tr>
-<tr><td>brand</td><td>Your brand-guide.md, voice.md, brand.json and fonts.</td></tr>
+<tr><td>Brand</td><td>Your brand-guide.md, voice.md, brand.json and fonts.</td></tr>
 <tr><td>Filming packs</td><td>Weekly filming plans. Created when the first pack is ready.</td></tr>
 <tr><td>STATUS.txt</td><td>Status notes, created by status checks and jobs.</td></tr>
 <tr><td>studio.json</td><td>Settings including posting times, accounts and photo folder.</td></tr></table>
@@ -107,7 +107,7 @@
 <h2>Part 6. Fill in your brand guide with Claude Code</h2>
 <p>You build your own brand. Do not ask Claude to invent your history, proof or results. Open Terminal in Applications, Utilities. Type <code>claude</code> and press Return. Sign in if asked. Share your website address, bio, notes and captions you like.</p>
 <!-- studio -->
-<p>Paste this exact request:</p><pre>Help me fill in my brand guide at my installed Content Studio brand guide, one section at a time, and ask me questions.</pre>
+<p>Paste this exact request:</p><pre>Help me fill in my brand guide at Desktop/Reels/Brand/brand-guide.md, one section at a time, and ask me questions.</pre>
 <p>Work through who you are, your audience, offer, story, beliefs, topics, voice, visual style, proof and call to action. Check every answer. Delete the line NOT FILLED IN YET only when the guide is actually complete. Extra features that require a finished guide stay on hold until then.</p>
 <!-- /studio -->
 <!-- reel-guide -->
@@ -119,7 +119,7 @@
 <h2>Part 7. Your daily routine</h2>
 <ol><li>Film with the phone at eye level and window light in front of you. Start talking promptly. If you stumble, pause and repeat the sentence; review the edit afterward.</li><li>AirDrop to your Mac. For a preview, move the clip into Desktop/Reels/Raw - Reel with B-roll.</li><li>Wait for the notification. Open the finished reel in Desktop/Reels, check the words and watch it before sharing.</li></ol>
 <!-- studio -->
-<p>For scheduling, watch the finished reel and drag it into Desktop/Reels/Publish. Keep your Mac on and the Claude app open. Check Made and Metricool afterward. To publish an edit you reviewed, drag its finished folder into Desktop/Reels/Publish.</p>
+<p>For scheduling, watch the finished reel and drag it into Desktop/Reels/Publish. Carousels and statics are made and scheduled by the Claude app at 6 AM and noon. Keep your Mac on and the Claude app open. Check Made and Metricool afterward. To publish an edit you reviewed, drag its finished folder into Desktop/Reels/Publish.</p>
 <!-- /studio -->
 <p>For personal B-roll, film short 6 to 10 second shots of your workspace, a walk or everyday activities, without faces. Give each file a descriptive name such as coffee-pouring.mov and put it in Raw - My B-roll clips.</p>
 <h2>Part 8. What happens on its own</h2>

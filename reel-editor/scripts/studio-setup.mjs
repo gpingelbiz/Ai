@@ -68,7 +68,7 @@ const signedIn = (bin) => {
 async function main() {
   try { if (!YES && fs.existsSync("/dev/tty")) tty = readline.createInterface({ input: fs.createReadStream("/dev/tty"), output: process.stdout }); } catch { tty = null; }
   const brandFrom = opt("--brand") ? expand(opt("--brand")) : "";
-  if (!brandFrom || !fs.existsSync(path.join(brandFrom, "brand.json"))) die("This setup needs a Content Studio kit: its Brand folder (brand.json, voice.md, brand-guide.md) was not found.");
+  if (!brandFrom || !fs.existsSync(path.join(brandFrom, "brand.json"))) die("This setup needs a Reels kit: its Brand folder (brand.json, voice.md, brand-guide.md) was not found.");
   const brand = readJSON(path.join(brandFrom, "brand.json"));
   if (!fs.existsSync(path.join(brandFrom, "brand-guide.md"))) note("No brand-guide.md in the kit: posts follow the voice notes and an even mix until one is added to your brand guide.");
   const root = studioDir(opt("--dir") || path.join(HOME, "Content Studio"));
@@ -76,7 +76,7 @@ async function main() {
   const before = fs.existsSync(paths.config) ? withDefaults(readJSON(paths.config)) : withDefaults({});
   const config = { client: brand.name || before.client, reels: { rawIntake: false, publisher: "claude" } };
 
-  bold(`Content Studio for ${config.client}`);
+  bold(`Your reels and posts for ${config.client}`);
   note("It makes your carousels, statics and reels and schedules them into your Metricool by itself.");
   note("Drop photos in Photos. Watch each finished reel, then drag the ones you like into Publish.");
 
@@ -177,7 +177,7 @@ async function main() {
   note("");
   note("1) Straight from this Mac (recommended). While a post is being scheduled, this Mac shares just");
   note("   those files at a private, random address for about a minute, Metricool copies them, and the");
-  note("   address closes. Nothing to sign up for. Your Mac only has to be on when the morning run goes.");
+  note("   address closes. Nothing to sign up for. Your Mac only has to be on when the Claude routine runs.");
   note("2) Google Drive. Images are copied into a Drive folder you share once as \"anyone with the link\",");
   note("   and Metricool takes them from there. Needs the Google Drive app on this Mac and Google Drive");
   note("   linked in Metricool. Good if you want every image kept in Drive.");
@@ -194,7 +194,7 @@ async function main() {
   } else if (route === "drive") {
     const rootDir = driveRoot();
     if (!rootDir) die("Google Drive for desktop is not on this Mac (or not signed in). Install it from google.com/drive/download, sign in, then run this installer again.");
-    folder ||= path.join(rootDir, "Content Studio uploads");
+    folder ||= path.join(rootDir, "Reels uploads");
     fs.mkdirSync(folder, { recursive: true });
     note(`Images go to the Drive folder "${path.basename(folder)}". Share it once: on drive.google.com right click it,`);
     note("Share, General access: Anyone with the link, Viewer, Done. In Metricool, link Google Drive (Settings).");
@@ -204,7 +204,7 @@ async function main() {
     const rootDir = dropboxRoot();
     if (!rootDir) die("The Dropbox app is not on this Mac. Install it from dropbox.com/install, sign in, then run this installer again.");
     if (!connectors.dropbox?.connected) note("Add the Dropbox connector on claude.ai (Settings, Connectors) so the studio can make share links.");
-    folder ||= path.join(rootDir, "Content Studio uploads");
+    folder ||= path.join(rootDir, "Reels uploads");
     fs.mkdirSync(folder, { recursive: true });
     ok(`images go through Dropbox: ${folder}`);
   }
@@ -223,7 +223,7 @@ async function main() {
   ok(`times set${config.sandcastles ? "; Sandcastles is connected, so hooks follow what is winning" : ""}`);
 
   note('New studios schedule each reel normally and also as a separate Trial Reel. Existing reel settings are kept.');
-  note('Story games are OFF. Fill in brand/brand-guide.md, then set stories.enabled to true in studio.json.');
+  note('Story games are OFF. Fill in Desktop/Reels/Brand/brand-guide.md, then set stories.enabled to true in studio.json.');
   note('Stories ask viewers to spot a problem, pick A/B, or keep/kill a note, at 08:00, 11:00 and 17:00. They never take a feed slot.');
   note('Each Sunday, Filming packs gets six short prompts and three B-roll ideas for Monday. Fill in your guide first.');
   note('Health checks run three times a day: missed daily runs, failed posts, disconnected accounts and reels waiting over three hours.');
@@ -233,15 +233,17 @@ async function main() {
 
   // ------------------------------------------------------------ 6. write and turn on
   bold("6/6  Turning it on");
+  if (!flag("--no-routine") && publishMode !== "off") config.daily = { publisher: "claude" };
   initStudio(root, { brandFrom, config });
   const studio = loadStudio(root);
   kitFolders(studio);
   ok("Your folders are ready in Desktop/Reels");
   // Reels reach Metricool over a temporary link, whichever route the images take.
   if (!flag("--no-routine") && publishMode !== "off" && !cloudflaredBin()) spawnSync("/bin/bash", [path.join(PKG_ROOT, "scripts", "install-cloudflared.sh")], { stdio: "inherit" });
-  if (!flag("--no-routine") && publishMode !== "off") for (const line of openRoutineSetup(studio)) note(line);
   if (!flag("--no-agents")) for (const line of installAgents(root)) ok(line);
-  if (!flag("--no-first-post") && publishMode !== "off" && !readPosts(paths).length) {
+  if (!flag("--no-routine") && publishMode !== "off") for (const line of openRoutineSetup(studio)) note(line);
+  if (studio.config.daily.publisher === "claude") note("Your first posts arrive after the next 6 AM run. You can also press Run now on daily-posts in the Claude app.");
+  if (studio.config.daily.publisher !== "claude" && !flag("--no-first-post") && publishMode !== "off" && !readPosts(paths).length) {
     const go = await ask("Make the first post now, to see it work? [Y/n]:", "y");
     if (!/^n/i.test(go)) spawnSync(process.execPath, [path.join(PKG_ROOT, "bin", "reel.mjs"), "daily", "--studio", root, "--limit", "1"], { stdio: "inherit" });
   }

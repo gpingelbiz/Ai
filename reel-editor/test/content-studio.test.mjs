@@ -671,12 +671,12 @@ test("kit: Start Here keeps the Content Studio section only in a Content Studio 
   assert.doesNotMatch(plain, /Content Studio|<!-- studio/);
   assert.match(plain, /Jane's Reel Editor/);
   const studio = personalizeStartHere(html, { name: "Jane" }, { studio: true });
-  assert.match(studio, /Jane's Content Studio/);
-  assert.match(studio, /Double click <b>Install Content Studio\.command<\/b> in this folder/);
+  assert.match(studio, /Jane's reels and posts/);
+  assert.match(studio, /Double click <b>Install Reels\.command<\/b> in this folder/);
   for (const route of ["Straight from this Mac", "Google Drive", "Dropbox"]) assert.match(studio, new RegExp(route));
   assert.doesNotMatch(studio, /<!-- \/?studio -->/);
   assert.equal(stripStudio(html), stripStudio(stripStudio(html)));
-  assert.ok(fs.statSync(path.join(PKG_ROOT, "kit", "Install Content Studio.command")).mode & 0o100, "the kit installer double-clicks");
+  assert.ok(fs.statSync(path.join(PKG_ROOT, "kit", "Install Reels.command")).mode & 0o100, "the kit installer double-clicks");
 });
 
 test("slides: a long sentence-case headline is set smaller; a short one keeps its kind's size", () => {

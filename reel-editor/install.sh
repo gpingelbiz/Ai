@@ -357,10 +357,10 @@ ok "test reel: $out"
 
 if [ "$STUDIO" = 1 ]; then
   # The Content Studio: the client's photo folder, Claude, Metricool and posting times (scripts/studio-setup.mjs).
-  [ -n "$BRAND" ] || die "--studio needs a Content Studio kit (its Brand folder)."
-  bold "Content Studio"
+  [ -n "$BRAND" ] || die "--studio needs a Reels kit (its Brand folder)."
+  bold "Your reels and posts"
   STUDIO_ARGS=(--brand "$BRAND"); [ "$NO_ROUTINE" != 1 ] || STUDIO_ARGS+=(--no-routine); [ "$YES" = 1 ] && STUDIO_ARGS+=(--yes)
-  node "$APP/scripts/studio-setup.mjs" "${STUDIO_ARGS[@]}" || die "The Content Studio setup stopped. Read the message above, then run the installer again."
+  node "$APP/scripts/studio-setup.mjs" "${STUDIO_ARGS[@]}" || die "The reels and posts setup stopped. Read the message above, then run the installer again."
 fi
 
 # Only client kits opt in; Greg's presets and installer path keep their existing jobs.
