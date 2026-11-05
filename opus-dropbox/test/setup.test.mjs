@@ -48,6 +48,7 @@ test("the Allow click comes back to this Mac and is traded for a refresh token",
 test("team accounts use the team root; personal accounts do not", () => {
   assert.equal(pathRootOf({ root_info: { ".tag": "team", root_namespace_id: "9", home_namespace_id: "4" } }), "9");
   assert.equal(pathRootOf({ root_info: { ".tag": "user", root_namespace_id: "4", home_namespace_id: "4" } }), "");
+  assert.equal(pathRootOf({ root_info: { ".tag": "user", root_namespace_id: "9", home_namespace_id: "4" } }), "9");
 });
 
 test("the background job runs one pass every 5 minutes", () => {

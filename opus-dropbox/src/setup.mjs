@@ -92,7 +92,7 @@ export async function dropboxSignIn(appKey, { port = REDIRECT_PORT, api = DROPBO
 /** Team accounts keep the team's folders under a root namespace; a personal account needs nothing extra. */
 export function pathRootOf(account) {
   const r = account?.root_info;
-  return r && r[".tag"] === "team" && r.root_namespace_id !== r.home_namespace_id ? r.root_namespace_id : "";
+  return r && r.root_namespace_id !== r.home_namespace_id ? r.root_namespace_id : ""; // some Business accounts say "user" here
 }
 
 export const CLIP_LENGTHS = [
@@ -102,6 +102,28 @@ export const CLIP_LENGTHS = [
   ["60 to 90 seconds", [[60, 90]]],
   ["90 seconds to 3 minutes", [[90, 180]]],
 ];
+
+/** Shared numbered choices for setup and attended settings changes. */
+export function templateLines(templates) {
+  const def = templates.find((t) => t.isDefault);
+  return [`0) Opus's default${def ? ` (${def.name})` : ""}`, ...templates.map((t, i) => `${i + 1}) ${t.name}`)];
+}
+export function setChoice(project, kind, value, templates = []) {
+  if (!/^\d+$/.test(String(value))) throw new Error("Choose a listed number.");
+  const n = Number(value);
+  if (n >= (kind === "template" ? templates.length + 1 : CLIP_LENGTHS.length)) throw new Error("Choose a listed number.");
+  if (kind === "template") {
+    if (n) project.brandTemplateId = templates[n - 1].templateId;
+    else delete project.brandTemplateId;
+  } else {
+    const d = CLIP_LENGTHS[n][1];
+    if (d) project.curationPref = { ...project.curationPref, clipDurations: d };
+    else if (project.curationPref) {
+      delete project.curationPref.clipDurations;
+      if (!Object.keys(project.curationPref).length) delete project.curationPref;
+    }
+  }
+}
 
 /** The kit's Dropbox app key, from kit.json next to the tool. */
 export function kitAppKey(appDir) {
@@ -136,21 +158,16 @@ export async function setup({ appDir, node = process.execPath, script }) {
 
     // 2) Template and clip length.
     if (templates.length) {
-      const def = templates.find((t) => t.isDefault);
       console.log("\nWhich brand template should the clips use?");
-      console.log(`  0) Opus's default${def ? ` (${def.name})` : ""}`);
-      templates.forEach((t, i) => console.log(`  ${i + 1}) ${t.name}`));
+      templateLines(templates).forEach((line) => console.log(`  ${line}`));
       const now = templates.findIndex((t) => t.templateId === c.opus.project.brandTemplateId) + 1;
       const pick = Number(await ask("Number", String(now)));
-      if (pick >= 1 && pick <= templates.length) c.opus.project.brandTemplateId = templates[pick - 1].templateId;
-      else delete c.opus.project.brandTemplateId;
+      try { setChoice(c.opus.project, "template", pick, templates); } catch { console.log("That is not on the list, so Opus's default is used."); setChoice(c.opus.project, "template", 0, templates); }
     }
     console.log("\nHow long should the clips be?");
     CLIP_LENGTHS.forEach(([label], i) => console.log(`  ${i}) ${label}`));
     const nowLen = Math.max(0, CLIP_LENGTHS.findIndex(([, d]) => JSON.stringify(d) === JSON.stringify(c.opus.project.curationPref?.clipDurations ?? null)));
-    const len = CLIP_LENGTHS[Number(await ask("Number", String(nowLen)))] || CLIP_LENGTHS[0];
-    if (len[1]) c.opus.project.curationPref = { ...c.opus.project.curationPref, clipDurations: len[1] };
-    else if (c.opus.project.curationPref) { delete c.opus.project.curationPref.clipDurations; if (!Object.keys(c.opus.project.curationPref).length) delete c.opus.project.curationPref; }
+    try { setChoice(c.opus.project, "length", await ask("Number", String(nowLen))); } catch { console.log("That is not on the list, so Opus picks the length."); setChoice(c.opus.project, "length", 0); }
 
     // 3) Dropbox sign-in.
     c.dropbox.appKey ||= kitAppKey(appDir);

@@ -1,0 +1,127 @@
+<title>Reel Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* A production slate: a status strip up top, then reels logged by shoot day like a shot list. */
+:root {
+  --bg: #eef2f1; --panel: #ffffff; --fg: #17211f; --muted: #566662; --line: #d3dcd9; --accent: #0b6b5d;
+  --good: #16784a; --warn: #a85a0c; --bad: #b3261e;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif; --body: "Source Sans 3", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101716; --panel: #182120; --fg: #e8efed; --muted: #9caca8; --line: #2b3735; --accent: #5ccdb9;
+  --good: #57c98e; --warn: #e6a452; --bad: #f08a80; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #101716; --panel: #182120; --fg: #e8efed; --muted: #9caca8; --line: #2b3735; --accent: #5ccdb9;
+  --good: #57c98e; --warn: #e6a452; --bad: #f08a80; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 400 16px/1.5 var(--body) }
+main { max-width: 980px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px }
+h1, h2, h3 { font-family: var(--display); margin: 0; text-wrap: balance; letter-spacing: .01em }
+h1 { font-size: 2.6rem; font-weight: 700; line-height: 1 }
+h2 { font-size: 1.5rem; font-weight: 600 }
+h3 { font: 500 .85rem var(--mono); color: var(--muted); padding-block: 14px 8px; border-bottom: 1px solid var(--line) }
+header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; justify-content: space-between }
+#updated { font: 500 .8rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+#status { display: grid; gap: 6px; padding: 16px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px }
+#statusLine { font: 600 1.35rem var(--display); display: flex; align-items: center; gap: 10px }
+#statusLine::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--dot, var(--muted)); flex: none }
+#status[data-state="good"] { --dot: var(--good) } #status[data-state="warn"] { --dot: var(--warn) } #status[data-state="bad"] { --dot: var(--bad) }
+#problems { margin: 0; padding-left: 20px; color: var(--muted) } #problems:empty { display: none }
+#counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px 16px }
+.count b { display: block; font: 600 2rem/1.1 var(--display); font-variant-numeric: tabular-nums }
+.count span { color: var(--muted); font-size: .9rem }
+section { display: grid; gap: 4px; min-width: 0 }
+.reel { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 4px 16px; padding-block: 14px; border-bottom: 1px solid var(--line) }
+.num { font: 700 2.2rem/1 var(--display); color: var(--accent); font-variant-numeric: tabular-nums }
+.num small { display: block; font: 500 .68rem var(--mono); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; padding-bottom: 2px }
+.title { font-weight: 600; overflow-wrap: anywhere }
+.caption { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: .95rem; margin: 6px 0 }
+details > summary { cursor: pointer; color: var(--accent); font-size: .92rem; width: fit-content }
+.actions { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .92rem; margin-top: 4px }
+a, button.link { color: var(--accent); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+#queues { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 28px }
+#queues ul { list-style: none; margin: 6px 0 0; padding: 0 }
+#queues li { padding-block: 6px; border-top: 1px solid var(--line); overflow-wrap: anywhere }
+#queues li small { display: block; color: var(--muted) }
+.empty { color: var(--muted) }
+@media (max-width: 480px) { h1 { font-size: 2.1rem } .reel { grid-template-columns: 58px minmax(0, 1fr) } .num { font-size: 1.8rem } }
+</style>
+<main>
+  <header><h1>Reel Board</h1><span id="updated">Waiting for the first update</span></header>
+  <div id="status" data-state="">
+    <div id="statusLine">Waiting for the first update from the Mac</div>
+    <ul id="problems"></ul>
+  </div>
+  <div id="counts" aria-label="Video counts"></div>
+  <section aria-labelledby="reelsHead"><h2 id="reelsHead">Finished reels</h2><div id="reels"><p class="empty">Finished reels appear here, grouped by day, after the next hourly update.</p></div></section>
+  <section aria-labelledby="queueHead"><h2 id="queueHead">Videos on the way</h2><div id="queues"></div></section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const add = (parent, tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; parent.append(el); return el; };
+const STALE_MINUTES = 150;
+function ago(iso) {
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (!Number.isFinite(m)) return "unknown";
+  if (m < 2) return "just now";
+  if (m < 90) return m + " minutes ago";
+  if (m < 2880) return Math.round(m / 60) + " hours ago";
+  return Math.round(m / 1440) + " days ago";
+}
+function render(b) {
+  const age = (Date.now() - Date.parse(b.updatedAt)) / 60000;
+  $("updated").textContent = "Updated " + ago(b.updatedAt);
+  const stale = !(age <= STALE_MINUTES), problems = Array.isArray(b.problems) ? b.problems : [];
+  $("status").dataset.state = stale || problems.length ? (problems.length ? "bad" : "warn") : "good";
+  $("statusLine").textContent = problems.length ? "Needs a look" : stale ? "This may be out of date" : "All good";
+  $("problems").replaceChildren();
+  if (stale) add($("problems"), "li", "No update for a while. The Mac may be off, or the Claude app may be closed.");
+  problems.forEach((p) => add($("problems"), "li", String(p)));
+  const c = b.counts || {};
+  $("counts").replaceChildren();
+  [["Finished videos", c.done], ["In Opus", (c.in_opus || 0) + (c.sending || 0) + (c.delivering || 0)], ["Waiting", c.waiting], ["Need a look", c.failed], ["Reels", b.reelCount]].forEach(([label, n]) => {
+    const d = add($("counts"), "div", undefined, "count"); add(d, "b", String(n || 0)); add(d, "span", label);
+  });
+  const box = $("reels"); box.replaceChildren();
+  const reels = Array.isArray(b.reels) ? b.reels : [];
+  if (!reels.length) add(box, "p", "No finished reels yet.", "empty");
+  let day;
+  for (const r of reels) {
+    if (r.day !== day) { day = r.day; add(box, "h3", String(day)); }
+    const row = add(box, "article", undefined, "reel");
+    const num = add(row, "div", undefined, "num"); add(num, "small", "Reel"); num.append(String(r.number || ""));
+    const body = add(row, "div"); add(body, "div", String(r.title || r.name || ""), "title");
+    if (r.caption) { const more = add(body, "details"); add(more, "summary", "Caption"); add(more, "p", String(r.caption), "caption");
+      const acts = add(more, "div", undefined, "actions"); const copy = add(acts, "button", "Copy caption", "link"); copy.type = "button";
+      copy.onclick = () => navigator.clipboard.writeText(String(r.caption)).then(() => { copy.textContent = "Copied"; }, () => { copy.textContent = "Select the text above to copy"; }); }
+    const acts = add(body, "div", undefined, "actions");
+    if (typeof r.url === "string" && r.url.startsWith("https://www.dropbox.com/home/")) { const a = add(acts, "a", "Open in Dropbox"); a.href = r.url; a.target = "_blank"; a.rel = "noreferrer"; }
+  }
+  const q = $("queues"); q.replaceChildren();
+  const items = Array.isArray(b.videos) ? b.videos : [];
+  const groups = [["failed", "Need a look"], ["in_opus", "In Opus"], ["delivering", "Going into Dropbox"], ["waiting", "Waiting to be sent"]];
+  let any = false;
+  for (const [status, label] of groups) {
+    const list = items.filter((v) => v.status === status);
+    if (!list.length) continue;
+    any = true;
+    const col = add(q, "div"); add(col, "h3", label + " (" + list.length + ")");
+    const ul = add(col, "ul");
+    list.forEach((v) => { const li = add(ul, "li", String(v.name || "")); if (v.error) add(li, "small", String(v.error)); });
+  }
+  if (!any) add(q, "p", "Nothing is on the way right now.", "empty");
+}
+(async () => {
+  const timer = setTimeout(() => { if ($("status").dataset.state === "") $("statusLine").textContent = "The board can't be reached yet. It may still be loading."; }, 10000);
+  const db = window.claude ? await claude.use("db") : null;
+  if (!db) { clearTimeout(timer); $("statusLine").textContent = "Sign in to Claude to see this board."; return; }
+  db.doc("board/current").onSnapshot((snap) => {
+    if (!snap.metadata.fromCache) clearTimeout(timer);
+    if (snap.exists) render(snap.data());
+  }, () => { clearTimeout(timer); $("statusLine").textContent = "The board could not load its data. Reload the page to try again."; });
+})();
+</script>

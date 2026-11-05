@@ -67,9 +67,10 @@ export function createOpus({ apiKey, orgId, api = API, fetch = globalThis.fetch,
       const out = [];
       const size = 50;
       for (let page = 1; ; page++) {
-        const items = await call("GET", "/api/exportable-clips", { query: { q: "findByProjectId", projectId, pageNum: page, pageSize: size }, org: orgId || org });
-        out.push(...(items || []));
-        if (!items || items.length < size) return out;
+        const r = await call("GET", "/api/exportable-clips", { query: { q: "findByProjectId", projectId, pageNum: page, pageSize: size }, org: orgId || org });
+        const items = Array.isArray(r) ? r : r?.data || []; // the live API wraps the list as { data: [...] }
+        out.push(...items);
+        if (items.length < size) return out;
       }
     },
   };

@@ -59,13 +59,14 @@ test("a dropped video goes to Opus and its clips come back into Dropbox", async 
     r.op.finish("P1");
     rep = await r.run();
     assert.equal(rep.delivered, 1);
-    assert.deepEqual(r.dbx.names("/Opus Clips/Big Talk"), ["Clip 1 - Hook number 1 why.mp4", "Clip 1 - caption.txt", "Clip 2 - Hook number 2 why.mp4", "Clip 2 - caption.txt"]);
-    assert.equal(r.dbx.text("/Opus Clips/Big Talk/Clip 1 - Hook number 1 why.mp4"), "bytes of /files/P1/1.mp4");
-    assert.equal(r.dbx.text("/Opus Clips/Big Talk/Clip 2 - caption.txt"), "Hook number 2: why?\n\nDescription 2\n\n#one #two\n");
+    assert.deepEqual(r.dbx.names("/Opus Clips"), ["2026-11-04 Reel 1", "2026-11-04 Reel 2"]);
+    assert.deepEqual(r.dbx.names("/Opus Clips/2026-11-04 Reel 1"), ["Hook number 1 why.mp4", "caption.txt"]);
+    assert.equal(r.dbx.text("/Opus Clips/2026-11-04 Reel 1/Hook number 1 why.mp4"), "bytes of /files/P1/1.mp4");
+    assert.equal(r.dbx.text("/Opus Clips/2026-11-04 Reel 2/caption.txt"), "Hook number 2: why?\n\nDescription 2\n\n#one #two\n");
     assert.deepEqual(r.dbx.names("/Unedited"), ["Done"]);
     assert.deepEqual(r.dbx.names("/Unedited/Done"), ["Big Talk.mov"]);
     assert.equal(r.item("Big Talk.mov").status, S.DONE);
-    assert.match(r.notes.at(-1), /2 clips from Big Talk\.mov are in \/Opus Clips\/Big Talk/);
+    assert.match(r.notes.at(-1), /2 clips from Big Talk\.mov, starting at \/Opus Clips\/2026-11-04 Reel 1/);
   } finally { r.close(); }
 });
 
@@ -188,7 +189,7 @@ test("when Dropbox cannot fetch a clip itself, the Mac downloads and uploads it"
     await r.run();
     r.op.finish("P1");
     await r.run();
-    assert.equal(r.dbx.text("/Opus Clips/Fallback/Clip 1 - Hook number 1 why.mp4"), "bytes of /files/P1/1.mp4");
+    assert.equal(r.dbx.text("/Opus Clips/2026-11-04 Reel 1/Hook number 1 why.mp4"), "bytes of /files/P1/1.mp4");
     assert.ok(r.logs.some((l) => l.event === "save_url_failed"));
   } finally { r.close(); }
 });
@@ -208,14 +209,13 @@ test("an interrupted delivery picks up where it stopped, with the same clip numb
     r.op.reverseClips = true; // Opus lists them in another order now
     rep = await r.run();
     assert.equal(rep.delivered, 1);
-    const names = r.dbx.names("/Opus Clips/Resume");
-    assert.deepEqual(names.filter((n) => n.endsWith(".mp4")), ["Clip 1 - Hook number 1 why.mp4", "Clip 2 - Hook number 2 why.mp4", "Clip 3 - Hook number 3 why.mp4"], "no duplicate clip 1");
-    assert.equal(names.length, 6);
-    assert.equal(r.dbx.text("/Opus Clips/Resume/Clip 3 - Hook number 3 why.mp4"), "bytes of /files/P1/3.mp4");
+    assert.deepEqual(r.dbx.names("/Opus Clips"), ["2026-11-04 Reel 1", "2026-11-04 Reel 2", "2026-11-04 Reel 3"], "no extra reel folder for the interrupted clip");
+    assert.deepEqual(r.dbx.names("/Opus Clips/2026-11-04 Reel 1"), ["Hook number 1 why.mp4", "caption.txt"], "no duplicate clip 1");
+    assert.equal(r.dbx.text("/Opus Clips/2026-11-04 Reel 2/Hook number 3 why.mp4"), "bytes of /files/P1/3.mp4"); // listed first on the resume
   } finally { r.close(); }
 });
 
-test("a second video with the same name gets its own clips folder", async () => {
+test("a second video with the same name gets the next reel folder", async () => {
   const r = await rig();
   try {
     r.op.clipCount = 1;
@@ -223,7 +223,7 @@ test("a second video with the same name gets its own clips folder", async () => 
     await r.run(); r.op.finish("P1"); await r.run();
     r.dbx.put("/Unedited/IMG_0001.MOV");
     await r.run(); r.op.finish("P2"); await r.run();
-    assert.deepEqual(r.dbx.names("/Opus Clips"), ["IMG_0001", "IMG_0001 (1)"]);
+    assert.deepEqual(r.dbx.names("/Opus Clips"), ["2026-11-04 Reel 1", "2026-11-04 Reel 2"]);
     assert.deepEqual(r.dbx.names("/Unedited/Done"), ["IMG_0001 (1).MOV", "IMG_0001.MOV"]);
   } finally { r.close(); }
 });
@@ -235,7 +235,7 @@ test("accents and emoji in names make it through Dropbox's ASCII-only header", a
     r.dbx.put("/Unedited/Café 🎬.mov");
     await r.run(); r.op.finish("P1"); await r.run();
     assert.equal(r.dbx.badArgHeaders, 0);
-    assert.deepEqual(r.dbx.names("/Opus Clips/Café 🎬"), ["Clip 1 - Hook number 1 why.mp4", "Clip 1 - caption.txt"]);
+    assert.deepEqual(r.dbx.names("/Opus Clips/2026-11-04 Reel 1"), ["Hook number 1 why.mp4", "caption.txt"]);
   } finally { r.close(); }
 });
 
@@ -300,4 +300,30 @@ test("small helpers", () => {
   assert.equal(captionText({ title: "T", hashtags: "#a" }), "T\n\n#a\n");
   assert.ok(isPublicLink({ link_permissions: { resolved_visibility: { ".tag": "public" } } }));
   assert.ok(!isPublicLink({ link_permissions: { effective_audience: { ".tag": "team" } } }));
+});
+
+test("the reel number starts over each day and skips a folder that is already there", async () => {
+  const r = await rig();
+  try {
+    r.op.clipCount = 1;
+    r.dbx.folder("/Opus Clips/2026-11-04 Reel 1");
+    r.dbx.put("/Unedited/One.mov");
+    await r.run(); r.op.finish("P1"); await r.run();
+    assert.deepEqual(r.dbx.names("/Opus Clips/2026-11-04 Reel 2"), ["Hook number 1 why.mp4", "caption.txt"]);
+    assert.deepEqual(r.dbx.names("/Opus Clips/2026-11-04 Reel 1"), []);
+    r.tick(24 * 3600 * 1000);
+    r.dbx.put("/Unedited/Two.mov");
+    await r.run(); r.op.finish("P2"); await r.run();
+    assert.deepEqual(r.dbx.names("/Opus Clips/2026-11-05 Reel 1"), ["Hook number 1 why.mp4", "caption.txt"]);
+  } finally { r.close(); }
+});
+
+test("the Opus clip list is read whether or not it is wrapped in { data }", async () => {
+  const op = await fakeOpus();
+  try {
+    const opus = createOpus({ apiKey: "opus-key", api: op.url, wait: noWait });
+    assert.equal((await opus.clips("p1")).length, op.clipCount);
+    op.plainClipList = true;
+    assert.equal((await opus.clips("p1")).length, op.clipCount);
+  } finally { await op.close?.(); }
 });

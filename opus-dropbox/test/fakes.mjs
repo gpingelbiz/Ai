@@ -127,6 +127,12 @@ export async function fakeDropbox() {
     const route = req.url.replace(/^\/2\//, "");
     fx.calls.push({ route, body: arg });
     if (fx.failUploads > 0) { fx.failUploads--; return json(res, 409, { error_summary: "path/insufficient_space/.." }); }
+    if (route === "files/download") {
+      const n = resolve(arg.path);
+      if (!n) return json(res, 409, { error_summary: "path/not_found" });
+      res.writeHead(200, { "Content-Type": "application/octet-stream" });
+      return res.end(n.bytes);
+    }
     if (route === "files/upload") {
       const n = fx.get(arg.path);
       if (n) n.bytes = raw; else add(arg.path, "file", raw);
@@ -178,7 +184,8 @@ export async function fakeOpus() {
       }));
       if (fx.reverseClips) clips = clips.reverse();
       const page = Number(u.searchParams.get("pageNum")), size = Number(u.searchParams.get("pageSize"));
-      return json(res, 200, clips.slice((page - 1) * size, page * size));
+      const list = clips.slice((page - 1) * size, page * size);
+      return json(res, 200, fx.plainClipList ? list : { data: list }); // the live API wraps the list
     }
     return json(res, 404, { message: "no route" });
   });
