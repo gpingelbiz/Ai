@@ -54,3 +54,7 @@ EOF
 chmod +x "$STATUS"
 echo
 echo "Done. Double-click \"Opus Dropbox Status\" on the Desktop any time to see what it is doing."
+"$NODE" "$APP/bin/opus-dropbox.mjs" watcher install || true
+echo "Paste the copied prompt in the Claude app Code tab to turn on the watcher."
+
+"$NODE" "$APP/bin/opus-dropbox.mjs" panel install || true

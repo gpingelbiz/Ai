@@ -4,8 +4,8 @@
  *   1. A video dropped in the drop folder is sent to Opus as a public Dropbox link (the video never passes through
  *      this Mac). At most `maxInFlight` videos sit in Opus at once (Opus Pro and Max run 4 projects in parallel).
  *   2. Each run asks Opus how its projects are doing.
- *   3. A finished project's clips go into `<finished>/<video name>/` as "Clip 1 - <title>.mp4" plus
- *      "Clip 1 - caption.txt" (Opus's title, description and hashtags). Dropbox fetches each clip from Opus itself.
+ *   3. Each clip of a finished project gets its own folder, `<finished>/<date> Reel <n>/`, numbered per day, holding
+ *      "<title>.mp4" and "caption.txt" (Opus's title, description and hashtags). Dropbox fetches each clip from Opus itself.
  *   4. The original moves to `<drop>/Done`. A video that fails moves to `<drop>/Needs a look` with a note saying what
  *      happened; moving it back into the drop folder sends it again.
  *
@@ -92,7 +92,7 @@ export async function runOnce({ c, state, dropbox, opus, now = () => Date.now(),
     } else if ((it.status === S.FAILED || it.status === S.DONE) && it.filed) {
       // The tool filed it away and a person moved it back: that means "do it again".
       set(e.id, { name: e.name, path: e.path_display, size: e.size, status: S.WAITING, seenAt: stamp(), tries: (it.tries || 1) + 1,
-        projectId: null, error: null, filed: false, dest: null, saved: [], order: null, stage: null, stuckNoted: false });
+        projectId: null, error: null, filed: false, dest: null, reels: null, saved: [], order: null, stage: null, stuckNoted: false });
       log("again", { name: e.name });
     } else if (it.status === S.WAITING) {
       set(e.id, { name: e.name, path: e.path_display, size: e.size });
@@ -186,6 +186,21 @@ export async function runOnce({ c, state, dropbox, opus, now = () => Date.now(),
     }
   }
 
+  /** Makes today's next `<date> Reel <n>` folder. The count lives in state; a folder already there is skipped, never reused. */
+  async function nextReelFolder() {
+    const d = new Date(now());
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    let n = state.reelDay?.day === day ? state.reelDay.n : 0;
+    for (;;) {
+      const folder = join(c.folders.finished, `${day} Reel ${++n}`);
+      if (await dropbox.exists(folder)) continue;
+      const made = await dropbox.createFolder(folder);
+      state.reelDay = { day, n };
+      save();
+      return made;
+    }
+  }
+
   async function deliver(id) {
     const it = items[id];
     // Opus's download links are signed and expire, so the list is read fresh every time. Right after COMPLETE the list
@@ -196,18 +211,22 @@ export async function runOnce({ c, state, dropbox, opus, now = () => Date.now(),
     const order = { ...(it.order || {}) };
     let next = Math.max(0, ...Object.values(order)) + 1;
     for (const cl of clips) { const key = cl.curationId || cl.id; if (!(key in order)) order[key] = next++; }
-    if (!it.dest) set(id, { dest: await dropbox.createFolder(join(c.folders.finished, safeName(baseName(it.name), "Video")), { autorename: true }) });
     set(id, { order });
     const saved = new Set(items[id].saved || []);
     for (const cl of clips) {
       const key = cl.curationId || cl.id;
       if (saved.has(key)) continue;
       if (!cl.uriForExport) throw new Error(`Opus gave no download link for clip ${order[key]}`);
-      const k = order[key];
-      const file = join(items[id].dest, `Clip ${k} - ${safeName(cl.title, `Clip ${k}`)}.mp4`);
-      // save_url never replaces a file (it adds "Clip 1 (1).mp4"), so a clip saved before an interruption is kept as is.
+      // A clip keeps its folder once it has one, so an interrupted delivery resumes in the same place with the same number.
+      let folder = items[id].reels?.[key];
+      if (!folder) {
+        folder = await nextReelFolder();
+        set(id, { reels: { ...items[id].reels, [key]: folder }, dest: items[id].dest || folder });
+      }
+      const file = join(folder, `${safeName(cl.title, `Reel`)}.mp4`);
+      // save_url never replaces a file (it adds " (1)"), so a clip saved before an interruption is kept as is.
       if (!(await dropbox.exists(file))) await saveClip(file, cl.uriForExport);
-      await dropbox.upload(join(items[id].dest, `Clip ${k} - caption.txt`), captionText(cl));
+      await dropbox.upload(join(folder, "caption.txt"), captionText(cl));
       saved.add(key);
       set(id, { saved: [...saved] });
     }
@@ -221,8 +240,8 @@ export async function runOnce({ c, state, dropbox, opus, now = () => Date.now(),
     }
     set(id, { status: S.DONE, clips: clips.length, doneAt: stamp(), filed, path: to, deliverErrors: 0 });
     report.delivered++;
-    log("delivered", { name: it.name, clips: clips.length, dest: items[id].dest });
-    notify("Opus clips are ready", `${clips.length} clip${clips.length === 1 ? "" : "s"} from ${it.name} are in ${items[id].dest}.`);
+    log("delivered", { name: it.name, clips: clips.length, dest: items[id].dest, reels: Object.values(items[id].reels || {}) });
+    notify("Opus clips are ready", `${clips.length} clip${clips.length === 1 ? "" : "s"} from ${it.name}, starting at ${items[id].dest}.`);
   }
 
   for (const [id, it] of Object.entries(items)) {
@@ -230,8 +249,11 @@ export async function runOnce({ c, state, dropbox, opus, now = () => Date.now(),
     try { await deliver(id); }
     catch (e) {
       const n = (items[id].deliverErrors || 0) + 1;
-      set(id, { deliverErrors: n, lastError: e.message });
-      log("deliver_error", { name: it.name, error: e.message, tries: n });
+      // Node reports every lost connection as "fetch failed"; the reason is on its cause.
+      const why = e.cause?.code || e.cause?.message;
+      const error = why ? `${e.message} (${why})` : e.message;
+      set(id, { deliverErrors: n, lastError: error });
+      log("deliver_error", { name: it.name, error, tries: n });
       if (n >= 6) await fail(id, `The clips could not be put into Dropbox after ${n} tries (${e.message}). They are still in Opus (project ${it.projectId}).`);
     }
   }

@@ -68,6 +68,10 @@ The installer puts the tool in `~/Library/Application Support/Opus Dropbox/app`,
 
 The files live in `~/Library/Application Support/Opus Dropbox`: `config.json` (the keys, mode 600), `state.json`, `run.log` (one JSON line per event) and `launchd.log`.
 
+## The shared board
+
+`opus-dropbox board install` readies a read-only page and copies a prompt. Pasted once in the Claude app's Code tab, it publishes the page as an artifact on that Claude account and points the `opus-watch` routine at it, so the board updates hourly while the Mac is on and the app is open. `opus-dropbox snapshot` writes what the board gets: named fields only, never a key, a sign-in or a share link. Settings and re-cuts stay on the local page.
+
 ## Rules it keeps
 
 - **A video is never sent to Opus twice by accident.** If a send might have gone through (the run died mid-send, or Opus gave no clear answer), the video goes to Needs a look with a note telling the client to check Opus first.
@@ -84,3 +88,54 @@ cd opus-dropbox && npm test
 ```
 
 The tests run against a fake Dropbox and a fake Opus over real HTTP (`test/fakes.mjs`), so they cost nothing and need no keys.
+
+### Settings and another cut
+
+`settings` shows the template, clip length, folders and maxInFlight without credentials.
+`templates` lists brand templates with the same numbers as setup, including 0 for Opus's default.
+`settings template <number>` and `settings length <number>` save a choice. Length numbers are
+0 for Opus picks, 1 for under 30 seconds, 2 for 30 to 60 seconds, 3 for 60 to 90 seconds,
+and 4 for 90 seconds to 3 minutes. Settings apply only to new sends.
+
+`recut "<file name>"` previews moving a filed done original back to the drop folder.
+`recut "<file name>" --yes` confirms it. The next run sends it to Opus again, costing at
+least 10 Opus credits. Old clips stay and new clips get a new folder. Ambiguous names
+and videos that have not finished cannot be re-cut.
+
+### Claude watcher
+
+`watch` prints JSON health, counts, videos in Opus, items needing a look, and newly done
+videos since the last watch. It never sends a video or moves a file. Only watcher metadata
+is saved, when the run lock is available. `watch --notify` also alerts once per distinct
+problem set until it changes or clears.
+
+`watcher install` writes the routine and attended skill under the current HOME's `.claude`
+folder, adds only exact read commands to Claude permissions, and prints a prompt to paste
+in the Claude app Code tab (also copied when pbcopy is available). Paste it to create and
+enable `opus-watch`, running at minute 7 each hour from 7 through 21. Existing Claude
+settings are backed up before merging; an unreadable settings file is left alone.
+The routine only reports. The attended skill requires a clear yes for the named video
+and the credit cost before invoking a re-cut.
+
+
+### Local command center
+
+Run `node bin/opus-dropbox.mjs panel` and open http://127.0.0.1:53690 on this Mac.
+The page shows health, videos, finished reels and captions, settings, and controls for
+another cut and pausing or resuming the background job. Settings apply to new sends.
+Another cut needs confirmation and costs at least 10 Opus credits; old clips stay.
+
+`panel install` installs the separate `com.pingel.opus-dropbox-panel` LaunchAgent
+with RunAtLoad and KeepAlive, logs to `panel.log` in the tool home, and creates
+`~/Desktop/Opus Command Center.webloc`. Running it again updates the same files.
+The kit installer also runs this command. `panel uninstall` removes that agent and
+shortcut. Neither command changes the existing run agent; `stop` and `start`
+still control only the run job.
+
+The page listens only on IPv4 loopback, port 53690. A busy port produces an error.
+It checks Host on every request and requires a matching Origin, JSON and a per start
+token for every POST. It serves no local files and exposes no account keys or share
+links. Loading the page and health reports does not change watcher metadata.
+Reels load on demand, 30 at a time, with a 60 second cache and captions capped at
+64 KB. Dropbox links open the configured paths relative to the Dropbox root.
+The page is local to this Mac, including when viewed at a narrow window width.

@@ -93,6 +93,26 @@ export function createDropbox({ appKey, refreshToken, pathRoot, api = API, conte
   return {
     rpc,
 
+    /** Read at most 64 KB, cancelling the download as soon as the cap is reached. */
+    async downloadText(path) {
+      const r = await fetch(`${content}/2/files/download`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await bearer()}`, ...rootHeader(), "Dropbox-API-Arg": apiArg({ path }) },
+      });
+      if (!r.ok) { await r.body?.cancel(); throw new DropboxError(r.status, "could not read caption"); }
+      const reader = r.body.getReader(), parts = [];
+      let size = 0;
+      try {
+        while (size < 65536) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const part = Buffer.from(value).subarray(0, 65536 - size);
+          parts.push(part); size += part.length;
+        }
+      } finally { await reader.cancel(); }
+      return Buffer.concat(parts).toString("utf8");
+    },
+
     account: () => rpc("users/get_current_account"),
 
     /** Everything directly inside a folder (not its subfolders). */
