@@ -412,6 +412,10 @@ test("metricool: the scheduled list and the tool prompt", () => {
   const list = normalizeScheduled({ data: [{ id: 1, publicationDate: { dateTime: "2026-11-02T10:00:00" }, instagramData: { type: "REEL" }, draft: true }, { bad: 1 }] });
   assert.deepEqual(list, [{ day: "2026-11-02", hour: 10, minute: 0, type: "REEL", draft: true, text: "", id: 1 }]);
   assert.match(toolPrompt("mcp__x__y", { a: 1 }), /exactly once[\s\S]*\{"a":1\}/);
+  // The search may repeat while the connector loads; the tool itself never runs twice.
+  assert.match(toolPrompt("mcp__x__y", {}), /ToolSearch, query "select:mcp__x__y"[\s\S]*search again/);
+  assert.match(toolPrompt("mcp__x__y", {}), /never call this one a second time/);
+  assert.doesNotMatch(toolPrompt("mcp__x__y", {}), /do not retry/i);
 });
 
 /* ---------- image routes ---------- */

@@ -47,19 +47,23 @@ export async function detectConnectors() {
   return parseConnectors(out);
 }
 
-/** The prompt for one tool call. Pure, so it can be tested. */
+/**
+ * The prompt for one tool call. Pure, so it can be tested. A claude.ai connector arrives seconds after headless Claude
+ * starts, and on a current Claude a first search can beat it, so searching again has to be allowed: "do not retry" alone
+ * made it give up every time on a client's Mac, where the same search found the tool on its third try.
+ */
 export function toolPrompt(tool, input) {
   return [
-    `Call the tool ${tool} exactly once, with exactly this input (do not change, add or drop any field or character):`,
+    `The tool ${tool} can take up to a minute to appear, because connectors load just after you start. Load it with ToolSearch, query "select:${tool}". If the search finds nothing, search again the same way, up to 15 times.`,
+    "",
+    "Then call the tool exactly once, with exactly this input (do not change, add or drop any field or character):",
     JSON.stringify(input),
     "",
-    "Do not call any other tool and do not retry. Then reply with only the tool's result, unchanged, as JSON (if the tool returned an error, reply {\"error\": \"<the exact error text>\"}). No prose, no code fence.",
+    `Do not use any tool other than ToolSearch and this one, and never call this one a second time. Then reply with only the tool's result, unchanged, as JSON (if the tool returned an error, reply {"error": "<the exact error text>"}; if it never appeared, reply {"error": "Tool ${tool} is not available in this session"}). No prose, no code fence.`,
   ].join("\n");
 }
 
-// A claude.ai connector is not in the session's tools when headless Claude starts; it arrives a little later. A call
-// that starts too early gets "not available in this session" without the tool ever running, so waiting and asking
-// again cannot double a post. (2026-11-04: a client's fresh Mac stopped the Content Studio setup on this.)
+// If a whole session still never saw the connector, the tool never ran, so waiting and asking again cannot double a post.
 const TOOL_NOT_READY = /not available in this session|no such tool|tool\b.*\bnot (found|available)/i;
 const NOT_READY_WAITS = [20000, 45000];
 
