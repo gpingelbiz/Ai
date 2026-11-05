@@ -24,6 +24,34 @@ export function plaqueLayout(words, options = {}) {
   return { fontSizeFrac, position: Math.round(top * 1000) / 1000, fits: true, zone: "below" };
 }
 
+/**
+ * The plaque beside the head on a wide (16:9) canvas. A head near the top of a wide frame leaves a band above it
+ * that squeezed the plaque to a quarter of its size (Greg's VSL, 2026-11-04), while the wall beside the speaker sat
+ * empty. This puts the plaque on the roomier side, at up to `grow` times the preset size on at most `maxLines` lines,
+ * centred on the face and ending above the chin. Null when the canvas is not wide or neither side has the room.
+ * left/right are the plaque's edges as fractions of the width from the left and right sides.
+ */
+export function sidePlaqueLayout(words, { headLeft, headRight, headTop, headBottom, fontSizeFrac, W = 1920, H = 1080, margin = 0.05, gap = 0.035, top = 0.06, maxLines = 3, grow = 1.4, minWidth = 0.24 } = {}) {
+  if (!(W > H) || !(headRight > headLeft) || !(headBottom > headTop) || !(fontSizeFrac > 0)) return null;
+  const room = { left: headLeft - gap - margin, right: 1 - margin - headRight - gap };
+  const side = room.right >= room.left ? "right" : "left";
+  const width = room[side];
+  if (width < minWidth) return null;
+  const block = BLOCK_HOOKS.plaque;
+  const r = (x) => Math.round(x * 1000) / 1000;
+  for (let frac = fontSizeFrac * grow; frac >= fontSizeFrac * 0.8; frac *= 0.94) {
+    const fontPx = Math.round(frac * H * block.em);
+    // The plaque's side padding (0.38 em each side) comes out of the width the words wrap in.
+    const h = hookBlockHeight(words, { W, H, fontPx, widthFrac: width - (0.8 * fontPx) / W, charEm: block.charEm, lineHeight: block.lineHeight, padEm: block.padEm, goldScale: 1 });
+    const lines = Math.round((h * H - block.padEm * fontPx) / (fontPx * block.lineHeight));
+    const blockTop = Math.max(top, Math.min((headTop + headBottom) / 2 - h / 2, headBottom - h));
+    if (lines > maxLines || blockTop < top - 1e-6 || blockTop + h > headBottom + 1e-6) continue;
+    const left = side === "left" ? margin : headRight + gap;
+    return { side, fontSizeFrac: r(frac), position: r(blockTop), left: r(left), right: r(1 - left - width), lines, zone: "side" };
+  }
+  return null;
+}
+
 /** How long the hook stays up: hook.duration seconds, or the whole reel for "reel" (one-line reels). */
 export function hookSeconds(setting, reel) {
   if (setting === "reel") return reel;

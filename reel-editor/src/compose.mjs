@@ -377,7 +377,7 @@ export function renderHTML(plan, footage) {
 
   const runtimePlan = {
     duration: D,
-    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(Number.isFinite(plan.hook.headTop) && !behind ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
+    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(hk.side ? { side: true } : {}), ...(Number.isFinite(plan.hook.headTop) && !behind && !hk.side ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
@@ -595,7 +595,7 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       }
       #cta-text { display: inline-block; max-width: 100%; transform-origin: 50% 50%; ${ctaLook} }
       .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}${hk.plaque === true ? `
-      #hook.hook-plaque #hook-block { left: 7%; right: 7%; text-align: center; }
+      #hook.hook-plaque #hook-block { ${hk.side ? `left: ${r3(hk.side.left * 100)}%; right: ${r3(hk.side.right * 100)}%; text-align: left;` : "left: 7%; right: 7%; text-align: center;"} }
       #hook.hook-plaque #hook-scrim, #hook.hook-plaque #hook-bar { display: none; }
       #hook.hook-plaque #hook-lines { display: inline-block; box-sizing: border-box; max-width: 100%; padding: 0.24em 0.38em 0.2em; color: ${c.text}; background: ${c.bg}; background-image: none; border: 0; border-left: ${Math.max(1, Math.round(6 * H / 1920))}px solid ${c.accent}; border-radius: 0.14em; box-shadow: none; transform: none; font-family: "Anton", sans-serif; font-style: normal; font-weight: 400; font-size: 1em; line-height: 1.05; letter-spacing: 0.01em; text-transform: ${hk.uppercase === false ? "none" : "uppercase"}; -webkit-text-stroke: 0; paint-order: normal; text-shadow: none; }
       #hook.hook-plaque #hook-lines::before, #hook.hook-plaque #hook-lines::after { display: none; }
@@ -637,7 +637,19 @@ ${audioHTML}
         // measured and the whole hook moves up until it ends 1.5% of the frame above the head, never above the 7% top
         // bar; only if it still does not fit does it shrink toward its top (to 60% at most). Without a measurement the
         // hook is left as placed.
-        if (PLAN.hook && Number.isFinite(PLAN.hook.headTop)) {
+${hk.side ? `        // A plaque beside the head wraps inside its column, and a wrapped box keeps the column's full width; shrink it
+        // to its longest line so no empty strip trails the text.
+        if (PLAN.hook && PLAN.hook.side) {
+          const box = document.getElementById("hook-lines");
+          const ws = box ? [...box.querySelectorAll(".hw")] : [];
+          if (ws.length) {
+            const b = box.getBoundingClientRect();
+            const right = Math.max(...ws.map((w) => w.getBoundingClientRect().right));
+            const rh = document.getElementById("root").getBoundingClientRect().height, k = rh ? rh / PLAN.height : 1;
+            box.style.width = Math.ceil((right - b.left) / k + (parseFloat(getComputedStyle(box).paddingRight) || 0) + 2) + "px";
+          }
+        }
+` : ""}        if (PLAN.hook && Number.isFinite(PLAN.hook.headTop)) {
           const hookEl = document.getElementById("hook");
           const root = document.getElementById("root").getBoundingClientRect();
           const k = root.height ? root.height / PLAN.height : 1;
