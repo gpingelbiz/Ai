@@ -65,7 +65,7 @@ export const STUDIO_DEFAULTS = {
   daysAhead: 3,
   maxPerRun: 4,
   carouselSlides: [5, 8],
-  reels: { enabled: true, earliest: 8, latest: 20, fallbackHour: 12, gapHours: 2, look: "auto", trial: false },
+  reels: { rawIntake: true, publisher: "legacy", enabled: true, earliest: 8, latest: 20, fallbackHour: 12, gapHours: 2, look: "auto", trial: false },
   stories: { enabled: false, slots: ["08:00", "11:00", "17:00"] },
   filming: { enabled: false },
   health: { pingUrl: "" },
@@ -222,7 +222,7 @@ export function loadStudio(dir, { publishing = true } = {}) {
   if (!fs.existsSync(paths.brandJson)) problems.push(`brand/brand.json is missing in ${paths.root}`);
   if (problems.length) throw new Error(`studio.json needs fixing:\n- ${problems.join("\n- ")}`);
   const brand = studioBrand(paths, config.slideColors);
-  for (const d of [paths.state, paths.made, paths.rawReels]) ensureDir(d);
+  for (const d of [paths.state, paths.made, paths.publish, ...(config.reels.rawIntake === false ? [] : [paths.rawReels])]) ensureDir(d);
   return { paths, config, brand: brand.raw, tokens: brand.tokens, voice: readText(paths.voice), guide: readText(paths.guide), photos: photosDir(config, paths) };
 }
 
@@ -273,7 +273,7 @@ export function takeLock(paths, name = "run") {
 /** A new studio folder: the subfolders, studio.json (kept when present) and the brand files copied from `brandFrom`. */
 export function initStudio(dir, { config = {}, brandFrom = null } = {}) {
   const paths = studioPaths(dir);
-  for (const d of [paths.root, paths.rawReels, paths.publish, paths.made, paths.brand, paths.state]) ensureDir(d);
+  for (const d of [paths.root, paths.publish, paths.made, paths.brand, paths.state]) ensureDir(d);
   if (brandFrom) {
     for (const f of ["brand.json", "voice.md", "brand-guide.md", "my-brand.json", "my-youtube.json", "dictionary.json"]) {
       const src = path.join(brandFrom, f);
@@ -298,6 +298,7 @@ export function initStudio(dir, { config = {}, brandFrom = null } = {}) {
   const defaults = structuredClone(STUDIO_DEFAULTS);
   if (!fs.existsSync(paths.config)) { defaults.reels.trial = "both"; defaults.filming.enabled = true; }
   const next = merge(merge(defaults, existing), config);
+  if (next.reels.rawIntake !== false) ensureDir(paths.rawReels);
   writeJSON(paths.config, { _how: "Content Studio settings. Edit and save; the next run uses them. Times are in timezone. Re-run the installer to change the Metricool brand or the image route.", ...next });
   if (photosDir(next, paths) === paths.photos) ensureDir(paths.photos);
   return paths;

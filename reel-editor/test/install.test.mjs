@@ -79,3 +79,13 @@ test("installer only accepts a Python Whisper can run, and stops if Whisper fail
   assert.match(sh, /"av<17" \|\| die /);
   assert.match(sh, /! py_ok "\$VENV\/bin\/python"; then rm -rf "\$VENV"/);
 });
+
+
+test("installer passes the routine test flag through without weakening Claude permissions", () => {
+  assert.match(installer, /--no-routine\) NO_ROUTINE=1/);
+  assert.match(installer, /STUDIO_ARGS\+=\(--no-routine\)/);
+  const setup = fs.readFileSync(new URL("../scripts/studio-setup.mjs", import.meta.url), "utf8");
+  const routine = fs.readFileSync(new URL("../src/studio-routine.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(installer + setup + routine, /bypassPermissions|disableAutoMode/);
+  assert.match(setup, /!flag\("--no-routine"\) && publishMode !== "off"/);
+});

@@ -12,12 +12,14 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { spawnSync } from "node:child_process";
-import { initStudio, studioPaths, studioDir, readPosts, withDefaults, macZone } from "../src/content-studio.mjs";
+import { loadStudio, initStudio, studioPaths, studioDir, readPosts, withDefaults, macZone } from "../src/content-studio.mjs";
 import { parseConnectors, metricoolBrands } from "../src/studio-metricool.mjs";
 import { driveRoot, dropboxRoot } from "../src/studio-host.mjs";
 import { installAgents } from "../src/studio-cli.mjs";
 import { cloudflaredBin } from "../src/publish-folder.mjs";
 import { PKG_ROOT, readJSON } from "../src/util.mjs";
+
+import { kitFolders, openRoutineSetup } from "../src/studio-routine.mjs";
 
 const args = process.argv.slice(2);
 const flag = (k) => args.includes(k);
@@ -68,15 +70,15 @@ async function main() {
   const brandFrom = opt("--brand") ? expand(opt("--brand")) : "";
   if (!brandFrom || !fs.existsSync(path.join(brandFrom, "brand.json"))) die("This setup needs a Content Studio kit: its Brand folder (brand.json, voice.md, brand-guide.md) was not found.");
   const brand = readJSON(path.join(brandFrom, "brand.json"));
-  if (!fs.existsSync(path.join(brandFrom, "brand-guide.md"))) note("No brand-guide.md in the kit: posts follow the voice notes and an even mix until one is added to Content Studio/brand.");
+  if (!fs.existsSync(path.join(brandFrom, "brand-guide.md"))) note("No brand-guide.md in the kit: posts follow the voice notes and an even mix until one is added to your brand guide.");
   const root = studioDir(opt("--dir") || path.join(HOME, "Content Studio"));
   const paths = studioPaths(root);
   const before = fs.existsSync(paths.config) ? withDefaults(readJSON(paths.config)) : withDefaults({});
-  const config = { client: brand.name || before.client };
+  const config = { client: brand.name || before.client, reels: { rawIntake: false, publisher: "claude" } };
 
   bold(`Content Studio for ${config.client}`);
   note("It makes your carousels, statics and reels and schedules them into your Metricool by itself.");
-  note("You only drop photos and clips. Nobody has to check the posts.");
+  note("Drop photos in Photos. Watch each finished reel, then drag the ones you like into Publish.");
 
   // ------------------------------------------------------------ 1. photos
   bold("1/6  Your photos");
@@ -85,14 +87,14 @@ async function main() {
   note("From the Photos app: select photos, File, Export, into the folder you pick here.");
   let photos = opt("--photos") ? expand(opt("--photos")) : "";
   if (!photos) {
-    const a = await ask(`Drag your photo folder into this window and press Return, or press Return for Content Studio/Photos:`, "");
+    const a = await ask(`Drag your photo folder into this window and press Return, or press Return for Desktop/Reels/Photos:`, "");
     photos = a ? expand(a) : "";
   }
   if (photos && protectedFolder(photos)) {
     note("");
     note(`That folder is inside ${path.relative(HOME, photos).split("/")[0]}. A Mac does not let background jobs read`);
     note("the Desktop, Documents, Downloads or iCloud Drive folders, so the daily run could not see it.");
-    const c = await ask("Copy those photos into Content Studio/Photos now (you can keep adding there)? [Y/n]:", "y");
+    const c = await ask("Copy those photos into Desktop/Reels/Photos now (you can keep adding there)? [Y/n]:", "y");
     if (/^n/i.test(c)) die("Move the photos to a folder outside Desktop, Documents and Downloads (Pictures works), then run the installer again.");
     fs.mkdirSync(paths.photos, { recursive: true });
     spawnSync("/bin/cp", ["-Rn", `${photos}/.`, paths.photos], { stdio: "inherit" });
@@ -114,7 +116,7 @@ async function main() {
   ok("Claude Code installed");
   if (!signedIn(bin)) {
     if (YES || !tty) die("Claude is not signed in. Open Terminal, type  claude  and sign in, then run this installer again.");
-    note("Sign in with YOUR Claude account (a Pro or Max plan). Claude opens here: follow the sign-in,");
+    note("Sign in with YOUR Claude account (a Pro or Max plan). Claude opens here: follow the sign in,");
     note("then type  /exit  and press Return to come back.");
     await ask("Press Return to start:", "");
     spawnSync(bin, [], { stdio: "inherit" });
@@ -139,7 +141,7 @@ async function main() {
   let metricool = { ...before.metricool, connector };
   let publishMode = before.publish.mode === "off" ? "schedule" : before.publish.mode;
   if (!connector) {
-    note("Metricool is not connected, so posts are made into Content Studio/Made but not scheduled.");
+    note("Metricool is not connected, so posts are made into Desktop/Reels/Made but not scheduled.");
     note("Run the installer again after connecting it to turn scheduling on.");
     publishMode = "off";
   } else {
@@ -194,7 +196,7 @@ async function main() {
     if (!rootDir) die("Google Drive for desktop is not on this Mac (or not signed in). Install it from google.com/drive/download, sign in, then run this installer again.");
     folder ||= path.join(rootDir, "Content Studio uploads");
     fs.mkdirSync(folder, { recursive: true });
-    note(`Images go to the Drive folder "${path.basename(folder)}". Share it once: on drive.google.com right-click it,`);
+    note(`Images go to the Drive folder "${path.basename(folder)}". Share it once: on drive.google.com right click it,`);
     note("Share, General access: Anyone with the link, Viewer, Done. In Metricool, link Google Drive (Settings).");
     if (tty) { spawnSync("open", ["https://drive.google.com/drive/my-drive"]); await ask("Press Return when the folder is shared:", ""); }
     ok(`images go through Google Drive: ${folder}`);
@@ -224,30 +226,28 @@ async function main() {
   note('Story games are OFF. Fill in brand/brand-guide.md, then set stories.enabled to true in studio.json.');
   note('Stories ask viewers to spot a problem, pick A/B, or keep/kill a note, at 08:00, 11:00 and 17:00. They never take a feed slot.');
   note('Each Sunday, Filming packs gets six short prompts and three B-roll ideas for Monday. Fill in your guide first.');
-  note('Health checks run three times a day: missed daily runs, failed posts, disconnected accounts and reels waiting over a day.');
-  note('Alerts appear on this Mac and in Content Studio/STATUS.txt. Nothing is sent to Greg.');
-  const pingUrl = opt("--health-ping") || await ask("Optional health ping URL (your own healthchecks.io-style https URL; Return skips):", before.health.pingUrl || "");
+  note('Health checks run three times a day: missed daily runs, failed posts, disconnected accounts and reels waiting over three hours.');
+  note('Alerts appear on this Mac and in Desktop/Reels/STATUS.txt.');
+  const pingUrl = opt("--health-ping") || await ask("Optional health ping URL (your own healthchecks.io https URL; Return skips):", before.health.pingUrl || "");
   config.health = { ...before.health, pingUrl };
 
   // ------------------------------------------------------------ 6. write and turn on
   bold("6/6  Turning it on");
   initStudio(root, { brandFrom, config });
-  const link = path.join(HOME, "Desktop", "Content Studio");
-  // The shortcut is for the standard folder only; a studio set up somewhere else (a test, a second client) gets none.
-  if (root === path.join(HOME, "Content Studio") && !fs.existsSync(link)) { try { fs.symlinkSync(root, link); ok("Desktop shortcut: Content Studio"); } catch {} }
-  ok(`studio.json written in ${root}`);
-  // Publish: drop a finished reel and it is scheduled as it is (Greg's Publish folder, for them), next to the Raw folders.
-  const reelsDesk = path.join(HOME, "Desktop", "Reels");
-  const pub = path.join(reelsDesk, "Publish");
-  if (root === path.join(HOME, "Content Studio") && fs.existsSync(reelsDesk)) { try { fs.lstatSync(pub); } catch { try { fs.symlinkSync(studioPaths(root).publish, pub); ok("Desktop shortcut: Reels/Publish"); } catch {} } }
+  const studio = loadStudio(root);
+  kitFolders(studio);
+  ok("Your folders are ready in Desktop/Reels");
+  // Reels reach Metricool over a temporary link, whichever route the images take.
+  if (!flag("--no-routine") && publishMode !== "off" && !cloudflaredBin()) spawnSync("/bin/bash", [path.join(PKG_ROOT, "scripts", "install-cloudflared.sh")], { stdio: "inherit" });
+  if (!flag("--no-routine") && publishMode !== "off") for (const line of openRoutineSetup(studio)) note(line);
   if (!flag("--no-agents")) for (const line of installAgents(root)) ok(line);
   if (!flag("--no-first-post") && publishMode !== "off" && !readPosts(paths).length) {
     const go = await ask("Make the first post now, to see it work? [Y/n]:", "y");
     if (!/^n/i.test(go)) spawnSync(process.execPath, [path.join(PKG_ROOT, "bin", "reel.mjs"), "daily", "--studio", root, "--limit", "1"], { stdio: "inherit" });
   }
   bold("Done.");
-  note("Drop photos into your photo folder and clips into Content Studio/Raw Reels. Every morning the studio");
-  note("fills the next days; Made shows what it made. Run this installer again to change anything.");
+  note("Film, then drop your clip into a Raw folder in Desktop/Reels. Watch the finished reel, then drag it into Publish. The Claude app");
+  note("schedules it within the hour during posting hours. Keep your Mac on and the Claude app open. Made shows copies.");
   tty?.close();
 }
 
