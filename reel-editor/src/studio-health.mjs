@@ -9,7 +9,7 @@ import { clientNotify, clientStatus } from "./client-status.mjs";
 import { readJSON } from "./util.mjs";
 
 /** Only waiting videos, never Done/, Music/, or an old caption beside a completed reel. */
-export function stuckDrops(folders, { now = Date.now() } = {}) {
+export function stuckDrops(folders, { now = Date.now(), maxAge = 86400000, message = null, skip = [], byArrival = false } = {}) {
   const out = [];
   for (const dir of folders) {
     let entries = [];
@@ -19,7 +19,9 @@ export function stuckDrops(folders, { now = Date.now() } = {}) {
       let videos = [];
       if (e.isFile() && /\.(mov|mp4|m4v)$/i.test(e.name)) videos = [file];
       if (e.isDirectory()) videos = fs.readdirSync(file).filter((f) => /\.(mov|mp4|m4v)$/i.test(f)).map((f) => path.join(file, f));
-      if (videos.some((f) => now - fs.statSync(f).mtimeMs > 86400000)) out.push(`Reel waiting more than a day: ${file}`);
+      if (skip.includes(e.name)) continue;
+      // Dragging a reel in keeps the video's old mtime; the top entry's ctime is when it arrived.
+      if (videos.length && (byArrival ? now - fs.statSync(file).ctimeMs > maxAge : videos.some((f) => now - fs.statSync(f).mtimeMs > maxAge))) out.push(message || `Reel waiting more than a day: ${file}`);
     }
   }
   return out;
@@ -74,7 +76,8 @@ export async function studioHealth(dir, { now = new Date(), dropFolders = null, 
     }
     for (const p of readPosts(paths).filter((p) => ["failed", "not-posted", "held"].includes(p.status))) issues.push(`Post needs attention (${p.day} ${p.time}): ${p.why || p.status}`);
   }
-  issues.push(...stuckDrops(dropFolders || [paths.rawReels, paths.publish, path.join(paths.reels, "delivered")], { now: now.getTime() }));
+  issues.push(...stuckDrops(dropFolders || [...(config.reels.rawIntake === false ? [] : [paths.rawReels]), ...(config.reels.publisher === "claude" ? [] : [paths.publish]), path.join(paths.reels, "delivered")], { now: now.getTime() }));
+  if (config.reels.publisher === "claude" && !dropFolders && stuckDrops([paths.publish], { now: now.getTime(), maxAge: 3 * 3600000, skip: ["Not posted"], byArrival: true }).length) issues.push("Open the Claude app; it has to be open for reels to post");
   if (!editorOnly && config.health?.pingUrl) {
     try { await (deps.healthPing || healthPing)(config.health.pingUrl, issues.length > 0); }
     catch (e) { issues.push(`Health ping failed: ${e.message}`); }

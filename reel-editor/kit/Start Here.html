@@ -39,7 +39,7 @@
 
   <h2>1. Install (about 10 minutes)</h2>
   <ol>
-    <li>Double-click <b>Install Reel Editor.command</b> in this folder. A Terminal window opens and does the work.</li>
+    <li>Double click <b>Install Reel Editor.command</b> in this folder. A Terminal window opens and does the work.</li>
     <li>Answer these questions:
       <table>
         <tr><th>Question</th><th>What to pick</th></tr>
@@ -121,21 +121,21 @@
     <li><b>Your words:</b> open <code>~/.reel/dictionary.json</code> and add your program and framework names under <code>terms</code>. They get highlighted and spelled right. People and company names go under <code>names</code>: spelled right, not highlighted.</li>
     <li><b>Your caption voice:</b> edit <code>~/.reel/voice.md</code> with who you talk to, words you use, and words you never use.</li>
     <li><b>A call-to-action:</b> add <code>export REEL_WATCH_CTA="Comment YOURWORD"</code> inside the reel-editor block in <code>~/.zshrc</code>.</li>
-    <li><b>Change your look:</b> double-click the installer again and pick another option.</li>
+    <li><b>Change your look:</b> double click the installer again and pick another option.</li>
   </ul>
 
 <!-- studio -->
   <h2 id="content-studio">Content Studio: your posts, made and scheduled for you</h2>
-  <p>Your kit also sets up the <b>Content Studio</b>: one folder that makes your carousels, statics and reels and schedules them into <b>your own Metricool</b>, every day, by itself. Nobody has to check the carousels or statics. All you do is keep dropping photos and clips.</p>
+  <p>Your kit also sets up the <b>Content Studio</b>: one folder that makes your carousels, statics and reels and schedules them into <b>your own Metricool</b>, every day, by itself. Nobody has to check the carousels or statics. Use Desktop/Reels for everything. Add photos to Photos. Film, drop a clip in a Raw folder, watch the finished reel, then drag it to Publish. Keep your Mac on and the Claude app open.</p>
 
   <div class="card"><strong>You need, on top of the above:</strong> your own Claude account (Pro or Max), your own Metricool account with your Instagram connected, and the Mac switched on. The daily run goes at about 6:07; if the Mac is asleep then, it runs when the Mac wakes.</div>
 
   <h3>Install</h3>
   <ol>
-    <li>Double-click <b>Install Content Studio.command</b> (not the Reel Editor one). It installs the reel editor in your brand first, then asks six things:
+    <li>Double click <b>Install Content Studio.command</b> (not the Reel Editor one). It installs the reel editor in your brand first, then asks six things:
       <table>
         <tr><th>Question</th><th>What to do</th></tr>
-        <tr><td>Your photos</td><td>Drag the folder with your photos into the Terminal window and press Return, or press Return to use <b>Content Studio/Photos</b>. A folder on the Desktop, in Documents or in Downloads can't be read by a background job on a Mac, so the installer offers to copy those photos in. Photos from the Photos app: select them, File, Export, into this folder.</td></tr>
+        <tr><td>Your photos</td><td>Drag the folder with your photos into the Terminal window and press Return, or press Return to use <b>Desktop/Reels/Photos</b>. A folder on the Desktop, in Documents or in Downloads can't be read by a background job on a Mac, so the installer offers to copy those photos in. Photos from the Photos app: select them, File, Export, into this folder.</td></tr>
         <tr><td>Claude</td><td>If Claude isn't signed in, it opens here: sign in with <b>your</b> Claude account, then type <code>/exit</code> and press Return. Claude writes your posts in your voice and talks to Metricool for you.</td></tr>
         <tr><td>Metricool</td><td>On claude.ai open <b>Settings, Connectors</b>, find <b>Metricool</b>, click Connect and sign in with your Metricool account (the installer opens the page). Then pick your brand from the list.</td></tr>
         <tr><td>How images reach Metricool</td><td>See the three ways below. Press Return for the first one if you're not sure.</td></tr>
@@ -155,21 +155,21 @@
   </table>
   <p class="muted">The Content Studio itself runs on a Mac (it uses the Mac's face finder and background jobs). Without a Mac, the posts can't be made; the image route only decides where the finished files go.</p>
 
-  <h3>Your daily safety net</h3>
-  <p>Three times a day the studio checks whether the daily run finished, Claude and Metricool are connected, a Metricool post failed, or a reel has waited over a day in Publish or Raw Reels. A Mac notification and <b>STATUS.txt</b> at the top of your studio tell you what to do. The installer offers an optional health ping URL: use your own healthchecks.io-style HTTPS address, or press Return to skip. It sends only a check-in (with <code>/fail</code> on problems), never your content. Nothing goes to Greg or an address you did not choose.</p>
+  <p>At the end of setup, the Claude app opens and a setup prompt is copied. Open the Code tab, paste, then press Return. Claude sets up your posting routine. Answer yes to its questions, and when it says the routine is on you are done. Keep your Mac on and the Claude app open.</p>
+<h3>Your daily safety net</h3>
+  <p>Three times a day the studio checks whether the daily run finished, Claude and Metricool are connected, a Metricool post failed, or a reel has waited over three hours in Publish. A Mac notification and <b>STATUS.txt</b> at the top of your studio tell you what to do. The installer offers an optional health ping URL: use your own healthchecks.io HTTPS address, or press Return to skip. It sends only a check in (with <code>/fail</code> on problems), never your content. Nothing goes to an address you did not choose.</p>
   <h3>Normal reels plus Trial Reels</h3>
   <p>New studios use <code>reels.trial: "both"</code>: a normal reel plus a separate Instagram Trial Reel copy. The trial never uses up a normal reel day. Both keep at least two hours from other posts. Existing settings stay as they are; <code>true</code> means trial only, <code>false</code> means normal only. Other connected networks keep the normal copy.</p>
   <h3>Optional daily story games</h3>
   <p>Stories start OFF. Write your own <b>brand/brand-guide.md</b>, then set <code>stories.enabled</code> to <code>true</code> in studio.json. The default <code>stories.slots</code> are <code>["08:00", "11:00", "17:00"]</code>. Your colors, fonts and voice become vertical story frames: spot what's wrong, pick A/B, or keep/kill a note. Viewers reply with their pick; these are not poll stickers. They schedule through your Metricool as Instagram stories and never take a feed slot. They refuse to run while the guide says <b>NOT FILLED IN YET</b>.</p>
   <h3>Sunday filming pack</h3>
-  <p>Each Sunday's daily run writes <b>Filming packs/&lt;Monday&gt; filming pack.md</b>: six prompts from your guide, each with a short opening, three beats and a last line for 25 to 45 seconds, plus three B-roll ideas for 5 to 10 seconds. Recent angles are avoided. Story prompts ask questions so you supply your real experience. The same filming box reminds you: eye-level phone, window light, one take, drop into Raw Reels or Desktop/Reels/Raw - Reel with B-roll. An unfinished guide skips the pack and leaves a note in STATUS.txt. We never invent your brand or your results.</p>
+  <p>Each Sunday's daily run writes <b>Filming packs/&lt;Monday&gt; filming pack.md</b>: six prompts from your guide, each with a short opening, three beats and a last line for 25 to 45 seconds, plus three B-roll ideas for 5 to 10 seconds. Recent angles are avoided. Story prompts ask questions so you supply your real experience. The same filming box reminds you: phone at eye level phone, window light, one take, drop into a Raw folder in Desktop/Reels, watch the finished reel, then drag it into Publish. An unfinished guide skips the pack and leaves a note in STATUS.txt. We never invent your brand or your results.</p>
 
   <h3>Your folder</h3>
   <table>
-    <tr><th>In Content Studio</th><th>What it is</th></tr>
-    <tr><td>Photos</td><td>(or the folder you picked) Where posts take photos from. Each photo is used once and never again. Blurry, dark, washed-out, tiny shots, screenshots and photos with a cut-off face are skipped by themselves.</td></tr>
-    <tr><td>Raw Reels</td><td>Drop a talking clip here. It's edited in your look, gets a caption in your voice, and is scheduled for the next day without a reel, at your best hour, two hours from your other posts. The clip moves to <b>Raw Reels/Done</b>.</td></tr>
-    <tr><td>Publish</td><td>Drop a finished reel (its folder from Desktop/Reels, or a video with a <code>.txt</code> caption of the same name). It is scheduled as it is, on the next day without a reel at your best hour; nothing is edited again. <b>Desktop/Reels/Publish</b> is a shortcut to it.</td></tr>
+    <tr><th>In Desktop/Reels</th><th>What it is</th></tr>
+    <tr><td>Photos</td><td>(or the folder you picked) Where posts take photos from. Each photo is used once and never again. Blurry, dark, washed-out, tiny shots, screenshots and photos with a cut off face are skipped by themselves.</td></tr>
+        <tr><td>Publish</td><td>Drop a finished reel (its folder from Desktop/Reels, or a video with a <code>.txt</code> caption of the same name). It is scheduled as it is, on the next day without a reel at your best hour; nothing is edited again. <b>Desktop/Reels/Publish</b> is a shortcut to it.</td></tr>
     <tr><td>Made</td><td>A copy of every post: the slides or the reel, the caption, and <b>Scheduled.txt</b> with the time and the Metricool link. Reference only: nothing here needs you.</td></tr>
     <tr><td>brand</td><td>Your brand: <code>brand-guide.md</code> (your Brand &amp; Messaging Guide: the pillars, the mix, your never-do list), <code>voice.md</code>, <code>brand.json</code> (colors, fonts) and your fonts.</td></tr>
     <tr><td>studio.json</td><td>Your settings: photo folder, posting times, Metricool brand, image route, AI label. Edit it in TextEdit and save; the next run uses it.</td></tr>
@@ -194,7 +194,7 @@
     <tr><td>Ban a word</td><td>Add it to <code>neverSay</code> in studio.json.</td></tr>
     <tr><td>Slides in other colors than your reels</td><td>Add <code>"slideColors": {"bg": "#FFF3EE", "text": "#111111", "accent": "#FFB27D"}</code> to studio.json (also <code>lines</code> and <code>cards</code>). Your reels keep your brand colors.</td></tr>
     <tr><td>See what it did</td><td>Open <b>Made</b>, or run <code>reel studio status</code> in Terminal.</td></tr>
-    <tr><td>Change Metricool, the image route or the photo folder</td><td>Double-click Install Content Studio.command again.</td></tr>
+    <tr><td>Change Metricool, the image route or the photo folder</td><td>Double click Install Content Studio.command again.</td></tr>
     <tr><td>Turn it off</td><td>In Terminal: <code>reel studio agents --uninstall</code></td></tr>
   </table>
 <!-- /studio -->
@@ -209,7 +209,7 @@
     <tr><td>A post was not made or not scheduled</td><td>Read the notification, then <b>Not posted.txt</b> in its Made folder, or run <code>reel studio status</code>. Most often: Claude signed out (open Terminal, type <code>claude</code>, sign in), Metricool disconnected (claude.ai, Settings, Connectors), or the Mac was off at 6:07 (the next run catches up).</td></tr>
     <tr><td>"No unused photos"</td><td>Every photo has been used once. Drop new photos into your photo folder; <code>reel photos</code> shows how many are ready and why any were skipped.</td></tr>
 <!-- /studio -->
-    <tr><td>Anything else, or to update</td><td>Double-click the installer again. It updates and repairs, and keeps your settings.</td></tr>
+    <tr><td>Anything else, or to update</td><td>Double click the installer again. It updates and repairs, and keeps your settings.</td></tr>
   </table>
 
   <h2>Remove it</h2>

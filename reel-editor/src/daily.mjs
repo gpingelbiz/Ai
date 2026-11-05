@@ -441,7 +441,7 @@ export async function runDaily(dir, { dryRun = false, noPublish = false, only = 
       results.push(...await runStories(studio, { now, noPublish: !publishing, deps }));
     }
     // Posts made earlier that never reached Metricool go first.
-    if (publishing) for (const p of retryable(posts, { tz: c.timezone, now })) {
+    if (publishing) for (const p of retryable(posts, { tz: c.timezone, now }).filter((p) => c.reels.publisher !== "claude" || !["reel", "trial"].includes(p.format))) {
       try { results.push(await publishPost(studio, p, { connectors, deps })); }
       catch (e) { results.push(failPublish(studio, p, e)); }
     }

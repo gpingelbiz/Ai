@@ -286,6 +286,7 @@ export function kitSendOutMessage(b, { studio = false } = {}) {
     `3. Before you install, have your Claude Pro or Max account ready${studio ? ", plus a Metricool account with your Instagram connected" : ""}. The Sign up here folder has every link.`,
     "4. After the install, fill in your own brand guide with Claude Code. The guide has the exact words to paste.",
     "",
+    ...(studio ? ["Use only Desktop/Reels: film, drop in a Raw folder, watch the finished reel, then drag it to Publish. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open.", "At setup, open the Code tab in Claude, paste the copied prompt and press Return. Press Run now once and choose Always allow on each question.", ""] : []),
     "Text me if you get stuck.",
     "Greg",
     "",

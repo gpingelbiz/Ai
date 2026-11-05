@@ -20,6 +20,7 @@ export const STUDIO_USAGE = `Content Studio (a client's folder that makes and sc
   reel studio init <dir> [--brand <Brand folder>] [--client "<name>"]   make a studio folder
   reel studio health [--studio <dir>]                                    check daily run, logins, failed posts and waiting reels
   reel studio status [--studio <dir>]                                    settings check, last posts, photo pool
+  reel studio publish scan|slot|serve|stop|done|fail [--studio <dir>]        commands for the Claude desktop publishing routine
   reel studio reels [--studio <dir>]                                     edit and schedule the clips in Raw Reels
   reel studio agents [--studio <dir>] [--uninstall]                      the daily job and the Raw Reels watcher (launchd)
   The studio is --studio, else $REEL_STUDIO, else ~/Content Studio.`;
@@ -118,15 +119,16 @@ ${extra}
 </dict>
 </plist>
 `;
+  const config = fs.existsSync(studioPaths(root).config) ? withDefaults(readJSON(studioPaths(root).config)) : withDefaults({});
   return [
     { label: `com.pingel.content-studio.daily.${slugged}`, plist: plist({ label: `com.pingel.content-studio.daily.${slugged}`, args: [node, bin, "daily", "--studio", root], extra: `  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>${hour}</integer><key>Minute</key><integer>${minute}</integer></dict>\n  <key>RunAtLoad</key><false/>` }) },
     { label: `com.pingel.content-studio.reels.${slugged}`, plist: plist({ label: `com.pingel.content-studio.reels.${slugged}`, args: [node, bin, "studio", "reels", "--studio", root], extra: `  <key>WatchPaths</key><array><string>${xml(path.join(root, "Raw Reels"))}</string><string>${xml(path.join(root, "Publish"))}</string></array>\n  <key>StartInterval</key><integer>3600</integer>\n  <key>ThrottleInterval</key><integer>60</integer>\n  <key>RunAtLoad</key><false/>` }) },
     { label: `com.pingel.content-studio.health.${slugged}`, plist: plist({ label: `com.pingel.content-studio.health.${slugged}`, args: [node, bin, "studio", "health", "--studio", root], extra: `  <key>StartCalendarInterval</key><array>${[9, 13, 18].map((h) => `<dict><key>Hour</key><integer>${h}</integer><key>Minute</key><integer>23</integer></dict>`).join("")}</array>` }) },
-  ];
+  ].filter((a) => config.reels.publisher !== "claude" || !a.label.includes(".reels."));
 }
 
-export function installAgents(root, { uninstall = false } = {}) {
-  const dir = path.join(os.homedir(), "Library", "LaunchAgents");
+export function installAgents(root, { uninstall = false, home = os.homedir(), run = spawnSync } = {}) {
+  const dir = path.join(home, "Library", "LaunchAgents");
   const uid = process.getuid();
   const out = [];
   // Agents installed before agentSlug under the generic "content-studio" name for THIS studio: removed, so the
@@ -134,19 +136,25 @@ export function installAgents(root, { uninstall = false } = {}) {
   for (const kind of ["daily", "reels", "health"]) {
     const label = `com.pingel.content-studio.${kind}.content-studio`;
     const file = path.join(dir, `${label}.plist`);
-    if (studioAgents(root)[0].label.endsWith(".content-studio") || !fs.existsSync(file)) continue;
+    if (studioAgents(root, { home })[0].label.endsWith(".content-studio") || !fs.existsSync(file)) continue;
     if (!fs.readFileSync(file, "utf8").includes(`<string>${xml(root)}</string>`)) continue;
-    spawnSync("launchctl", ["bootout", `gui/${uid}/${label}`], { stdio: "ignore" });
+    run("launchctl", ["bootout", `gui/${uid}/${label}`], { stdio: "ignore" });
     fs.rmSync(file, { force: true });
     out.push(`removed the old ${label}`);
   }
-  for (const a of studioAgents(root)) {
+  const obsolete = `com.pingel.content-studio.reels.${agentSlug(root, home)}`;
+  if (!studioAgents(root, { home }).some((a) => a.label === obsolete)) {
+    run("launchctl", ["bootout", `gui/${uid}/${obsolete}`], { stdio: "ignore" });
+    fs.rmSync(path.join(dir, `${obsolete}.plist`), { force: true });
+    out.push(`removed ${obsolete}`);
+  }
+  for (const a of studioAgents(root, { home })) {
     const file = path.join(dir, `${a.label}.plist`);
-    spawnSync("launchctl", ["bootout", `gui/${uid}/${a.label}`], { stdio: "ignore" });
+    run("launchctl", ["bootout", `gui/${uid}/${a.label}`], { stdio: "ignore" });
     if (uninstall) { fs.rmSync(file, { force: true }); out.push(`removed ${a.label}`); continue; }
     ensureDir(dir);
     fs.writeFileSync(file, a.plist);
-    const r = spawnSync("launchctl", ["bootstrap", `gui/${uid}`, file], { encoding: "utf8" });
+    const r = run("launchctl", ["bootstrap", `gui/${uid}`, file], { encoding: "utf8" });
     out.push(r.status === 0 ? `on: ${a.label}` : `could not start ${a.label}: ${(r.stderr || "").trim()}`);
   }
   return out;
@@ -155,6 +163,10 @@ export function installAgents(root, { uninstall = false } = {}) {
 export async function studioCommand(args) {
   const [cmd, ...rest] = args;
   if (!cmd || cmd === "help" || cmd === "--help") return console.log(STUDIO_USAGE);
+  if (cmd === "publish") {
+    const { publishCommand } = await import("./studio-publish.mjs");
+    return publishCommand(rest);
+  }
   if (cmd === "init") {
     const { values, positionals } = opt(rest, { brand: { type: "string" }, client: { type: "string" } });
     const dir = studioDir(positionals[0] || values.studio);

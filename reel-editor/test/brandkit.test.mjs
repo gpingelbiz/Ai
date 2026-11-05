@@ -162,3 +162,13 @@ test("generic kit includes the beginner guide without studio sections", () => {
     lintGuide(page.stdout);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+
+test("client kit copy uses a single desktop folder and explains approval and the app handoff", () => {
+  for (const file of ["Start Here.html", "Setup Guide.html", "Install Content Studio.command"]) {
+    const copy = fs.readFileSync(path.join(PKG_ROOT, "kit", file), "utf8");
+    assert.doesNotMatch(copy, /Raw Reels|Desktop\/Content Studio/);
+    assert.match(copy, /Desktop\/Reels/);
+    assert.match(copy, /Claude app/);
+  }
+});

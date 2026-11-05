@@ -343,3 +343,14 @@ test("a real Metricool error is never retried, so a post cannot double", async (
   await assert.rejects(metricoolCall("Metricool", "createScheduledPost", {}, { notReadyWaits: [1, 1] }), /Authorization Error/);
   assert.equal(calls(), 1);
 });
+
+
+test("legacy client studios keep raw intake and the legacy publisher by default", (t) => {
+  const s = studio(t);
+  assert.equal(s.config.reels.rawIntake, true);
+  assert.equal(s.config.reels.publisher, "legacy");
+  assert.equal(fs.existsSync(s.paths.rawReels), true);
+  const source = fs.readFileSync(path.join(PKG_ROOT, "scripts", "client.mjs"), "utf8");
+  assert.match(source, /publish: \{ mode: "off" \}/);
+  assert.doesNotMatch(source, /publisher: "claude"|rawIntake: false/);
+});

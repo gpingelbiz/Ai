@@ -672,7 +672,7 @@ test("kit: Start Here keeps the Content Studio section only in a Content Studio 
   assert.match(plain, /Jane's Reel Editor/);
   const studio = personalizeStartHere(html, { name: "Jane" }, { studio: true });
   assert.match(studio, /Jane's Content Studio/);
-  assert.match(studio, /Double-click <b>Install Content Studio\.command<\/b> in this folder/);
+  assert.match(studio, /Double click <b>Install Content Studio\.command<\/b> in this folder/);
   for (const route of ["Straight from this Mac", "Google Drive", "Dropbox"]) assert.match(studio, new RegExp(route));
   assert.doesNotMatch(studio, /<!-- \/?studio -->/);
   assert.equal(stripStudio(html), stripStudio(stripStudio(html)));
@@ -873,4 +873,17 @@ test("kit: Start Here lists every service to sign up for with a clickable link; 
   assert.match(links["Pixabay (free).webloc"], /<string>https:\/\/pixabay\.com\/api\/docs\/<\/string>/);
   assert.match(links["Metricool.webloc"], /<string>https:\/\/metricool\.com\/pricing\/<\/string>/);
   assert.ok(!("Metricool.webloc" in signupLinks()), "reel kit: no Metricool link");
+});
+
+
+test("kit setup gates intake and posting agents without changing legacy studio defaults", () => {
+  const dir = path.join(tmp(), "kit");
+  try {
+    const p = initStudio(dir, { config: { reels: { rawIntake: false, publisher: "claude" } } });
+    assert.equal(fs.existsSync(p.rawReels), false);
+    assert.deepEqual(studioAgents(dir).map((a) => a.label.split(".")[3]), ["daily", "health"]);
+    const source = fs.readFileSync(path.join(PKG_ROOT, "scripts", "studio-setup.mjs"), "utf8");
+    assert.match(source, /rawIntake: false, publisher: "claude"/);
+    assert.match(source, /--no-routine/);
+  } finally { fs.rmSync(path.dirname(dir), { recursive: true, force: true }); }
 });
