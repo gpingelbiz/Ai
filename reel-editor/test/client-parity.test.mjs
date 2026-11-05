@@ -10,7 +10,7 @@ import { studioHealth, stuckDrops, validPingURL, healthPing } from "../src/studi
 import { guideReady, clientStatus } from "../src/client-status.mjs";
 import { withDefaults, initStudio, studioPaths, loadStudio, readPosts, logPost, checkStudio } from "../src/content-studio.mjs";
 import { studioAgents } from "../src/studio-cli.mjs";
-import { postInput, normalizeScheduled } from "../src/studio-metricool.mjs";
+import { postInput, normalizeScheduled, metricoolCall } from "../src/studio-metricool.mjs";
 import { reelSlot, trialSlotFor, scheduleReel } from "../src/studio-reels.mjs";
 import { runDaily, openSlots, retryable, publishPost } from "../src/daily.mjs";
 import { runStories, parseStory, storySpec, runFilmingPack, parseFilmingPack, filmingPrompt, storyPrompt, HOW_TO_FILM, sameAngle } from "../src/studio-extras.mjs";
@@ -311,4 +311,35 @@ test("installer runs its $formula note under Mac bash in a UTF-8 locale", { skip
   const r = spawnSync("/bin/bash", ["-c", `set -u; note() { echo "$1"; }; formula=ffmpeg; ${line}`], { encoding: "utf8", env: { ...process.env, LC_ALL: "en_US.UTF-8" } });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /installing ffmpeg/);
+});
+
+function fakeClaude(t, replies) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-claude-"));
+  t.after(() => { delete process.env.REEL_CLAUDE_BIN; fs.rmSync(dir, { recursive: true, force: true }); });
+  const bin = path.join(dir, "claude"), count = path.join(dir, "count");
+  fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));
+  fs.writeFileSync(bin, `#!/usr/bin/env node\nconst fs=require("fs");const c=${JSON.stringify(count)};const n=fs.existsSync(c)?Number(fs.readFileSync(c,"utf8")):0;fs.writeFileSync(c,String(n+1));const r=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(dir, "replies.json"))},"utf8"));process.stdout.write(r[Math.min(n,r.length-1)]);\n`);
+  fs.chmodSync(bin, 0o755);
+  process.env.REEL_CLAUDE_BIN = bin;
+  return () => Number(fs.readFileSync(count, "utf8"));
+}
+const NOT_READY = JSON.stringify({ error: "Tool mcp__claude_ai_Metricool__getBrandSettings is not available in this session" });
+
+test("a connector that is not ready yet is asked again, then the result comes back", async (t) => {
+  const calls = fakeClaude(t, [NOT_READY, "The tool is not available in this session.", JSON.stringify({ data: [{ id: 1 }] })]);
+  const r = await metricoolCall("Metricool", "getBrandSettings", {}, { notReadyWaits: [1, 1] });
+  assert.deepEqual(r, { data: [{ id: 1 }] });
+  assert.equal(calls(), 3);
+});
+
+test("a connector that never loads stops with what to do", async (t) => {
+  const calls = fakeClaude(t, [NOT_READY]);
+  await assert.rejects(metricoolCall("Metricool", "getBrandSettings", {}, { notReadyWaits: [1, 1] }), /\/mcp[\s\S]*Settings, Connectors/);
+  assert.equal(calls(), 3);
+});
+
+test("a real Metricool error is never retried, so a post cannot double", async (t) => {
+  const calls = fakeClaude(t, [JSON.stringify({ error: "Authorization Error" })]);
+  await assert.rejects(metricoolCall("Metricool", "createScheduledPost", {}, { notReadyWaits: [1, 1] }), /Authorization Error/);
+  assert.equal(calls(), 1);
 });

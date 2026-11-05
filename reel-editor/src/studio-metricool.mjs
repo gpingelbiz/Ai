@@ -57,15 +57,26 @@ export function toolPrompt(tool, input) {
   ].join("\n");
 }
 
+// A claude.ai connector is not in the session's tools when headless Claude starts; it arrives a little later. A call
+// that starts too early gets "not available in this session" without the tool ever running, so waiting and asking
+// again cannot double a post. (2026-11-04: a client's fresh Mac stopped the Content Studio setup on this.)
+const TOOL_NOT_READY = /not available in this session|no such tool|tool\b.*\bnot (found|available)/i;
+const NOT_READY_WAITS = [20000, 45000];
+
 /** One Metricool tool call. Returns the parsed result; throws on an error result. */
-export async function metricoolCall(connector, tool, input, { timeoutMs } = {}) {
+export async function metricoolCall(connector, tool, input, { timeoutMs, notReadyWaits = NOT_READY_WAITS } = {}) {
   if (!connector) throw new Error("no Metricool connector name in studio.json (run the installer again)");
   const name = `${connectorPrefix(connector)}${tool}`;
-  const reply = await runClaude(["-p", toolPrompt(name, input), "--allowedTools", name, "--disallowedTools", DENY.join(","), "--output-format", "text"], { timeoutMs });
-  let result;
-  try { result = firstJSON(reply); } catch { throw new Error(`Metricool ${tool}: no result came back (${reply.trim().slice(0, 200)})`); }
-  if (result && typeof result === "object" && result.error) throw new Error(`Metricool ${tool}: ${typeof result.error === "string" ? result.error : JSON.stringify(result.error)}`);
-  return result;
+  for (let attempt = 0; ; attempt++) {
+    const reply = await runClaude(["-p", toolPrompt(name, input), "--allowedTools", name, "--disallowedTools", DENY.join(","), "--output-format", "text"], { timeoutMs });
+    let result, problem = "";
+    try { result = firstJSON(reply); if (result && typeof result === "object" && result.error) problem = typeof result.error === "string" ? result.error : JSON.stringify(result.error); }
+    catch { problem = `no result came back (${reply.trim().slice(0, 200)})`; }
+    if (!problem) return result;
+    if (!TOOL_NOT_READY.test(problem)) throw new Error(`Metricool ${tool}: ${problem}`);
+    if (attempt >= notReadyWaits.length) throw new Error(`Metricool ${tool}: Claude could not load the Metricool connector on this Mac (${problem}). Open Terminal, type claude, press Return, type /mcp and check Metricool shows connected; if not, reconnect it at claude.ai, Settings, Connectors. Then try again.`);
+    await new Promise((r) => setTimeout(r, notReadyWaits[attempt]));
+  }
 }
 
 /** The Metricool brands on the account: [{id, label, timezone, networks}]. */
