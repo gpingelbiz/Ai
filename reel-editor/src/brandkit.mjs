@@ -240,13 +240,13 @@ export const stripStudio = (html) => String(html).replace(/[ \t]*<!-- studio -->
 
 /**
  * The Start Here page with their name on it and the look question gone (their look comes with the kit). A Content
- * Studio kit (`studio: true`) keeps the Content Studio section and points at Install Content Studio.command; any
+ * Studio kit (`studio: true`) keeps the Content Studio section and points at Install Reels.command; any
  * other kit drops it.
  */
 export function personalizeStartHere(html, b, { studio = false } = {}) {
-  const who = studio ? `${b.name}'s Content Studio` : `${b.name}'s Reel Editor`;
+  const who = studio ? `${b.name}'s reels and posts` : `${b.name}'s Reel Editor`;
   const page = studio
-    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/<b>Install Reel Editor\.command<\/b>/g, "<b>Install Content Studio.command</b>")
+    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/<b>Install Reel Editor\.command<\/b>/g, "<b>Install Reels.command</b>")
     : stripStudio(html);
   return page
     .replace("<!-- signups -->", signupsHTML({ studio }))
@@ -260,13 +260,13 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 /** Beginner walkthrough for either kind of client kit. */
 export function personalizeSetupGuide(html, b, { studio = false } = {}) {
-  const who = `${b.name}'s ${studio ? "Content Studio" : "Reel Editor"}`;
+  const who = `${b.name}'s ${studio ? "reels and posts" : "Reel Editor"}`;
   return (studio ? String(html).replace(/<!-- \/?studio -->\n?/g, "") : stripStudio(html))
     .replace(/<!-- (reel-claude|reel-guide) -->[\s\S]*?<!-- \/\1 -->/g, (block) => studio ? "" : block.replace(/<!--[^>]*-->/g, ""))
     .replace("<!-- signups -->", signupsHTML({ studio }))
     .replace("<title>Reel Editor: Setup Guide</title>", `<title>${esc(who)}: Setup Guide</title>`)
     .replace("<h1>Reel Editor: Setup Guide</h1>", `<h1>${esc(who)}: Setup Guide</h1>`)
-    .replace(/Install Reel Editor\.command/g, studio ? "Install Content Studio.command" : "Install Reel Editor.command")
+    .replace(/Install Reel Editor\.command/g, studio ? "Install Reels.command" : "Install Reel Editor.command")
     .replace(/<tr><td>Your look<\/td><td>[\s\S]*?<\/td><\/tr>/, "");
 }
 
@@ -279,14 +279,14 @@ export function kitSendOutMessage(b, { studio = false } = {}) {
   const greeting = firsts.length ? ` ${firsts.join(" and ")}` : "";
   const studioLine = studio ? " and schedules them through your own Metricool" : "";
   return [
-    `Hi${greeting}, here is your ${studio ? "Content Studio" : "Reel Editor"} kit. It turns your talking clips into finished reels${studioLine}.`,
+    `Hi${greeting}, here is your ${studio ? "reels and posts" : "Reel Editor"} kit. It turns your talking clips into finished reels${studioLine}.`,
     "",
     "1. Get the zip onto your Mac. Open the link on your Mac and download it, or AirDrop it from your phone. Zip files sent by text often come through blank, so ask me for a link if that happens.",
     "2. Double click the zip to unzip it, then open Setup Guide.html first. It walks you through every step and every question the installer asks.",
     `3. Before you install, have your Claude Pro or Max account ready${studio ? ", plus a Metricool account with your Instagram connected" : ""}. The Sign up here folder has every link.`,
     "4. After the install, fill in your own brand guide with Claude Code. The guide has the exact words to paste.",
     "",
-    ...(studio ? ["Use only Desktop/Reels: film, drop in a Raw folder, watch the finished reel, then drag it to Publish. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open.", "At setup, open the Code tab in Claude, paste the copied prompt and press Return. Press Run now once and choose Always allow on each question.", ""] : []),
+    ...(studio ? ["Use only Desktop/Reels: film, drop in a Raw folder, watch the finished reel, then drag it to Publish. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open.", "At setup, open the Code tab in Claude, paste the copied prompt and press Return. Claude turns on reel-publish and daily-posts. Carousels and statics are made and scheduled at 6 AM and noon. You can press Run now on daily-posts. Choose Always allow on each question.", ""] : []),
     "Text me if you get stuck.",
     "Greg",
     "",

@@ -104,7 +104,7 @@ export async function runStories(studio, { now = new Date(), noPublish = false, 
       record = { id, day, time, format: "story", hook: game.question, made, files, text: game.visible, altText: [game.visible], ai: studio.config.ai.label === "always", preflight, status: "made" };
       writeJSON(path.join(made, "game.json"), game);
       logPost(studio.paths, record);
-      results.push(noPublish ? record : await publishPost(studio, record, { deps }));
+      results.push(noPublish || studio.config.daily.publisher === "claude" ? record : await publishPost(studio, record, { deps }));
     } catch (e) {
       record = { ...record, id, day, time, format: "story", status: record?.made ? "not-posted" : "failed", why: e.message };
       logPost(studio.paths, record); results.push(record);

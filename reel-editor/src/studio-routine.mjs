@@ -71,12 +71,70 @@ Never post anything absent from scan, change other posts, create more than one t
 `;
 }
 
+export function dailyPostsPrompt(studio, options = {}) {
+  const c = studio.config;
+  const command = (action, args = "") => `${publishPrefix(options).replace(/ publish$/, " posts")} ${action}${args ? ` ${args}` : ""} --studio ${quote(studio.paths.root)}`;
+  return `---
+name: daily-posts
+description: Make and schedule carousels and static posts at 6 AM and noon.
+---
+Make and schedule only the posts returned by ready. Fixed facts: blogId ${c.metricool.blogId}, timezone ${c.timezone}, daysAhead ${c.daysAhead}. Keep this Mac on and the Claude app open.
+Use each command below verbatim as one Bash command. Substitute only SCHEDULED_JSON, POST_ID, LOCAL_DATE, PLANNER_URL, METRICOOL_ID, ERROR_REASON. Quote each safely as a single shell argument. Never use cd, pipes, redirects or compound commands.
+1. Run:
+${command("scan")}
+If work is false STOP with no connector calls.
+2. Call Metricool getScheduledPosts once for brandId ${c.metricool.blogId}, timezone ${c.timezone}, fromDate today through daysAhead days from today. Include EVERY network and drafts. Map to {day,hour,minute,type} in that timezone. REEL means only regular Instagram reels, TRIAL_REEL means trials, STORY means Instagram stories, POST means everything else. Draft reels are POST. Include id and plannerUrl when available, and no post text. SCHEDULED_JSON is this complete array.
+3. Run:
+${command("make", "'SCHEDULED_JSON'")}
+4. Run:
+${command("wait")}
+Repeat wait while running is true; each wait returns within two minutes. Making posts can take many minutes. Never start another make while one is running. If making failed, still process ready and finish.
+5. Run:
+${command("ready")}
+6. For each ready post, oldest first, run this with the Bash timeout set to 600000:
+${command("serve", "'POST_ID'")}
+Call Metricool createScheduledPost once with blogId, date and info returned by ready, filling only info.media with the https URLs from serve in slide order. Keep mediaAltText, text, draft, AI flag, networks and all other info exactly. date includes the correct UTC offset for ${c.timezone} on that day. No best time lookup is needed. Never retry an uncertain create. Only success when the response media URL starts with https://static.metricool.com.
+Always run this after a create, including a failure:
+${command("stop")}
+After a confirmed success run this, with LOCAL_DATE set to the date returned by ready:
+${command("done", "'POST_ID' --date 'LOCAL_DATE' --planner 'PLANNER_URL' --id 'METRICOOL_ID'")}
+If serve failed, so createScheduledPost was never called, run:
+${command("fail", "'POST_ID' --why 'ERROR_REASON' --not-sent")}
+If createScheduledPost failed or its media was unconfirmed run:
+${command("fail", "'POST_ID' --why 'ERROR_REASON'")}
+Never call done on an unconfirmed post. Continue to the next ready post. Never retry that post in this run.
+7. Always run last, including after errors:
+${command("finish")}
+Reply with one short line per post: scheduled or draft, day and time, or failure.
+Never touch other posts, use createScheduledPostForReview, send messages, or change the supplied copy. Only use Bash and the Metricool tools getScheduledPosts and createScheduledPost.
+`;
+}
+
+export function allowPostsCommands({ home = os.homedir(), ...options } = {}) {
+  const file = path.join(home, ".claude", "settings.json");
+  let settings;
+  try { settings = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { if (e.code !== "ENOENT") return false; settings = {}; }
+  const rule = `Bash(${publishPrefix(options).replace(/ publish$/, " posts")} *)`;
+  const allow = settings.permissions?.allow || [];
+  if (!allow.includes(rule)) {
+    settings.permissions = { ...settings.permissions, allow: [...allow, rule] };
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify(settings, null, 2)); fs.renameSync(`${file}.tmp`, file);
+  }
+  return true;
+}
+
 export function writeRoutine(studio, { home = os.homedir(), ...options } = {}) {
   const prompt = routinePrompt(studio, options);
   const file = path.join(studio.paths.state, "reel-publish-routine.md");
   const skill = path.join(home, ".claude", "scheduled-tasks", "reel-publish", "SKILL.md");
   for (const target of [file, skill]) { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, prompt); }
-  return { file, skill, setup: `Create a scheduled task using create_scheduled_task with taskId reel-publish, cron 45 7-20 * * *, description "Schedule approved reels from Publish", and the complete prompt from ${quote(file)}. Then use ToolSearch to find the Metricool tools getScheduledPosts, getBestTimeToPostByNetwork and createScheduledPost, and add their exact full tool names to permissions.allow in ${quote(path.join(home, ".claude", "settings.json"))}, keeping everything else in that file, so later runs do not stop to ask. Then list scheduled tasks, confirm reel-publish is enabled, and tell me in one line that the routine is on.` };
+  let daily = null;
+  if (studio.config.daily.publisher === "claude") {
+    daily = { file: path.join(studio.paths.state, "daily-posts-routine.md"), skill: path.join(home, ".claude", "scheduled-tasks", "daily-posts", "SKILL.md") };
+    for (const target of [daily.file, daily.skill]) { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, dailyPostsPrompt(studio, options)); }
+  }
+  return { file, skill, daily, setup: `Create a scheduled task using create_scheduled_task with taskId reel-publish, cron 45 7-20 * * *, description "Schedule approved reels from Publish", and the complete prompt from ${quote(file)}. ${daily ? `Create a second scheduled task using create_scheduled_task with taskId daily-posts, cron 0 6,12 * * *, description "Make and schedule carousels and static posts", and the complete prompt from ${quote(daily.file)}. ` : ""}Then use ToolSearch to find the Metricool tools getScheduledPosts, getBestTimeToPostByNetwork and createScheduledPost, and add their exact full tool names to permissions.allow in ${quote(path.join(home, ".claude", "settings.json"))}, keeping everything else in that file, so later runs do not stop to ask. Then list scheduled tasks, confirm reel-publish${daily ? " and daily-posts are" : " is"} enabled, and tell me in one line that the routine${daily ? "s are" : " is"} on.` };
 }
 
 /** Install preparation only. The desktop app itself must register the task. */
@@ -84,6 +142,7 @@ export function openRoutineSetup(studio, { run = spawnSync, home = os.homedir(),
   const routine = writeRoutine(studio, { home });
   const notes = [];
   if (!allowPublishCommands({ home })) notes.push("Could not update your Claude settings file, so Claude may ask before it posts. Answer yes when it does.");
+  if (studio.config.daily.publisher === "claude" && !allowPostsCommands({ home })) notes.push("Could not update your Claude settings file. Answer yes if Claude asks before making posts.");
   if (!appExists) {
     const r = run("brew", ["install", "--cask", "claude"], { stdio: "inherit" });
     if (r.status !== 0) notes.push("Install the Claude app from claude.ai/download, then open it.");
@@ -115,7 +174,8 @@ export function kitFolders(studio, { home = os.homedir() } = {}) {
   }
   const status = path.join(studio.paths.root, "STATUS.txt");
   if (!fs.existsSync(status)) fs.writeFileSync(status, "Ready. Keep your Mac on and the Claude app open.\n");
-  for (const [name, target] of [["Publish", studio.paths.publish], ["Photos", photosDir(studio.config, studio.paths)], ["Made", studio.paths.made], ["STATUS.txt", status]]) {
+  fs.mkdirSync(path.join(studio.paths.root, "Filming packs"), { recursive: true });
+  for (const [name, target] of [["Brand", studio.paths.brand], ["Filming packs", path.join(studio.paths.root, "Filming packs")], ["Publish", studio.paths.publish], ["Photos", photosDir(studio.config, studio.paths)], ["Made", studio.paths.made], ["STATUS.txt", status]]) {
     const link = path.join(desk, name);
     try { fs.lstatSync(link); } catch (e) { if (e.code !== "ENOENT") throw e; fs.symlinkSync(target, link); }
   }

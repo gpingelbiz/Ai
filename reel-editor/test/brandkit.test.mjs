@@ -94,11 +94,11 @@ for (const studio of [false, true]) {
   test(`Setup Guide personalization and delivery text: studio=${studio}`, () => {
     const source = fs.readFileSync(path.join(PKG_ROOT, "kit/Setup Guide.html"), "utf8");
     const html = personalizeSetupGuide(source, { ...jane, name: 'Jane & Jo' }, { studio });
-    assert.match(html, new RegExp(`<title>Jane &amp; Jo's ${studio ? "Content Studio" : "Reel Editor"}: Setup Guide</title>`));
-    assert.match(html, new RegExp(`<h1>Jane &amp; Jo's ${studio ? "Content Studio" : "Reel Editor"}: Setup Guide</h1>`));
-    assert.ok(html.includes(studio ? "Install Content Studio.command" : "Install Reel Editor.command"));
+    assert.match(html, new RegExp(`<title>Jane &amp; Jo's ${studio ? "reels and posts" : "Reel Editor"}: Setup Guide</title>`));
+    assert.match(html, new RegExp(`<h1>Jane &amp; Jo's ${studio ? "reels and posts" : "Reel Editor"}: Setup Guide</h1>`));
+    assert.ok(html.includes(studio ? "Install Reels.command" : "Install Reel Editor.command"));
     assert.equal(html.includes("Connect Metricool to Claude before installing"), studio);
-    assert.equal(html.includes("Make the first post now"), studio);
+    assert.equal(html.includes("press Run now on daily-posts"), studio);
     assert.equal(html.includes("Add Claude for graphic cards"), !studio);
     assert.doesNotMatch(html, /<!-- \/?studio -->|Your look/);
     if (!studio) assert.doesNotMatch(html, /Metricool|Content Studio/);
@@ -136,7 +136,7 @@ for (const studio of [false, true]) {
       fs.writeFileSync(guide, "NOT FILLED IN YET\n");
       const result = spawnSync(process.execPath, ["scripts/brand-kit.mjs", brand, "--out", root, ...(studio ? ["--studio", guide] : [])], { cwd: PKG_ROOT, encoding: "utf8" });
       assert.equal(result.status, 0, result.stderr);
-      const kitName = `Jane Doe ${studio ? "Content Studio" : "Reel Editor"} Kit`;
+      const kitName = `Jane Doe ${studio ? "Reels and Posts" : "Reel Editor"} Kit`;
       const zip = path.join(root, `${kitName}.zip`), message = path.join(root, `${kitName} - send-out message.txt`);
       const listing = spawnSync("unzip", ["-Z1", zip], { encoding: "utf8" });
       assert.equal(listing.status, 0, listing.stderr);
@@ -165,7 +165,7 @@ test("generic kit includes the beginner guide without studio sections", () => {
 
 
 test("client kit copy uses a single desktop folder and explains approval and the app handoff", () => {
-  for (const file of ["Start Here.html", "Setup Guide.html", "Install Content Studio.command"]) {
+  for (const file of ["Start Here.html", "Setup Guide.html", "Install Reels.command"]) {
     const copy = fs.readFileSync(path.join(PKG_ROOT, "kit", file), "utf8");
     assert.doesNotMatch(copy, /Raw Reels|Desktop\/Content Studio/);
     assert.match(copy, /Desktop\/Reels/);

@@ -300,7 +300,7 @@ test("filming: off for existing studios, on for new ones", async (t) => {
 // Mac bash 3.2 in a UTF-8 locale reads a non-ASCII character after $name as part of the name, so with set -u
 // `$formula…` dies with "unbound variable" (a client's fresh Mac stopped at install.sh line 91). Write ${name}….
 test("shell scripts never put a non-ASCII character right after a bare $variable", () => {
-  const files = ["install.sh", "kit/Install Reel Editor.command", "kit/Install Content Studio.command", ...fs.readdirSync(path.join(PKG_ROOT, "scripts")).filter((f) => f.endsWith(".sh")).map((f) => `scripts/${f}`)];
+  const files = ["install.sh", "kit/Install Reel Editor.command", "kit/Install Reels.command", ...fs.readdirSync(path.join(PKG_ROOT, "scripts")).filter((f) => f.endsWith(".sh")).map((f) => `scripts/${f}`)];
   const bad = [];
   for (const f of files) fs.readFileSync(path.join(PKG_ROOT, f), "utf8").split("\n").forEach((line, i) => { if (/\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/.test(line)) bad.push(`${f}:${i + 1}`); });
   assert.deepEqual(bad, []);

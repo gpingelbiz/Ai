@@ -59,7 +59,7 @@ export async function studioHealth(dir, { now = new Date(), dropFolders = null, 
     const { day, minutes } = zonedNow(tz, now);
     let daily = {};
     try { daily = readJSON(path.join(paths.state, "daily.json")); } catch {}
-    if (minutes >= 9 * 60 && daily.day !== day) issues.push("The daily run has not finished today. Keep this Mac awake and check the daily log.");
+    if (minutes >= 9 * 60 && (daily.day !== day || (config.daily.publisher === "claude" && !daily.completed))) issues.push(config.daily.publisher === "claude" ? "Open the Claude app; it has to be open for your carousels and static posts to be made." : "The daily run has not finished today. Keep this Mac awake and check the daily log.");
     if (daily.error) issues.push(`Daily run needs attention: ${daily.error}`);
     try {
       if (!await (deps.claudeConnected || claudeConnected)()) issues.push("Claude is disconnected. Open Terminal, run claude and sign in.");
@@ -74,7 +74,8 @@ export async function studioHealth(dir, { now = new Date(), dropFolders = null, 
         }
       } catch (e) { issues.push(`Metricool health check failed: ${String(e.message).split("\n")[0]}`); }
     }
-    for (const p of readPosts(paths).filter((p) => ["failed", "not-posted", "held"].includes(p.status))) issues.push(`Post needs attention (${p.day} ${p.time}): ${p.why || p.status}`);
+    // A routine post on hold is never resent, so it would alert forever; it stops alerting a week after its date.
+    for (const p of readPosts(paths).filter((p) => ["failed", "not-posted", "held"].includes(p.status) && (config.daily.publisher !== "claude" || p.day >= addDays(day, -7)))) issues.push(`Post needs attention (${p.day} ${p.time}): ${p.why || p.status}`);
   }
   issues.push(...stuckDrops(dropFolders || [...(config.reels.rawIntake === false ? [] : [paths.rawReels]), ...(config.reels.publisher === "claude" ? [] : [paths.publish]), path.join(paths.reels, "delivered")], { now: now.getTime() }));
   if (config.reels.publisher === "claude" && !dropFolders && stuckDrops([paths.publish], { now: now.getTime(), maxAge: 3 * 3600000, skip: ["Not posted"], byArrival: true }).length) issues.push("Open the Claude app; it has to be open for reels to post");
@@ -84,6 +85,6 @@ export async function studioHealth(dir, { now = new Date(), dropFolders = null, 
   }
   const message = issues.length ? issues.join("\n") : "OK. All checks passed.";
   clientStatus(paths, "health", message, now);
-  if (issues.length) (deps.notify || clientNotify)(editorOnly ? "Reel Editor needs attention" : "Content Studio needs attention", message);
+  if (issues.length) (deps.notify || clientNotify)(editorOnly ? "Reel Editor needs attention" : "Your reels and posts need attention", message);
   return { issues, message };
 }

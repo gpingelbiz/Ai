@@ -394,39 +394,51 @@ export async function publishPost(studio, record, { connectors = {}, deps = {} }
   try {
     const input = postInput({ blogId: c.metricool.blogId, day: record.day, time: record.time, tz: c.timezone, text: record.text, media: host.urls, altText: record.altText, kind: record.format, ai: record.ai, draft, networks: record.format === "story" ? ["instagram"] : c.metricool.networks, title: record.hook, coverMs: record.coverMs });
     const r = await (deps.createPost || createPost)(c.metricool.connector || connectors.metricool, input);
-    const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: record.draftWhy || (draft ? "the studio is set to drafts" : "") };
-    fs.writeFileSync(path.join(record.made, "Scheduled.txt"), [
-      draft ? `Saved as a DRAFT in Metricool (${next.why}); it will not post until it is scheduled there.` : `Scheduled to post ${record.day} at ${record.time} (${c.timezone}) on ${c.metricool.networks.join(", ")}.`,
-      `Metricool: ${r.plannerUrl || "(no link returned)"}`,
-      record.ai ? "Marked as made with AI (Instagram's AI label)." : "",
-    ].filter(Boolean).join("\n") + "\n");
-    fs.rmSync(path.join(record.made, "Not posted.txt"), { force: true });
-    logPost(studio.paths, next);
-    studioLog(studio.paths, `${next.status} ${record.id} ${r.plannerUrl || ""}`);
-    return next;
+    return recordPostSuccess(studio, record, r);
   } finally {
     await host.close();
   }
+}
+
+export function recordPostSuccess(studio, record, r) {
+  const c = studio.config;
+  const draft = c.publish.mode === "draft" || !!record.draftWhy;
+  const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: record.draftWhy || (draft ? "the studio is set to drafts" : "") };
+  fs.writeFileSync(path.join(record.made, "Scheduled.txt"), [
+    draft ? `Saved as a DRAFT in Metricool (${next.why}); it will not post until it is scheduled there.` : `Scheduled to post ${record.day} at ${record.time} (${c.timezone}) on ${c.metricool.networks.join(", ")}.`,
+    `Metricool: ${r.plannerUrl || "(no link returned)"}`,
+    record.ai ? "Marked as made with AI (Instagram's AI label)." : "",
+  ].filter(Boolean).join("\n") + "\n");
+  fs.rmSync(path.join(record.made, "Not posted.txt"), { force: true });
+  logPost(studio.paths, next);
+  studioLog(studio.paths, `${next.status} ${record.id} ${r.plannerUrl || ""}`);
+  return next;
 }
 
 /**
  * The whole daily run. Options: dryRun (make nothing, list the slots), noPublish (make and file in Made/ only),
  * only ("carousel" | "static": fill only that kind), limit (most posts this run), now (tests), deps (tests).
  */
-export async function runDaily(dir, { dryRun = false, noPublish = false, only = null, limit = null, day = null, now = new Date(), deps = {} } = {}) {
+export async function runDaily(dir, { dryRun = false, noPublish = false, only = null, limit = null, day = null, now = new Date(), deps = {}, routine = false, scheduled: passedSchedule = null } = {}) {
   const studio = loadStudio(dir, { publishing: !noPublish && !dryRun });
   const c = studio.config;
+  if (c.daily.publisher === "claude" && !dryRun && !noPublish && !routine) {
+    const skipped = "The Claude routine makes and schedules your carousels and static posts.";
+    console.log(skipped);
+    return { made: [], skipped };
+  }
   const release = dryRun ? () => {} : takeLock(studio.paths, "daily");
   if (!release) { log("studio: another run is going; nothing to do"); return { made: [], skipped: "locked" }; }
   try {
     if (!dryRun) writeJSON(path.join(studio.paths.state, "daily.json"), { started: now.toISOString(), error: "The daily run started but did not finish. Check .studio/launchd.log." });
     const publishing = c.publish.mode !== "off" && !noPublish;
     let connectors = { metricool: c.metricool.connector };
-    if (c.sandcastles || c.hosting.route === "dropbox") { try { connectors = { ...(await (deps.detectConnectors || detectConnectors)()), metricool: c.metricool.connector }; connectors = Object.fromEntries(Object.entries(connectors).map(([k, v]) => [k, typeof v === "object" ? (v?.connected ? v.name : "") : v])); } catch {} }
+    if (c.sandcastles || (!routine && c.hosting.route === "dropbox")) { try { connectors = { ...(await (deps.detectConnectors || detectConnectors)()), metricool: c.metricool.connector }; connectors = Object.fromEntries(Object.entries(connectors).map(([k, v]) => [k, typeof v === "object" ? (v?.connected ? v.name : "") : v])); } catch {} }
+    if (routine && deps.beforeDaily) await deps.beforeDaily();
     const posts = readPosts(studio.paths);
     const { day: today } = zonedNow(c.timezone, now);
-    let scheduled = [];
-    if (publishing) {
+    let scheduled = passedSchedule || [];
+    if (publishing && !passedSchedule) {
       try { scheduled = await (deps.scheduledPosts || scheduledPosts)(c.metricool.connector, { blogId: c.metricool.blogId, from: day || today, to: day || addDays(today, Number(c.daysAhead)), tz: c.timezone }); }
       catch (e) { warn(`studio: could not read Metricool's schedule (${e.message}); filling by the log only`); }
     }
@@ -467,9 +479,9 @@ export async function runDaily(dir, { dryRun = false, noPublish = false, only = 
   }
 }
 
-function failPublish(studio, record, e) {
+export function failPublish(studio, record, e) {
   const why = String(e.message).split("\n")[0];
-  try { fs.writeFileSync(path.join(record.made, "Not posted.txt"), `Not in Metricool yet: ${why}\nThe next daily run tries again while the time is still ahead.\n`); } catch {}
+  try { fs.writeFileSync(path.join(record.made, "Not posted.txt"), `Not in Metricool yet: ${why}\n${record.uncertain ? "Check Metricool first. An uncertain create is not automatically retried." : "The next daily run tries again while the time is still ahead."}\n`); } catch {}
   const next = { ...record, status: "not-posted", why };
   logPost(studio.paths, next);
   studioLog(studio.paths, `NOT POSTED ${record.id}: ${why}`);
@@ -479,7 +491,7 @@ function failPublish(studio, record, e) {
 
 /** One line per result, for the terminal and the log. */
 export function dailySummary(result) {
-  if (result.skipped) return `nothing done (${result.skipped})`;
+  if (result.skipped) return result.skipped.startsWith("The Claude routine") ? result.skipped : `nothing done (${result.skipped})`;
   if (!result.made) return result.slots.length ? `open slots: ${result.slots.map((s) => `${s.day} ${s.time} ${s.format}`).join(", ")}` : "every slot is filled";
   if (!result.made.length) return "every slot is filled";
   return result.made.map((r) => `${r.day} ${r.time} ${r.format}: ${r.status}${r.hook ? ` "${r.hook}"` : ""}${r.plannerUrl ? ` ${r.plannerUrl}` : ""}${r.why ? ` (${r.why})` : ""}`).join("\n");
