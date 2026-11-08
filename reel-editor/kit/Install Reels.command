@@ -1,23 +1,29 @@
 #!/bin/bash
-# your reels and posts: double click to install or update (macOS, Apple Silicon).
-# Installs the reel editor with this kit's brand, then sets up your reels and posts: your photo folder, your Claude
-# sign in, your Metricool brand, how images reach Metricool, and your posting times, and turns on the daily run.
-# Running it again later updates everything and keeps your settings.
+# Double-click to install the tested editor with this kit's brand.
+set -o pipefail
 clear
-printf '\n\033[1mYour reels and posts\033[0m\n\n'
-printf 'This sets up your reels and posts on this Mac. It takes about 15 minutes.\n'
-printf 'If a window asks to install Apple'"'"'s command line tools, click Install, wait, then double click this file again.\n\n'
+printf '\nYour reels and posts\n\n'
+printf 'This gets editing ready in your account. No Mac password is needed.\n'
+printf 'The first setup downloads tools and speech recognition. Keep this window open.\n\n'
 KIT="$(cd "$(dirname "$0")" && pwd)"
 if [ ! -f "$KIT/Brand/brand.json" ]; then
-  printf '\033[31mThe Brand folder is missing next to this file.\033[0m Unzip the whole kit and double click this file inside it.\n'
+  printf 'The Brand folder is missing next to this file. Unzip the whole kit, then open this file inside it.\n'
+  read -r -p "Press Return to close. " _ < /dev/tty || true
+  exit 1
+fi
+if [ ! -f "$KIT/install.sh" ] || [ ! -f "$KIT/release.json" ]; then
+  printf 'The setup files are missing. Unzip the whole kit, then try again.\n'
   read -r -p "Press Return to close. " _ < /dev/tty || true
   exit 1
 fi
 cd "$HOME" || exit 1
-if curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash -s -- --brand "$KIT/Brand" --studio; then
-  printf '\n\033[32mAll set.\033[0m Use Desktop/Reels. Film, drop a clip in a Raw folder, watch the finished reel, then drag it to Publish. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open. Open Start Here.html for how it works.\n'
+bash "$KIT/install.sh" --brand "$KIT/Brand" --studio --release "$KIT/release.json"
+STATUS=$?
+if [ "$STATUS" = 0 ]; then
+  printf 'Posting setup with the Claude app is separate; Start Here.html explains it.\n'
+  printf '\nUse the Raw folders in Desktop/Reels for your clips. Start Here.html explains the next steps.\n'
 else
-  printf '\n\033[31mThe install stopped.\033[0m Read the message above, then double click this file again. Start Here.html has fixes for the common ones.\n'
+  printf '\nThe install stopped. Read the message above, then double-click this file again to continue.\n'
 fi
-printf '\nYou can close this window.\n'
 read -r -p "Press Return to close. " _ < /dev/tty || true
+exit "$STATUS"

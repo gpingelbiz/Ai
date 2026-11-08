@@ -7,6 +7,7 @@
 # REEL_WATCH_RAW / REEL_WATCH_RAW_BROLL / REEL_WATCH_RAW_CAROUSEL / REEL_WATCH_DONE pick the folders; they are
 # written into the agent so the script scans the same folders launchd watches.
 set -euo pipefail
+[ ! -f "$HOME/.reel/env.sh" ] || . "$HOME/.reel/env.sh"
 
 LABEL="com.pingel.reel-watch"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -29,6 +30,11 @@ if [ "${1:-}" = "--uninstall" ]; then
   exit 0
 fi
 
+xml() { printf '%s' "$1" | sed -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
+# No login shell: the agent gets the exact tool search path used by this setup.
+AGENT_PATH="$(xml "$PATH")"
+AGENT_COMMAND='[ ! -f "$HOME/.reel/env.sh" ] || . "$HOME/.reel/env.sh"; exec /bin/bash "$1"'
+
 render() {
   cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -39,26 +45,30 @@ render() {
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>$HERE/watch-folder.sh</string>
+    <string>-c</string>
+    <string>$(xml "$AGENT_COMMAND")</string>
+    <string>reel-watch</string>
+    <string>$(xml "$HERE/watch-folder.sh")</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>REEL_WATCH_RAW</key><string>$RAW</string>
-    <key>REEL_WATCH_RAW_BROLL</key><string>$RAW_BROLL</string>
-    <key>REEL_WATCH_RAW_CAROUSEL</key><string>$RAW_CAROUSEL</string>
-    <key>REEL_WATCH_RAW_LONG</key><string>$RAW_LONG</string>
-    <key>REEL_WATCH_RAW_YOUTUBE</key><string>$RAW_YOUTUBE</string>
-    <key>REEL_WATCH_RAW_RUNWAY</key><string>$RAW_RUNWAY</string>
-    <key>REEL_WATCH_RAW_OWN_BROLL</key><string>$RAW_OWN_BROLL</string>
-    <key>REEL_WATCH_MUSIC</key><string>$MUSIC</string>
-    <key>REEL_WATCH_DONE</key><string>$DONE</string>
+    <key>PATH</key><string>$AGENT_PATH</string>
+    <key>REEL_WATCH_RAW</key><string>$(xml "$RAW")</string>
+    <key>REEL_WATCH_RAW_BROLL</key><string>$(xml "$RAW_BROLL")</string>
+    <key>REEL_WATCH_RAW_CAROUSEL</key><string>$(xml "$RAW_CAROUSEL")</string>
+    <key>REEL_WATCH_RAW_LONG</key><string>$(xml "$RAW_LONG")</string>
+    <key>REEL_WATCH_RAW_YOUTUBE</key><string>$(xml "$RAW_YOUTUBE")</string>
+    <key>REEL_WATCH_RAW_RUNWAY</key><string>$(xml "$RAW_RUNWAY")</string>
+    <key>REEL_WATCH_RAW_OWN_BROLL</key><string>$(xml "$RAW_OWN_BROLL")</string>
+    <key>REEL_WATCH_MUSIC</key><string>$(xml "$MUSIC")</string>
+    <key>REEL_WATCH_DONE</key><string>$(xml "$DONE")</string>
   </dict>
   <key>WatchPaths</key>
-  <array><string>$RAW</string><string>$RAW_BROLL</string><string>$RAW_CAROUSEL</string><string>$RAW_LONG</string><string>$RAW_YOUTUBE</string><string>$RAW_RUNWAY</string><string>$RAW_OWN_BROLL</string></array>
+  <array><string>$(xml "$RAW")</string><string>$(xml "$RAW_BROLL")</string><string>$(xml "$RAW_CAROUSEL")</string><string>$(xml "$RAW_LONG")</string><string>$(xml "$RAW_YOUTUBE")</string><string>$(xml "$RAW_RUNWAY")</string><string>$(xml "$RAW_OWN_BROLL")</string></array>
   <key>RunAtLoad</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>$LOG</string>
-  <key>StandardErrorPath</key><string>$LOG</string>
+  <key>StandardOutPath</key><string>$(xml "$LOG")</string>
+  <key>StandardErrorPath</key><string>$(xml "$LOG")</string>
 </dict>
 </plist>
 EOF
