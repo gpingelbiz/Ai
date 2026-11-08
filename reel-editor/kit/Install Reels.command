@@ -9,12 +9,12 @@ printf 'The first setup downloads tools and speech recognition. Keep this window
 KIT="$(cd "$(dirname "$0")" && pwd)"
 if [ ! -f "$KIT/Brand/brand.json" ]; then
   printf 'The Brand folder is missing next to this file. Unzip the whole kit, then open this file inside it.\n'
-  read -r -p "Press Return to close. " _ < /dev/tty || true
+  read -r -p "Press Return to close. " _ < /dev/tty 2>/dev/null || true
   exit 1
 fi
 if [ ! -f "$KIT/install.sh" ] || [ ! -f "$KIT/release.json" ]; then
   printf 'The setup files are missing. Unzip the whole kit, then try again.\n'
-  read -r -p "Press Return to close. " _ < /dev/tty || true
+  read -r -p "Press Return to close. " _ < /dev/tty 2>/dev/null || true
   exit 1
 fi
 cd "$HOME" || exit 1
@@ -26,5 +26,5 @@ if [ "$STATUS" = 0 ]; then
 else
   printf '\nThe install stopped. Read the message above, then use the Terminal steps in Setup Guide.html to continue.\n'
 fi
-read -r -p "Press Return to close. " _ < /dev/tty || true
+read -r -p "Press Return to close. " _ < /dev/tty 2>/dev/null || true
 exit "$STATUS"

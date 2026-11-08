@@ -55,15 +55,17 @@ bold() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
 die() { printf '\n\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
-# Questions come from the keyboard even when this script arrives through `curl | bash`.
+# Questions come from the keyboard even when this script arrives through `curl | bash`. /dev/tty can exist without
+# a terminal behind it (a background or remote run); then every question takes its default.
+if (exec < /dev/tty) 2>/dev/null; then HAVE_TTY=1; else HAVE_TTY=0; fi
 ask() { # ask "Question" default -> REPLY
-  if [ "$YES" = 1 ] || [ ! -r /dev/tty ]; then REPLY="$2"; return; fi
+  if [ "$YES" = 1 ] || [ "$HAVE_TTY" != 1 ]; then REPLY="$2"; return; fi
   printf '%s ' "$1" > /dev/tty
   read -r REPLY < /dev/tty || REPLY=""
   [ -n "$REPLY" ] || REPLY="$2"
 }
 ask_secret() {
-  if [ "$YES" = 1 ] || [ ! -r /dev/tty ]; then REPLY=""; return; fi
+  if [ "$YES" = 1 ] || [ "$HAVE_TTY" != 1 ]; then REPLY=""; return; fi
   printf '%s ' "$1" > /dev/tty
   read -rs REPLY < /dev/tty || REPLY=""
   printf '\n' > /dev/tty
@@ -316,7 +318,7 @@ else
     *)
       if npm install -g @openai/codex --silent --no-audit --no-fund >/dev/null 2>&1; then ok "Codex installed"
       else note "Codex did not install; reels come without b-roll and carousels"; fi
-      if command -v codex >/dev/null 2>&1 && [ "$YES" != 1 ] && [ -r /dev/tty ]; then
+      if command -v codex >/dev/null 2>&1 && [ "$YES" != 1 ] && [ "$HAVE_TTY" = 1 ]; then
         note "Sign in with your ChatGPT account in the browser window that opens."
         codex login < /dev/tty > /dev/tty 2>&1 || note "Sign-in skipped. Run  codex login  later to turn on b-roll and carousels."
       fi ;;
@@ -340,7 +342,7 @@ if [ "$STUDIO" != 1 ]; then
   fi
   if [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ]; then
     if claude_ok; then ok "Claude signed in: cards, captions and hook ideas on"
-    elif [ "$YES" != 1 ] && [ -r /dev/tty ]; then
+    elif [ "$YES" != 1 ] && [ "$HAVE_TTY" = 1 ]; then
       note "Sign in with YOUR Claude account (Pro or Max). Claude opens here: follow the sign-in, then type /exit and press Return."
       "$CLAUDE_BIN" < /dev/tty > /dev/tty 2>&1 || true
       if claude_ok; then ok "Claude signed in: cards, captions and hook ideas on"; else note "Claude is not signed in yet. Later: type  claude  in Terminal and sign in."; fi
@@ -450,7 +452,7 @@ if [ -n "$RELEASE" ] && [ "$STUDIO" = 1 ]; then
   # One setup for accounts, keys, posting times and the Claude routines (src/setup-steps.mjs). It saves after every
   # answer, so stopping halfway is safe: reel setup picks up where it stopped.
   bold "Your reels and posts"
-  if [ "$YES" = 1 ] || [ ! -r /dev/tty ]; then
+  if [ "$YES" = 1 ] || [ "$HAVE_TTY" != 1 ]; then
     node "$APP/scripts/studio-setup.mjs" --brand "$BRAND" --yes
     note "Next: open Terminal and type  reel setup  to connect your accounts and posting."
   else
