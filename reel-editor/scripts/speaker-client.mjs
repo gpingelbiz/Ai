@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { identityLeaks } from "../src/speaker-guard.mjs";
+import { isMain } from "../src/util.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export function speakerConfig(env = process.env) {
@@ -163,6 +164,6 @@ export async function speakerClientMain(args = process.argv.slice(2), config = s
   install(false);
   console.log(`${name} is ready: ${desktop}`);
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isMain(import.meta.url)) {
   speakerClientMain().catch((e) => { console.error(`speaker-client: ${e.message}`); process.exitCode = 1; });
 }

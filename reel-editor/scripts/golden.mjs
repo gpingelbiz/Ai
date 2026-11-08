@@ -14,6 +14,7 @@ import { composeProject } from "../src/compose.mjs";
 import { loadPreset } from "../src/presets.mjs";
 import { run, PKG_ROOT } from "../src/util.mjs";
 import { hyperframesBin, renderEnv } from "../src/render.mjs";
+import { isMain } from "../src/util.mjs";
 
 export const MOMENTS = [
   { at: 0.3, what: "hook headline on frame one" },
@@ -129,7 +130,7 @@ export async function golden({ update = false, threshold = 0.1, maxDiff = 0.002 
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const update = process.argv.includes("--update");
   const res = await golden({ update });
   for (const r of res) console.log(`${r.status.padEnd(8)} ${r.name}  ${r.at}s  ${r.what}${r.share != null ? `  (${(r.share * 100).toFixed(3)}% of pixels differ)` : ""}`);

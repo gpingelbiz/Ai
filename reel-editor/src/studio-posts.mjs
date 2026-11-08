@@ -27,9 +27,8 @@ export function readyPosts(s, { now = new Date() } = {}) {
     .sort((a,b) => `${a.day} ${a.time}`.localeCompare(`${b.day} ${b.time}`))
     .map(p => {
       const c = s.config;
-      const publishMarker = p.publishMarker || `[reel:${createHash('sha256').update(JSON.stringify([s.paths.root, p.id])).digest('hex').slice(0, 32)}]`;
-      if (!p.publishMarker) logPost(s.paths, { ...p, publishMarker });
-      const text = `${p.text}\n\n${publishMarker}`;
+      // The caption goes out exactly as written: no tracking marker in what the client's followers read.
+      const text = p.text;
       const input = postInput({ blogId: c.metricool.blogId, day: p.day, time: p.time, tz: c.timezone, text, media: p.files.map(() => ''), altText: p.altText, kind: p.format, ai: p.ai, draft: c.publish.mode === 'draft' || !!p.draftWhy, trial: p.trial, networks: p.format === 'story' ? ['instagram'] : c.metricool.networks, title: p.hook || '', coverMs: p.coverMs });
       const info = JSON.parse(input.info); info.media = [];
       return { id: p.id, day: p.day, time: p.time, format: p.format, date: input.date, blogId: input.blogId, info };
@@ -54,10 +53,10 @@ export function failPost(s,id,why,{ notSent = false, metricoolId } = {}) {
 /** Reconcile uncertain creates only against the app's complete snapshot. Never automatically send one again. */
 export function reconcilePosts(s, scheduled) {
   for (const p of readPosts(s.paths).filter(p => ['made', 'not-posted'].includes(p.status) && !['reel', 'trial'].includes(p.format) && p.preflight?.verdict === 'schedule')) {
-    // A matching minute is not evidence that this post landed.
+    // Only the post id Metricool gave back proves this post landed; a matching minute or text does not. An
+    // uncertain post with no id stays held for a person.
     const match = p.uncertain && scheduled.find(q =>
-      (p.metricoolId != null && p.metricoolId !== '' && q.id != null && String(q.id) === String(p.metricoolId)) ||
-      (/^\[reel:[a-f0-9]{32}\]$/.test(p.publishMarker || '') && String(q.text || '').includes(p.publishMarker)));
+      p.metricoolId != null && p.metricoolId !== '' && q.id != null && String(q.id) === String(p.metricoolId));
     if (match) donePost(s,p.id,{ date: `${p.day}T${p.time}:00`, id: match.id, planner: match.plannerUrl });
     else if (p.status === 'not-posted' && !p.uncertain) logPost(s.paths, { ...p, status: 'made' });
   }

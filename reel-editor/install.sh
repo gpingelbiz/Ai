@@ -417,8 +417,8 @@ if [ "$STUDIO" = 1 ]; then
   [ -n "$BRAND" ] || die "--studio needs a Reels kit (its Brand folder)."
   bold "Your reels and posts"
   if [ -n "$RELEASE" ]; then
-    # The old account setup installs unchecked tools and may ask for a Mac password.
-    note "Posting setup pending. This installer gets editing ready first."
+    # A kit gets editing proven first; the posting setup page opens after the test reel (below).
+    note "Posting setup comes right after your test reel."
   else
   STUDIO_ARGS=(--brand "$BRAND"); [ "$NO_ROUTINE" != 1 ] || STUDIO_ARGS+=(--no-routine); [ "$YES" = 1 ] && STUDIO_ARGS+=(--yes)
   node "$APP/scripts/studio-setup.mjs" "${STUDIO_ARGS[@]}" || die "The reels and posts setup stopped. Read the message above, then run the installer again."
@@ -444,6 +444,19 @@ if [ -n "$RELEASE" ]; then
   out="$(find "$HOME/Reels/install-test" -type f -name '*.mp4' -print | sed -n '1p')"
   [ -n "$out" ] || die "The test reel is missing. See ~/.reel/install.log, then run this installer again."
   [ "$YES" = 1 ] || open "$out" || die "The test reel is ready at $out, but it could not be opened."
+fi
+
+if [ -n "$RELEASE" ] && [ "$STUDIO" = 1 ]; then
+  # One setup for accounts, keys, posting times and the Claude routines (src/setup-steps.mjs). It saves after every
+  # answer, so stopping halfway is safe: reel setup picks up where it stopped.
+  bold "Your reels and posts"
+  if [ "$YES" = 1 ] || [ ! -r /dev/tty ]; then
+    node "$APP/scripts/studio-setup.mjs" --brand "$BRAND" --yes
+    note "Next: open Terminal and type  reel setup  to connect your accounts and posting."
+  else
+    note "A setup page opens in your browser. Follow it, then click Finish there."
+    "$HOME/.local/bin/reel" setup --brand "$BRAND" || note "Setup is saved where it stopped. Type  reel setup  in Terminal to continue."
+  fi
 fi
 
 bold "Done."

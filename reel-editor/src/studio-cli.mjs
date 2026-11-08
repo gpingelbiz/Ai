@@ -22,10 +22,11 @@ export const STUDIO_USAGE = `Your reels and posts (your folders and posting sett
   reel studio status [--studio <dir>]                                    settings check, last posts, photo pool
   reel studio posts scan|make|wait|ready|serve|stop|done|fail|finish [--studio <dir>]
   reel studio publish scan|slot|claim|serve|stop|done|fail|release [--studio <dir>]        commands for the Claude desktop publishing routine
-  reel studio routine-receipt '<receipt JSON>' [--studio <dir>]          save the checked routine details
+  reel studio routine-receipt --nonce <n> --tasks '<json>' [--studio <dir>]  save the checked routine details
+  reel studio verify-routines [--studio <dir>]                          check both routines are set up and have run
   reel studio verify-routines [--studio <dir>]                           check the saved routine details
-  reel studio heartbeat start|done|fail|check [lane] [--studio <dir>]      record or check a routine run
-  reel studio storage [--studio <dir>]                                  show storage use
+  reel studio heartbeat start|discover|done|fail <task> [reason] | check   record or check a routine run
+  reel studio storage [--yes] [--studio <dir>]                          show storage use; --yes removes old finished work
   reel studio reels [--studio <dir>]                                     edit and schedule the clips in Raw Reels
   reel studio agents [--studio <dir>] [--uninstall]                      the daily job and the Raw Reels watcher (launchd)
   The studio is --studio, else $REEL_STUDIO, else ~/Content Studio.`;
@@ -167,47 +168,29 @@ export function installAgents(root, { uninstall = false, home = os.homedir(), ru
   return out;
 }
 
-/** Optional Phase 2 modules can land independently without breaking existing commands. */
-async function supportFunction(file, name, loadModule) {
-  let module;
-  try { module = await loadModule(file); }
-  catch (error) {
-    if (error.code !== "ERR_MODULE_NOT_FOUND") throw error;
-    throw new Error(`${name} is not available yet`);
-  }
-  if (typeof module[name] !== "function") throw new Error(`${name} is not available yet`);
-  return module[name];
-}
-
-export async function studioSupportCommand(cmd, rest, { loadModule = file => import(file) } = {}) {
-  const { values, positionals } = opt(rest, {
-    verify: { type: "boolean" }, id: { type: "string" }, "run-id": { type: "string" }, why: { type: "string" },
-  });
-  const studio = loadStudio(values.studio);
-  if (cmd === "routine-receipt" || cmd === "verify-routines") {
-    const verify = cmd === "verify-routines" || values.verify;
-    const fn = await supportFunction("./studio-routine.mjs", verify ? "verifyRoutines" : "writeRoutineReceipt", loadModule);
-    if (verify) return fn(studio);
-    if (!positionals[0]) throw new Error("routine-receipt needs the checked routine details as JSON");
-    const receipt = JSON.parse(positionals[0]);
-    if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) throw new Error("The routine receipt must be a JSON object");
-    return fn(studio, receipt);
-  }
-  if (cmd === "heartbeat") {
-    const [action, lane] = positionals;
-    if (!["start", "done", "fail", "check"].includes(action)) throw new Error("heartbeat needs start, done, fail or check");
-    const fn = await supportFunction("./heartbeat.mjs", "heartbeat", loadModule);
-    return fn(studio, action, { lane, id: values.id, runId: values["run-id"], why: values.why });
-  }
-  const fn = await supportFunction("./studio-health.mjs", "storageReport", loadModule);
-  return fn(studio);
+/**
+ * The routine, heartbeat and storage commands. Their owning modules parse their own arguments; this only adds the
+ * studio folder when the caller did not name one.
+ */
+export async function studioSupportCommand(cmd, rest, { loadModule = (file) => import(file) } = {}) {
+  const named = rest.indexOf("--studio");
+  const studio = loadStudio(named >= 0 ? rest[named + 1] : undefined);
+  const args = named >= 0 ? rest : [...rest, "--studio", studio.paths.root];
+  if (cmd === "routine-receipt") return (await loadModule("./studio-routine.mjs")).routineReceiptCommand(args);
+  if (cmd === "verify-routines") return (await loadModule("./studio-routine.mjs")).verifyRoutines(studio.paths.root);
+  if (cmd === "heartbeat") return (await loadModule("./heartbeat.mjs")).heartbeatCommand(args);
+  const { cleanupStorage, storageSummary } = await loadModule("./storage.mjs");
+  const report = cleanupStorage({ yes: rest.includes("--yes"), studio: studio.paths.root });
+  return { summary: storageSummary(report), ...report };
 }
 
 export async function studioCommand(args) {
   const [cmd, ...rest] = args;
   if (!cmd || cmd === "help" || cmd === "--help") return console.log(STUDIO_USAGE);
   if (["routine-receipt", "verify-routines", "heartbeat", "storage"].includes(cmd)) {
-    console.log(JSON.stringify(await studioSupportCommand(cmd, rest), null, 2));
+    const result = await studioSupportCommand(cmd, rest);
+    // routine-receipt and heartbeat print their own line; the others print their result.
+    if (cmd === "verify-routines" || cmd === "storage") console.log(cmd === "storage" ? result.summary : JSON.stringify(result, null, 2));
     return;
   }
   if (cmd === "posts") return (await import("./studio-posts.mjs")).postsCommand(rest);

@@ -66,7 +66,7 @@ ${heartbeatStart(studio, options, "reel-publish")}
 Dropping a finished reel into Desktop/Reels/Publish is approval to post it. Schedule ALL ready reels through the Metricool connector in this run. Do nothing else.
 Fixed facts: blogId ${c.metricool.blogId}, timezone ${c.timezone}. Use the providers, trial setting, text, cover and AI flag returned by scan. One regular reel per day and at least two hours from every other post. Trial copies never take a regular reel day. A draft stays a draft.
 
-Use each command below as one verbatim Bash command, substituting only the uppercase argument placeholders (SLOT_JSON, TRIAL_SLOT_JSON, REEL_VIDEO, REEL_ENTRY, LOCAL_DATE, PLANNER_URL, POST_ID, ERROR_REASON). SLOT_JSON is a JSON object with scheduled, taken and bestByDay. TRIAL_SLOT_JSON has scheduled, bestByDay, trialCopy:true and notBefore set to the regular reel day. Never use cd, pipes, redirects or compound commands. Quote substituted arguments safely as single shell arguments.
+Use each command below as one verbatim Bash command, substituting only the uppercase argument placeholders (SLOT_JSON, TRIAL_SLOT_JSON, REEL_ENTRY, LOCAL_DATE, OWNER, PLANNER_URL, POST_ID, ERROR_REASON). SLOT_JSON is a JSON object with scheduled, taken and bestByDay. TRIAL_SLOT_JSON has scheduled, bestByDay, trialCopy:true and notBefore set to the regular reel day. Never use cd, pipes, redirects or compound commands. Quote substituted arguments safely as single shell arguments.
 
 1. Run:
 ${command("scan")}
@@ -77,8 +77,11 @@ If ready is empty, reply "Nothing to publish", mention problems briefly, write t
 a. Run:
 ${command("slot", "'SLOT_JSON'")}
 The command also accounts for the local posts log and daily photo post times. If null, report no clear time, write the final heartbeat and stop.
-b. Run:
-${command("serve", "'REEL_VIDEO'")}
+b. Claim the reel for this run BEFORE anything is posted, with LOCAL_DATE the chosen local dayTHH:00:
+${command("claim", "'REEL_ENTRY' --date 'LOCAL_DATE'")}
+It returns an owner: use it as OWNER in every command below for this reel. If claim says the reel may already be scheduled, or that it is held, skip this reel, say so in your reply and continue with the next one. Never work around a claim.
+Then run:
+${command("serve", "'REEL_ENTRY' --owner 'OWNER'")}
 It returns a temporary https video link. It may take two minutes.
 c. Call createScheduledPost with blogId ${c.metricool.blogId}, date as dayTHH:00:00 plus the UTC offset of ${c.timezone} on that day, and info JSON:
 {"autoPublish":true,"draft":<reel.draft>,"descendants":[],"firstCommentText":"","hasNotReadNotes":false,"media":[<temporary link>],"mediaAltText":[],"videoCoverMilliseconds":<reel.coverMs>,"providers":<one {"network":name} per reel.providers>,"publicationDate":{"dateTime":<dayTHH:00:00>,"timezone":"${c.timezone}"},"shortener":false,"smartLinkData":{"ids":[]},"text":<reel.text exactly>,"instagramData":{"type":<reel.instagramType>,"showReelOnFeed":true,"isAiGenerated":<reel.isAiGenerated>}}
@@ -89,11 +92,11 @@ e. After success add this slot to scheduled and its day to taken for a non draft
 ${command("slot", "'TRIAL_SLOT_JSON'")}
 Use only Instagram for the trial copy, without tiktokData. Add its time to scheduled, never taken. If the copy fails or no slot is available, retain the regular post and record the reason. Do not retry the regular post.
 f. For a confirmed regular or trial only post, run:
-${command("done", "'REEL_ENTRY' --date 'LOCAL_DATE' --planner 'PLANNER_URL' --id 'POST_ID'")}
+${command("done", "'REEL_ENTRY' --owner 'OWNER' --date 'LOCAL_DATE' --planner 'PLANNER_URL' --id 'POST_ID'")}
 When a trial copy succeeded append --trial-copy '<local dayTHH:00:00>' --trial-planner '<plannerUrl>' --trial-id '<post id>'. When it failed append --trial-copy-failed '<exact error>' and --trial-date '<chosen local date if available>'. These are arguments to that same single command. Draft status comes from scan and is preserved by done.
 If the first post failed, or its media was not confirmed on static.metricool.com, run:
-${command("fail", "'REEL_ENTRY' --why 'ERROR_REASON'")}
-Continue to the next reel. Never call done on an unconfirmed post.
+${command("fail", "'REEL_ENTRY' --owner 'OWNER' --why 'ERROR_REASON'")}
+Continue to the next reel. Never call done on an unconfirmed post. If you cannot tell whether the create worked, run neither done nor fail: the claim keeps the reel held for a person to check, which is what we want. Never run publish release; only a person does that.
 5. Reply with one short line per reel: scheduled or draft, day and time, networks, trial result or failure.
 
 Never post anything absent from scan, change other posts, create more than one trial copy, use createScheduledPostForReview, send messages, or use networks absent from scan. Keep this Mac on and the Claude app open.

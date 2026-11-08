@@ -24,6 +24,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { bannedInCaption } from "../src/publish-folder.mjs";
 import { isClientJob } from "../src/client-mode.mjs";
+import { isMain } from "../src/util.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TOOLS = ["mcp__claude_ai_sandcastles__top_hooks", "mcp__claude_ai_sandcastles__top_formats"];
@@ -209,4 +210,4 @@ async function main() {
   console.log(`caption: ${out}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMain(import.meta.url)) main();

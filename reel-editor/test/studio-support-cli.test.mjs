@@ -12,23 +12,21 @@ function fixture(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initStudio(root, { brandFrom: path.join(PKG_ROOT, 'examples/content-studio/brand'), config: { client: 'Example', timezone: 'UTC', metricool: { blogId: '42' } } }); return root;
 }
-test('support commands pass parsed routine, heartbeat and storage inputs to their owning modules', async t => {
+test('support commands hand their own arguments, plus the studio folder, to the modules that own them', async t => {
   const root = fixture(t), calls = [];
-  const module = Object.fromEntries(['writeRoutineReceipt', 'verifyRoutines', 'heartbeat', 'storageReport'].map(name => [name, (...args) => { calls.push({ name, args }); return { ok: name }; }]));
-  const deps = { loadModule: async () => module };
-  assert.deepEqual(await studioSupportCommand('routine-receipt', ['{"nonce":"one","tasks":[]}', '--studio', root], deps), { ok: 'writeRoutineReceipt' });
+  const record = (name) => (...args) => { calls.push({ name, args }); return { ok: name }; };
+  const modules = {
+    './studio-routine.mjs': { routineReceiptCommand: record('routineReceiptCommand'), verifyRoutines: record('verifyRoutines') },
+    './heartbeat.mjs': { heartbeatCommand: record('heartbeatCommand') },
+    './storage.mjs': { cleanupStorage: record('cleanupStorage'), storageSummary: () => 'summary' },
+  };
+  const deps = { loadModule: async (file) => modules[file] };
+  await studioSupportCommand('routine-receipt', ['--nonce', 'one', '--tasks', '[]', '--studio', root], deps);
+  assert.deepEqual(calls[0].args[0], ['--nonce', 'one', '--tasks', '[]', '--studio', root]);
   await studioSupportCommand('verify-routines', ['--studio', root], deps);
-  await studioSupportCommand('routine-receipt', ['--verify', '--studio', root], deps);
-  for (const action of ['start', 'done', 'fail', 'check']) await studioSupportCommand('heartbeat', [action, 'publish', '--id', 'one', '--run-id', 'run', '--why', 'No result', '--studio', root], deps);
-  await studioSupportCommand('storage', ['--studio', root], deps);
-  assert.equal(calls[0].args[0].paths.root, root);
-  assert.deepEqual(calls[0].args[1], { nonce: 'one', tasks: [] });
-  assert.deepEqual(calls[3].args.slice(1), ['start', { lane: 'publish', id: 'one', runId: 'run', why: 'No result' }]);
-  assert.equal(calls.at(-1).name, 'storageReport');
-});
-test('missing modules and exports give a clear pending error; unrelated import failures remain visible', async t => {
-  const root = fixture(t), args = ['--studio', root];
-  await assert.rejects(studioSupportCommand('storage', args, { loadModule: async () => ({}) }), /storageReport is not available yet/);
-  await assert.rejects(studioSupportCommand('heartbeat', ['start', ...args], { loadModule: async () => { throw Object.assign(new Error('missing'), { code: 'ERR_MODULE_NOT_FOUND' }); } }), /heartbeat is not available yet/);
-  await assert.rejects(studioSupportCommand('verify-routines', args, { loadModule: async () => { throw new Error('broken module'); } }), /broken module/);
+  assert.equal(calls[1].args[0], root);
+  await studioSupportCommand('heartbeat', ['start', 'reel-publish', '--studio', root], deps);
+  assert.deepEqual(calls[2].args[0], ['start', 'reel-publish', '--studio', root]);
+  const storage = await studioSupportCommand('storage', ['--yes', '--studio', root], deps);
+  assert.deepEqual(calls[3].args[0], { yes: true, studio: root }); assert.equal(storage.summary, 'summary');
 });

@@ -26,7 +26,7 @@ test('migration independent of reels; app daily removes agent and refuses legacy
 });
 test('local scan stops on complete day; ready preserves exact info and expires',t=>{
  const s=fixture(t);fs.writeFileSync(path.join(s.paths.state,'daily.json'),JSON.stringify({day:'2026-11-08',completed:'yes',error:''}));assert.equal(scanPosts(s,{now}).work,false);
- post(s);assert.equal(scanPosts(s,{now}).work,true);const r=readyPosts(s,{now})[0];assert.deepEqual(r.info.media,[]);assert.deepEqual(r.info.mediaAltText,['Exact alt']);assert.match(r.info.text,/^Exact caption\n\n\[reel:[a-f0-9]{32}\]$/);assert.equal(r.info.text,readyPosts(s,{now})[0].info.text);assert.deepEqual(readyPosts(s,{now:new Date('2026-11-09T06:00Z')}),[]);
+ post(s);assert.equal(scanPosts(s,{now}).work,true);const r=readyPosts(s,{now})[0];assert.deepEqual(r.info.media,[]);assert.deepEqual(r.info.mediaAltText,['Exact alt']);assert.equal(r.info.text,'Exact caption');assert.equal(r.info.text,readyPosts(s,{now})[0].info.text);assert.deepEqual(readyPosts(s,{now:new Date('2026-11-09T06:00Z')}),[]);
 });
 test('passed schedule fills a slot; make uses daily gates without schedule connector',async t=>{
  const s=fixture(t,{daysAhead:0,slots:[{time:'10:00',format:'static'}]});let calls=0;const r=await makePosts(s,[{day:'2026-11-08',hour:10,minute:0,type:'POST'}],{now,deps:{scheduledPosts:()=>{calls++;throw Error('connector called');}}});assert.equal(calls,0);assert.deepEqual(r.slots,[]);assert.deepEqual(readyPosts(s,{now}),[]);
@@ -137,17 +137,13 @@ test('the routine never leans on a wait or serve longer than the Bash limit allo
   assert.match(prompt,/timeout set to 600000/);assert.match(prompt,/--not-sent/);assert.match(prompt,/LOCAL_DATE set to the date returned by ready/);
 });
 
-test('our unique caption marker settles an uncertain post; matching caption words alone do not', t => {
+test('captions go out exactly as written, and matching caption words never settle an uncertain post', t => {
   const s = fixture(t); const p = post(s, { text: 'A long caption. '.repeat(20) });
   const ready = readyPosts(s, { now })[0];
-  const saved = readPosts(s.paths).find(q => q.id === p.id);
-  assert.ok(ready.info.text.includes(saved.publishMarker));
+  assert.equal(ready.info.text, p.text);
   failPost(s, p.id, 'No confirmed reply');
   reconcilePosts(s, [{ day: p.day, hour: 18, minute: 0, type: 'POST', id: 'other', text: p.text }]);
   assert.equal(readPosts(s.paths)[0].uncertain, true);
-  reconcilePosts(s, [{ day: p.day, hour: 18, minute: 0, type: 'POST', id: 'ours', text: ready.info.text }]);
-  assert.equal(readPosts(s.paths)[0].metricoolId, 'ours');
-  assert.equal(readPosts(s.paths)[0].uncertain, false);
 });
 test('a known remote id identifies an uncertain post even if its time changed', t => {
   const s = fixture(t); const p = post(s);

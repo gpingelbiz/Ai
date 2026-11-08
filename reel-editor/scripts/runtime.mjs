@@ -4,6 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isMain } from "../src/util.mjs";
 
 const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const read = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
@@ -316,6 +317,6 @@ async function main() {
   }
   throw new Error("Unknown installer step.");
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (isMain(import.meta.url)) {
   main().catch((e) => { console.error(e.message); process.exitCode = 1; });
 }

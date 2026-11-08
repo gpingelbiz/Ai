@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { speakerConfig, speakerClients, safeName } from "./speaker-client.mjs";
+import { isMain } from "../src/util.mjs";
 
 const read = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { if (e.code === "ENOENT") return null; throw new Error(`Cannot read ${f}: ${e.message}`); } };
 const files = (dir) => fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isFile() && d.name.endsWith(".json")).map((d) => path.join(dir, d.name)).sort() : [];
@@ -101,7 +102,7 @@ export function intakeSnapshot(folder) {
   walk(path.join(folder, "footage")); walk(path.join(folder, "proof"));
   return JSON.stringify(entries.sort((a, b) => a[0].localeCompare(b[0])));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isMain(import.meta.url)) {
   try {
     const args = process.argv.slice(2), config = speakerConfig();
     if (args[0] === "--snapshot") console.log(intakeSnapshot(args[1]));

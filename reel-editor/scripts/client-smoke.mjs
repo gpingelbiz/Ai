@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { PKG_ROOT } from "../src/util.mjs";
+import { isMain } from "../src/util.mjs";
 
 export function checkRuntime({ app = PKG_ROOT, env = process.env, run = spawnSync } = {}) {
   if (!env.REEL_RUNTIME) {
@@ -47,6 +48,6 @@ export async function clientSmoke({ app = PKG_ROOT, env = process.env, run = spa
   if (info.instagramData.type !== "STORY") throw new Error("story adapter failed");
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (isMain(import.meta.url)) {
   clientSmoke().then(() => console.log("Client offline self-check passed.")).catch((e) => { console.error(e.message); process.exitCode = 1; });
 }

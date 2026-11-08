@@ -6,6 +6,7 @@ import { makeStill, animateStill, makeSound, estimateClip, modelInfo, dataURI } 
 import { stillPrompt, videoMotion, shotSeed } from "../src/broll-runway.mjs";
 import { recordUsage, reelUsageNote } from "../src/usage.mjs";
 import { ensureDir, readJSON, writeJSON, run, warn, log } from "../src/util.mjs";
+import { isMain } from "../src/util.mjs";
 
 export function bakeoffOptions(args) {
   const { values } = parseArgs({ args, options: {
@@ -126,7 +127,7 @@ export async function runBakeoff(options, deps = {}) {
   return { items, credits: spent(), aborted };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isMain(import.meta.url)) {
   try { await runBakeoff(bakeoffOptions(process.argv.slice(2))); }
   catch (e) { warn(e.message); process.exitCode = 1; }
 }

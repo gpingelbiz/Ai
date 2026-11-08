@@ -245,7 +245,9 @@ done
 # Housekeeping: keep the log under 5 MB and drop work folders (intermediates, not the delivered reels) older than
 # REEL_WATCH_PRUNE_DAYS (default 30; 0 turns it off).
 if [ -f "$log" ] && [ "$(filesize "$log")" -gt 5000000 ]; then tail -c 1000000 "$log" > "$log.tmp" && mv -f "$log.tmp" "$log"; fi
-prune="${REEL_WATCH_PRUNE_DAYS:-30}"
+# A kit install never deletes on its own: a 30-day-old work folder can hold a paid Runway journal or an unposted
+# reel. Its health check warns about space instead and `reel studio storage --yes` removes only safe folders.
+if [ "${REEL_CLIENT_MODE:-}" = 1 ]; then prune=0; else prune="${REEL_WATCH_PRUNE_DAYS:-30}"; fi
 if [ "$prune" -gt 0 ] 2>/dev/null; then
   find "$REELS/videos" -mindepth 1 -maxdepth 1 -type d -not -name ".*" -mtime +"$prune" -exec rm -rf {} + 2>/dev/null || true
 fi

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { updateClient } from "../src/client-update.mjs";
 import { studioHealth } from "../src/studio-health.mjs";
 import { ensureDir, readJSON, writeJSON, PKG_ROOT } from "../src/util.mjs";
+import { isMain } from "../src/util.mjs";
 
 const xml = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const stableApp = (app, home) => path.resolve(app).startsWith(path.join(home, ".local/share/reel-editor") + path.sep) ? path.join(home, "Ai/reel-editor") : app;
@@ -59,4 +60,4 @@ async function main() {
   if (job === "health") { const r = await studioHealth(state, { dropFolders: config.dropFolders }); if (r.issues.length) process.exitCode = 1; return; }
   throw new Error("client-maintenance: install, update or health");
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main().catch((e) => { console.error(e.message); process.exitCode = 1; });
+if (isMain(import.meta.url)) main().catch((e) => { console.error(e.message); process.exitCode = 1; });

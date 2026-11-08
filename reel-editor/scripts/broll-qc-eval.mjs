@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { checkRunwayVideo } from "../src/broll-runway.mjs";
 import { DEFECT_QUESTIONS, eventInPoint } from "../src/broll-qc.mjs";
 import { ensureDir, readJSON, writeJSON, run, log, warn } from "../src/util.mjs";
+import { isMain } from "../src/util.mjs";
 
 export function qcEvalOptions(args) {
   const { values } = parseArgs({ args, options: { manifest: { type: "string" }, out: { type: "string" } } });
@@ -74,7 +75,7 @@ export async function runQcEval(options, deps = {}) {
   return report;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isMain(import.meta.url)) {
   try {
     const report = await runQcEval(qcEvalOptions(process.argv.slice(2)));
     if (report.wrong.length) process.exitCode = 1;

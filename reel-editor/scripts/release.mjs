@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { PKG_ROOT } from "../src/util.mjs";
 import { fileHash, releaseID, verifyRelease, readReleaseManifest, sameRelease } from "../src/release.mjs";
+import { isMain } from "../src/util.mjs";
 
 const json = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
 
@@ -217,6 +218,6 @@ export function main(args = process.argv.slice(2)) {
   throw new Error("Use: release.mjs build [--id 2026.11.08.1], publish <id> [--yes], or kits <id> [--clients registry.json].");
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (isMain(import.meta.url)) {
   try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
