@@ -322,3 +322,9 @@ test("downloaded Whisper files are checked against the pinned sha256, wherever t
   fs.writeFileSync(store, "bad bytes");
   assert.throws(() => verifyModel(cache, "neutral/whisper", revision, { "model.bin": hash(bytes) }), /did not match/);
 });
+
+test("the kit's own setup files stand alone: they import only Node's built-ins", () => {
+  // The kit carries scripts/runtime.mjs beside install.sh, before the editor is downloaded.
+  const src = fs.readFileSync(path.join(app, "scripts/runtime.mjs"), "utf8");
+  for (const [, spec] of src.matchAll(/^\s*import\s[^'"]*['"]([^'"]+)['"]/gm)) assert.match(spec, /^node:/, `runtime.mjs imports ${spec}`);
+});

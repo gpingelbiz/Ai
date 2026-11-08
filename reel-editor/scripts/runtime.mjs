@@ -4,7 +4,6 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { isMain } from "../src/util.mjs";
 
 const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const read = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
@@ -317,6 +316,9 @@ async function main() {
   }
   throw new Error("Unknown installer step.");
 }
-if (isMain(import.meta.url)) {
+// The kit carries this file on its own (beside install.sh), so it imports nothing from the editor. Real paths,
+// because a release is also reached through the ~/Ai/reel-editor link.
+const realOr = (f) => { try { return fs.realpathSync(f); } catch { return path.resolve(f); } };
+if (process.argv[1] && realOr(fileURLToPath(import.meta.url)) === realOr(process.argv[1])) {
   main().catch((e) => { console.error(e.message); process.exitCode = 1; });
 }
