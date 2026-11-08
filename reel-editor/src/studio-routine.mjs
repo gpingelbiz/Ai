@@ -2,12 +2,40 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { PKG_ROOT } from "./util.mjs";
-import { photosDir } from "./content-studio.mjs";
+import { randomUUID } from "node:crypto";
+import { parseArgs } from "node:util";
+import { PKG_ROOT, writeJSON } from "./util.mjs";
+import { photosDir, studioPaths } from "./content-studio.mjs";
+import { ROUTINE_TASKS, routineSetupFile, checkHeartbeats } from "./heartbeat.mjs";
+import { isClientMode } from "./client-mode.mjs";
 
 const quote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? String(s) : `'${String(s).replace(/'/g, `'\\''`)}'`);
 /** Every routine command starts with this, so one allow rule covers them all. */
 const publishPrefix = ({ node = process.execPath, bin = path.join(PKG_ROOT, "bin", "reel.mjs") } = {}) => `${quote(node)} ${quote(bin)} studio publish`;
+const studioPrefix = (options) => publishPrefix(options).replace(/ publish$/, "");
+const heartbeatLine = (studio, options, action, task) => `${studioPrefix(options)} heartbeat ${action} ${task} --studio ${quote(studio.paths.root)}`;
+const heartbeatStart = (studio, options, task) => `First run this single Bash command, before any other work:
+${heartbeatLine(studio, options, "start", task)}
+This command checks ${quote(path.join(studio.paths.root, ".check-run"))} to choose a check run.
+Read its JSON result. If checkRun is true, follow ONLY the CHECK RUN steps below and then STOP. If this command fails or its result is unclear, STOP without making or posting anything.
+
+CHECK RUN
+Use ToolSearch to find the Metricool tools ${task === "reel-publish" ? "getScheduledPosts, getBestTimeToPostByNetwork and createScheduledPost" : "getScheduledPosts and createScheduledPost"}. Find the tools only; do not call them. If discovery is unavailable, fail this check with a short reason and STOP.
+Run this command to read this client's brand and scan the photo, Publish and Made folders:
+${heartbeatLine(studio, options, "discover", task)}
+If it fails, fail this check and STOP. Do not run any normal steps. Do not create, make, render, serve, upload, schedule or post anything. Do not call Metricool, Runway or ElevenLabs, even for a draft. After successful discovery run:
+${heartbeatLine(studio, options, "done", task)}
+Reply "Check complete" and STOP. Never continue from a check run into the normal steps.
+END CHECK RUN
+
+NORMAL RUN
+On every exit, even when nothing is ready, run the final heartbeat command below. If any step fails, use heartbeat fail instead of done with a short plain reason such as 'Posting needs attention'. Never include keys or raw tool responses in the reason. Never retry a write with an unknown outcome; hold it for a person.
+`;
+const heartbeatEnd = (studio, options, task) => `Always finish the run, including when there is nothing to post, with:
+${heartbeatLine(studio, options, "done", task)}
+If any step failed, use this instead, replacing only SHORT_REASON with a short reason:
+${heartbeatLine(studio, options, "fail", `${task} 'SHORT_REASON'`)}
+`;
 
 /** Allow only the routine's own commands, so an unattended run never stops on them. Everything else in the file stays. */
 export function allowPublishCommands({ home = os.homedir(), ...options } = {}) {
@@ -34,6 +62,7 @@ name: reel-publish
 description: Schedule approved reels hourly at :45 from 7 AM to 8 PM.
 ---
 
+${heartbeatStart(studio, options, "reel-publish")}
 Dropping a finished reel into Desktop/Reels/Publish is approval to post it. Schedule ALL ready reels through the Metricool connector in this run. Do nothing else.
 Fixed facts: blogId ${c.metricool.blogId}, timezone ${c.timezone}. Use the providers, trial setting, text, cover and AI flag returned by scan. One regular reel per day and at least two hours from every other post. Trial copies never take a regular reel day. A draft stays a draft.
 
@@ -41,13 +70,13 @@ Use each command below as one verbatim Bash command, substituting only the upper
 
 1. Run:
 ${command("scan")}
-If ready is empty, reply "Nothing to publish", mention problems briefly and STOP. Make no connector calls.
+If ready is empty, reply "Nothing to publish", mention problems briefly, write the final heartbeat and STOP. Make no connector calls.
 2. Call Metricool getScheduledPosts once for brandId ${c.metricool.blogId}, timezone ${c.timezone}, fromDate now through 21 days from now. Build scheduled as objects {day,hour,minute,type} in that timezone. Include EVERY network and drafts. Use REEL only for a regular Instagram reel, TRIAL_REEL for a trial, STORY for an Instagram story and POST for everything else. Stories do not block feed slots. Build taken from non draft regular Instagram reel dates, or trial dates too when scan says trial true. Exclude draft reels from taken; represent them as POST in scheduled so their time still blocks.
 3. Call getBestTimeToPostByNetwork once for brandId ${c.metricool.blogId}, socialNetwork instagram, timezone ${c.timezone}, the same dates. Build bestByDay with dates and hours ranked best first.
 4. For EACH ready reel in order:
 a. Run:
 ${command("slot", "'SLOT_JSON'")}
-The command also accounts for the local posts log and daily photo post times. If null, report no clear time and stop.
+The command also accounts for the local posts log and daily photo post times. If null, report no clear time, write the final heartbeat and stop.
 b. Run:
 ${command("serve", "'REEL_VIDEO'")}
 It returns a temporary https video link. It may take two minutes.
@@ -68,6 +97,7 @@ Continue to the next reel. Never call done on an unconfirmed post.
 5. Reply with one short line per reel: scheduled or draft, day and time, networks, trial result or failure.
 
 Never post anything absent from scan, change other posts, create more than one trial copy, use createScheduledPostForReview, send messages, or use networks absent from scan. Keep this Mac on and the Claude app open.
+${heartbeatEnd(studio, options, "reel-publish")}
 `;
 }
 
@@ -78,11 +108,12 @@ export function dailyPostsPrompt(studio, options = {}) {
 name: daily-posts
 description: Make and schedule carousels and static posts at 6 AM and noon.
 ---
+${heartbeatStart(studio, options, "daily-posts")}
 Make and schedule only the posts returned by ready. Fixed facts: blogId ${c.metricool.blogId}, timezone ${c.timezone}, daysAhead ${c.daysAhead}. Keep this Mac on and the Claude app open.
 Use each command below verbatim as one Bash command. Substitute only SCHEDULED_JSON, POST_ID, LOCAL_DATE, PLANNER_URL, METRICOOL_ID, ERROR_REASON. Quote each safely as a single shell argument. Never use cd, pipes, redirects or compound commands.
 1. Run:
 ${command("scan")}
-If work is false STOP with no connector calls.
+If work is false write the final heartbeat and STOP with no connector calls.
 2. Call Metricool getScheduledPosts once for brandId ${c.metricool.blogId}, timezone ${c.timezone}, fromDate today through daysAhead days from today. Include EVERY network and drafts. Map to {day,hour,minute,type} in that timezone. REEL means only regular Instagram reels, TRIAL_REEL means trials, STORY means Instagram stories, POST means everything else. Draft reels are POST. Include id and plannerUrl when available, and no post text. SCHEDULED_JSON is this complete array.
 3. Run:
 ${command("make", "'SCHEDULED_JSON'")}
@@ -106,7 +137,8 @@ Never call done on an unconfirmed post. Continue to the next ready post. Never r
 7. Always run last, including after errors:
 ${command("finish")}
 Reply with one short line per post: scheduled or draft, day and time, or failure.
-Never touch other posts, use createScheduledPostForReview, send messages, or change the supplied copy. Only use Bash and the Metricool tools getScheduledPosts and createScheduledPost.
+Never touch other posts, use createScheduledPostForReview, send messages, or change the supplied copy. In normal runs only use Bash and the Metricool tools getScheduledPosts and createScheduledPost.
+${heartbeatEnd(studio, options, "daily-posts")}
 `;
 }
 
@@ -124,33 +156,154 @@ export function allowPostsCommands({ home = os.homedir(), ...options } = {}) {
   return true;
 }
 
-export function writeRoutine(studio, { home = os.homedir(), ...options } = {}) {
-  const prompt = routinePrompt(studio, options);
-  const file = path.join(studio.paths.state, "reel-publish-routine.md");
-  const skill = path.join(home, ".claude", "scheduled-tasks", "reel-publish", "SKILL.md");
-  for (const target of [file, skill]) { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, prompt); }
-  let daily = null;
-  if (studio.config.daily.publisher === "claude") {
-    daily = { file: path.join(studio.paths.state, "daily-posts-routine.md"), skill: path.join(home, ".claude", "scheduled-tasks", "daily-posts", "SKILL.md") };
-    for (const target of [daily.file, daily.skill]) { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, dailyPostsPrompt(studio, options)); }
+const setupProblem = "Open Claude, then Code, and paste the setup request again.";
+const readRecord = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } };
+const runProblem = (id) => `Open Claude, then Code, then Scheduled, and press Run now on ${id}`;
+const conflictProblem = (id) => `${id} already uses another folder. Open Claude, then Code, then Scheduled, and check that task before setting up this client.`;
+
+/** Unknown task folders are left alone, including old tasks with no ownership record. */
+function checkTaskFolder(skill, root, id) {
+  const dir = path.dirname(skill);
+  try {
+    const stat = fs.lstatSync(dir);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(conflictProblem(id));
+  } catch (e) { if (e.code === "ENOENT") return; throw e; }
+  for (const file of [skill, path.join(dir, "reel-owner.json")]) {
+    try { if (fs.lstatSync(file).isSymbolicLink()) throw new Error(conflictProblem(id)); }
+    catch (e) { if (e.code !== "ENOENT") throw e; }
   }
-  return { file, skill, daily, setup: `Create a scheduled task using create_scheduled_task with taskId reel-publish, cron 45 7-20 * * *, description "Schedule approved reels from Publish", and the complete prompt from ${quote(file)}. ${daily ? `Create a second scheduled task using create_scheduled_task with taskId daily-posts, cron 0 6,12 * * *, description "Make and schedule carousels and static posts", and the complete prompt from ${quote(daily.file)}. ` : ""}Then use ToolSearch to find the Metricool tools getScheduledPosts, getBestTimeToPostByNetwork and createScheduledPost, and add their exact full tool names to permissions.allow in ${quote(path.join(home, ".claude", "settings.json"))}, keeping everything else in that file, so later runs do not stop to ask. Then list scheduled tasks, confirm reel-publish${daily ? " and daily-posts are" : " is"} enabled, and tell me in one line that the routine${daily ? "s are" : " is"} on.` };
+  const owner = readRecord(path.join(dir, "reel-owner.json"));
+  if (owner) {
+    if (owner.folder === root) return;
+    throw new Error(conflictProblem(id));
+  }
+  // Older Reel tasks already name their folder on every command line.
+  let text = "";
+  try { text = fs.readFileSync(skill, "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  const commands = text.split("\n").filter((line) => / studio (publish|posts) /.test(line));
+  if (commands.length && commands.every((line) => line.endsWith(` --studio ${quote(root)}`))) return;
+  throw new Error(conflictProblem(id));
+}
+
+export function writeRoutine(studio, { home = os.homedir(), now = new Date(), ...options } = {}) {
+  const root = path.resolve(studio.paths.root);
+  const tasks = ROUTINE_TASKS.filter((t) => t.id === "reel-publish" || studio.config.daily.publisher === "claude" || isClientMode());
+  const outputs = tasks.map(({ id }) => ({
+    id,
+    file: path.join(studio.paths.state, `${id}-routine.md`),
+    skill: path.join(home, ".claude", "scheduled-tasks", id, "SKILL.md"),
+  }));
+  // Check every task before writing either copy or changing the previous setup nonce.
+  for (const out of outputs) checkTaskFolder(out.skill, root, out.id);
+  const nonce = randomUUID();
+  for (const out of outputs) {
+    const prompt = out.id === "reel-publish" ? routinePrompt(studio, options) : dailyPostsPrompt(studio, options);
+    for (const target of [out.file, out.skill]) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, prompt);
+    }
+    writeJSON(path.join(path.dirname(out.skill), "reel-owner.json"), { folder: root });
+  }
+  writeJSON(routineSetupFile(root), { nonce, at: now.toISOString(), folder: root, tasks });
+  // The first scheduled run is safe even if it starts before the person presses Run now.
+  checkHeartbeats(root, { now });
+  const [publish, daily = null] = outputs;
+  const receipt = `${studioPrefix(options)} routine-receipt --nonce ${quote(nonce)} --tasks 'TASKS_JSON' --studio ${quote(root)}`;
+  const setup = `First list scheduled tasks before creating or updating anything. Discover the scheduled task tools if needed. Never touch other tasks. Only this client's tasks ${tasks.map((t) => t.id).join(" and ")} may be changed.
+Check the actual working folder of each existing task with either name. If it differs from ${quote(root)}, or you cannot confirm its folder, STOP and report a conflict. Do not change, delete or replace that task or its prompt folder.
+For each of this client's tasks, update it if it exists or create it using create_scheduled_task if it does not. Make each an enabled LOCAL task, never a cloud task, with working folder ${quote(root)}:
+${tasks.map((t) => `taskId ${t.id}, cron ${t.schedule}, complete prompt from ${quote(outputs.find((out) => out.id === t.id).file)}.`).join("\n")}
+Then use ToolSearch to find the Metricool tools getScheduledPosts, getBestTimeToPostByNetwork and createScheduledPost, and add their exact full tool names to permissions.allow in ${quote(path.join(home, ".claude", "settings.json"))}, keeping everything else in that file, so later runs do not stop to ask.
+List scheduled tasks again. Read their actual enabled state, cron schedule and working folder from this second list. Confirm ${tasks.length === 2 ? "both tasks run" : "the task runs"} locally. Do not guess these values from the prompt files. If a task is missing, uses a different folder or is not local, STOP and report the problem.
+Then run this one Bash command, replacing only TASKS_JSON with the actual JSON array from that list, safely quoted as one shell argument:
+${receipt}
+Each array entry has exactly {"id": taskId, "enabled": true or false, "schedule": cron string, "folder": absolute working folder}. Include only this client's tasks. Never include keys, prompts or other task data.
+Tell me to open Claude, then Code, then Scheduled, and press Run now once on each task. The check only finds tools, reads the brand and scans folders. Posting stays pending until ${tasks.length === 2 ? "both checks finish" : "the check finishes"}. Keep this Mac on and the Claude app open.`;
+  return { file: publish.file, skill: publish.skill, daily, nonce, setup };
+}
+
+/** The app supplies observed task data, never its prompt or credentials. */
+export function writeRoutineReceipt(studioRoot, { nonce, tasks, now = new Date() } = {}) {
+  const root = studioPaths(studioRoot).root;
+  const setup = readRecord(routineSetupFile(root));
+  if (!setup?.nonce || nonce !== setup.nonce || !Array.isArray(setup.tasks) || !setup.tasks.length || setup.tasks.some((t) => !ROUTINE_TASKS.some((expected) => expected.id === t?.id))) throw new Error(setupProblem);
+  if (!Array.isArray(tasks) || tasks.length !== setup.tasks.length || setup.tasks.some(({ id }) => tasks.filter((t) => t?.id === id).length !== 1)) throw new Error(setupProblem);
+  const clean = tasks.map((t) => {
+    if (typeof t.enabled !== "boolean" || typeof t.schedule !== "string" || typeof t.folder !== "string" || !path.isAbsolute(t.folder)) throw new Error(setupProblem);
+    return { id: t.id, enabled: t.enabled, schedule: t.schedule, folder: t.folder };
+  });
+  const receipt = { nonce, at: now.toISOString(), tasks: clean };
+  writeJSON(path.join(root, "routines.json"), receipt);
+  return receipt;
+}
+
+export function routineReceiptCommand(args) {
+  const { values, positionals } = parseArgs({ args, options: { nonce: { type: "string" }, tasks: { type: "string" }, studio: { type: "string" } }, allowPositionals: true, strict: true });
+  let tasks;
+  try { tasks = JSON.parse(values.tasks); } catch { throw new Error(setupProblem); }
+  if (positionals.length) throw new Error(setupProblem);
+  const receipt = writeRoutineReceipt(values.studio, { nonce: values.nonce, tasks });
+  console.log("Routine details saved. Run both checks in Claude.");
+  return receipt;
+}
+
+export function verifyRoutines(studioRoot) {
+  const root = studioPaths(studioRoot).root;
+  const setup = readRecord(routineSetupFile(root));
+  const receipt = readRecord(path.join(root, "routines.json"));
+  const tasks = Array.isArray(receipt?.tasks) ? receipt.tasks : [];
+  const result = (problem) => ({ ok: !problem, tasks, problem });
+  if (!setup?.nonce || setup.folder !== root || !Array.isArray(setup.tasks) || setup.tasks.some((t) => !ROUTINE_TASKS.some((expected) => expected.id === t?.id)) || receipt?.nonce !== setup.nonce || !Number.isFinite(Date.parse(receipt?.at)) || !Number.isFinite(Date.parse(setup.at)) || Date.parse(receipt.at) < Date.parse(setup.at)) return result(setupProblem);
+  const beats = readRecord(path.join(root, "heartbeat.json"));
+  const checkFile = path.join(root, ".check-run");
+  const check = readRecord(checkFile);
+  if (fs.existsSync(checkFile) && (!check?.id || check.nonce !== setup.nonce)) return result(setupProblem);
+  // Legacy studios keep their original single task. Client setups always require both.
+  const expected = isClientMode() ? ROUTINE_TASKS : ROUTINE_TASKS.filter((t) => setup.tasks?.some((x) => x.id === t.id));
+  if (!expected.length || tasks.length !== expected.length) return result(setupProblem);
+  for (const { id, schedule } of expected) {
+    const matches = tasks.filter((t) => t?.id === id);
+    if (matches.length !== 1) return result(setupProblem);
+    const task = matches[0];
+    if (task.folder !== root) return result(`Open Claude, then Code, then Scheduled, and choose ${root} as the folder for ${id}.`);
+    if (task.enabled !== true) return result(`Open Claude, then Code, then Scheduled, and turn on ${id}.`);
+    if (task.schedule !== schedule) return result(`Open Claude, then Code, then Scheduled, and paste the setup request again to fix the times for ${id}.`);
+    const done = beats?.tasks?.[id]?.checkDone;
+    if (done?.nonce !== setup.nonce || !done?.id || (check && done.id !== check.id) || !Number.isFinite(Date.parse(done?.at)) || Date.parse(done.at) < Date.parse(setup.at)) return result(runProblem(id));
+  }
+  return result(null);
+}
+
+export function allowHeartbeatCommands({ home = os.homedir(), ...options } = {}) {
+  const file = path.join(home, ".claude", "settings.json");
+  let settings = {};
+  try { settings = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { if (e.code !== "ENOENT") return false; }
+  const rule = `Bash(${studioPrefix(options)} heartbeat *)`;
+  const allow = settings.permissions?.allow || [];
+  if (!allow.includes(rule)) {
+    settings.permissions = { ...settings.permissions, allow: [...allow, rule] };
+    writeJSON(file, settings);
+  }
+  return true;
 }
 
 /** Install preparation only. The desktop app itself must register the task. */
-export function openRoutineSetup(studio, { run = spawnSync, home = os.homedir(), appExists = fs.existsSync("/Applications/Claude.app") } = {}) {
-  const routine = writeRoutine(studio, { home });
+export function openRoutineSetup(studio, { run = spawnSync, home = os.homedir(), appExists, ...options } = {}) {
+  const routine = writeRoutine(studio, { home, ...options });
   const notes = [];
-  if (!allowPublishCommands({ home })) notes.push("Could not update your Claude settings file, so Claude may ask before it posts. Answer yes when it does.");
-  if (studio.config.daily.publisher === "claude" && !allowPostsCommands({ home })) notes.push("Could not update your Claude settings file. Answer yes if Claude asks before making posts.");
-  if (!appExists) {
-    const r = run("brew", ["install", "--cask", "claude"], { stdio: "inherit" });
-    if (r.status !== 0) notes.push("Install the Claude app from claude.ai/download, then open it.");
+  if (!allowPublishCommands({ home, ...options })) notes.push("Could not update your Claude settings file, so Claude may ask before it posts. Answer yes when it does.");
+  if (routine.daily && !allowPostsCommands({ home, ...options })) notes.push("Could not update your Claude settings file. Answer yes if Claude asks before making posts.");
+  if (!allowHeartbeatCommands({ home, ...options })) notes.push("Answer yes if Claude asks to save a routine check.");
+  const app = ["/Applications/Claude.app", path.join(home, "Applications", "Claude.app")].find((file) => fs.existsSync(file));
+  const installed = appExists ?? !!app;
+  if (!installed) {
+    run("open", ["https://claude.com/download"]);
+    notes.push("Download Claude from https://claude.com/download and drag Claude into Applications. Then open it and continue with the copied request.");
   }
   const copied = run("pbcopy", [], { input: routine.setup, encoding: "utf8" });
-  run("open", ["-a", "Claude"]);
-  notes.push(copied.status === 0 ? "The setup prompt is copied. Open the Code tab in the Claude app, paste, then press Return." : `Open the Code tab in the Claude app and paste this request: ${routine.setup}`);
-  notes.push("Claude sets up your posting routine. Answer yes to its questions. When it says the routine is on, you are done. Keep your Mac on and the Claude app open.");
+  if (installed) run("open", app ? [app] : ["-a", "Claude"]);
+  notes.push(copied.status === 0 ? "The setup request is copied. Open the Code tab in Claude, paste, then press Return." : `Open the Code tab in Claude and paste this request: ${routine.setup}`);
+  notes.push("Posting setup is pending. In Claude, open Code, then Scheduled, and press Run now on each task once. The checks do not post anything. Keep your Mac on and Claude open.");
   return notes;
 }
 

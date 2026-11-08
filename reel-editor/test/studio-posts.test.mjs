@@ -85,8 +85,9 @@ test('daily CLI refusal is one line, dry-run and explicit no-publish remain usab
  const s=fixture(t,{slots:[],daysAhead:0});
  const r=spawnSync(process.execPath,[path.join(PKG_ROOT,'bin/reel.mjs'),'daily','--studio',s.paths.root],{encoding:'utf8'});
  assert.equal(r.status,0,r.stderr);assert.equal(r.stdout.trim().split('\n').length,1);assert.match(r.stdout,/Claude routine/);
- assert.deepEqual((await runDaily(s.paths.root,{dryRun:true,now})).slots,[]);
- assert.deepEqual((await runDaily(s.paths.root,{noPublish:true,now})).made,[]);
+ const deps={scheduledPosts:async()=>[]};
+ assert.deepEqual((await runDaily(s.paths.root,{dryRun:true,now,deps})).slots,[]);
+ assert.deepEqual((await runDaily(s.paths.root,{noPublish:true,now,deps})).made,[]);
 });
 test('app daily health retains its agent and points clients to Claude; kit links do not overwrite',async t=>{
  const { studioHealth }=await import('../src/studio-health.mjs');

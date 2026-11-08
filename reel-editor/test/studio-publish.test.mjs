@@ -71,16 +71,17 @@ test("routine writes both copies, no personal text or shell compounds; only app 
   const text = routinePrompt(s, { node: "/absolute/node", bin: "/absolute/reel.mjs" });
   assert.doesNotMatch(text, /Greg|Pingel|Phoenix|officialgregpingel|Ghost P&L|GHOST|wife/);
   for (const line of text.split("\n").filter((l) => l.startsWith("/absolute/node "))) {
-    assert.doesNotMatch(line, /&&|\|\||[|<>]|\bcd\b/); assert.match(line, /studio publish/);
+    assert.doesNotMatch(line, /&&|\|\||[|<>]|\bcd\b/); assert.match(line, /studio (publish|heartbeat)/);
   }
   assert.match(text, /blogId 42, timezone UTC/);
   const result = writeRoutine(s, { home: s.home });
   assert.equal(fs.readFileSync(result.file, "utf8"), fs.readFileSync(result.skill, "utf8"));
-  assert.match(result.setup, /create_scheduled_task[\s\S]*45 7-20 \* \* \*[\s\S]*list scheduled tasks[\s\S]*enabled/);
+  assert.match(result.setup, /create_scheduled_task[\s\S]*45 7-20 \* \* \*[\s\S]*List scheduled tasks[\s\S]*enabled/);
   const calls = [];
   const notes = openRoutineSetup(s, { home: s.home, appExists: false, run: (cmd, args, options) => { calls.push({ cmd, args, options }); return { status: cmd === "brew" ? 1 : 0 }; } });
-  assert.deepEqual(calls.map((r) => r.cmd), ["brew", "pbcopy", "open"]);
-  assert.match(notes.join(" "), /claude.ai\/download[\s\S]*Code tab[\s\S]*routine is on/);
+  assert.deepEqual(calls.map((r) => r.cmd), ["open", "pbcopy"]);
+  assert.deepEqual(calls[0].args, ["https://claude.com/download"]);
+  assert.match(notes.join(" "), /claude.com\/download[\s\S]*Code tab[\s\S]*Posting setup is pending/);
   assert.doesNotMatch(text + result.setup, /bypassPermissions|disableAutoMode/);
 });
 test("kit migration is repeatable, avoids overwrite, leaves Done and real Desktop folder alone", (t) => {
