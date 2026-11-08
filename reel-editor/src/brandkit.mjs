@@ -37,9 +37,10 @@ export function checkBrand(b) {
   if (b.brollEngine != null && !["codex", "runway"].includes(b.brollEngine)) out.push('brollEngine is "codex" or "runway"');
   if (b.captionKeywords != null && b.captionKeywords !== "auto") out.push('captionKeywords is "auto" (or leave it out)');
   if (b.looks?.only != null) {
+    if (!Array.isArray(b.looks.only)) out.push("looks.only must be a list; leave it empty to allow every house look");
     const only = Array.isArray(b.looks.only) ? b.looks.only.map((x) => String(x).toLowerCase().trim()) : [];
     for (const x of only) if (!LOOK_IDS.includes(x) || x === "gregcard") out.push(`looks.only: "${x}" is not a look they can use (${LOOK_IDS.filter((id) => id !== "gregcard").join(", ")})`);
-    if (only.filter((x) => LOOK_IDS.includes(x) && x !== "gregcard").length < 2) out.push("looks.only needs at least 2 looks, so reels can vary");
+    if (only.length && new Set(only.filter((x) => LOOK_IDS.includes(x) && x !== "gregcard")).size < 2) out.push("looks.only needs at least 2 looks, so reels can vary");
   }
   return out;
 }

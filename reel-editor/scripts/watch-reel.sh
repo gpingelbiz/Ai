@@ -31,15 +31,19 @@
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
 set -euo pipefail
 
+[ ! -f "$HOME/.reel/env.sh" ] || . "$HOME/.reel/env.sh"
+# A hosted client job overrides the shared environment after it is loaded.
+[ -z "${REEL_WATCH_CLIENT_ENV:-}" ] || { set -a; . "$REEL_WATCH_CLIENT_ENV"; set +a; }
+
 FILE="${1:-}"
 MODE="${2:-reel}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
 case "$MODE" in reel|broll|carousel|long|youtube|runway|own-broll) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube, runway or own-broll"}'; exit 1;; esac
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+[ -f "$HOME/.reel/env.sh" ] || export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
-if [ -f "$HOME/.zshrc" ]; then
+if [ ! -f "$HOME/.reel/env.sh" ] && [ -f "$HOME/.zshrc" ]; then
   while IFS= read -r line; do
     var="${line#export }"; var="${var%%=*}"
     [ "$var" != "PATH" ] && [ -n "${!var+x}" ] && continue
@@ -79,21 +83,20 @@ wait_image() {
   done
   return 1
 }
-if [ "${REEL_WATCH_FAST:-0}" != 1 ]; then
-  last=-1; good=0
+if [ "${REEL_WATCH_FAST:-0}" != 1 ] && [ "${REEL_WATCH_READY:-}" != "$(filesize "$FILE")-$(filemtime "$FILE")" ]; then
+  last=-1; lastmtime=-1; good=0
   for _ in $(seq 1 150); do
     size=$(filesize "$FILE")
-    age=$(( $(date +%s) - $(filemtime "$FILE") ))
-    if [ "$size" = "$last" ] && [ "$size" -gt 0 ] && [ "$age" -ge 5 ] && probe_ok "$FILE"; then good=$((good + 1)); else good=0; fi
+    mtime=$(filemtime "$FILE")
+    age=$(( $(date +%s) - mtime ))
+    if [ "$mtime" = "$lastmtime" ] && [ "$size" = "$last" ] && [ "$size" -gt 0 ] && [ "$age" -ge 5 ] && probe_ok "$FILE"; then good=$((good + 1)); else good=0; fi
     [ "$good" -ge 2 ] && break
-    last=$size
+    last=$size; lastmtime=$mtime
     sleep 2
   done
   if [ "$good" -lt 2 ]; then
-    echo "$(date '+%F %T') FAIL  $(basename "$FILE"): still copying or not a readable video after 5 minutes" >> "${REEL_WATCH_ROOT:-$HOME/Reels}/watch.log"
-    [ "$MODE" != own-broll ] || printf 'Rejected: the file did not finish copying or could not be read as a video. Rename it to try again.\n' > "$FILE.result.txt"
-    printf '{"ok":false,"input":"%s","error":"file never finished copying"}\n' "$FILE"
-    exit 1
+    printf 'Still copying %s. Editing will start when copying finishes.\n' "$(basename "$FILE")"
+    exit 75
   fi
 fi
 
@@ -153,7 +156,7 @@ case "$base" in *"#premise"*) flags+=(--premise-mode auto);; esac
 case "$base" in *"#look:"*) lk="${base#*#look:}"; lk="${lk%%[ .#]*}"; flags+=(--look "$lk");; esac
 # "#v2": Greg's test look from the Oct 28 design teardown (presets/pingel-v2.json). Never on a client's reel (their
 # brand kit wins) or in the Runway folder, which has its own preset.
-case "$base" in *"#v2"*) [ "$MODE" = runway ] || [ -n "${REEL_CLIENT:-}" ] || flags+=(--preset pingel-v2);; esac
+case "$base" in *"#v2"*) [ "$MODE" = runway ] || [ "${REEL_CLIENT_MODE:-0}" = 1 ] || [ -n "${REEL_CLIENT:-}" ] || flags+=(--preset pingel-v2);; esac
 # Music: the editor picks from the music folder by the mood of what is said; "#music:<name>" asks for a track
 # whose file name contains <name>; "#nomusic" skips it. Carousels never get music.
 if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then
@@ -166,16 +169,39 @@ if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then
       ;;
   esac
 fi
-# The b-roll folder gets the full look (the preset's cards, reveal captions and b-roll); the plain folder keeps
-# the classic captions with no cards.
+# A chosen brand caption style wins over the drop folder's default.
+brand_captions=""
+if [ -n "${REEL_PRESET:-}" ]; then
+  brand_captions=$(node --input-type=module -e '
+    import fs from "node:fs";
+    import path from "node:path";
+    const file = fs.existsSync(process.argv[1]) ? process.argv[1] : path.join(process.argv[2], "..", "presets", `${process.argv[1]}.json`);
+    try {
+      const p = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (p.brand || /^brand-/.test(p.name || "")) {
+        const look = p.brand?.compat?.reel?.look;
+        const style = look ? look.captions : p.captions?.style;
+        if (style) process.stdout.write(style);
+      }
+    } catch {}
+  ' "$REEL_PRESET" "$HERE" 2>/dev/null || true)
+fi
 case "$MODE" in
-  # Codex draws the first frames unless a client's brand picked another engine (client.env REEL_BROLL_ENGINE).
-  broll) flags+=(--broll-engine "${REEL_BROLL_ENGINE:-codex}" --broll --graphics --caption-style reveal);;
-  long) flags+=(--broll --graphics --caption-style reveal);;
-  # Greg's Runway look is pingel-runway; anyone else keeps their own look with Runway clips as the b-roll.
-  runway) case "${REEL_PRESET:-pingel-brand}" in pingel-*) flags+=(--preset pingel-runway);; *) flags+=(--broll-engine runway);; esac
-    flags+=(--broll --graphics --caption-style reveal);;
-  reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate --no-behind);;
+  broll) flags+=(--broll-engine "${REEL_BROLL_ENGINE:-codex}" --broll --graphics)
+    [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+  long) flags+=(--broll --graphics)
+    [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+  runway)
+    if [ "${REEL_CLIENT_MODE:-0}" = 1 ] || [ -n "${REEL_CLIENT:-}" ]; then
+      flags+=(--broll-engine runway)
+    else
+      case "${REEL_PRESET:-pingel-brand}" in pingel-*) flags+=(--preset pingel-runway);; *) flags+=(--broll-engine runway);; esac
+    fi
+    flags+=(--broll --graphics)
+    [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+  reel) flags+=(--no-graphics)
+    [ -n "$brand_captions" ] || flags+=(--caption-style pop)
+    flags+=(--no-slams --no-annotate --no-behind);;
 esac
 # A carousel needs the transcript and plan, not a render.
 [ "$MODE" = carousel ] && flags+=(--no-render)
