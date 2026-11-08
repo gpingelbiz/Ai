@@ -120,7 +120,7 @@ else throw Error('Unexpected reel command');
   const archive = path.join(dir, "release.tar.gz"); tar(releaseSource, archive, "reel-editor");
   const bytes = fs.readFileSync(archive);
   const m = { schema: 1, id: "2026.11.08.1", commit: "a".repeat(40), runtime: { id: "rt-test", platform: "darwin-arm64", minMacOS: "14.0", tools,
-    python: { version: "3.12.13", requirements: "runtime/requirements.lock" }, whisper: { model: "neutral/whisper", revision: "a".repeat(40) }, hyperframes: { version: "0.8.214" } },
+    python: { version: "3.12.13", requirements: "runtime/requirements.lock" }, whisper: { model: "neutral/whisper", revision: "a".repeat(40), files: { "model.bin": hash(Buffer.from("pinned-model\n")) } }, hyperframes: { version: "0.8.214" } },
     artifact: { name: "release.tar.gz", url: pathToFileURL(archive).href, sha256: hash(bytes), bytes: bytes.length }, files };
   for (const name of ["brand.json", "my-brand.json", "my-youtube.json"]) put(path.join(brand, name), JSON.stringify({ name: "Avery's Studio" }));
   put(path.join(brand, "dictionary.json"), "{}"); put(path.join(brand, "voice.md"), "Your voice.");
@@ -304,12 +304,16 @@ test("a kit without a hashed browser stops before activation or a browser downlo
   assert.equal(fs.readFileSync(path.join(f.home, "downloads"), "utf8").trim().split("\n").length, 6);
 });
 
-test("downloaded Whisper blobs are checked against their content hashes", (t) => {
+test("downloaded Whisper files are checked against the pinned sha256, wherever the cache keeps them", (t) => {
   const f = fixture(t), cache = path.join(f.dir, "models"), repo = path.join(cache, "models--neutral--whisper"), revision = "b".repeat(40);
-  const bytes = Buffer.from("model"), blob = path.join(repo, "blobs", hash(bytes)), snapshot = path.join(repo, "snapshots", revision);
-  put(blob, bytes); fs.mkdirSync(snapshot, { recursive: true });
+  // huggingface_hub 2.x: the snapshot links into the repo's blobs, which link on into a shared store in the cache.
+  const bytes = Buffer.from("model"), store = path.join(cache, "blobs", "xx", "xet-name"), snapshot = path.join(repo, "snapshots", revision);
+  put(store, bytes); fs.mkdirSync(path.join(repo, "blobs"), { recursive: true }); fs.mkdirSync(snapshot, { recursive: true });
+  fs.symlinkSync("../../blobs/xx/xet-name", path.join(repo, "blobs", hash(bytes)));
   fs.symlinkSync(`../../blobs/${hash(bytes)}`, path.join(snapshot, "model.bin"));
-  verifyModel(cache, "neutral/whisper", revision);
-  fs.writeFileSync(blob, "bad bytes");
-  assert.throws(() => verifyModel(cache, "neutral/whisper", revision), /checksum/);
+  verifyModel(cache, "neutral/whisper", revision, { "model.bin": hash(bytes) });
+  assert.throws(() => verifyModel(cache, "neutral/whisper", revision, {}), /no checksum/);
+  assert.throws(() => verifyModel(cache, "neutral/whisper", revision, { "model.bin": hash(bytes), "vocabulary.json": hash(bytes) }), /incomplete/);
+  fs.writeFileSync(store, "bad bytes");
+  assert.throws(() => verifyModel(cache, "neutral/whisper", revision, { "model.bin": hash(bytes) }), /did not match/);
 });

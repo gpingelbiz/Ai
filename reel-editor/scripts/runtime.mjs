@@ -88,26 +88,23 @@ function inventory(root, dirs) {
   for (const dir of dirs) walk(dir);
   return files;
 }
-export function verifyModel(cache, model, revision) {
-  const repo = path.join(cache, `models--${model.replaceAll("/", "--")}`), snapshot = path.join(repo, "snapshots", revision);
-  if (!exists(path.join(snapshot, "model.bin"))) throw new Error("The speech model download is incomplete. Run this installer again.");
-  const blobs = fs.realpathSync(path.join(repo, "blobs"));
-  function walk(dir) {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const file = path.join(dir, e.name);
-      if (e.isDirectory()) { walk(file); continue; }
-      const blob = fs.realpathSync(file), expected = path.basename(blob);
-      if (!inside(blobs, blob) || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(expected)) throw new Error("The speech model download has no checksum. Ask for help before continuing.");
-      let actual;
-      if (expected.length === 64) actual = digest(blob);
-      else {
-        const hash = crypto.createHash("sha1");
-        hash.update(`blob ${fs.statSync(blob).size}\0`); hash.update(fs.readFileSync(blob)); actual = hash.digest("hex");
-      }
-      if (actual !== expected) throw new Error("The speech model download did not match its checksum. Run this installer again.");
-    }
+/**
+ * Each model file is checked against the sha256 pinned in runtime.json (whisper.files). The file names in the
+ * HuggingFace cache are not used as checksums: huggingface_hub 2.x keeps big files in a shared content store under
+ * the cache's own blobs/ folder, named by its own hash, so only the bytes themselves are compared.
+ */
+export function verifyModel(cache, model, revision, files) {
+  const snapshot = path.join(cache, `models--${model.replaceAll("/", "--")}`, "snapshots", revision);
+  if (!files || !Object.keys(files).length) throw new Error("The speech model download has no checksum. Ask for help before continuing.");
+  const root = fs.realpathSync(cache);
+  for (const [name, expected] of Object.entries(files)) {
+    if (!/^[a-f0-9]{64}$/.test(expected) || name.includes("/") || name.startsWith(".")) throw new Error("The speech model download has no checksum. Ask for help before continuing.");
+    const file = path.join(snapshot, name);
+    if (!exists(file)) throw new Error("The speech model download is incomplete. Run this installer again.");
+    const real = fs.realpathSync(file);
+    if (!inside(root, real)) throw new Error("The speech model download is not where it should be. Ask for help before continuing.");
+    if (digest(real) !== expected) throw new Error("The speech model download did not match its checksum. Run this installer again.");
   }
-  walk(snapshot);
 }
 export function installApp(home, m) {
   const l = layout(home, m), identity = sha(JSON.stringify(m));
@@ -169,7 +166,7 @@ export function prepareSpeech(home, m) {
   // Keep the exact snapshot inside the runtime; transcription can use the usual HF cache lookup offline.
   command(python, ["-c", "from huggingface_hub import snapshot_download; import sys; snapshot_download(sys.argv[1], revision=sys.argv[2], cache_dir=sys.argv[3])",
     m.runtime.whisper.model, m.runtime.whisper.revision, modelStage], l, env);
-  verifyModel(modelStage, m.runtime.whisper.model, m.runtime.whisper.revision);
+  verifyModel(modelStage, m.runtime.whisper.model, m.runtime.whisper.revision, m.runtime.whisper.files);
   atomic(path.join(modelStage, `models--${m.runtime.whisper.model.replaceAll("/", "--")}`, "refs/main"), m.runtime.whisper.revision);
   fs.rmSync(path.join(l.rt, "models"), { recursive: true, force: true });
   fs.renameSync(modelStage, path.join(l.rt, "models"));
