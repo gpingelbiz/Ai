@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
@@ -26,7 +27,9 @@ export function readyPosts(s, { now = new Date() } = {}) {
     .sort((a,b) => `${a.day} ${a.time}`.localeCompare(`${b.day} ${b.time}`))
     .map(p => {
       const c = s.config;
-      const input = postInput({ blogId: c.metricool.blogId, day: p.day, time: p.time, tz: c.timezone, text: p.text, media: p.files.map(() => ''), altText: p.altText, kind: p.format, ai: p.ai, draft: c.publish.mode === 'draft' || !!p.draftWhy, trial: p.trial, networks: p.format === 'story' ? ['instagram'] : c.metricool.networks, title: p.hook || '', coverMs: p.coverMs });
+      // The caption goes out exactly as written: no tracking marker in what the client's followers read.
+      const text = p.text;
+      const input = postInput({ blogId: c.metricool.blogId, day: p.day, time: p.time, tz: c.timezone, text, media: p.files.map(() => ''), altText: p.altText, kind: p.format, ai: p.ai, draft: c.publish.mode === 'draft' || !!p.draftWhy, trial: p.trial, networks: p.format === 'story' ? ['instagram'] : c.metricool.networks, title: p.hook || '', coverMs: p.coverMs });
       const info = JSON.parse(input.info); info.media = [];
       return { id: p.id, day: p.day, time: p.time, format: p.format, date: input.date, blogId: input.blogId, info };
     });
@@ -44,14 +47,16 @@ export function donePost(s,id,receipt) {
   return recordPostSuccess(s, { ...p, uncertain: false }, { id: receipt.id || '', plannerUrl: receipt.planner || '' });
 }
 /** notSent: nothing reached Metricool (the files could not be hosted), so the next run may send it again. */
-export function failPost(s,id,why,{ notSent = false } = {}) {
-  return failPublish(s, { ...postAt(s,id), uncertain: !notSent }, new Error(why));
+export function failPost(s,id,why,{ notSent = false, metricoolId } = {}) {
+  return failPublish(s, { ...postAt(s,id), ...(metricoolId != null && metricoolId !== '' ? { metricoolId } : {}), uncertain: !notSent }, new Error(why));
 }
 /** Reconcile uncertain creates only against the app's complete snapshot. Never automatically send one again. */
 export function reconcilePosts(s, scheduled) {
   for (const p of readPosts(s.paths).filter(p => ['made', 'not-posted'].includes(p.status) && !['reel', 'trial'].includes(p.format) && p.preflight?.verdict === 'schedule')) {
-    // Only a post whose create may have landed can be matched. Another post at that time says nothing about one never sent.
-    const match = p.uncertain && scheduled.find(q => q.day === p.day && Number(q.hour) === Number(p.time.slice(0,2)) && Number(q.minute) === Number(p.time.slice(3)) && (q.type === 'STORY') === (p.format === 'story'));
+    // Only the post id Metricool gave back proves this post landed; a matching minute or text does not. An
+    // uncertain post with no id stays held for a person.
+    const match = p.uncertain && scheduled.find(q =>
+      p.metricoolId != null && p.metricoolId !== '' && q.id != null && String(q.id) === String(p.metricoolId));
     if (match) donePost(s,p.id,{ date: `${p.day}T${p.time}:00`, id: match.id, planner: match.plannerUrl });
     else if (p.status === 'not-posted' && !p.uncertain) logPost(s.paths, { ...p, status: 'made' });
   }
@@ -113,7 +118,7 @@ async function runPostsCommand(args) {
   }
   else if(cmd==='wait') result=await waitPosts(s);
   else if(cmd==='done') result=donePost(s,arg,v);
-  else if(cmd==='fail') result=failPost(s,arg,v.why || 'Unconfirmed create',{ notSent: v['not-sent'] });
+  else if(cmd==='fail') result=failPost(s,arg,v.why || 'Unconfirmed create',{ notSent: v['not-sent'], metricoolId: v.id });
   else if(cmd==='finish') result=finishPosts(s);
   else if(cmd==='stop') result=await stop({state});
   else if(cmd==='serve') {

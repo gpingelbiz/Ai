@@ -125,26 +125,26 @@ test("health: old raw and Publish videos alert; fresh videos and Done do not", (
 test("health: missed daily run and disconnected Claude notify and write STATUS without telemetry", async (t) => {
   const s = studio(t), notices = [];
   clientStatus(s.paths, "filming", "Your guide is unfinished", NOW);
-  const r = await studioHealth(s.paths.root, { now: new Date("2026-11-08T13:00Z"), deps: { claudeConnected: () => false, notify: (...a) => notices.push(a), healthPing: () => { throw new Error("must not ping"); } } });
+  const r = await studioHealth(s.paths.root, { env: {}, now: new Date("2026-11-08T13:00Z"), deps: { claudeConnected: () => false, notify: (...a) => notices.push(a), healthPing: () => { throw new Error("must not ping"); } } });
   assert.equal(r.issues.length, 2); assert.equal(notices.length, 1);
   assert.match(fs.readFileSync(path.join(s.paths.root, "STATUS.txt"), "utf8"), /filming: Your guide is unfinished/);
 });
 test("health: successful empty daily run is recorded and clears missed-run alert", async (t) => {
   const s = studio(t); await runDaily(s.paths.root, { now: NOW, deps: { writeFilmingPack: async () => JSON.stringify(pack()) } });
-  const r = await studioHealth(s.paths.root, { now: new Date("2026-11-08T13:00Z"), deps: { claudeConnected: () => true, notify: () => assert.fail("healthy run notified") } });
+  const r = await studioHealth(s.paths.root, { env: {}, now: new Date("2026-11-08T13:00Z"), deps: { claudeConnected: () => true, notify: () => assert.fail("healthy run notified") } });
   assert.deepEqual(r.issues, []);
 });
 test("health: Metricool disconnection and post provider errors are visible", async (t) => {
   const s = studio(t, { publish: { mode: "schedule" }, metricool: { blogId: "1", connector: "Metricool" } });
   const deps = { claudeConnected: () => true, detectConnectors: async () => ({ metricool: { connected: false } }), notify: () => {} };
-  assert.match((await studioHealth(s.paths.root, { now: NOW, deps })).message, /Metricool is disconnected/);
+  assert.match((await studioHealth(s.paths.root, { env: {}, now: NOW, deps })).message, /Metricool is disconnected/);
   const posts = normalizeScheduled({ data: [{ date: "2026-11-07T11:00", providers: [{ status: "ERROR", errorMessage: "Token expired" }] }] });
-  const r = await studioHealth(s.paths.root, { now: NOW, deps: { ...deps, detectConnectors: async () => ({ metricool: { name: "Metricool", connected: true } }), scheduledPosts: async () => posts } });
+  const r = await studioHealth(s.paths.root, { env: {}, now: NOW, deps: { ...deps, detectConnectors: async () => ({ metricool: { name: "Metricool", connected: true } }), scheduledPosts: async () => posts } });
   assert.match(r.message, /Metricool post failed.*Token expired/);
 });
 test("health: editor-only checks drops without touching Claude, Metricool or a ping", async (t) => {
   const root = tmp(t);
-  const r = await studioHealth(root, { dropFolders: [], deps: { claudeConnected: () => assert.fail(), detectConnectors: () => assert.fail(), healthPing: () => assert.fail(), notify: () => assert.fail() } });
+  const r = await studioHealth(root, { env: {}, dropFolders: [], deps: { claudeConnected: () => assert.fail(), detectConnectors: () => assert.fail(), healthPing: () => assert.fail(), notify: () => assert.fail() } });
   assert.deepEqual(r.issues, []);
 });
 test("health: only an explicit https ping is sent, with /fail on problems and no content", async () => {

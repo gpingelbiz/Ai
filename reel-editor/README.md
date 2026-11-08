@@ -24,6 +24,36 @@ curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/inst
 
 **Sending it to someone?** `scripts/package-kit.sh ~/Desktop` builds `Reel Editor Kit.zip`: a double-click installer plus a one-page Start Here guide. It holds no code or keys; the installer pulls the latest version from GitHub when it runs.
 
+## Tested releases and client kits
+
+For client kits, use the release commands in this section. Older kit examples elsewhere in this guide need `--release <release.json>` or `--dev` added. Released kits use their bundled installer.
+
+Save every repository change in git before building. From `reel-editor/`:
+
+```bash
+npm run release -- build --id 2026.11.08.1
+node scripts/brand-kit.mjs their-brand.json --release dist/release/2026.11.08.1/release.json
+node scripts/brand-kit.mjs their-brand.json --studio their-guide.md --release dist/release/2026.11.08.1/release.json
+node scripts/release.mjs kits 2026.11.08.1 --clients /path/to/private/kits.json
+```
+
+The build refuses any changed or untracked repository files, runs `npm test`, requires all six golden frames to match, and builds the Apple Silicon helpers with `scripts/build-helpers.sh`. Missing golden baselines fail; `npm run test:golden:update` is only for an intended, reviewed change. The builder copies the app into a temporary folder and runs full `npm ci` there. It keeps dev dependencies because `pngjs` is used by runtime slide and grid checks. Building needs the normal maintainer tools and access to the package cache or registry; tests use local fakes and never download packages.
+
+Outputs are `dist/release/<id>/reel-editor-<id>.tar.gz` and `release.json`. The manifest records the saved git commit, the entire pinned runtime, every shipped file's SHA-256 and the passing test counts. The archive contains one `reel-editor/` folder. It excludes local settings, keys, personal brands, Greg's presets and voice, music, personal example footage and dependency caches. A fresh dependency install goes into the archive. The embedded `release.json` describes the app files; the sidecar also has the finished archive's SHA-256 and size. Neither manifest hashes itself, since an archive cannot contain its own final hash.
+
+Kit builds require `--release`; they verify and open the saved archive and use its own kit builder and templates. Each zip gets `release.json`, that release's `install.sh`, its launcher and guides, and the person's Brand folder. Zips strip extended attributes and resource forks. For a local preview, use `--dev` instead; the console and adjacent send-out message warn against sending it to a client. Existing Greg installs without `--release` keep their development workflow.
+
+The private registry defaults to `~/Reels/client-brands/kits.json`. Paths can be absolute, start with `~/`, or be relative to the registry file:
+
+```json
+[
+  { "brand": "jane.json", "studio": null, "out": "kits/jane" },
+  { "brand": "sam.json", "studio": "sam-guide.md", "out": "kits/sam" }
+]
+```
+
+After reviewing the artifact and getting Greg's go-ahead, `node scripts/release.mjs publish 2026.11.08.1` prints the destination, commit, both upload paths, hash and size. Add `--yes` to create GitHub release `reel-2026.11.08.1` and upload both files. There is no automatic retry. `reel doctor` shows the release, runtime and changed or missing files; a client's `STATUS.txt` starts with its release number.
+
 ## Install (Mac Mini)
 
 ```bash

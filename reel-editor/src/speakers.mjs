@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { run, r3, PKG_ROOT } from "./util.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 /**
  * Speaker-aware reframing for long-form footage (a podcast, an interview, a training) cut into reels: find the
@@ -18,14 +19,17 @@ import { run, r3, PKG_ROOT } from "./util.mjs";
 const SWIFT_SRC = path.join(PKG_ROOT, "scripts", "speakers.swift");
 
 async function speakersBinary() {
-  if (process.platform !== "darwin" || !fs.existsSync(SWIFT_SRC)) return null;
-  const dir = process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor");
-  fs.mkdirSync(dir, { recursive: true });
-  const bin = path.join(dir, `speakers-${Math.round(fs.statSync(SWIFT_SRC).mtimeMs)}`);
-  if (!fs.existsSync(bin)) {
-    try { await run("swiftc", ["-O", SWIFT_SRC, "-o", bin], { capture: true }); } catch { return null; }
-  }
-  return bin;
+  if (process.platform !== "darwin") return null;
+  try { return await nativeTool("speakers", { compile: async () => {
+    if (!fs.existsSync(SWIFT_SRC)) return null;
+    const dir = process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor");
+    fs.mkdirSync(dir, { recursive: true });
+    const bin = path.join(dir, `speakers-${Math.round(fs.statSync(SWIFT_SRC).mtimeMs)}`);
+    if (!fs.existsSync(bin)) {
+      try { await run("swiftc", ["-O", SWIFT_SRC, "-o", bin], { capture: true }); } catch { return null; }
+    }
+    return bin;
+  } }); } catch { return null; }
 }
 
 /** Faces with lip motion from `from` to `to` seconds, every `step`. Null when the tool is unavailable. */

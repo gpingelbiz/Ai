@@ -25,6 +25,11 @@
   th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em; }
   a { color: var(--accent); }
   .muted { color: var(--muted); font-size: 14px; }
+  .terminal-picture { margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .terminal-bar { padding: 8px 14px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 14px; }
+  .terminal-screen { padding: 18px 14px; background: #16161a; color: #f6f6f8; font: 14px/1.8 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .drag-file { display: inline-block; border: 1px dashed #e0b44c; border-radius: 6px; padding: 3px 8px; color: #e0b44c; }
+  .terminal-picture figcaption { padding: 10px 14px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -33,17 +38,29 @@
   <p>First time? Open <a href="Setup Guide.html">Setup Guide.html</a> for the setup walkthrough.</p>
   <p class="lead">Drop a raw talking-head clip in a folder and get back a finished vertical reel: captions, tight cuts, a hook title placed around your face, a check on every word, and a ready-to-post caption.</p>
 
-  <div class="card"><strong>You need:</strong> a Mac with Apple Silicon (M1 or newer), about 4 GB of free space, and internet. The accounts that add the rest are listed right below, with links.</div>
+  <div class="card"><strong>You need:</strong> a Mac with Apple Silicon (M1 or newer) and macOS 14 or newer, about 4 GB of free space, and internet. The accounts that add the rest are listed right below, with links.</div>
 
 <!-- signups -->
 
-  <h2>1. Install (about 10 minutes)</h2>
+  <h2>1. Install (20 to 40 minutes the first time)</h2>
+  <p>The first install downloads about 2 GB.</p>
   <ol>
-    <li>Double click <b>Install Reel Editor.command</b> in this folder. A Terminal window opens and does the work.</li>
+    <li>Open <b>Terminal</b> (Applications, Utilities).</li>
+    <li>Type <code>bash</code> and a space.</li>
+    <li>Drag <b>Install Reel Editor.command</b> from the kit folder into the Terminal window.</li>
+    <li>Press <b>Return</b>. Keep the whole kit together and leave Terminal open while it works.</li>
+  </ol>
+  <figure class="terminal-picture" aria-label="Drag the Install file into Terminal after bash and a space">
+    <div class="terminal-bar">Terminal</div>
+    <div class="terminal-screen">% bash <span class="drag-file"><b>Install Reel Editor.command</b> &#8592; drag this file here</span></div>
+    <figcaption>Terminal fills in the file location for you. Then press Return.</figcaption>
+  </figure>
+  <p>You can also double click <b>Install Reel Editor.command</b>. If double clicking says it can't be opened, use the Terminal steps above; never change your security settings. If this kit includes an <b>Install Reel Editor.app</b>, you can double click that instead. Keep it in this folder.</p>
+  <ol start="5">
     <li>Answer these questions:
       <table>
         <tr><th>Question</th><th>What to pick</th></tr>
-        <tr><td>Your look</td><td><b>2</b> for plain white captions, or <b>3</b> for your own colors (two hex codes, like <code>#00AAFF</code>). Pick <b>1</b> only if you make content for Greg Pingel.</td></tr>
+        <tr><td>Your look</td><td>This kit carries your own brand, colors, caption voice and word list.</td></tr>
         <tr><td>ElevenLabs key</td><td>Paste it, or press Return to skip. Get one at elevenlabs.io, under Developers, API Keys.</td></tr>
         <tr><td>Drop folder</td><td>Press Return for yes.</td></tr>
         <tr><td>Codex</td><td>Press Return for yes if you have a ChatGPT account, then sign in in the browser window. It picks matching B-roll moments and adds generated carousel images.</td></tr>
@@ -52,20 +69,10 @@
         <tr><td>Claude</td><td>Press Return for yes, then sign in with your Claude account (Pro or Max) when it opens and type <code>/exit</code> to come back. It adds graphic cards, captions and hook ideas.<!-- studio --> A kit with scheduling asks this later, when setting up your posts.<!-- /studio --></td></tr>
       </table>
     </li>
-    <li>It finishes by playing a short test reel. That means it worked.</li>
+    <li>It makes a spoken sample on your Mac, reads it locally and renders a short test reel. Wait for <b>Editing ready (release …)</b>. The result and test reel are in <code>~/Reels/install-test/</code>.</li>
   </ol>
 
-  <div class="card">
-    <p><strong>If your Mac says the file "can't be opened" or "Apple could not verify" it:</strong></p>
-    <ol>
-      <li>Open <b>System Settings</b>, then <b>Privacy &amp; Security</b>.</li>
-      <li>Scroll down to the message about <b>Install Reel Editor.command</b> and click <b>Open Anyway</b>.</li>
-      <li>Confirm, and enter your Mac password if asked.</li>
-    </ol>
-    <p>Or skip the file: open <b>Terminal</b> (in Applications, Utilities), paste this line and press Return:</p>
-    <pre>curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash</pre>
-  </div>
-  <p class="muted">If a window asks to install Apple's command line tools, click Install, wait for it to finish, then run the installer again. If Homebrew is missing, the installer adds it and asks for your Mac password once.</p>
+  <p class="muted">No Homebrew, Apple command line tools or administrator account is needed. If you see a request to install developer tools or Homebrew, stop and use the installer bundled in this kit.</p>
 
   <h3>Fixes and waiting-reel alerts</h3>
   <p>Your client kit checks for fixes every week on this Mac. It keeps your settings, voice, brand guide, dictionary and look. It installs packages only when the package files changed, checks the update without contacting a service, and returns to the previous version if the check fails. You get a notification when something changed or needs attention. Updates pause while the code folder has unsaved changes. Re-running the installer keeps one update job.</p>
@@ -79,7 +86,7 @@
   </ol>
   <table>
     <tr><th>Drop into</th><th>You get</th></tr>
-    <tr><td>Raw - Reel</td><td><code>2026-10-21 Reel 1</code>: the edited reel in the classic look (bold outlined captions), named after its hook</td></tr>
+    <tr><td>Raw - Reel</td><td><code>2026-10-21 Reel 1</code>: the edited reel in your chosen caption style (bold outlined captions when no style was chosen), named after its hook</td></tr>
     <tr><td>Raw - Reel with B-roll</td><td><code>2026-10-21 Reel 2 with B-roll</code>: the full look: graphic cards that show what you say, captions that light up word by word with a hand-drawn marker on the key word, big climax words that stamp in as you say them, the hook running behind your head and shoulders, and real moving clips that fit what you say. Your own clips come first, then free stock video; otherwise you stay on screen. Cards need Claude Code.</td></tr>
     <tr><td>Raw - Full YouTube Edit</td><td><code>2026-10-22 YouTube 1</code>: the whole long video edited for YouTube: chapters with title cards, re-hooks, sparse cards and pictures, punch-ins, a clean last 20 seconds for the end screen, plus the description with chapters, three titles, the captions file, three thumbnail frames and the end-screen plan. Captions are off by default; put <code>#captions</code> in the file name to burn them in.</td></tr>
     <tr><td>Raw - Reel with Runway B-roll</td><td><code>2026-10-22 Reel 3 with Runway</code>: the full look with short generated video clips as the b-roll instead of pictures. Needs a Runway API key with credits (about 30 cents a clip); the folder gets a note with what the reel cost.</td></tr>
@@ -91,9 +98,9 @@
     <tr><th>File</th><th>What it is</th></tr>
     <tr><td>check these words.txt</td><td>Only when the two transcription engines disagreed on a word, with its time in the reel. Check those spots before posting. Brand terms and names from your dictionary are corrected and re-timed before this list is made.</td></tr>
     <tr><td>check this reel.txt</td><td>Only when the editor's own check on the finished file found something: sound level off, a black or still first second, a long silence, captions over your chin, text where Instagram puts its caption and buttons. The reel is still there; the note says what to look at. It also lists what Claude noticed when it watched the finished reel frame by frame, with times, and whether a cold viewer would keep watching after 3 seconds. Check each one yourself; Claude can be wrong. Every reel is also run through a studio-sound pass (room noise and hiss out, every phrase at the same level) before this check.</td></tr>
-    <tr><td>caption.txt</td><td>A caption, 3 hashtags and 3 hook ideas based on what is working for that topic right now. Needs Claude Code and the Sandcastles connector; otherwise it is skipped.</td></tr>
+    <tr><td>caption.txt</td><td>A caption, 3 hashtags and 3 hook ideas based on your transcript. Needs Claude Code; it uses your own transcript and caption voice.</td></tr>
     <tr><td>Cover 1-3.png</td><td>Three cover images to pick from when you post: your best frame with a short bold title (outlined, on a dark bar, or with one word boxed), placed so the profile grid does not crop it.</td></tr>
-    <tr><td>The hook</td><td>If you did not write one in the file name, the editor writes three (strongest first, from what wins on Sandcastles) and puts the first on the finished reel; all three are in caption.txt. To use another, drop the clip again named <code>clip__Your hook here.mov</code>.</td></tr>
+    <tr><td>The hook</td><td>If you did not write one in the file name, the editor writes three (strongest first, from your own transcript) and puts the first on the finished reel; all three are in caption.txt. To use another, drop the clip again named <code>clip__Your hook here.mov</code>.</td></tr>
   </table>
 
   <p>The filename is the brief:</p>
@@ -183,7 +190,7 @@
     <li>When something fails you get a Mac notification; the post waits in Made with <b>Not posted.txt</b>, and an uncertain result waits for a schedule check before it can be marked done.</li>
   </ol>
   <p><b>AI label:</b> any post with a picture made by AI carries Instagram's "made with AI" label, always. Your real photos are never labelled. Set <code>"ai": {"label": "always"}</code> in studio.json to label every post.</p>
-  <p class="muted">Pictures made by AI (for slides with no photo left) need Codex, and hooks that follow what is winning need the Sandcastles connector in Claude. Both are optional: without them the studio uses only your photos and your guide.</p>
+  <p class="muted">Pictures made by AI (for slides with no photo left) need Codex, and use your own accounts. Without generated pictures, the studio uses only your photos and your guide.</p>
 
   <h3>Change something</h3>
   <table>

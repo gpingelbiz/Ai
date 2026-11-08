@@ -23,10 +23,15 @@
   label { display: block; margin: 10px 0; }
   a { color: var(--accent); }
   .muted { color: var(--muted); font-size: 14px; }
+  .terminal-picture { margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .terminal-bar { padding: 8px 14px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 14px; }
+  .terminal-screen { padding: 18px 14px; background: #16161a; color: #f6f6f8; font: 14px/1.8 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .drag-file { display: inline-block; border: 1px dashed #e0b44c; border-radius: 6px; padding: 3px 8px; color: #e0b44c; }
+  .terminal-picture figcaption { padding: 10px 14px; font-size: 14px; }
 </style>
 </head><body><main>
 <h1>Reel Editor: Setup Guide</h1>
-<p class="lead">A walkthrough for your first setup. Allow about 45 minutes, including signing in. Keep this page open while you work. Press Return when the installer asks you to continue.</p>
+<p class="lead">A walkthrough for your first setup. Allow 20 to 40 minutes for the first install, plus time for signing in. It downloads about 2 GB. Keep this page open while you work. Press Return when the installer asks you to continue.</p>
 <h2>Step 0: get the kit onto your Mac</h2>
 <ol><li>If the kit is on your phone, use Share, then AirDrop, and choose your Mac. Accept it on the Mac. Or open the email, Google Drive link or Dropbox link on your Mac and download the zip there.</li><li>If the kit came in a text and the file shows up blank or will not open, ask Greg for a download link instead. Text messages often drop zip files.</li><li>In Finder, open Downloads (or wherever you saved it). Double click the zip to unzip it. Open the new kit folder.</li><li>Open <b>Setup Guide.html</b> first. Keep the whole kit together, including its Brand folder. You will open the installer in Part 4.</li></ol>
 <h2>Part 1. What this is</h2>
@@ -42,7 +47,7 @@
 <!-- /studio -->
 <p>The files and settings live on your Mac. Connected AI services process material for the features you use. Use your own accounts. Greg does not receive your files or health alerts automatically.</p>
 <h2>Part 3. What you need before you start</h2>
-<p>Use a Mac with Apple Silicon (M1 or newer), about 4 GB of free space and internet. Open the Apple menu, then About This Mac. Look for a Chip name beginning with Apple M. In System Settings, General, Storage, check your available space.</p>
+<p>Use a Mac with Apple Silicon (M1 or newer) and macOS 14 or newer, about 4 GB of free space and internet. Open the Apple menu, then About This Mac. Look for a Chip name beginning with Apple M. In System Settings, General, Storage, check your available space.</p>
 <p>Have your Claude Pro or Max account ready for the brand guide walkthrough and writing features. Optional services unlock the features shown below. The kit's Sign up here folder has links you can double click.</p>
 <!-- signups -->
 <!-- studio -->
@@ -51,9 +56,20 @@
 <p>Leave your Mac on and connected for scheduled work. A sleeping Mac runs missed calendar jobs after waking; a shut down Mac cannot edit or post. Check the status after turning it back on.</p>
 <!-- /studio -->
 <h2>Part 4. Install step by step</h2>
-<ol><li>Inside the unzipped kit, double click <b>Install Reel Editor.command</b>.</li><li>If macOS blocks it, open System Settings, then Privacy &amp; Security. Find the message about the installer, click Open Anyway, confirm and enter your Mac password if asked. Open the installer again if needed.</li><li>A Terminal window opens. It shows progress as it installs the tools. If Apple asks to install command line tools, click Install, wait until it finishes, then open the kit installer again. A password typed into Terminal may show no letters; type it and press Return.</li><li>Answer the questions below in order. Already saved keys and signed in tools may be skipped. A key is a private code from your account; paste it into Terminal, not into a message to Greg.</li></ol>
+<ol><li>Open <b>Terminal</b> (Applications, Utilities).</li>
+    <li>Type <code>bash</code> and a space.</li>
+    <li>Drag <b>Install Reel Editor.command</b> from the kit folder into the Terminal window.</li>
+    <li>Press <b>Return</b>. Keep the whole kit together and leave Terminal open while it works.</li></ol>
+<figure class="terminal-picture" aria-label="Drag the Install file into Terminal after bash and a space">
+    <div class="terminal-bar">Terminal</div>
+    <div class="terminal-screen">% bash <span class="drag-file"><b>Install Reel Editor.command</b> &#8592; drag this file here</span></div>
+    <figcaption>Terminal fills in the file location for you. Then press Return.</figcaption>
+  </figure>
+  <p>You can also double click <b>Install Reel Editor.command</b>. If double clicking says it can't be opened, use the Terminal steps above; never change your security settings. If this kit includes an <b>Install Reel Editor.app</b>, you can double click that instead. Keep it in this folder.</p>
+<p>Terminal shows progress as it installs the tools in your own home folder. No administrator account, Homebrew or Apple command line tools are needed. If you see a request to install developer tools or Homebrew, stop and use the installer bundled in this kit.</p>
+<p>Answer the questions below in order. Already saved keys and signed in tools may be skipped. A key is a private code from your account; paste it into Terminal, not into a message to Greg.</p>
 <table><tr><th>It asks</th><th>What to do</th></tr>
-<tr><td>Your look</td><td>In a generic kit, choose 2 for plain white captions or 3 for your own colors. Personalized kits skip this question.</td></tr>
+<tr><td>Your look</td><td>Your brand, colors, caption voice and words come with this kit.</td></tr>
 <tr><td>Paste your ElevenLabs API key, or press Return to skip:</td><td>Paste your key from ElevenLabs, Developers, API Keys, or press Return.</td></tr>
 <tr><td>Paste your Runway API key, or press Return to skip:</td><td>Press Return unless you have bought Runway API credits.</td></tr>
 <tr><td>Paste your Pixabay API key, or press Return to skip:</td><td>Log in to your free account at <a href="https://pixabay.com/api/docs/">pixabay.com/api/docs/</a>. Your key appears on that page. Paste it here, or skip.</td></tr>
@@ -64,9 +80,9 @@
 <tr><td>Add Claude for graphic cards, captions and hook ideas (needs a Claude Pro or Max plan)? [Y/n]:</td><td>Press Return. Follow the sign in, then type /exit and press Return to come back.</td></tr>
 <!-- /reel-claude -->
 </table>
-<p>Next it renders a short test reel and opens it. For Reel Editor, setup is then complete.</p>
+<p>The last editing check makes a spoken sample on this Mac, reads its words locally and renders a short test reel. It uses no paid services. The test reel and its result are in <code>~/Reels/install-test/</code>.</p>
 <!-- studio -->
-<p>Setup for your reels and posts continues after that test:</p>
+<p>Reels kits also walk you through these posting settings. Editing ready confirms editing; check the Claude app routines separately before relying on posting:</p>
 <table><tr><th>It asks</th><th>What to do</th></tr>
 <tr><td>Drag your photo folder into this window and press Return, or press Return for Desktop/Reels/Photos:</td><td>Press Return for the default. On a repeat install, the previous photo folder is kept. If you choose a protected folder, it offers to copy the photos into Desktop/Reels/Photos; press Return for yes.</td></tr>
 <tr><td>Press Return to start:</td><td>Starts Claude sign in if needed. Sign in, then type /exit and press Return.</td></tr>
@@ -80,7 +96,7 @@
 <tr><td>Claude app routines</td><td>Paste the copied setup prompt into the Code tab. Claude enables reel-publish and daily-posts. Your first posts arrive after the next 6 AM run. You can press Run now on daily-posts in the Claude app.</td></tr>
 </table>
 <!-- /studio -->
-<p>Wait for <b>All set.</b> before closing the window. If it says the install stopped, read the message, fix that issue and run the installer again.</p>
+<p>Wait for <b>Editing ready (release …)</b> before closing the window. If it says the install stopped, read the message, fix that issue and run the installer again.</p>
 <h2>Part 5. What is on your Mac now</h2>
 <p>Open Finder, then Desktop, then Reels. The Raw folders are shortcuts to folders inside ~/Reels. A tilde (~) means your home folder. Finished edits appear in Desktop/Reels.</p>
 <table><tr><th>Folder</th><th>What to put there and what it does</th></tr>
@@ -129,13 +145,13 @@
 <!-- /studio -->
 <h2>Part 9. Fix a problem</h2>
 <table><tr><th>What you see</th><th>What to do</th></tr>
-<tr><td>Nothing happens after a drop</td><td>Use one of the Raw folders, not the main Reels folder. Keep the Mac on. If you see a Reel failed notification, read it, then rename the clip to retry.</td></tr>
+<tr><td>Nothing happens after a drop</td><td>Use one of the Raw folders, not the main Reels folder. Keep the Mac on. If you see a Reel failed notification, read the note ending in "why it failed.txt" beside your original clip. Check with the person who sent you the kit before trying paid features again.</td></tr>
 <tr><td>A caption word is wrong</td><td>Read check these words.txt in the reel folder. Ask Claude Code to add the correction to ~/.reel/dictionary.json, with a backup first.</td></tr>
 <tr><td>The hook covers your face</td><td>Add #top or #low to the clip name and drop it again.</td></tr>
 <!-- studio -->
 <tr><td>A post did not go out</td><td>Read Desktop/Reels/STATUS.txt and Not posted.txt in its Made folder. If Claude signed out, open Terminal, type claude and sign in. If Metricool disconnected, reconnect at claude.ai, Settings, Connectors.</td></tr>
 <!-- /studio -->
-<tr><td>macOS blocks the installer</td><td>Use System Settings, Privacy &amp; Security, Open Anyway as described in Part 4.</td></tr>
+<tr><td>macOS blocks the installer</td><td>Use the Terminal steps in Part 4. Never change your security settings.</td></tr>
 <tr><td>Anything else</td><td>Open Install Reel Editor.command again to update or repair. Existing settings are kept, but read any questions before accepting defaults. If you are still stuck, text Greg with the message you see.</td></tr></table>
 <h2>Part 10. Quick checklist</h2>
 <p>Tick these as you go. Ticks are just for this open page and may reset when you reopen it.</p>
@@ -147,7 +163,7 @@
 <!-- /studio -->
 <label><input type="checkbox"> Free Pixabay key ready, or deliberately skipped</label>
 <label><input type="checkbox"> Kit downloaded onto the Mac and unzipped</label>
-<label><input type="checkbox"> Installer finished with All set</label>
+<label><input type="checkbox"> Installer finished with Editing ready</label>
 <label><input type="checkbox"> My own brand guide filled in with Claude Code</label>
 <label><input type="checkbox"> First clip edited and checked</label>
 <!-- studio -->

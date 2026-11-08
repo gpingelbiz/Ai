@@ -63,21 +63,31 @@ export function toolPrompt(tool, input) {
   ].join("\n");
 }
 
-// If a whole session still never saw the connector, the tool never ran, so waiting and asking again cannot double a post.
+// A reply about loading a tool is not proof that a write never ran.
 const TOOL_NOT_READY = /not available in this session|no such tool|tool\b.*\bnot (found|available)/i;
 const NOT_READY_WAITS = [20000, 45000];
+const READ_TOOLS = new Set(["getBrandSettings", "getScheduledPosts", "getBestTimeToPostByNetwork"]);
+function callError(tool, message, uncertain) {
+  const error = new Error(`Metricool ${tool}: ${message}`);
+  if (uncertain) error.uncertain = true;
+  return error;
+}
 
 /** One Metricool tool call. Returns the parsed result; throws on an error result. */
 export async function metricoolCall(connector, tool, input, { timeoutMs, notReadyWaits = NOT_READY_WAITS } = {}) {
   if (!connector) throw new Error("no Metricool connector name in studio.json (run the installer again)");
   const name = `${connectorPrefix(connector)}${tool}`;
+  const readOnly = READ_TOOLS.has(tool);
   for (let attempt = 0; ; attempt++) {
-    const reply = await runClaude(["-p", toolPrompt(name, input), "--allowedTools", name, "--disallowedTools", DENY.join(","), "--output-format", "text"], { timeoutMs });
+    let reply;
+    try { reply = await runClaude(["-p", toolPrompt(name, input), "--allowedTools", name, "--disallowedTools", DENY.join(","), "--output-format", "text"], { timeoutMs }); }
+    catch { throw callError(tool, "The connection stopped before a result came back. Check Metricool before trying again.", !readOnly); }
     let result, problem = "";
     try { result = firstJSON(reply); if (result && typeof result === "object" && result.error) problem = typeof result.error === "string" ? result.error : JSON.stringify(result.error); }
     catch { problem = `no result came back (${reply.trim().slice(0, 200)})`; }
+    if (!problem && (!result || typeof result !== "object" || !Object.keys(result).length)) problem = "No confirmed result came back";
     if (!problem) return result;
-    if (!TOOL_NOT_READY.test(problem)) throw new Error(`Metricool ${tool}: ${problem}`);
+    if (!readOnly || !TOOL_NOT_READY.test(problem)) throw callError(tool, problem, !readOnly);
     if (attempt >= notReadyWaits.length) throw new Error(`Metricool ${tool}: Claude could not load the Metricool connector on this Mac (${problem}). Open Terminal, type claude, press Return, type /mcp and check Metricool shows connected; if not, reconnect it at claude.ai, Settings, Connectors. Then try again.`);
     await new Promise((r) => setTimeout(r, notReadyWaits[attempt]));
   }
@@ -134,7 +144,7 @@ export function normalizeScheduled(r) {
     const dt = String(p.publicationDate?.dateTime || p.publicationDate || p.date || "");
     const m = dt.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
     if (!m) return null;
-    return { day: m[1], hour: Number(m[2]), minute: Number(m[3]), type: String(p.instagramData?.type || p.type || "POST").toUpperCase(), draft: !!p.draft, text: String(p.text || "").slice(0, 80), id: p.id ?? p.uuid ?? null, ...(p.status || p.publicationStatus ? { status: String(p.status || p.publicationStatus) } : {}), ...(scheduledError(p) ? { error: scheduledError(p) } : {}) };
+    return { day: m[1], hour: Number(m[2]), minute: Number(m[3]), type: String(p.instagramData?.type || p.type || "POST").toUpperCase(), draft: !!p.draft, text: String(p.text || ""), id: p.id ?? p.uuid ?? null, ...(p.status || p.publicationStatus ? { status: String(p.status || p.publicationStatus) } : {}), ...(scheduledError(p) ? { error: scheduledError(p) } : {}) };
   }).filter(Boolean);
 }
 
@@ -188,5 +198,7 @@ export function createdPost(r) {
 /** Schedule one post. Returns {plannerUrl, id, raw}. */
 export async function createPost(connector, input) {
   const r = await metricoolCall(connector, "createScheduledPost", input, { timeoutMs: 420000 });
-  return { ...createdPost(r), raw: r };
+  const post = createdPost(r);
+  if (post.id == null || post.id === "") throw callError("createScheduledPost", "No post id came back. Check Metricool before trying again.", true);
+  return { ...post, raw: r };
 }

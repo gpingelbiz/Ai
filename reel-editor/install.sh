@@ -11,6 +11,7 @@
 #   --yes            take the defaults, ask nothing (Greg's look unless --look is given; no key; drop folder on)
 #   --look greg|clean|custom   --accent "#hex" --text "#hex" (custom colors)
 #   --brand <folder> a brand kit's Brand folder (scripts/brand-kit.mjs): their look, fonts, words, voice; no look question
+#   --release <file> install the tested release from a kit (no password or developer tools)
 #   --studio         also set up the Content Studio (needs --brand from a Content Studio kit): photo folder, Claude sign-in,
 #                    the client's Metricool brand, how images reach Metricool, posting times, the daily job
 #   --no-routine     skip Claude desktop routine setup (testing)
@@ -28,7 +29,8 @@ DIR="$HOME/Ai"
 VENV="$HOME/.reel-venv"
 CONF="$HOME/.reel"
 ZSHRC="$HOME/.zshrc"
-YES=0; LINK=1; WATCH=""; LOOK=""; ACCENT=""; TEXTC=""; BRAND=""; STUDIO=0; NO_ROUTINE=0
+YES=0; LINK=1; WATCH=""; LOOK=""; ACCENT=""; TEXTC=""; BRAND=""; STUDIO=0; NO_ROUTINE=0; RELEASE=""; RUNTIME=""; RELEASE_ID=dev
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,6 +42,7 @@ while [ $# -gt 0 ]; do
     --accent) ACCENT="$2"; shift ;;
     --text) TEXTC="$2"; shift ;;
     --brand) BRAND="$2"; LOOK=brand; shift ;;
+    --release) RELEASE="$2"; shift ;;
     --studio) STUDIO=1 ;;
     --no-routine) NO_ROUTINE=1 ;;
     --dir) DIR="$2"; shift ;;
@@ -52,15 +55,17 @@ bold() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
 die() { printf '\n\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
-# Questions come from the keyboard even when this script arrives through `curl | bash`.
+# Questions come from the keyboard even when this script arrives through `curl | bash`. /dev/tty can exist without
+# a terminal behind it (a background or remote run); then every question takes its default.
+if (exec < /dev/tty) 2>/dev/null; then HAVE_TTY=1; else HAVE_TTY=0; fi
 ask() { # ask "Question" default -> REPLY
-  if [ "$YES" = 1 ] || [ ! -r /dev/tty ]; then REPLY="$2"; return; fi
+  if [ "$YES" = 1 ] || [ "$HAVE_TTY" != 1 ]; then REPLY="$2"; return; fi
   printf '%s ' "$1" > /dev/tty
   read -r REPLY < /dev/tty || REPLY=""
   [ -n "$REPLY" ] || REPLY="$2"
 }
 ask_secret() {
-  if [ "$YES" = 1 ] || [ ! -r /dev/tty ]; then REPLY=""; return; fi
+  if [ "$YES" = 1 ] || [ "$HAVE_TTY" != 1 ]; then REPLY=""; return; fi
   printf '%s ' "$1" > /dev/tty
   read -rs REPLY < /dev/tty || REPLY=""
   printf '\n' > /dev/tty
@@ -68,6 +73,48 @@ ask_secret() {
 
 bold "Reel Editor installer"
 [ "$(uname -s)" = Darwin ] || die "This installer is for macOS."
+if [ -n "$RELEASE" ]; then
+  [ "$(uname -m)" = arm64 ] || die "Intel Macs are not supported yet. Use an Apple Silicon Mac."
+  MACOS="$(sw_vers -productVersion)"
+  [ "${MACOS%%.*}" -ge 14 ] || die "Reel Editor needs macOS 14 or newer. Update macOS, then run this installer again."
+  [ -f "$RELEASE" ] || die "The kit's release.json is missing. Unzip the whole kit, then try again."
+  [ -f "$HERE/scripts/bootstrap-runtime.sh" ] && [ -f "$HERE/scripts/runtime.mjs" ] || die "The kit's setup files are missing. Unzip the whole kit, then try again."
+  mkdir -p "$CONF" "$HOME/.local/share/reel-editor/tmp"
+  chmod 700 "$CONF"
+  touch "$CONF/install.log"; chmod 600 "$CONF/install.log"
+  trap 'echo "The install stopped. See ~/.reel/install.log, then run this installer again." >&2' ERR
+  RELEASE_ID="$(plutil -extract id raw -o - "$RELEASE")"
+  RUNTIME_ID="$(plutil -extract runtime.id raw -o - "$RELEASE")"
+  case "$RUNTIME_ID" in ''|*[!a-zA-Z0-9._-]*|.|..) die "The tools list is not valid." ;; esac
+  RUNTIME="$HOME/.local/share/reel-editor/runtime/$RUNTIME_ID"
+  note "Downloading tools (about 200 MB)"
+  bash "$HERE/scripts/bootstrap-runtime.sh" "$RELEASE"
+  export PATH="$RUNTIME/bin:$HOME/.local/bin:$PATH"
+  RUNTIME_HELPER="$HERE/scripts/runtime.mjs"
+  # The verified app carries the hashed speech package list; unpack it before preparing speech.
+  note "Getting the tested editor ready"
+  node "$RUNTIME_HELPER" app "$RELEASE"
+  APP="$HOME/.local/share/reel-editor/releases/$RELEASE_ID"
+  note "Getting speech recognition ready (about 1.6 GB, once)"
+  node "$RUNTIME_HELPER" speech "$RELEASE"
+  VENV="$RUNTIME/venv"
+  note "Getting the render browser ready"
+  node "$RUNTIME_HELPER" browser "$RELEASE"
+  node "$RUNTIME_HELPER" switch "$RELEASE"
+  if [ "$LINK" = 1 ]; then
+    mkdir -p "$HOME/.local/bin"
+    cat > "$HOME/.local/bin/.reel-install.tmp" <<'LAUNCHER'
+#!/bin/sh
+[ -f "$HOME/.reel/env.sh" ] && . "$HOME/.reel/env.sh"
+exec "$REEL_RUNTIME/bin/node" "$HOME/.local/share/reel-editor/current/bin/reel.mjs" "$@"
+LAUNCHER
+    chmod 755 "$HOME/.local/bin/.reel-install.tmp"
+    mv -f "$HOME/.local/bin/.reel-install.tmp" "$HOME/.local/bin/reel"
+  fi
+  # Always enter through current so background jobs survive the next release switch.
+  APP="$HOME/Ai/reel-editor"
+  [ -n "$LOOK" ] || LOOK=clean
+else
 [ "$(uname -m)" = arm64 ] || note "This Mac is not Apple Silicon. It will work, but renders are much slower."
 
 # ---------------------------------------------------------------- 1. Apple tools
@@ -81,14 +128,19 @@ fi
 
 # ---------------------------------------------------------------- 2. Homebrew + tools
 bold "2/7  Homebrew, ffmpeg, Node, Python"
-if ! command -v brew >/dev/null 2>&1; then
+py_ok() { "$1" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 14) else 1)' >/dev/null 2>&1; }
+NEED_BREW=0
+for cmd in node ffmpeg ffprobe git; do command -v "$cmd" >/dev/null 2>&1 || NEED_BREW=1; done
+PY="$(command -v python3 || true)"
+if [ -z "$PY" ] || ! py_ok "$PY"; then NEED_BREW=1; fi
+if [ "$NEED_BREW" = 1 ] && ! command -v brew >/dev/null 2>&1; then
   [ -x /opt/homebrew/bin/brew ] || { note "Installing Homebrew (it will ask for your Mac password)…"; /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" < /dev/tty; }
   eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
 fi
 # Only install what is missing, judged by the command itself: `brew list python` misses python@3.14, and
 # installing a second Python re-points python3 for every script on the Mac. No Homebrew auto-update either.
 export HOMEBREW_NO_AUTO_UPDATE=1
-for pair in ffmpeg:ffmpeg node:node git:git; do
+for pair in ffmpeg:ffmpeg ffprobe:ffmpeg node:node git:git; do
   cmd="${pair%%:*}"; formula="${pair#*:}"
   if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd (already installed)"; else note "installing ${formula}…"; brew install "$formula" >/dev/null; ok "$cmd"; fi
 done
@@ -117,13 +169,19 @@ if [ -e "$DIR/.git" ]; then
   if [ -n "$BRAND" ] && [ -n "$(git -C "$DIR" status --porcelain --untracked-files=all)" ]; then
     die "Your code folder has uncommitted changes. Keep or commit them before re-running the installer. Nothing was updated."
   fi
-  git -C "$DIR" pull --ff-only -q && ok "updated $DIR"
+  git -C "$DIR" pull --ff-only -q || die "The code update stopped. Read the message above, then run this installer again."
+  ok "updated $DIR"
 else
-  git clone -q "$REPO" "$DIR" && ok "downloaded to $DIR"
+  git clone -q "$REPO" "$DIR" || die "The code download stopped. Read the message above, then run this installer again."
+  ok "downloaded to $DIR"
 fi
 APP="$DIR/reel-editor"
-( cd "$APP" && npm install --silent --no-audit --no-fund >/dev/null ) && ok "packages installed"
-if [ "$LINK" = 1 ]; then ( cd "$APP" && npm link --silent >/dev/null 2>&1 ) && ok "the reel command is ready"; fi
+( cd "$APP" && npm install --silent --no-audit --no-fund ) || die "The editor packages did not install. Read the message above."
+ok "packages installed"
+if [ "$LINK" = 1 ]; then
+  ( cd "$APP" && npm link --silent ) || die "The reel command could not be linked. Read the message above."
+  ok "the reel command is ready"
+fi
 
 # ---------------------------------------------------------------- 4. Whisper + render browser
 bold "4/7  Whisper and the render browser"
@@ -133,12 +191,16 @@ if [ -x "$VENV/bin/python" ] && ! py_ok "$VENV/bin/python"; then rm -rf "$VENV";
 # av<17: PyAV 19 removed an argument faster-whisper 1.2.1 passes ("unexpected keyword argument metadata_errors").
 "$VENV/bin/pip" install -q --disable-pip-version-check --only-binary=av --upgrade faster-whisper "av<17" || die "Whisper did not install. Read the message above, then run this again."
 ok "Whisper (faster-whisper) installed"
-( cd "$APP" && npx --yes hyperframes browser ensure >/dev/null 2>&1 ) && ok "render browser ready"
+( cd "$APP" && npx --yes hyperframes browser ensure ) || die "The render browser did not install. Read the message above."
+ok "render browser ready"
 # Studio sound: the DeepFilterNet denoiser is one binary from its official GitHub release (no Python). Optional:
 # without it the spectral denoiser runs and the log says so.
 if [ -x "$HOME/.cache/reel-editor/bin/deep-filter" ]; then ok "studio sound denoiser present"
 elif bash "$APP/scripts/install-deepfilter.sh" >/dev/null 2>&1; then ok "studio sound denoiser installed (DeepFilterNet)"
 else note "DeepFilterNet could not be fetched; reels use the built-in denoiser. Later: $APP/scripts/install-deepfilter.sh"; fi
+
+fi # legacy tools and code
+RUNTIME_HELPER="${RUNTIME_HELPER:-$APP/scripts/runtime.mjs}"
 
 # ---------------------------------------------------------------- 5. Your look and words
 bold "5/7  Your look"
@@ -157,15 +219,23 @@ case "$LOOK" in
     [ -f "$BRAND/my-brand.json" ] || die "No brand in $BRAND (my-brand.json is missing)."
     mkdir -p "$CONF/fonts"
     # Their own edits win; an untouched copy (same as the last kit's) takes the new kit's look and b-roll settings.
-    if [ -f "$CONF/my-brand.json" ] && [ -f "$CONF/.kit-my-brand.json" ] && ! cmp -s "$CONF/my-brand.json" "$CONF/.kit-my-brand.json" && ! cmp -s "$CONF/my-brand.json" "$BRAND/my-brand.json"; then
+    if [ -f "$CONF/my-brand.json" ] && ! cmp -s "$CONF/my-brand.json" "$BRAND/my-brand.json" && { [ ! -f "$CONF/.kit-my-brand.json" ] || ! cmp -s "$CONF/my-brand.json" "$CONF/.kit-my-brand.json"; }; then
       cp -f "$BRAND/my-brand.json" "$CONF/my-brand.kit-new.json"
       note "kept your edited ~/.reel/my-brand.json; this kit's version is next to it as my-brand.kit-new.json"
     else
       cp -f "$BRAND/my-brand.json" "$CONF/my-brand.json"
     fi
     cp -f "$BRAND/my-brand.json" "$CONF/.kit-my-brand.json"
-    [ -f "$BRAND/my-youtube.json" ] && cp -f "$BRAND/my-youtube.json" "$CONF/my-youtube.json" && YTPRESET="$CONF/my-youtube.json"
-    [ -f "$BRAND/brand.json" ] && cp -f "$BRAND/brand.json" "$CONF/brand.json"
+    for name in my-youtube.json brand.json; do
+      if [ -f "$BRAND/$name" ]; then
+        if [ -f "$CONF/$name" ] && ! cmp -s "$CONF/$name" "$BRAND/$name" && { [ ! -f "$CONF/.kit-$name" ] || ! cmp -s "$CONF/$name" "$CONF/.kit-$name"; }; then
+          cp -f "$BRAND/$name" "$CONF/${name%.json}.kit-new.json"
+          note "kept your edited $name; this kit's version is next to it"
+        else cp -f "$BRAND/$name" "$CONF/$name"; fi
+        cp -f "$BRAND/$name" "$CONF/.kit-$name"
+      fi
+    done
+    [ ! -f "$CONF/my-youtube.json" ] || YTPRESET="$CONF/my-youtube.json"
     for f in "$BRAND"/fonts/*; do [ -f "$f" ] && cp -f "$f" "$CONF/fonts/"; done
     # Their word list and voice are theirs to edit: a re-run keeps the edited copies.
     [ -f "$CONF/dictionary.json" ] || cp "$BRAND/dictionary.json" "$CONF/dictionary.json"
@@ -198,8 +268,9 @@ ok "look: $LOOK"
 
 # ---------------------------------------------------------------- 6. Settings
 bold "6/7  Keys and settings"
+node "$RUNTIME_HELPER" migrate-keys
 KEY=""
-if grep -q '^export ELEVENLABS_API_KEY=' "$ZSHRC" 2>/dev/null; then
+if grep -q '^ELEVENLABS_API_KEY=' "$CONF/keys.env" 2>/dev/null; then
   ok "ElevenLabs key already set (kept)"
 else
   note "ElevenLabs Scribe is the most accurate transcription (key from elevenlabs.io, Developers, API Keys)."
@@ -207,7 +278,7 @@ else
   KEY="$REPLY"
 fi
 RWKEY=""
-if grep -q '^export RUNWAY_API_KEY=' "$ZSHRC" 2>/dev/null; then
+if grep -q '^RUNWAY_API_KEY=' "$CONF/keys.env" 2>/dev/null; then
   ok "Runway key already set (kept)"
 else
   note "Runway makes short video b-roll for Raw - Reel with Runway B-roll, about 30 cents a clip (key and credits at dev.runwayml.com)."
@@ -215,7 +286,7 @@ else
   RWKEY="$REPLY"
 fi
 PBKEY=""
-if grep -q '^export PIXABAY_API_KEY=' "$ZSHRC" 2>/dev/null; then
+if grep -q '^PIXABAY_API_KEY=' "$CONF/keys.env" 2>/dev/null; then
   ok "Pixabay key already set (kept)"
 else
   note "Pixabay adds free stock video for Raw - Reel with B-roll."
@@ -224,7 +295,7 @@ else
   PBKEY="$REPLY"
 fi
 PXKEY=""
-if grep -q '^export PEXELS_API_KEY=' "$ZSHRC" 2>/dev/null; then
+if grep -q '^PEXELS_API_KEY=' "$CONF/keys.env" 2>/dev/null; then
   ok "Pexels key already set (kept)"
 else
   note "Pexels adds free stock video for Raw - Reel with B-roll."
@@ -234,6 +305,7 @@ else
 fi
 [ -n "$WATCH" ] || { ask "Turn on the drop folder (drop a clip, get a reel)? [Y/n]:" y; case "$REPLY" in n*|N*) WATCH=n ;; *) WATCH=y ;; esac; }
 
+if [ -z "$RELEASE" ]; then
 # Codex makes the b-roll stills and carousels, on the person's own ChatGPT plan. Optional: without it, reels
 # come with no b-roll and no carousel.
 if command -v codex >/dev/null 2>&1; then
@@ -246,7 +318,7 @@ else
     *)
       if npm install -g @openai/codex --silent --no-audit --no-fund >/dev/null 2>&1; then ok "Codex installed"
       else note "Codex did not install; reels come without b-roll and carousels"; fi
-      if command -v codex >/dev/null 2>&1 && [ "$YES" != 1 ] && [ -r /dev/tty ]; then
+      if command -v codex >/dev/null 2>&1 && [ "$YES" != 1 ] && [ "$HAVE_TTY" = 1 ]; then
         note "Sign in with your ChatGPT account in the browser window that opens."
         codex login < /dev/tty > /dev/tty 2>&1 || note "Sign-in skipped. Run  codex login  later to turn on b-roll and carousels."
       fi ;;
@@ -256,7 +328,8 @@ fi
 # Claude Code writes the graphic cards, the captions and the hook ideas, on the person's own Claude plan. Optional:
 # without it, reels come without cards and captions. A Content Studio kit installs and signs it in later (step 2 of
 # its setup), so it is not asked twice.
-CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"; [ -n "$CLAUDE_BIN" ] || { [ -x "$HOME/.local/bin/claude" ] && CLAUDE_BIN="$HOME/.local/bin/claude"; }
+CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
+if [ -z "$CLAUDE_BIN" ] && [ -x "$HOME/.local/bin/claude" ]; then CLAUDE_BIN="$HOME/.local/bin/claude"; fi
 claude_ok() { [ -n "$CLAUDE_BIN" ] && perl -e 'alarm 120; exec @ARGV' "$CLAUDE_BIN" -p "Reply with the word OK and nothing else." --tools "" --strict-mcp-config --output-format text 2>/dev/null | grep -q OK; }
 if [ "$STUDIO" != 1 ]; then
   if [ -z "$CLAUDE_BIN" ]; then
@@ -269,7 +342,7 @@ if [ "$STUDIO" != 1 ]; then
   fi
   if [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ]; then
     if claude_ok; then ok "Claude signed in: cards, captions and hook ideas on"
-    elif [ "$YES" != 1 ] && [ -r /dev/tty ]; then
+    elif [ "$YES" != 1 ] && [ "$HAVE_TTY" = 1 ]; then
       note "Sign in with YOUR Claude account (Pro or Max). Claude opens here: follow the sign-in, then type /exit and press Return."
       "$CLAUDE_BIN" < /dev/tty > /dev/tty 2>&1 || true
       if claude_ok; then ok "Claude signed in: cards, captions and hook ideas on"; else note "Claude is not signed in yet. Later: type  claude  in Terminal and sign in."; fi
@@ -277,46 +350,24 @@ if [ "$STUDIO" != 1 ]; then
   fi
 fi
 
-touch "$ZSHRC"
-# Keep a call-to-action someone set by hand; a re-run must not wipe it.
-CTA_LINE="$(grep '^export REEL_WATCH_CTA=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
-# Keys saved by an earlier run sit inside our block, which is rewritten below: carry them over.
-EL_LINE="$(grep '^export ELEVENLABS_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
-RW_LINE="$(grep '^export RUNWAY_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
-PB_LINE="$(grep '^export PIXABAY_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
-PX_LINE="$(grep '^export PEXELS_API_KEY=' "$ZSHRC" 2>/dev/null | tail -1 || true)"
-[ -n "$CTA_LINE" ] || CTA_LINE='export REEL_WATCH_CTA=""   # call-to-action for drop-folder reels, e.g. "Comment WORD"'
-# Replace our block (and loose reel lines from older setups); leave everything else in ~/.zshrc alone.
-tmp="$(mktemp)"
-awk '/^# >>> reel-editor >>>/{skip=1} !skip && !/^export (REEL_[A-Z_]+|PRODUCER_BROWSER_GPU_MODE)=/{print} /^# <<< reel-editor <<</{skip=0}' "$ZSHRC" > "$tmp"
-{
-  echo "# >>> reel-editor >>>"
-  echo "export REEL_PYTHON=\"$VENV/bin/python\""
-  echo "export PRODUCER_BROWSER_GPU_MODE=hardware"
-  echo "export REEL_PRESET=\"$PRESET\""
-  [ -z "$DICT" ] || echo "export REEL_DICTIONARY=\"$DICT\""
-  echo "$CTA_LINE"
-  [ -z "$VOICE" ] || echo "export REEL_CAPTION_VOICE=\"$VOICE\""
-  [ -z "$YTPRESET" ] || echo "export REEL_YOUTUBE_PRESET=\"$YTPRESET\""
-  if [ "$WATCH" = y ]; then
-    echo "export REEL_WATCH_RAW=\"$HOME/Reels/raw\""
-    echo "export REEL_WATCH_DONE=\"$HOME/Desktop/Reels\""
-  fi
-  if [ -n "$KEY" ]; then echo "export ELEVENLABS_API_KEY=\"$KEY\""; elif [ -n "$EL_LINE" ] && ! grep -q '^export ELEVENLABS_API_KEY=' "$tmp"; then echo "$EL_LINE"; fi
-  if [ -n "$RWKEY" ]; then echo "export RUNWAY_API_KEY=\"$RWKEY\""; elif [ -n "$RW_LINE" ] && ! grep -q '^export RUNWAY_API_KEY=' "$tmp"; then echo "$RW_LINE"; fi
-  if [ -n "$PBKEY" ]; then echo "export PIXABAY_API_KEY=\"$PBKEY\""; elif [ -n "$PB_LINE" ] && ! grep -q '^export PIXABAY_API_KEY=' "$tmp"; then echo "$PB_LINE"; fi
-  if [ -n "$PXKEY" ]; then echo "export PEXELS_API_KEY=\"$PXKEY\""; elif [ -n "$PX_LINE" ] && ! grep -q '^export PEXELS_API_KEY=' "$tmp"; then echo "$PX_LINE"; fi
-  echo "# <<< reel-editor <<<"
-} >> "$tmp"
-cat "$tmp" > "$ZSHRC" && rm -f "$tmp"
-ok "settings saved in ~/.zshrc"
-export REEL_PYTHON="$VENV/bin/python" PRODUCER_BROWSER_GPU_MODE=hardware REEL_PRESET="$PRESET" REEL_WATCH_CTA=""
-[ -z "$YTPRESET" ] || export REEL_YOUTUBE_PRESET="$YTPRESET"
-[ -z "$DICT" ] || export REEL_DICTIONARY="$DICT"
-[ -z "$KEY" ] || export ELEVENLABS_API_KEY="$KEY"
-[ -z "$RWKEY" ] || export RUNWAY_API_KEY="$RWKEY"
-[ -z "$PBKEY" ] || export PIXABAY_API_KEY="$PBKEY"
-[ -z "$PXKEY" ] || export PEXELS_API_KEY="$PXKEY"
+fi # optional account tools stay out of the pinned release install
+
+for pair in ELEVENLABS_API_KEY:KEY RUNWAY_API_KEY:RWKEY PIXABAY_API_KEY:PBKEY PEXELS_API_KEY:PXKEY; do
+  name="${pair%%:*}"; variable="${pair#*:}"; value="${!variable}"
+  if [ -n "$value" ]; then printf '%s\n' "$value" | node "$RUNTIME_HELPER" save-key "$name"; fi
+done
+CLIENT=""
+if [ -n "$BRAND" ]; then
+  CLIENT="$(node -e 'const fs=require("fs"),p=require("path"); const dir=process.argv[1]; const name=JSON.parse(fs.readFileSync(p.join(dir,fs.existsSync(p.join(dir,"brand.json"))?"brand.json":"my-brand.json"),"utf8")).name; const slug=String(name||"client").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); console.log(slug||"client")' "$BRAND")"
+fi
+REEL_RUNTIME="$RUNTIME" REEL_RELEASE="$RELEASE_ID" REEL_PYTHON="$VENV/bin/python" \
+REEL_PRESET="$PRESET" REEL_DICTIONARY="$DICT" REEL_CAPTION_VOICE="$VOICE" REEL_YOUTUBE_PRESET="$YTPRESET" \
+REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$HOME/Desktop/Reels" \
+REEL_CLIENT="$CLIENT" REEL_CLIENT_MODE="$(if [ -n "$BRAND" ]; then echo 1; fi)" \
+node "$RUNTIME_HELPER" env
+. "$CONF/env.sh"
+ok "settings saved in ~/.reel/env.sh"
+if [ -n "$RELEASE" ]; then node "$RUNTIME_HELPER" phase "$RELEASE" settings; fi
 
 # The jungle-reel props group belongs only to the house shot list; clients get the general groups.
 mkdir -p "$HOME/Desktop/Reels"
@@ -339,13 +390,20 @@ if [ "$WATCH" = y ]; then
   [ -e "$D/Raw - Reel with Runway B-roll" ] || ln -s "$HOME/Reels/raw-runway" "$D/Raw - Reel with Runway B-roll"
   [ -e "$D/Music" ] || ln -s "$HOME/Reels/music" "$D/Music"
   # Their music is their own: the folder gets a note and clickable links to where Greg's comes from (src/music-source.mjs).
-  node --input-type=module -e 'const [mod, dir] = process.argv.slice(1); import(mod).then((m) => m.setUpMusicFolder(dir))' "$APP/src/music-source.mjs" "$HOME/Reels/music" >/dev/null 2>&1 || true
-  REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh" >/dev/null
+  if [ -n "${RELEASE:-}" ]; then
+    if ! node --input-type=module -e 'const [mod, dir] = process.argv.slice(1); import(mod).then((m) => m.setUpMusicFolder(dir))' "$APP/src/music-source.mjs" "$HOME/Reels/music" >> "$CONF/install.log" 2>&1; then
+      note "The music folder is ready; its optional guide could not be written. Details: ~/.reel/install.log"
+    fi
+  else
+    node --input-type=module -e 'const [mod, dir] = process.argv.slice(1); import(mod).then((m) => m.setUpMusicFolder(dir))' "$APP/src/music-source.mjs" "$HOME/Reels/music" >/dev/null 2>&1 || true
+  fi
+  REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh"
   ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - My B-roll clips, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit, Raw - Reel with Runway B-roll (music from Desktop/Reels/Music: links to Epidemic Sound inside)"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it
 bold "7/7  Test reel"
+if [ -z "$RELEASE" ]; then
 ( cd "$APP" && node bin/reel.mjs doctor 2>/dev/null | sed -n '1,8p' | sed 's/^/  /' )
 TEST="$HOME/Reels/install-test"
 mkdir -p "$TEST"
@@ -354,13 +412,19 @@ out=$(cd "$TEST" && node "$APP/bin/reel.mjs" edit test.mov --out "$TEST/videos/t
 [ -f "$out" ] || die "The test reel did not render. Run: cd $APP && node bin/reel.mjs doctor"
 ok "test reel: $out"
 [ "$YES" = 1 ] || open "$out" 2>/dev/null || true
+fi
 
 if [ "$STUDIO" = 1 ]; then
   # The Content Studio: the client's photo folder, Claude, Metricool and posting times (scripts/studio-setup.mjs).
   [ -n "$BRAND" ] || die "--studio needs a Reels kit (its Brand folder)."
-  bold "Your reels and posts"
+  [ -n "$RELEASE" ] || bold "Your reels and posts"
+  if [ -n "$RELEASE" ]; then
+    # A kit gets editing proven first; the posting setup page opens after the test reel (below).
+    note "Posting setup comes right after your test reel."
+  else
   STUDIO_ARGS=(--brand "$BRAND"); [ "$NO_ROUTINE" != 1 ] || STUDIO_ARGS+=(--no-routine); [ "$YES" = 1 ] && STUDIO_ARGS+=(--yes)
   node "$APP/scripts/studio-setup.mjs" "${STUDIO_ARGS[@]}" || die "The reels and posts setup stopped. Read the message above, then run the installer again."
+  fi
 fi
 
 # Only client kits opt in; Greg's presets and installer path keep their existing jobs.
@@ -372,6 +436,29 @@ if [ "$LOOK" = brand ]; then
   ok "weekly fixes on: your settings and brand stay yours; local code edits pause updates"
   note "Updates are checked offline and rolled back if the check fails. Notes: ~/.reel/maintenance/updates.log"
   [ "$STUDIO" = 1 ] || note "Waiting reels are checked three times a day. Alerts appear on this Mac; notes: ~/.reel/maintenance/STATUS.txt"
+fi
+
+if [ -n "$RELEASE" ]; then
+  note "Making your test reel"
+  if [ "$LINK" = 1 ]; then "$HOME/.local/bin/reel" accept 2>&1 | tee -a "$CONF/install.log"; else node "$APP/bin/reel.mjs" accept 2>&1 | tee -a "$CONF/install.log"; fi
+  node "$RUNTIME_HELPER" phase "$RELEASE" acceptance
+  # accept owns the filename; open the movie it made in the isolated test folder.
+  out="$(find "$HOME/Reels/install-test" -type f -name '*.mp4' -print | sed -n '1p')"
+  [ -n "$out" ] || die "The test reel is missing. See ~/.reel/install.log, then run this installer again."
+  [ "$YES" = 1 ] || open "$out" || die "The test reel is ready at $out, but it could not be opened."
+fi
+
+if [ -n "$RELEASE" ] && [ "$STUDIO" = 1 ]; then
+  # One setup for accounts, keys, posting times and the Claude routines (src/setup-steps.mjs). It saves after every
+  # answer, so stopping halfway is safe: reel setup picks up where it stopped.
+  bold "Your reels and posts"
+  if [ "$YES" = 1 ] || [ "$HAVE_TTY" != 1 ]; then
+    node "$APP/scripts/studio-setup.mjs" --brand "$BRAND" --yes
+    note "Next: open Terminal and type  reel setup  to connect your accounts and posting."
+  else
+    note "A setup page opens in your browser. Follow it, then click Finish there."
+    "$HOME/.local/bin/reel" setup --brand "$BRAND" || note "Setup is saved where it stopped. Type  reel setup  in Terminal to continue."
+  fi
 fi
 
 bold "Done."

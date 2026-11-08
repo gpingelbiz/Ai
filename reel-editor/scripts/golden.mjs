@@ -14,6 +14,7 @@ import { composeProject } from "../src/compose.mjs";
 import { loadPreset } from "../src/presets.mjs";
 import { run, PKG_ROOT } from "../src/util.mjs";
 import { hyperframesBin, renderEnv } from "../src/render.mjs";
+import { isMain } from "../src/util.mjs";
 
 export const MOMENTS = [
   { at: 0.3, what: "hook headline on frame one" },
@@ -25,6 +26,12 @@ export const MOMENTS = [
 ];
 const GOLDEN = path.join(PKG_ROOT, "test", "golden");
 const SIZE = { w: 540, h: 960 }; // compared at half size: small files, same failures
+
+export function requireBaselines({ dir = GOLDEN, update = false } = {}) {
+  if (update) return;
+  const missing = MOMENTS.map((_, i) => `frame-${String(i + 1).padStart(2, "0")}.png`).filter((name) => !fs.existsSync(path.join(dir, name)));
+  if (missing.length) throw new Error(`Missing golden frames: ${missing.join(", ")}. Use --update only after reviewing the intended look.`);
+}
 
 function words(text, start, step = 0.3) {
   return text.split(" ").map((t, i) => ({ text: t, start: +(start + i * step).toFixed(3), end: +(start + i * step + 0.25).toFixed(3) }));
@@ -75,6 +82,7 @@ async function half(src, dst) {
 }
 
 export async function golden({ update = false, threshold = 0.1, maxDiff = 0.002 } = {}) {
+  requireBaselines({ update });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "reel-golden-"));
   try {
     // A gradient from a fixed formula as the footage (lavfi "gradients" is random per run): every frame and every run
@@ -91,7 +99,8 @@ export async function golden({ update = false, threshold = 0.1, maxDiff = 0.002 
       if (!fs.existsSync(file)) throw new Error(`no snapshot at ${MOMENTS[i].at}s (${file})`);
       await half(file, got);
       const want = path.join(GOLDEN, name);
-      if (update || !fs.existsSync(want)) { fs.copyFileSync(got, want); return { ...MOMENTS[i], name, status: "written" }; }
+      if (update) { fs.copyFileSync(got, want); return { ...MOMENTS[i], name, status: "written" }; }
+      if (!fs.existsSync(want)) return { ...MOMENTS[i], name, status: "missing" };
       const a = PNG.sync.read(fs.readFileSync(want)), b = PNG.sync.read(fs.readFileSync(got));
       if (a.width !== b.width || a.height !== b.height) return { ...MOMENTS[i], name, status: "size", share: 1, got };
       const diff = new PNG({ width: a.width, height: a.height });
@@ -121,11 +130,11 @@ export async function golden({ update = false, threshold = 0.1, maxDiff = 0.002 
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const update = process.argv.includes("--update");
   const res = await golden({ update });
   for (const r of res) console.log(`${r.status.padEnd(8)} ${r.name}  ${r.at}s  ${r.what}${r.share != null ? `  (${(r.share * 100).toFixed(3)}% of pixels differ)` : ""}`);
-  const bad = res.filter((r) => r.status === "changed" || r.status === "size");
+  const bad = res.filter((r) => !["same", "written"].includes(r.status));
   if (bad.length) {
     console.log(`\n${bad.length} frame${bad.length === 1 ? "" : "s"} changed; diffs in test/golden/diff. Run with --update if the change is intended.`);
     process.exit(1);

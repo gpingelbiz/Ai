@@ -21,7 +21,12 @@ export const STUDIO_USAGE = `Your reels and posts (your folders and posting sett
   reel studio health [--studio <dir>]                                    check daily run, logins, failed posts and waiting reels
   reel studio status [--studio <dir>]                                    settings check, last posts, photo pool
   reel studio posts scan|make|wait|ready|serve|stop|done|fail|finish [--studio <dir>]
-  reel studio publish scan|slot|serve|stop|done|fail [--studio <dir>]        commands for the Claude desktop publishing routine
+  reel studio publish scan|slot|claim|serve|stop|done|fail|release [--studio <dir>]        commands for the Claude desktop publishing routine
+  reel studio routine-receipt --nonce <n> --tasks '<json>' [--studio <dir>]  save the checked routine details
+  reel studio verify-routines [--studio <dir>]                          check both routines are set up and have run
+  reel studio verify-routines [--studio <dir>]                           check the saved routine details
+  reel studio heartbeat start|discover|done|fail <task> [reason] | check   record or check a routine run
+  reel studio storage [--yes] [--studio <dir>]                          show storage use; --yes removes old finished work
   reel studio reels [--studio <dir>]                                     edit and schedule the clips in Raw Reels
   reel studio agents [--studio <dir>] [--uninstall]                      the daily job and the Raw Reels watcher (launchd)
   The studio is --studio, else $REEL_STUDIO, else ~/Content Studio.`;
@@ -163,9 +168,31 @@ export function installAgents(root, { uninstall = false, home = os.homedir(), ru
   return out;
 }
 
+/**
+ * The routine, heartbeat and storage commands. Their owning modules parse their own arguments; this only adds the
+ * studio folder when the caller did not name one.
+ */
+export async function studioSupportCommand(cmd, rest, { loadModule = (file) => import(file) } = {}) {
+  const named = rest.indexOf("--studio");
+  const studio = loadStudio(named >= 0 ? rest[named + 1] : undefined);
+  const args = named >= 0 ? rest : [...rest, "--studio", studio.paths.root];
+  if (cmd === "routine-receipt") return (await loadModule("./studio-routine.mjs")).routineReceiptCommand(args);
+  if (cmd === "verify-routines") return (await loadModule("./studio-routine.mjs")).verifyRoutines(studio.paths.root);
+  if (cmd === "heartbeat") return (await loadModule("./heartbeat.mjs")).heartbeatCommand(args);
+  const { cleanupStorage, storageSummary } = await loadModule("./storage.mjs");
+  const report = cleanupStorage({ yes: rest.includes("--yes"), studio: studio.paths.root });
+  return { summary: storageSummary(report), ...report };
+}
+
 export async function studioCommand(args) {
   const [cmd, ...rest] = args;
   if (!cmd || cmd === "help" || cmd === "--help") return console.log(STUDIO_USAGE);
+  if (["routine-receipt", "verify-routines", "heartbeat", "storage"].includes(cmd)) {
+    const result = await studioSupportCommand(cmd, rest);
+    // routine-receipt and heartbeat print their own line; the others print their result.
+    if (cmd === "verify-routines" || cmd === "storage") console.log(cmd === "storage" ? result.summary : JSON.stringify(result, null, 2));
+    return;
+  }
   if (cmd === "posts") return (await import("./studio-posts.mjs")).postsCommand(rest);
   if (cmd === "publish") {
     const { publishCommand } = await import("./studio-publish.mjs");
@@ -181,6 +208,9 @@ export async function studioCommand(args) {
     const { values } = opt(rest, {});
     const paths = studioPaths(values.studio);
     if (!fs.existsSync(paths.config)) return console.log(`no studio at ${paths.root}`);
+    const { publishHolds } = await import("./studio-publish.mjs");
+    const held = publishHolds({ paths });
+    for (const hold of held) console.log(`${hold.entry || hold.id}: ${hold.message}`);
     const problems = checkStudio(readJSON(paths.config));
     console.log(problems.length ? `studio.json needs fixing:\n- ${problems.join("\n- ")}` : `studio.json: OK (${paths.root})`);
     const posts = readPosts(paths).sort((a, b) => `${a.day} ${a.time}`.localeCompare(`${b.day} ${b.time}`)).slice(-10);

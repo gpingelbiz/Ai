@@ -96,3 +96,13 @@ export function fontFile(style, name) {
 }
 
 export const VIDEO_EXTS = new Set([".mov", ".mp4", ".m4v", ".webm", ".mkv", ".avi"]);
+
+/**
+ * True when this module is the script node was started with. Compares real paths: a kit install reaches the app
+ * through the ~/Ai/reel-editor link, and node resolves the link for import.meta.url but not for process.argv[1].
+ */
+export function isMain(metaUrl, argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  const real = (f) => { try { return fs.realpathSync(f); } catch { return path.resolve(f); } };
+  return real(fileURLToPath(metaUrl)) === real(argv1);
+}

@@ -23,15 +23,22 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { bannedInCaption } from "../src/publish-folder.mjs";
+import { isClientJob } from "../src/client-mode.mjs";
+import { isMain } from "../src/util.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TOOLS = ["mcp__claude_ai_sandcastles__top_hooks", "mcp__claude_ai_sandcastles__top_formats"];
 const DENY = ["Bash", "Edit", "Write", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "NotebookEdit"];
 
 export function voiceFile(plan, env = process.env) {
-  if (env.REEL_CAPTION_VOICE && fs.existsSync(env.REEL_CAPTION_VOICE)) return env.REEL_CAPTION_VOICE;
+  const ownVoice = env.REEL_CAPTION_VOICE;
+  if (ownVoice && fs.existsSync(ownVoice) && !(isClientJob(env) && fs.realpathSync(ownVoice) === path.join(ROOT, "voice/greg.md"))) return ownVoice;
   // Greg's voice for every look of his (pingel-brand, pingel-runway); anyone else's comes from REEL_CAPTION_VOICE.
-  return path.join(ROOT, "voice", /^pingel-/.test(plan?.style?.name || "") ? "greg.md" : "default.md");
+  return path.join(ROOT, "voice", !isClientJob(env) && /^pingel-/.test(plan?.style?.name || "") ? "greg.md" : "default.md");
+}
+
+export function captionAccess(env = process.env) {
+  return { sandcastles: !isClientJob(env) && env.REEL_CAPTION_SANDCASTLES !== "0", watchlist: !isClientJob(env) && env.REEL_CAPTION_WATCHLIST !== "0" };
 }
 
 /** The prompt Claude gets. Pure, so it can be tested. */
@@ -123,10 +130,10 @@ export function formatPostText(j) {
 }
 
 /** The work folder's "post notes.txt": the caption again, the hook options with their patterns, the trend. */
-export function formatCaptionFile(j, { title, cta, date = new Date().toISOString().slice(0, 10) }) {
+export function formatCaptionFile(j, { title, cta, date = new Date().toISOString().slice(0, 10), sandcastles = true }) {
   const lines = [
     String(title || "Reel").toUpperCase(),
-    `Post notes (${date}). The caption that posts is caption.txt; the hook options come from what is winning on Sandcastles.`,
+    `Post notes (${date}). The caption that posts is caption.txt; ${sandcastles ? "the hook options come from what is winning on Sandcastles" : "the hook options come from your transcript"}.`,
     "",
     "CAPTION",
     ...String(j.caption).split(/\n+/).map((l) => l.trim()).filter(Boolean),
@@ -172,8 +179,8 @@ async function main() {
   const auto = !!(hook && plan.hook?.auto);
   const out = outArg || path.join(workDir, "caption.txt");
   const voicePath = voiceFile(plan);
-  const sandcastles = process.env.REEL_CAPTION_SANDCASTLES !== "0";
-  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voicePath, "utf8"), cta, auto, watchlist: process.env.REEL_CAPTION_WATCHLIST !== "0", sandcastles });
+  const { sandcastles, watchlist } = captionAccess();
+  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voicePath, "utf8"), cta, auto, watchlist, sandcastles });
   let reply;
   try {
     reply = await runClaude(prompt, { sandcastles });
@@ -197,10 +204,10 @@ async function main() {
   } else if (hook && j.hooks[0]?.text !== hook) j.hooks = [{ text: hook, pattern: "the hook in the reel" }, ...j.hooks.filter((h) => h.text !== hook)].slice(0, 3);
   j.caption = cleanCaption(j.caption, { greg: path.basename(voicePath) === "greg.md" });
   fs.writeFileSync(path.join(workDir, "caption.json"), JSON.stringify(j, null, 2) + "\n");
-  fs.writeFileSync(path.join(workDir, "post notes.txt"), formatCaptionFile(j, { title: (auto && j.best) || hook || plan.name, cta }));
+  fs.writeFileSync(path.join(workDir, "post notes.txt"), formatCaptionFile(j, { title: (auto && j.best) || hook || plan.name, cta, sandcastles }));
   if (!j.caption) { console.log("caption: nothing left after the voice rules, skipped (see post notes.txt)"); return; }
   fs.writeFileSync(out, formatPostText(j));
   console.log(`caption: ${out}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMain(import.meta.url)) main();

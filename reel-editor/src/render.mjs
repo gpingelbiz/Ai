@@ -2,9 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { run, log, warn, PKG_ROOT } from "./util.mjs";
 
-export function hyperframesBin() {
-  const local = path.join(PKG_ROOT, "node_modules", ".bin", "hyperframes");
-  return fs.existsSync(local) ? [local] : ["npx", "hyperframes"];
+export function hyperframesBin({ app = PKG_ROOT, env = process.env } = {}) {
+  const local = path.join(app, "node_modules", ".bin", "hyperframes");
+  if (fs.existsSync(local)) return [local];
+  if (env.REEL_CLIENT_MODE === "1") throw new Error("The video renderer is missing. Run your kit's installer again to repair this release.");
+  return ["npx", "hyperframes"];
 }
 
 export function renderEnv() {
