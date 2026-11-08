@@ -882,8 +882,8 @@ test("kit setup gates intake and posting agents without changing legacy studio d
     const p = initStudio(dir, { config: { reels: { rawIntake: false, publisher: "claude" } } });
     assert.equal(fs.existsSync(p.rawReels), false);
     assert.deepEqual(studioAgents(dir).map((a) => a.label.split(".")[3]), ["daily", "health"]);
-    const source = fs.readFileSync(path.join(PKG_ROOT, "scripts", "studio-setup.mjs"), "utf8");
+    const source = fs.readFileSync(path.join(PKG_ROOT, "src", "setup-steps.mjs"), "utf8");
     assert.match(source, /rawIntake: false, publisher: "claude"/);
-    assert.match(source, /--no-routine/);
+    assert.match(source, /slots: \[\], publish: \{ mode: "off" \}/);
   } finally { fs.rmSync(path.dirname(dir), { recursive: true, force: true }); }
 });
