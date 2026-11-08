@@ -26,14 +26,15 @@ test('migration independent of reels; app daily removes agent and refuses legacy
 });
 test('local scan stops on complete day; ready preserves exact info and expires',t=>{
  const s=fixture(t);fs.writeFileSync(path.join(s.paths.state,'daily.json'),JSON.stringify({day:'2026-11-08',completed:'yes',error:''}));assert.equal(scanPosts(s,{now}).work,false);
- post(s);assert.equal(scanPosts(s,{now}).work,true);const r=readyPosts(s,{now})[0];assert.deepEqual(r.info.media,[]);assert.deepEqual(r.info.mediaAltText,['Exact alt']);assert.equal(r.info.text,'Exact caption');assert.deepEqual(readyPosts(s,{now:new Date('2026-11-09T06:00Z')}),[]);
+ post(s);assert.equal(scanPosts(s,{now}).work,true);const r=readyPosts(s,{now})[0];assert.deepEqual(r.info.media,[]);assert.deepEqual(r.info.mediaAltText,['Exact alt']);assert.match(r.info.text,/^Exact caption\n\n\[reel:[a-f0-9]{32}\]$/);assert.equal(r.info.text,readyPosts(s,{now})[0].info.text);assert.deepEqual(readyPosts(s,{now:new Date('2026-11-09T06:00Z')}),[]);
 });
 test('passed schedule fills a slot; make uses daily gates without schedule connector',async t=>{
  const s=fixture(t,{daysAhead:0,slots:[{time:'10:00',format:'static'}]});let calls=0;const r=await makePosts(s,[{day:'2026-11-08',hour:10,minute:0,type:'POST'}],{now,deps:{scheduledPosts:()=>{calls++;throw Error('connector called');}}});assert.equal(calls,0);assert.deepEqual(r.slots,[]);assert.deepEqual(readyPosts(s,{now}),[]);
 });
 test('held posts never ready; uncertain failure reconciles before retry; done writes receipt',t=>{
  const s=fixture(t);const p=post(s);failPost(s,p.id,'Uncertain result');assert.deepEqual(readyPosts(s,{now}),[]);reconcilePosts(s,[]);assert.deepEqual(readyPosts(s,{now}),[]);
- reconcilePosts(s,[{day:p.day,hour:18,minute:0,type:'POST',id:'remote'}]);assert.equal(readPosts(s.paths)[0].status,'scheduled');assert.equal(fs.existsSync(path.join(p.made,'Not posted.txt')),false);
+ reconcilePosts(s,[{day:p.day,hour:18,minute:0,type:'POST',id:'unrelated'}]);assert.equal(readPosts(s.paths)[0].status,'not-posted');
+ logPost(s.paths,{...readPosts(s.paths)[0],metricoolId:'remote'});reconcilePosts(s,[{day:p.day,hour:18,minute:0,type:'POST',id:'remote'}]);assert.equal(readPosts(s.paths)[0].status,'scheduled');assert.equal(fs.existsSync(path.join(p.made,'Not posted.txt')),false);
  post(s,{status:'held'});assert.deepEqual(readyPosts(s,{now}),[]);post(s);assert.equal(donePost(s,p.id,{date:'2026-11-08T18:00:00',id:'123'}).metricoolId,'123');assert.match(fs.readFileSync(path.join(p.made,'Scheduled.txt'),'utf8'),/18:00/);
 });
 test('dead child and stale lock recovery; finish keeps errors',t=>{
@@ -99,14 +100,14 @@ test('app daily health retains its agent and points clients to Claude; kit links
  fs.unlinkSync(path.join(s.home,'Desktop/Reels/Brand'));fs.mkdirSync(path.join(s.home,'Desktop/Reels/Brand'));kitFolders(s,{home:s.home});assert.equal(fs.lstatSync(path.join(s.home,'Desktop/Reels/Brand')).isSymbolicLink(),false);
 });
 
-test('a post never sent is not marked done by another post at its time; only an uncertain one is',t=>{
+test('neither a never sent post nor an uncertain post is settled by another post at its time',t=>{
   const s=fixture(t);const day='2031-01-02';
   logPost(s.paths,{id:'never',day,time:'10:00',format:'static',status:'made',made:s.paths.made,files:[],preflight:{verdict:'schedule'},text:'x'});
   logPost(s.paths,{id:'maybe',day,time:'18:00',format:'static',status:'not-posted',uncertain:true,made:s.paths.made,files:[],preflight:{verdict:'schedule'},text:'y'});
   fs.mkdirSync(s.paths.made,{recursive:true});
   reconcilePosts(s,[{day,hour:10,minute:0,type:'POST',id:'other'},{day,hour:18,minute:0,type:'POST',id:'real'}]);
   const by=Object.fromEntries(readPosts(s.paths).map(p=>[p.id,p]));
-  assert.equal(by.never.status,'made');assert.equal(by.maybe.status,'scheduled');assert.equal(by.maybe.metricoolId,'real');
+  assert.equal(by.never.status,'made');assert.equal(by.maybe.status,'not-posted');assert.equal(by.maybe.uncertain,true);
 });
 test('a story at the same time does not settle a feed post',t=>{
   const s=fixture(t);const day='2031-01-02';
@@ -133,4 +134,24 @@ test('children leave the Claude session behind but keep everything else',()=>{
 test('the routine never leans on a wait or serve longer than the Bash limit allows',t=>{
   const prompt=dailyPostsPrompt(fixture(t));
   assert.match(prompt,/timeout set to 600000/);assert.match(prompt,/--not-sent/);assert.match(prompt,/LOCAL_DATE set to the date returned by ready/);
+});
+
+test('our unique caption marker settles an uncertain post; matching caption words alone do not', t => {
+  const s = fixture(t); const p = post(s, { text: 'A long caption. '.repeat(20) });
+  const ready = readyPosts(s, { now })[0];
+  const saved = readPosts(s.paths).find(q => q.id === p.id);
+  assert.ok(ready.info.text.includes(saved.publishMarker));
+  failPost(s, p.id, 'No confirmed reply');
+  reconcilePosts(s, [{ day: p.day, hour: 18, minute: 0, type: 'POST', id: 'other', text: p.text }]);
+  assert.equal(readPosts(s.paths)[0].uncertain, true);
+  reconcilePosts(s, [{ day: p.day, hour: 18, minute: 0, type: 'POST', id: 'ours', text: ready.info.text }]);
+  assert.equal(readPosts(s.paths)[0].metricoolId, 'ours');
+  assert.equal(readPosts(s.paths)[0].uncertain, false);
+});
+test('a known remote id identifies an uncertain post even if its time changed', t => {
+  const s = fixture(t); const p = post(s);
+  failPost(s, p.id, 'Receipt was incomplete', { metricoolId: 123 });
+  reconcilePosts(s, [{ day: p.day, hour: 19, minute: 30, type: 'POST', id: '123', text: 'Edited in Metricool' }]);
+  assert.equal(readPosts(s.paths)[0].status, 'scheduled');
+  assert.equal(readPosts(s.paths)[0].metricoolId, '123');
 });
