@@ -67,7 +67,7 @@ function fixture(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "original.mov");
   fs.writeFileSync(file, "fake media, only fake runners inspect it");
-  return { dir, file, opts: { workDir: path.join(dir, "work"), cacheDir: path.join(dir, "bin"), key: "talk-a", sourceId: "talk-a" } };
+  return { dir, file, opts: { workDir: path.join(dir, "work"), cacheDir: path.join(dir, "bin"), resolveTool: async (_, { compile }) => compile(), key: "talk-a", sourceId: "talk-a" } };
 }
 
 test("fake runner compiles, decodes original audio without denoise, caches rows and spans per source", async (t) => {
@@ -131,6 +131,6 @@ test("client work directory is discovered from the manifest", async (t) => {
   const { dir, file, opts } = fixture(t);
   fs.writeFileSync(path.join(dir, "speaker-manifest.json"), "{}");
   const run = async (cmd) => ({ out: ["swiftc", "ffmpeg"].includes(cmd) ? "" : rows([0.8, 0.9]).map((r) => JSON.stringify(r)).join("\n") });
-  await findReactions(file, { cacheDir: opts.cacheDir, key: "auto", run });
+  await findReactions(file, { cacheDir: opts.cacheDir, resolveTool: opts.resolveTool, key: "auto", run });
   assert.ok(fs.existsSync(path.join(dir, "work/index/auto.reactions.json")));
 });

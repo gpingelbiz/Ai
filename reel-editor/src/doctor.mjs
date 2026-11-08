@@ -4,6 +4,8 @@ import { run, PKG_ROOT } from "./util.mjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
 import { hasCodex, codexPausedUntil } from "./codex.mjs";
 import { findDeepFilter } from "./studio.mjs";
+import { nativeTool } from "./native-tool.mjs";
+import { isClientMode } from "./client-mode.mjs";
 
 async function ok(cmd, args) {
   try {
@@ -22,7 +24,13 @@ export async function doctor() {
   rows.push([`${py} faster-whisper`, await ok(py, ["-c", "import faster_whisper"]) ? "ok" : "MISSING (pip install faster-whisper)"]);
   const dfn = findDeepFilter();
   rows.push(["deep-filter (studio sound)", dfn ? `ok (${dfn})` : "not installed: scripts/install-deepfilter.sh (the spectral denoiser is used until then)"]);
-  rows.push(["swiftc (faces, speakers, cutout)", await ok("xcrun", ["--find", "swiftc"]) ? "ok" : "MISSING (xcode-select --install)"]);
+  const helpers = ["faces", "matte", "person", "speakers", "featureprint", "ocr", "dhash", "photosheet", "photofinish", "reactions"];
+  const missing = (await Promise.all(helpers.map(async (name) => {
+    try { await nativeTool(name); return null; } catch { return name; }
+  }))).filter(Boolean);
+  if (!missing.length) rows.push(["built-in tools", "ok"]);
+  else if (isClientMode()) rows.push(["built-in tools", "Some tools are missing or out of date. Reinstall Reel Editor."]);
+  else rows.push(["swiftc (faces, speakers, cutout)", await ok("xcrun", ["--find", "swiftc"]) ? "ok" : "MISSING (xcode-select --install)"]);
   const bin = hyperframesBin();
   rows.push(["hyperframes", bin.length === 1 ? `ok (${bin[0]})` : "not installed locally; falls back to npx (run npm install)"]);
   rows.push(["ELEVENLABS_API_KEY", process.env.ELEVENLABS_API_KEY ? "set" : "not set (needed only for --sfx, --voiceover, --engine elevenlabs)"]);

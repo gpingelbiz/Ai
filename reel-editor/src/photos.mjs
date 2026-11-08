@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { run, PKG_ROOT, ensureDir, writeJSON, readJSON } from "./util.mjs";
+import { nativeTool } from "./native-tool.mjs";
+import { isClientMode } from "./client-mode.mjs";
 
 /**
  * The Content Studio photo pool: every photo in the client's photo folder, checked once with the face finder
@@ -48,21 +50,24 @@ export function photoKey(file) {
 
 const cacheDir = () => process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor");
 
-/** Compile scripts/<name>.swift once into the cache (recompiled when the source changes). Null off macOS. */
+/** Prefer the built-in photo tool; keep the local compiler fallback on Greg's Macs. */
 export async function swiftTool(name) {
-  const src = path.join(PKG_ROOT, "scripts", `${name}.swift`);
-  if (process.platform !== "darwin" || !fs.existsSync(src)) return null;
-  const bin = path.join(ensureDir(cacheDir()), `${name}-${Math.round(fs.statSync(src).mtimeMs)}`);
-  if (!fs.existsSync(bin)) {
-    try { await run("swiftc", ["-O", src, "-o", bin], { capture: true }); } catch { return null; }
-  }
-  return bin;
+  if (process.platform !== "darwin") return null;
+  try { return await nativeTool(name, { compile: async () => {
+    const src = path.join(PKG_ROOT, "scripts", `${name}.swift`);
+    if (!fs.existsSync(src)) return null;
+    const bin = path.join(ensureDir(cacheDir()), `${name}-${Math.round(fs.statSync(src).mtimeMs)}`);
+    if (!fs.existsSync(bin)) {
+      try { await run("swiftc", ["-O", src, "-o", bin], { capture: true }); } catch { return null; }
+    }
+    return bin;
+  } }); } catch { return null; }
 }
 
 /** Face finder reports for these files, 20 at a time. */
 export async function detectPhotos(files) {
   const bin = await swiftTool("faces");
-  if (!bin) throw new Error("the face finder needs a Mac with Swift (xcode-select --install)");
+  if (!bin) throw new Error(isClientMode() ? "the face finder is unavailable" : "the face finder needs a Mac with Swift (xcode-select --install)");
   const out = [];
   for (let i = 0; i < files.length; i += 20) {
     const { out: text } = await run(bin, ["--photo", ...files.slice(i, i + 20)], { capture: true });
