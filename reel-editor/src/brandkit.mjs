@@ -271,7 +271,7 @@ export function personalizeSetupGuide(html, b, { studio = false } = {}) {
 }
 
 /** Pasteable delivery text, kept beside the zip rather than inside it. */
-export function kitSendOutMessage(b, { studio = false } = {}) {
+export function kitSendOutMessage(b, { studio = false, release, dev = false } = {}) {
   // brand.names is the spelling list, so it can hold company names too: greet the people only when there are one or
   // two two-word names (like "Zack Straughn"), otherwise just say hi. Greg adds the name before sending.
   const people = (Array.isArray(b.names) ? b.names : []).map((n) => String(n).trim()).filter((n) => /^\S+ \S+$/.test(n));
@@ -279,7 +279,9 @@ export function kitSendOutMessage(b, { studio = false } = {}) {
   const greeting = firsts.length ? ` ${firsts.join(" and ")}` : "";
   const studioLine = studio ? " and schedules them through your own Metricool" : "";
   return [
+    ...(dev ? ["WARNING: This is a development kit. It is not pinned to a tested release. Do not send it to a client.", ""] : []),
     `Hi${greeting}, here is your ${studio ? "reels and posts" : "Reel Editor"} kit. It turns your talking clips into finished reels${studioLine}.`,
+    ...(release ? [`This kit installs tested release ${release.id}.`, ""] : []),
     "",
     "1. Get the zip onto your Mac. Open the link on your Mac and download it, or AirDrop it from your phone. Zip files sent by text often come through blank, so ask me for a link if that happens.",
     "2. Double click the zip to unzip it, then open Setup Guide.html first. It walks you through every step and every question the installer asks.",

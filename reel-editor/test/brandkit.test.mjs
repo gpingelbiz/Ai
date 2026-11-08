@@ -134,7 +134,7 @@ for (const studio of [false, true]) {
       const brand = path.join(root, "brand.json"), guide = path.join(root, "guide.md");
       fs.writeFileSync(brand, JSON.stringify(jane));
       fs.writeFileSync(guide, "NOT FILLED IN YET\n");
-      const result = spawnSync(process.execPath, ["scripts/brand-kit.mjs", brand, "--out", root, ...(studio ? ["--studio", guide] : [])], { cwd: PKG_ROOT, encoding: "utf8" });
+      const result = spawnSync(process.execPath, ["scripts/brand-kit.mjs", brand, "--dev", "--out", root, ...(studio ? ["--studio", guide] : [])], { cwd: PKG_ROOT, encoding: "utf8" });
       assert.equal(result.status, 0, result.stderr);
       const kitName = `Jane Doe ${studio ? "Reels and Posts" : "Reel Editor"} Kit`;
       const zip = path.join(root, `${kitName}.zip`), message = path.join(root, `${kitName} - send-out message.txt`);
@@ -145,6 +145,7 @@ for (const studio of [false, true]) {
       const page = spawnSync("unzip", ["-p", zip, `${kitName}/Setup Guide.html`], { encoding: "utf8" }).stdout;
       assert.equal(page, personalizeSetupGuide(fs.readFileSync(path.join(PKG_ROOT, "kit/Setup Guide.html"), "utf8"), jane, { studio }));
       lintGuide(fs.readFileSync(message, "utf8"));
+      assert.match(fs.readFileSync(message, "utf8"), /WARNING: This is a development kit/);
       assert.ok(result.stdout.trim().endsWith(`${zip}\n${message}`));
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
@@ -153,7 +154,7 @@ for (const studio of [false, true]) {
 test("generic kit includes the beginner guide without studio sections", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "generic-guide-"));
   try {
-    const result = spawnSync("bash", ["scripts/package-kit.sh", root], { cwd: PKG_ROOT, encoding: "utf8" });
+    const result = spawnSync("bash", ["scripts/package-kit.sh", root, "--dev"], { cwd: PKG_ROOT, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     const page = spawnSync("unzip", ["-p", path.join(root, "Reel Editor Kit.zip"), "Reel Editor Kit/Setup Guide.html"], { encoding: "utf8" });
     assert.equal(page.status, 0, page.stderr);

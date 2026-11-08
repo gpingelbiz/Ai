@@ -4,6 +4,16 @@ import { run, PKG_ROOT } from "./util.mjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
 import { hasCodex, codexPausedUntil } from "./codex.mjs";
 import { findDeepFilter } from "./studio.mjs";
+import { currentRelease, verifyRelease } from "./release.mjs";
+
+export function releaseSection({ app = PKG_ROOT } = {}) {
+  try {
+    const release = currentRelease({ app });
+    if (release.id === "dev") return "Release: dev";
+    const files = release.verified ? "files verified" : `changed or missing files: ${verifyRelease({ app }).join(", ")}`;
+    return `Release: ${release.id} (${release.commit.slice(0, 7)}), runtime ${release.runtime.id}, ${files}`;
+  } catch { return "Release: saved release details could not be read; run your kit's installer again"; }
+}
 
 async function ok(cmd, args) {
   try {
@@ -15,6 +25,7 @@ async function ok(cmd, args) {
 }
 
 export async function doctor() {
+  console.log(releaseSection());
   const rows = [];
   rows.push(["ffmpeg", await ok("ffmpeg", ["-version"]) ? "ok" : "MISSING (brew install ffmpeg)"]);
   rows.push(["ffprobe", await ok("ffprobe", ["-version"]) ? "ok" : "MISSING"]);
@@ -23,8 +34,11 @@ export async function doctor() {
   const dfn = findDeepFilter();
   rows.push(["deep-filter (studio sound)", dfn ? `ok (${dfn})` : "not installed: scripts/install-deepfilter.sh (the spectral denoiser is used until then)"]);
   rows.push(["swiftc (faces, speakers, cutout)", await ok("xcrun", ["--find", "swiftc"]) ? "ok" : "MISSING (xcode-select --install)"]);
-  const bin = hyperframesBin();
-  rows.push(["hyperframes", bin.length === 1 ? `ok (${bin[0]})` : "not installed locally; falls back to npx (run npm install)"]);
+  let bin;
+  try {
+    bin = hyperframesBin();
+    rows.push(["hyperframes", bin.length === 1 ? `ok (${bin[0]})` : "not installed locally; falls back to npx (run npm install)"]);
+  } catch (error) { rows.push(["hyperframes", error.message]); }
   rows.push(["ELEVENLABS_API_KEY", process.env.ELEVENLABS_API_KEY ? "set" : "not set (needed only for --sfx, --voiceover, --engine elevenlabs)"]);
   rows.push(["ELEVENLABS_VOICE_ID", process.env.ELEVENLABS_VOICE_ID ? "set" : "not set (needed for --voiceover unless --voice given)"]);
   const codex = !hasCodex() ? "not installed (only for --broll and carousels: npm install -g @openai/codex)"
@@ -35,6 +49,7 @@ export async function doctor() {
   rows.push(["REEL_BROWSER_PATH", process.env.REEL_BROWSER_PATH || "(unset: hyperframes downloads its own Chrome)"]);
   for (const [k, v] of rows) console.log(`  ${k.padEnd(24)} ${v}`);
   console.log("\n  hyperframes doctor:");
+  if (!bin) return;
   try {
     await run(bin[0], [...bin.slice(1), "doctor"], { env: renderEnv() });
   } catch (e) {
