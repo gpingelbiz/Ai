@@ -208,7 +208,7 @@ test("STATUS keeps a release header and each job's existing message", (t) => {
   const root = tmp(t), paths = { root, state: path.join(root, "state") };
   clientStatus(paths, "filming", "waiting"); clientStatus(paths, "health", "ready");
   const lines = fs.readFileSync(path.join(root, "STATUS.txt"), "utf8").split("\n");
-  assert.equal(lines[0], "Reel Editor (release dev)");
+  assert.match(lines[0], /^\d{4}-\d\d-\d\dT\S+ Reel Editor \(release dev\) Read the posting note below\.$/);
   assert.match(lines.join("\n"), /filming: waiting/); assert.match(lines.join("\n"), /health: ready/);
 });
 

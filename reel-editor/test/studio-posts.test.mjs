@@ -95,7 +95,7 @@ test('app daily health retains its agent and points clients to Claude; kit links
  const { kitFolders }=await import('../src/studio-routine.mjs');
  const s=fixture(t,{publish:{mode:'off'}});
  assert.ok(studioAgents(s.paths.root).some(a=>a.label.includes('.health.')));
- const result=await studioHealth(s.paths.root,{now:new Date('2026-11-08T10:00Z'),deps:{claudeConnected:()=>true,notify:()=>{}}});
+ const result=await studioHealth(s.paths.root,{now:new Date('2026-11-08T10:00Z'),home:s.home,env:{},deps:{claudeConnected:()=>true,notify:()=>{}}});
  assert.ok(result.issues.includes('Open the Claude app; it has to be open for your carousels and static posts to be made.'));
  kitFolders(s,{home:s.home});assert.equal(fs.lstatSync(path.join(s.home,'Desktop/Reels/Brand')).isSymbolicLink(),true);assert.equal(fs.statSync(path.join(s.home,'Desktop/Reels/Filming packs')).isDirectory(),true);
  fs.unlinkSync(path.join(s.home,'Desktop/Reels/Brand'));fs.mkdirSync(path.join(s.home,'Desktop/Reels/Brand'));kitFolders(s,{home:s.home});assert.equal(fs.lstatSync(path.join(s.home,'Desktop/Reels/Brand')).isSymbolicLink(),false);

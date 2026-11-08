@@ -100,6 +100,18 @@ if [ "${REEL_WATCH_FAST:-0}" != 1 ] && [ "${REEL_WATCH_READY:-}" != "$(filesize 
   fi
 fi
 
+# Check the work volume before any edit or paid request. A pause stays unmarked for a later scan.
+free_kb=$(LC_ALL=C df -Pk "$REELS" 2>/dev/null | awk 'NR == 2 { print $4 }') || free_kb=""
+case "$free_kb" in
+  ''|*[!0-9]*)
+    printf 'Editing is paused because free space could not be checked. Your original is safe. Check storage in System Settings.\n' > "$FILE - why it failed.txt"
+    exit 75;;
+esac
+if [ "$free_kb" -lt 7812500 ]; then
+  printf 'Editing is paused because this Mac is nearly full. Your original is safe.\n' > "$FILE - why it failed.txt"
+  exit 75
+fi
+
 # Own footage is imported in place; the command leaves its result note beside the original.
 if [ "$MODE" = own-broll ]; then
   rm -f "$FILE.result.txt"
