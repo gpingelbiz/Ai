@@ -67,6 +67,7 @@ if(out==='-') console.log(text); else fs.writeFileSync(out,text);
   tool("ffmpeg", "#!/bin/bash\nexit 0\n", "zip");
   tool("ffprobe", "#!/bin/bash\nexit 0\n", "zip");
   tool("yt-dlp", "#!/bin/bash\nexit 0\n", "file");
+  tool("cloudflared", "#!/bin/bash\nexit 0\n", "tar.gz");
   tool("uv", `#!/bin/bash
 echo "$*" >> "$HOME/uv-calls"
 if [ "$1" = python ]; then
@@ -301,7 +302,7 @@ test("a kit without a hashed browser stops before activation or a browser downlo
   const f = fixture(t); delete f.m.files["assets/browser/chrome-headless-shell-mac-arm64/chrome-headless-shell"]; f.save();
   const r = f.run(); assert.notEqual(r.status, 0); assert.match(r.stderr, /missing its checked render browser/);
   assert.equal(fs.existsSync(path.join(f.root, "current")), false);
-  assert.equal(fs.readFileSync(path.join(f.home, "downloads"), "utf8").trim().split("\n").length, 6);
+  assert.equal(fs.readFileSync(path.join(f.home, "downloads"), "utf8").trim().split("\n").length, 7);
 });
 
 test("downloaded Whisper files are checked against the pinned sha256, wherever the cache keeps them", (t) => {

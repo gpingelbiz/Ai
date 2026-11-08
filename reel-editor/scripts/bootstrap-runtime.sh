@@ -28,7 +28,7 @@ if [ -f "$RT/.tools-complete" ] && cmp -s "$WORK/runtime.json" "$RT/.runtime.jso
 fi
 [ ! -e "$RT" ] || fail "An unfinished tools folder needs checking: $RT"
 mkdir -p "$WORK/runtime/bin"
-for NAME in node ffmpeg ffprobe uv yt-dlp; do
+for NAME in node ffmpeg ffprobe uv yt-dlp cloudflared; do
   URL="$(field "runtime.tools.$NAME.url")"
   SHA="$(field "runtime.tools.$NAME.sha256")"
   KIND="$(field "runtime.tools.$NAME.kind")"
@@ -51,7 +51,8 @@ for NAME in node ffmpeg ffprobe uv yt-dlp; do
         mv "$WORK/unpack" "$WORK/runtime/node"
         for BIN in node npm npx; do ln -s "../node/bin/$BIN" "$WORK/runtime/bin/$BIN"; done
       else
-        cp "$WORK/unpack/uv" "$WORK/runtime/bin/uv"
+        # uv and cloudflared each unpack to one program named like the tool.
+        cp "$WORK/unpack/$NAME" "$WORK/runtime/bin/$NAME"
       fi
       ;;
     zip)

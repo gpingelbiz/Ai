@@ -267,6 +267,7 @@ export function writeEnvironment(home, values) {
       '  if [ -n "$_rel" ] && [ -n "$_rt" ] && [ -f "$REEL_SHARE/runtime/$_rt/.complete" ]; then',
       '    export REEL_RELEASE="$_rel" REEL_RUNTIME="$REEL_SHARE/runtime/$_rt"',
       '    export REEL_PYTHON="$REEL_RUNTIME/venv/bin/python" HF_HUB_CACHE="$REEL_RUNTIME/models" PATH="$REEL_RUNTIME/bin:$PATH"',
+      '    export REEL_CLOUDFLARED="$REEL_RUNTIME/bin/cloudflared"',
       '  fi',
       '  unset _rel _rt',
       'fi',
