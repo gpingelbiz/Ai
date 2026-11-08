@@ -75,5 +75,5 @@ test("installer passes the routine test flag through without weakening Claude pe
   const setup = fs.readFileSync(new URL("../scripts/studio-setup.mjs", import.meta.url), "utf8");
   const routine = fs.readFileSync(new URL("../src/studio-routine.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(installer + setup + routine, /bypassPermissions|disableAutoMode/);
-  assert.match(setup, /!flag\("--no-routine"\) && publishMode !== "off"/);
+  assert.match(setup, /setupCommand\(process.argv.slice\(2\), \{ terminal: true \}\)/);
 });

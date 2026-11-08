@@ -5,6 +5,11 @@ import { PKG_ROOT } from "../src/util.mjs";
 
 async function start() {
   const args = process.argv.slice(2);
+  if (args[0] === "setup") {
+    const { setupCommand } = await import("../src/setup-steps.mjs");
+    await setupCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "accept") {
     const { acceptCommand } = await import("../src/acceptance.mjs");
     process.exitCode = await acceptCommand(args.slice(1));
