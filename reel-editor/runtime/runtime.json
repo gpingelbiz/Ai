@@ -1,0 +1,54 @@
+{
+  "_note": "The exact tools a client install gets, each a pinned download checked by sha256 before use. Matches Greg's MacBook (2026-11-08) except ffmpeg, which is the same version built natively for Apple Silicon (Greg's evermeet build is Intel and runs through Rosetta). Change a version only together with its sha256, then run the release checks.",
+  "id": "rt-2026.11.08-1",
+  "platform": "darwin-arm64",
+  "minMacOS": "14.0",
+  "tools": {
+    "node": {
+      "version": "24.18.1",
+      "url": "https://nodejs.org/dist/v24.18.1/node-v24.18.1-darwin-arm64.tar.gz",
+      "sha256": "eb02f7fab96d3d67de40c5ec8566096fcb4c2026728787683ae5a97eb612b941",
+      "kind": "tar.gz",
+      "strip": 1
+    },
+    "ffmpeg": {
+      "version": "8.1.2",
+      "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/ffmpeg.zip",
+      "sha256": "ef1aa60006c7b77ce170c1608c08d8e4ba1c30c5746f2ac986ded932d0ac2c3c",
+      "kind": "zip",
+      "bin": "ffmpeg"
+    },
+    "ffprobe": {
+      "version": "8.1.2",
+      "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/ffprobe.zip",
+      "sha256": "c39787f4af7a3932502d2d48db6f6feaaa836b48a73ef78c32cc3285df61dfaf",
+      "kind": "zip",
+      "bin": "ffprobe"
+    },
+    "uv": {
+      "version": "0.11.28",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.11.28/uv-aarch64-apple-darwin.tar.gz",
+      "sha256": "33540eb7c883ab857eff79bd5ac2aa31fe27b595abecb4a9c003a2c998447232",
+      "kind": "tar.gz",
+      "strip": 1
+    },
+    "yt-dlp": {
+      "version": "2026.07.04",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp_macos",
+      "sha256": "498bd0dae17855c599d371d68ec5bafc439a9d8640e838be25c765a9792f261b",
+      "kind": "file",
+      "bin": "yt-dlp"
+    }
+  },
+  "python": {
+    "version": "3.12.13",
+    "_note": "Installed by the pinned uv (uv python install 3.12.13), so the CPython build is uv 0.11.28's.",
+    "requirements": "runtime/requirements.lock",
+    "_lock": "Greg's ~/.reel-venv exactly (pip freeze 2026-11-08), hashes for every wheel; install with --require-hashes --only-binary :all:. onnxruntime 1.31.0 needs macOS 14 or newer."
+  },
+  "whisper": {
+    "model": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+  },
+  "hyperframes": { "version": "0.8.214", "_note": "pinned in package.json and package-lock.json; its render browser comes from `hyperframes browser ensure` for that version" }
+}
