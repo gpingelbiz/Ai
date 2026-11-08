@@ -5,7 +5,7 @@ import { runEdit, buildProject, renderProject, batchEdit } from "./pipeline.mjs"
 import { transcribe, applyCorrections } from "./transcribe.mjs";
 import { listPresets, loadPreset, loadDictionary } from "./presets.mjs";
 import { hyperframesBin } from "./render.mjs";
-import { doctor } from "./doctor.mjs";
+import { doctor, releaseOnly } from "./doctor.mjs";
 import { makeCarousel } from "./carousel.mjs";
 import { makeClips } from "./clips.mjs";
 import { makeCover } from "./cover.mjs";
@@ -574,6 +574,7 @@ export async function main(argv) {
       return studioCommand(rest);
     }
     case "doctor":
+      if (rest.includes("--release-only")) { if (!releaseOnly()) process.exitCode = 1; return; }
       return doctor();
     default:
       console.log(USAGE);

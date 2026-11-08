@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ensureDir, readJSON, writeJSON } from "./util.mjs";
+import { currentRelease } from "./release.mjs";
 
 export const guideReady = (guide) => Boolean(String(guide || "").trim()) && !/NOT FILLED IN YET/i.test(guide);
 export const clientNotify = (title, message) => {
@@ -16,5 +17,7 @@ export function clientStatus(paths, job, message, now = new Date()) {
   try { status = readJSON(file); } catch {}
   status[job] = `${now.toISOString()} ${job}: ${message}`;
   writeJSON(file, status);
-  fs.writeFileSync(path.join(paths.root, "STATUS.txt"), Object.values(status).join("\n") + "\n");
+  let release = "unknown";
+  try { release = currentRelease().id; } catch {}
+  fs.writeFileSync(path.join(paths.root, "STATUS.txt"), `Reel Editor (release ${release})\n` + Object.values(status).join("\n") + "\n");
 }
