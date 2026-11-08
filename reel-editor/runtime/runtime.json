@@ -1,13 +1,13 @@
 {
-  "_note": "The exact tools a client install gets, each a pinned download checked by sha256 before use. Matches Greg's MacBook (2026-11-08) except ffmpeg, which is the same version built natively for Apple Silicon (Greg's evermeet build is Intel and runs through Rosetta). Change a version only together with its sha256, then run the release checks.",
-  "id": "rt-2026.11.08-1",
+  "_note": "The exact tools every install gets (client kits and Greg's own Macs), each a pinned download checked by sha256 before use. Upgraded 2026-11-08 on Greg's call (\"My Macs and Phase 1 now\"): tests, goldens (0.000% diff) and a real spoken edit passed on these. Change a version only together with its sha256, then run the release checks.",
+  "id": "rt-2026.11.08-2",
   "platform": "darwin-arm64",
   "minMacOS": "14.0",
   "tools": {
     "node": {
-      "version": "24.18.1",
-      "url": "https://nodejs.org/dist/v24.18.1/node-v24.18.1-darwin-arm64.tar.gz",
-      "sha256": "eb02f7fab96d3d67de40c5ec8566096fcb4c2026728787683ae5a97eb612b941",
+      "version": "24.22.2",
+      "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-darwin-arm64.tar.gz",
+      "sha256": "aa9549349e47dffaa42dcf95d6e06ade8c4bdafc980979883b88767670df385a",
       "kind": "tar.gz",
       "strip": 1
     },
@@ -33,9 +33,9 @@
       "strip": 1
     },
     "yt-dlp": {
-      "version": "2026.07.04",
-      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp_macos",
-      "sha256": "498bd0dae17855c599d371d68ec5bafc439a9d8640e838be25c765a9792f261b",
+      "version": "2026.10.26",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp_macos",
+      "sha256": "0f922c15ccc0b83eefa1c8bc9104e434318c4bf16e408e1ee93b7745a6efe0aa",
       "kind": "file",
       "bin": "yt-dlp"
     }
@@ -50,5 +50,28 @@
     "model": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
     "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
   },
-  "hyperframes": { "version": "0.8.214", "_note": "pinned in package.json and package-lock.json; its render browser comes from `hyperframes browser ensure` for that version" }
+  "hyperframes": {
+    "version": "0.9.25",
+    "_note": "pinned in package.json and package-lock.json (0.9 drops only HyperFrames' cloud render protocol, which reel never uses); its render browser comes from `hyperframes browser ensure` for that version"
+  },
+  "services": {
+    "_note": "Online services the editor calls with the client's own keys. Not installed; listed so every install records which models it uses. Change a model only after a side by side test on a real reel.",
+    "elevenlabs": {
+      "transcription": "scribe_v1",
+      "voiceover": "eleven_multilingual_v2"
+    },
+    "runway": {
+      "apiVersion": "2024-11-06",
+      "video": "gen4.5 (presets), gen4_turbo (code default)",
+      "image": "nano_banana_2.1 (presets), gen4_image (code default)",
+      "sound": "mirelo_sfx_2_0"
+    },
+    "stock": [
+      "Pixabay videos API",
+      "Pexels videos API",
+      "Wikimedia Commons API"
+    ],
+    "codex": "the Codex config default, then gpt-5.6-sol",
+    "claude": "the Claude Code default model on the client's plan"
+  }
 }
