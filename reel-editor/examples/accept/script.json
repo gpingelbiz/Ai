@@ -1,0 +1,4 @@
+{
+  "sentence": "This is a simple editing check. Clear words appear on the screen while the picture stays still.",
+  "expectedWords": ["this", "is", "a", "simple", "editing", "check", "clear", "words", "appear", "on", "the", "screen", "while", "the", "picture", "stays", "still"]
+}

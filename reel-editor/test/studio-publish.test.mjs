@@ -106,8 +106,12 @@ test("kit agents omit reels, legacy studios keep reels and raw intake", (t) => {
 test("health alerts after three hours in Publish and ignores gated raw intake", async (t) => {
   const s = fixture(t, { publish: { mode: "off" } }); reel(s);
   fs.mkdirSync(s.paths.rawReels); fs.writeFileSync(path.join(s.paths.rawReels, "old.mov"), "v"); fs.utimesSync(path.join(s.paths.rawReels, "old.mov"), new Date(0), new Date(0));
+  // ctime is the real arrival time; advance from it rather than a fixed calendar date.
+  const arrival = fs.statSync(path.join(s.paths.publish, "clip")).ctimeMs;
+  const healthNow = new Date(arrival + 4 * 3600000);
+  fs.writeFileSync(path.join(s.paths.state, "daily.json"), JSON.stringify({ day: healthNow.toISOString().slice(0, 10), completed: true }));
   const notices = [];
-  const result = await studioHealth(s.paths.root, { now, deps: { claudeConnected: () => true, notify: (...args) => notices.push(args) } });
+  const result = await studioHealth(s.paths.root, { now: healthNow, deps: { claudeConnected: () => true, notify: (...args) => notices.push(args) } });
   assert.deepEqual(result.issues, ["Open the Claude app; it has to be open for reels to post"]);
   assert.equal(notices.length, 1); assert.match(fs.readFileSync(path.join(s.paths.root, "STATUS.txt"), "utf8"), /Open the Claude app/);
 });
