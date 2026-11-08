@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { firstJSON } from "./claude.mjs";
 import { run, r3 } from "./util.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 const quantile = (values, fraction) => [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * fraction))];
@@ -312,9 +313,12 @@ export async function phonePreviews(file, shot, groups, { dir, caption = {}, run
 }
 
 /** The evidence-image helper runs both Apple face detection and OCR and reports analysis errors. */
-export async function localClipCheck(frames, { dir, runFn = run, look, pick } = {}) {
-  const source = fileURLToPath(new URL("../scripts/ocr.swift", import.meta.url)), bin = path.join(dir, "ocr");
-  if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(source).mtimeMs) await runFn("swiftc", ["-O", "-o", bin, source], { capture: true });
+export async function localClipCheck(frames, { dir, runFn = run, look, pick, resolveTool = nativeTool } = {}) {
+  const bin = await resolveTool("ocr", { compile: async () => {
+    const source = fileURLToPath(new URL("../scripts/ocr.swift", import.meta.url)), bin = path.join(dir, "ocr");
+    if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(source).mtimeMs) await runFn("swiftc", ["-O", "-o", bin, source], { capture: true });
+    return bin;
+  } });
   const reports = [];
   for (const frame of frames) {
     const response = await runFn(bin, [frame.file], { capture: true });
