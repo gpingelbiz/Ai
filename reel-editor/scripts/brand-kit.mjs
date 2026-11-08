@@ -85,6 +85,13 @@ fs.chmodSync(path.join(kit, installer), 0o755);
 if (release) {
   fs.copyFileSync(releaseFile, path.join(kit, "release.json"));
   fs.copyFileSync(path.join(PKG_ROOT, "install.sh"), path.join(kit, "install.sh"));
+  // install.sh's first steps run before the editor is downloaded, so their two helpers ride in the kit (from this
+  // same release, so they match the installer).
+  fs.mkdirSync(path.join(kit, "scripts"), { recursive: true });
+  for (const f of ["bootstrap-runtime.sh", "runtime.mjs"]) {
+    fs.copyFileSync(path.join(PKG_ROOT, "scripts", f), path.join(kit, "scripts", f));
+    fs.chmodSync(path.join(kit, "scripts", f), f.endsWith(".sh") ? 0o755 : 0o644);
+  }
 }
 fs.writeFileSync(path.join(kit, "Start Here.html"), personalizeStartHere(fs.readFileSync(path.join(PKG_ROOT, "kit", "Start Here.html"), "utf8"), brand, { studio: !!GUIDE }));
 fs.writeFileSync(path.join(kit, "Setup Guide.html"), personalizeSetupGuide(fs.readFileSync(path.join(PKG_ROOT, "kit", "Setup Guide.html"), "utf8"), brand, { studio: !!GUIDE }));
