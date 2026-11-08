@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { initStudio, loadStudio, readPosts } from "../src/content-studio.mjs";
 import { studioAgents, installAgents } from "../src/studio-cli.mjs";
-import { scanPublish, publishSlot, finishPublish, failPublish } from "../src/studio-publish.mjs";
+import { scanPublish, publishSlot, finishPublish, failPublish, claimPublish, beginPublish, releasePublish, publishClaims, publishLedger, INTERRUPTED_PUBLISH } from "../src/studio-publish.mjs";
 import { kitFolders, routinePrompt, writeRoutine, openRoutineSetup } from "../src/studio-routine.mjs";
 import { studioHealth } from "../src/studio-health.mjs";
 import { PKG_ROOT } from "../src/util.mjs";
@@ -50,14 +51,16 @@ test("done files to Made and logs normal and trial records; fail keeps the reel 
   assert.match(fs.readFileSync(path.join(s.paths.publish, "Not posted", "clip", "Why it did not post.txt"), "utf8"), /Network unavailable/);
   assert.deepEqual(scanPublish(s, { settle: 0 }).ready, []);
   reel(s);
-  const r = finishPublish(s, "clip", { date: "2026-11-08T10:00:00", planner: "https://example.test/1", id: "1", trialCopy: "2026-11-08T12:00:00", trialPlanner: "https://example.test/2" });
+  const claim = claimPublish(s, "clip", { date: "2026-11-08T10:00:00" });
+  const r = finishPublish(s, "clip", { owner: claim.owner, date: "2026-11-08T10:00:00", planner: "https://example.test/1", id: "1", trialCopy: "2026-11-08T12:00:00", trialPlanner: "https://example.test/2", trialId: "2" });
   assert.equal(fs.existsSync(dir), false); assert.equal(fs.existsSync(r.files[0]), true);
   const posts = readPosts(s.paths); assert.equal(posts.length, 2); assert.equal(posts[1].format, "trial"); assert.equal(posts[0].status, "scheduled");
   assert.match(fs.readFileSync(path.join(r.made, "Scheduled.txt"), "utf8"), /10:00/);
 });
 test("done preserves the draft gate even without a draft argument", (t) => {
   const s = fixture(t); reel(s, "clip", "");
-  assert.equal(finishPublish(s, "clip", { date: "2026-11-08T10:00:00" }).status, "draft");
+  const claim = claimPublish(s, "clip", { date: "2026-11-08T10:00:00" });
+  assert.equal(finishPublish(s, "clip", { date: claim.slot, id: "draft-id", owner: claim.owner }).status, "draft");
 });
 test("slots enforce regular day and two hours, include local daily slots, trial is independent", (t) => {
   const s = fixture(t, { slots: [{ time: "10:00", format: "static" }] });
@@ -135,7 +138,8 @@ test("agent rerun unloads and removes an old kit reels agent while retaining dai
 test("filing a Clips folder leaves its other videos ready for a later scan", (t) => {
   const s = fixture(t); const dir = reel(s, "Clips");
   fs.writeFileSync(path.join(dir, "second.mp4"), "v"); fs.utimesSync(path.join(dir, "second.mp4"), new Date(0), new Date(0));
-  finishPublish(s, "Clips", { date: "2026-11-08T10:00:00" });
+  const claim = claimPublish(s, "Clips", { date: "2026-11-08T10:00:00" });
+  finishPublish(s, "Clips", { date: claim.slot, owner: claim.owner, id: "one", trialCopyFailed: "No trial slot" });
   assert.equal(scanPublish(s).ready[0].video, path.join(dir, "second.mp4"));
 });
 
@@ -168,4 +172,137 @@ test("health: a reel just dragged into Publish is not stuck, whatever age its vi
   const opts = { maxAge: 3 * 3600000, byArrival: true };
   assert.deepEqual(stuckDrops([dir], opts), []);
   assert.equal(stuckDrops([dir], { ...opts, now: Date.now() + 4 * 3600000 }).length, 1);
+});
+
+function publisher(s, id, { stage, barrier } = {}) {
+  const code = `
+    import fs from 'node:fs';
+    import { loadStudio } from ${JSON.stringify(new URL('../src/content-studio.mjs', import.meta.url).href)};
+    import { claimPublish, beginPublish } from ${JSON.stringify(new URL('../src/studio-publish.mjs', import.meta.url).href)};
+    const s = loadStudio(${JSON.stringify(s.paths.root)});
+    const barrier = ${JSON.stringify(barrier || '')};
+    if (barrier) {
+      process.send({ ready: true });
+      while (!fs.existsSync(barrier)) await new Promise(r => setTimeout(r, 5));
+    }
+    try {
+      const claim = claimPublish(s, ${JSON.stringify(id)}, { date: '2031-01-02T10:00:00' });
+      if (${JSON.stringify(stage)} !== 'before') {
+        beginPublish(s, claim.id, claim.owner);
+        fs.appendFileSync(${JSON.stringify(path.join(s.home, 'fake-creates'))}, claim.id + '\\n');
+      }
+      if (barrier) process.send({ claim }, () => process.exit(0));
+      else { process.send({ claim }); setInterval(() => {}, 1000); }
+    } catch (error) { process.send({ error: error.message }, () => process.exit(0)); }
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  let stderr = '';
+  child.stderr.on('data', d => { stderr += d; });
+  const messages = [];
+  const first = new Promise(resolve => child.once('message', resolve));
+  child.on('message', m => messages.push(m));
+  const closed = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code, signal) => code === 0 || signal === 'SIGKILL' ? resolve({ code, signal }) : reject(new Error(stderr)));
+  });
+  return { child, first, closed, messages };
+}
+for (const stage of ['before', 'after']) test(`killed ${stage} create stays held through a fresh scan and cannot create again`, async t => {
+  const s = fixture(t); const dir = reel(s);
+  const id = scanPublish(s).ready[0].id;
+  const run = publisher(s, id, { stage });
+  t.after(() => run.child.kill('SIGKILL'));
+  const { claim } = await run.first;
+  assert.ok(claim);
+  run.child.kill('SIGKILL'); await run.closed;
+  assert.equal(publishClaims(s)[0].state, 'awaiting-receipt');
+  const note = path.join(dir, 'Posting check.txt'); fs.unlinkSync(note);
+  const fresh = loadStudio(s.paths.root);
+  assert.deepEqual(scanPublish(fresh).ready, []);
+  assert.equal(scanPublish(fresh).held[0].message, INTERRUPTED_PUBLISH);
+  assert.match(fs.readFileSync(path.join(s.paths.root, 'STATUS.txt'), 'utf8'), /Posting was interrupted\. This reel may already be scheduled/);
+  assert.equal(fs.readFileSync(note, 'utf8').trim(), INTERRUPTED_PUBLISH);
+  assert.throws(() => claimPublish(fresh, id, { date: claim.slot }), /Posting was interrupted/);
+  const count = fs.existsSync(path.join(s.home, 'fake-creates')) ? fs.readFileSync(path.join(s.home, 'fake-creates'), 'utf8').trim().split('\n').length : 0;
+  assert.equal(count, stage === 'before' ? 0 : 1);
+});
+test('two publishers race for one durable claim and only one reaches a fake create', async t => {
+  const s = fixture(t); reel(s);
+  const id = scanPublish(s).ready[0].id, barrier = path.join(s.home, 'go');
+  const runs = [publisher(s, id, { barrier }), publisher(s, id, { barrier })];
+  t.after(() => runs.forEach(r => r.child.kill('SIGKILL')));
+  await Promise.all(runs.map(r => r.first)); fs.writeFileSync(barrier, 'go');
+  await Promise.all(runs.map(r => r.closed));
+  assert.equal(runs.flatMap(r => r.messages).filter(m => m.claim).length, 1);
+  assert.equal(runs.flatMap(r => r.messages).filter(m => m.error).length, 1);
+  assert.equal(fs.readFileSync(path.join(s.home, 'fake-creates'), 'utf8').trim().split('\n').length, 1);
+  assert.equal(publishClaims(s).length, 1); assert.deepEqual(scanPublish(s).ready, []);
+});
+test('serving consumes a claim once; failures and wrong owners cannot unlock it', t => {
+  const s = fixture(t); reel(s);
+  const claim = claimPublish(s, scanPublish(s).ready[0].id, { date: '2031-01-02T10:00:00' });
+  assert.throws(() => beginPublish(s, claim.id, 'another owner'), /owner/);
+  beginPublish(s, claim.id, claim.owner);
+  assert.throws(() => beginPublish(s, claim.id, claim.owner), /Posting was interrupted/);
+  assert.throws(() => finishPublish(s, claim.id, { date: claim.slot, id: 'remote', owner: 'another' }), /owner/);
+  assert.equal(failPublish(s, claim.id, 'No result', { owner: claim.owner }).status, 'held');
+  assert.deepEqual(scanPublish(s).ready, []);
+  assert.throws(() => releasePublish(s, claim.id), /Choose/);
+  releasePublish(s, claim.id, { notPosted: true });
+  assert.equal(scanPublish(s).ready.length, 1);
+  const next = claimPublish(s, claim.id, { date: claim.slot });
+  assert.notEqual(next.owner, claim.owner);
+  beginPublish(s, next.id, next.owner);
+});
+test('done requires identifying receipts and saves normal and trial ids before clearing a claim', t => {
+  const s = fixture(t); reel(s);
+  const claim = claimPublish(s, 'clip', { date: '2031-01-02T10:00:00' });
+  assert.throws(() => finishPublish(s, claim.id, { owner: claim.owner, date: claim.slot }), /post id/);
+  assert.throws(() => finishPublish(s, claim.id, { owner: claim.owner, date: claim.slot, id: 'normal' }), /trial copy result/);
+  const made = finishPublish(s, claim.id, { owner: claim.owner, date: claim.slot, id: 'normal', trialCopy: '2031-01-02T12:00:00', trialId: 'trial' });
+  const receipt = JSON.parse(fs.readFileSync(path.join(publishLedger(s), `${claim.id}.receipt.json`), 'utf8'));
+  assert.equal(receipt.normal.id, 'normal'); assert.equal(receipt.trial.id, 'trial');
+  assert.equal(receipt.made, made.made); assert.deepEqual(publishClaims(s), []);
+  assert.deepEqual(scanPublish(s).ready, []);
+  assert.throws(() => claimPublish(s, claim.id, { date: claim.slot }), /reel id/);
+});
+test('a saved receipt survives failed local filing and forbids another create', t => {
+  const s = fixture(t); reel(s);
+  const claim = claimPublish(s, 'clip', { date: '2031-01-02T10:00:00' });
+  fs.rmSync(s.paths.made, { recursive: true }); fs.writeFileSync(s.paths.made, 'blocked');
+  assert.throws(() => finishPublish(s, claim.id, { owner: claim.owner, date: claim.slot, id: 'normal', trialCopyFailed: 'No reply' }));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(publishLedger(s), `${claim.id}.receipt.json`))).normal.id, 'normal');
+  assert.deepEqual(scanPublish(s).ready, []);
+  assert.throws(() => beginPublish(s, claim.id, claim.owner), /receipt is already saved/);
+  assert.throws(() => releasePublish(s, claim.id, { notPosted: true }), /receipt is already saved/);
+});
+test('a person can confirm posting without a lost remote id and the reel cannot be offered again', t => {
+  const s = fixture(t); reel(s);
+  const claim = claimPublish(s, 'clip', { date: '2031-01-02T10:00:00' });
+  releasePublish(s, claim.id, { posted: true });
+  assert.deepEqual(publishClaims(s), []); assert.deepEqual(scanPublish(s).ready, []);
+  const saved = JSON.parse(fs.readFileSync(path.join(publishLedger(s), `${claim.id}.receipt.json`)));
+  assert.equal(saved.normal.confirmedByPerson, true); assert.equal(saved.trial.uncertain, true);
+});
+test('a trial only receipt stays separate from a normal receipt', t => {
+  const s = fixture(t, { reels: { trial: true } }); reel(s);
+  const claim = claimPublish(s, 'clip', { date: '2031-01-02T10:00:00' });
+  finishPublish(s, claim.id, { owner: claim.owner, date: claim.slot, id: 'only-trial' });
+  const receipt = JSON.parse(fs.readFileSync(path.join(publishLedger(s), `${claim.id}.receipt.json`)));
+  assert.equal(receipt.normal, null); assert.equal(receipt.trial.id, 'only-trial');
+});
+test('a damaged claim holds its reel instead of treating it as ready', t => {
+  const s = fixture(t); reel(s);
+  const claim = claimPublish(s, 'clip', { date: '2031-01-02T10:00:00' });
+  fs.writeFileSync(path.join(publishLedger(s), `${claim.id}.claim.json`), '{}');
+  assert.deepEqual(scanPublish(s).ready, []);
+  assert.equal(scanPublish(s).held[0].id, claim.id);
+  assert.throws(() => claimPublish(s, claim.id, { date: claim.slot }), /Posting was interrupted/);
+});
+test('the posting note never becomes a missing caption, even on a video named caption', t => {
+  const s = fixture(t, { reels: { trial: false } }); const dir = reel(s, 'clip', '');
+  fs.renameSync(path.join(dir, 'clip.mp4'), path.join(dir, 'caption.mp4'));
+  fs.unlinkSync(path.join(dir, 'caption.txt'));
+  const claim = claimPublish(s, 'clip', { date: '2031-01-02T10:00:00' });
+  assert.equal(finishPublish(s, claim.id, { owner: claim.owner, date: claim.slot, id: 'draft' }).status, 'draft');
 });
