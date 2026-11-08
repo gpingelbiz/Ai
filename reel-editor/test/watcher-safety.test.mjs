@@ -103,6 +103,32 @@ test("scanner loads the shared environment before selecting drop folders", (t) =
   assert.equal(f.run().status, 0); assert.deepEqual(f.calls(), ["Ask for the guide"]);
 });
 
+test("low disk pauses before editing, leaves the exact note, and never records a failed edit", (t) => {
+  const f = setup(t);
+  fs.copyFileSync(path.join(PKG_ROOT, "scripts/watch-reel.sh"), path.join(f.home, "scripts/watch-reel.sh"));
+  f.env.REEL_WATCH_FAST = "1";
+  f.stub("df", 'printf "Filesystem 1024-blocks Used Available Capacity Mounted on\\nvolume 40000000 33000000 7000000 83%% /\\n"');
+  f.stub("reel", 'echo should-not-run >> "$HOME/calls"; exit 1');
+  assert.equal(f.run().status, 0);
+  assert.deepEqual(f.calls(), []); assert.deepEqual(f.markers(), []);
+  assert.equal(fs.readFileSync(`${f.clip} - why it failed.txt`, "utf8"), "Editing is paused because this Mac is nearly full. Your original is safe.\n");
+  assert.equal(fs.readFileSync(f.clip, "utf8"), "video");
+  assert.equal(f.run().status, 0); assert.deepEqual(f.calls(), []);
+});
+
+test("the disk admission gate allows exactly 8 GB and fails safely when space is unknown", (t) => {
+  const f = setup(t);
+  f.env.REEL_WATCH_FAST = "1"; f.env.REEL_WATCH_CAPTION = "0"; f.env.REEL_WATCH_PRUNE_DAYS = "0";
+  f.stub("reel", 'echo admitted >> "$HOME/calls"; exit 1');
+  f.stub("osascript", "exit 0");
+  const run = () => spawnSync("/bin/bash", [path.join(PKG_ROOT, "scripts/watch-reel.sh"), f.clip], { env: f.env, encoding: "utf8" });
+  f.stub("df", 'printf "Filesystem 1024-blocks Used Available Capacity Mounted on\\nvolume 40000000 32187500 7812500 80%% /\\n"');
+  assert.equal(run().status, 1); assert.deepEqual(f.calls(), ["admitted"]);
+  f.stub("df", "exit 1");
+  assert.equal(run().status, 75); assert.deepEqual(f.calls(), ["admitted"]);
+  assert.match(fs.readFileSync(`${f.clip} - why it failed.txt`, "utf8"), /free space could not be checked/);
+});
+
 for (const mode of ["reel", "broll", "runway", "long"]) {
   test(`client ${mode} jobs keep their caption style and CTA despite #v2`, (t) => {
     const f = setup(t);
