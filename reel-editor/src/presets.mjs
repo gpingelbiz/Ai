@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { readJSON, deepMerge, PKG_ROOT, warn } from "./util.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
-import { GREG_PRESETS, isClientMode } from "./client-mode.mjs";
+import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 
 const PRESET_DIR = path.join(PKG_ROOT, "presets");
 
@@ -11,7 +11,7 @@ export function listPresets() {
     .readdirSync(PRESET_DIR)
     .filter((f) => f.endsWith(".json") && !f.startsWith("_") && !f.startsWith("pace-") && f !== "broll-shotlist.json")
     .map((f) => f.replace(/\.json$/, ""))
-    .filter((name) => !isClientMode() || !GREG_PRESETS.includes(name));
+    .filter((name) => !isClientJob() || !GREG_PRESETS.includes(name));
 }
 
 /**
@@ -26,8 +26,8 @@ export const CLIENT_BASE = { captions: CLIENT_CAPTIONS, zooms: { minSpacing: 10,
 export const isClientBrand = (own = {}) => own.extends === "pingel-brand" && /^brand-/.test(String(own.name || ""));
 
 /** Default preset: REEL_PRESET (a name in presets/ or a path to a .json, set by install.sh), else pingel-brand. */
-export function loadPreset(nameOrPath = process.env.REEL_PRESET || (isClientMode() ? "clean" : "pingel-brand")) {
-  const client = isClientMode();
+export function loadPreset(nameOrPath = process.env.REEL_PRESET || (isClientJob() ? "clean" : "pingel-brand")) {
+  const client = isClientJob();
   const personal = (name) => GREG_PRESETS.includes(path.basename(String(name || ""), ".json").toLowerCase());
   const refuse = () => { throw new Error("This look belongs to Greg. Choose your own brand look or clean."); };
   if (client && personal(nameOrPath)) refuse();
@@ -36,13 +36,11 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || (isClientMode
   const base = readJSON(path.join(PRESET_DIR, "_defaults.json"));
   const own = readJSON(file);
   if (client && personal(own.name)) refuse();
-  // "extends": another preset's settings underneath this one's (pingel-runway builds on pingel-brand).
-  // Older client kits named Greg's preset as their base. Keep their settings without reading his files.
-  const parentName = client && isClientBrand(own) ? null : own.extends;
-  if (client && personal(parentName)) refuse();
-  const inherited = parentName ? readJSON(path.join(PRESET_DIR, `${parentName}.json`)) : null;
-  if (client && inherited && (personal(inherited.name) || personal(inherited.extends))) refuse();
-  let parent = inherited ? deepMerge(base, inherited) : base;
+  // "extends": another preset's settings underneath this one's (pingel-runway builds on pingel-brand). A client
+  // brand (brand-<slug>) keeps pingel-brand as its engine base, as every kit always has, so a kit renders exactly
+  // like today; client mode only stops a client picking one of Greg's looks as their own look.
+  if (client && personal(own.extends) && !isClientBrand(own)) refuse();
+  let parent = own.extends ? deepMerge(base, readJSON(path.join(PRESET_DIR, `${own.extends}.json`))) : base;
   if (isClientBrand(own)) parent = deepMerge(parent, CLIENT_BASE);
   const p = deepMerge(parent, own);
   delete p.extends;
@@ -80,8 +78,6 @@ export function loadDictionary(file) {
 
 /** The Runway b-roll timing and budget from presets/pingel-runway.json (clip length, gaps, counts, credit cap). */
 export function runwayTiming() {
-  // Turn on moving clips, keeping the client's own model, timing and budget.
-  if (isClientMode()) return { animate: true };
   const { enabled, engine, ...timing } = readJSON(path.join(PRESET_DIR, "pingel-runway.json")).broll || {};
   return timing;
 }

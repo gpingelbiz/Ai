@@ -70,6 +70,10 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   if [ "$(( $(date +%s) - $(filemtime "$LOCK") ))" -gt 10800 ]; then rmdir "$LOCK" 2>/dev/null; mkdir "$LOCK" 2>/dev/null || exit 0; else exit 0; fi
 fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+# A weekly update is switching the editor (src/client-update.mjs holds this while it swaps releases): edit nothing
+# now; launchd runs this again on the next change or interval. Checked after taking our lock, so the updater, which
+# takes its barrier first and then waits for this lock, can never swap code under a running edit.
+if [ -e "$HOME/.reel/maintenance/update.lock" ]; then exit 0; fi
 
 # One pass over a set of drop folders: $1 marker folder, $2 client.env ("" for Greg's own), then mode|folder pairs.
 scan() {

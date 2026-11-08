@@ -77,14 +77,16 @@ function fakeTools(app, overrides = {}) {
 }
 function built(t, options) {
   const app = repo(t, options), tools = fakeTools(app);
-  const release = buildRelease({ app, id: ID, run: tools.run });
+  // A stand-in render browser, so tests never download Chrome.
+  const browser = (stage) => put(path.join(stage, "assets/browser/chrome-headless-shell-mac-arm64/chrome-headless-shell"), "fake chrome");
+  const release = buildRelease({ app, id: ID, run: tools.run, browser });
   return { app, release, ...tools };
 }
 
 // These are secret *markers*, never real personal files or credentials.
 test("release allowlist excludes personal files, footage, music, caches and checkout dependencies", (t) => {
   const root = tmp(t), app = path.join(root, "checkout"), stage = path.join(root, "stage");
-  const denied = [".env.local", ".git/config", "brands/greg.json", "presets/pingel-brand.json", "presets/pingel-v2.json", "presets/pingel-runway.json", "voice/greg.md", "examples/greg.mp4", "examples/content-studio/Photos/greg.jpg", "music/greg.mp3", "assets/music/greg.mp3", "node_modules/.cache/key", "node_modules/old/index.js", "dist/release/old.tar.gz", "runtime/keys.env", "src/.env.local"];
+  const denied = [".env.local", ".git/config", "brands/greg.json", "presets/pingel-v2.json", "voice/greg.md", "examples/greg.mp4", "examples/content-studio/Photos/greg.jpg", "music/greg.mp3", "assets/music/greg.mp3", "node_modules/.cache/key", "node_modules/old/index.js", "dist/release/old.tar.gz", "runtime/keys.env", "src/.env.local"];
   const allowed = ["src/main.mjs", "bin/reel.mjs", "scripts/helper.swift", "kit/Start Here.html", "presets/clean.json", "assets/vendor/gsap.min.js", "assets/fonts/Inter.ttf", "assets/sfx/slam.wav", "voice/default.md", "dictionary.json", "runtime/runtime.json", "runtime/requirements.lock", "examples/sample-words.json", "examples/accept/script.json", "dist/helpers/darwin-arm64/helper", "dist/helpers/darwin-arm64/helpers.json", "install.sh", "package.json", "package-lock.json"];
   for (const file of denied) put(path.join(app, file), "SECRET_MARKER");
   for (const file of allowed) put(path.join(app, file), "public");
@@ -95,6 +97,7 @@ test("release allowlist excludes personal files, footage, music, caches and chec
   for (const file of denied) assert.equal(fs.existsSync(path.join(stage, file)), false, file);
   assert.equal(fs.existsSync(path.join(stage, "src/linked-secret.mjs")), false);
   for (const file of Object.keys(hashFiles(stage))) assert.notEqual(fs.readFileSync(path.join(stage, file), "utf8"), "SECRET_MARKER");
+  for (const base of ["presets/pingel-brand.json", "presets/pingel-runway.json"]) assert.equal(allowedFile(base), true, `${base} is the engine base client brands extend`);
   assert.equal(allowedFile("examples/accept/talk.wav"), false, "acceptance speech must be generated on the client's Mac");
 });
 

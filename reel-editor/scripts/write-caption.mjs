@@ -23,7 +23,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { bannedInCaption } from "../src/publish-folder.mjs";
-import { isClientMode } from "../src/client-mode.mjs";
+import { isClientJob } from "../src/client-mode.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TOOLS = ["mcp__claude_ai_sandcastles__top_hooks", "mcp__claude_ai_sandcastles__top_formats"];
@@ -31,13 +31,13 @@ const DENY = ["Bash", "Edit", "Write", "Read", "Glob", "Grep", "WebFetch", "WebS
 
 export function voiceFile(plan, env = process.env) {
   const ownVoice = env.REEL_CAPTION_VOICE;
-  if (ownVoice && fs.existsSync(ownVoice) && !(isClientMode(env) && fs.realpathSync(ownVoice) === path.join(ROOT, "voice/greg.md"))) return ownVoice;
+  if (ownVoice && fs.existsSync(ownVoice) && !(isClientJob(env) && fs.realpathSync(ownVoice) === path.join(ROOT, "voice/greg.md"))) return ownVoice;
   // Greg's voice for every look of his (pingel-brand, pingel-runway); anyone else's comes from REEL_CAPTION_VOICE.
-  return path.join(ROOT, "voice", !isClientMode(env) && /^pingel-/.test(plan?.style?.name || "") ? "greg.md" : "default.md");
+  return path.join(ROOT, "voice", !isClientJob(env) && /^pingel-/.test(plan?.style?.name || "") ? "greg.md" : "default.md");
 }
 
 export function captionAccess(env = process.env) {
-  return { sandcastles: !isClientMode(env) && env.REEL_CAPTION_SANDCASTLES !== "0", watchlist: !isClientMode(env) && env.REEL_CAPTION_WATCHLIST !== "0" };
+  return { sandcastles: !isClientJob(env) && env.REEL_CAPTION_SANDCASTLES !== "0", watchlist: !isClientJob(env) && env.REEL_CAPTION_WATCHLIST !== "0" };
 }
 
 /** The prompt Claude gets. Pure, so it can be tested. */

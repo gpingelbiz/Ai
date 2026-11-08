@@ -28,7 +28,12 @@ export function assertClean(app, run = command) {
 }
 
 /** Start from nothing: local footage, brands, credentials and old dependencies cannot enter a release. */
+// Client brands are built on these two (src/presets.mjs: brand-<slug> extends pingel-brand; the Runway folder reads
+// pingel-runway's clip timing), so they ship as the engine base; client mode never lets a client pick them as a look.
+const BASE_PRESETS = ["presets/pingel-brand.json", "presets/pingel-runway.json"];
+
 export function allowedFile(name) {
+  if (BASE_PRESETS.includes(name)) return true;
   const parts = name.split("/");
   if (parts.some((part) => part.startsWith(".") || /^(?:brands|music)$/i.test(part) || /^(?:pingel-|greg(?:[.-]|$))/i.test(part) || /(?:\.env(?:\.|$)|keys\.env$|\.pem$|\.key$)/i.test(part))) return false;
   if (["package.json", "package-lock.json", "install.sh"].includes(name)) return true;
@@ -90,7 +95,19 @@ export function testCounts(unit, goldens) {
   return { unit: `${passed}/${total}`, goldens: "6/6" };
 }
 
-export function buildRelease({ app = PKG_ROOT, id, run = command, now = new Date() } = {}) {
+/**
+ * The render browser ships inside the release (hashed with every other file): HyperFrames' own download has no
+ * pinned checksum, and scripts/runtime.mjs refuses to render without this copy.
+ */
+export function bundleBrowser(stage, run = command) {
+  const hf = path.join(stage, "node_modules", ".bin", "hyperframes");
+  run(hf, ["browser", "ensure"], { cwd: stage });
+  const chrome = run(hf, ["browser", "path"], { cwd: stage }).trim().split(/\r?\n/).pop();
+  if (!/chrome-headless-shell-mac-arm64\/chrome-headless-shell$/.test(chrome) || !fs.existsSync(chrome)) throw new Error(`The render browser was not found (${chrome}).`);
+  fs.cpSync(path.dirname(chrome), path.join(stage, "assets", "browser", "chrome-headless-shell-mac-arm64"), { recursive: true, verbatimSymlinks: true });
+}
+
+export function buildRelease({ app = PKG_ROOT, id, run = command, now = new Date(), browser = bundleBrowser } = {}) {
   assertClean(app, run);
   id = validID(id || `${now.toISOString().slice(0, 10).replaceAll("-", ".")}.1`);
   const output = path.join(app, "dist", "release", id);
@@ -109,6 +126,7 @@ export function buildRelease({ app = PKG_ROOT, id, run = command, now = new Date
     }
     // pngjs is a devDependency used by the app's grid and slide checks, so keep full npm ci.
     run("npm", ["ci", "--no-audit", "--no-fund"], { cwd: stage });
+    browser(stage, run);
     const runtime = JSON.parse(fs.readFileSync(path.join(stage, "runtime/runtime.json"), "utf8"));
     const name = `reel-editor-${id}.tar.gz`;
     const release = { schema: 1, id, commit, createdAt: now.toISOString(), runtime, artifact: { name, url: `https://github.com/gpingelbiz/Ai/releases/download/reel-${id}/${name}` }, files: hashFiles(stage), tests };

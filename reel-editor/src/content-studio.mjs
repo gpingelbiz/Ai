@@ -271,6 +271,8 @@ export function takeLock(paths, name = "run") {
     try { fs.mkdirSync(lock); } catch { return null; }
   }
   fs.writeFileSync(path.join(lock, "who"), `${name} ${process.pid}\n`);
+  // A weekly update is switching the editor: step aside (after taking our lock, so the updater's wait sees us).
+  if (fs.existsSync(path.join(os.homedir(), ".reel", "maintenance", "update.lock"))) { fs.rmSync(lock, { recursive: true, force: true }); return null; }
   return () => fs.rmSync(lock, { recursive: true, force: true });
 }
 

@@ -63,7 +63,7 @@ test("the watcher edits Greg's drops as Greg and a client's drops with the clien
   fs.writeFileSync(path.join(bin, "watch-reel.sh"), `#!/bin/bash\nprintf '%s|%s|%s|%s|%s|%s\\n' "$(basename "$1")" "$2" "\${REEL_CLIENT:-greg}" "\${REEL_PRESET:-default}" "\${REEL_WATCH_DONE:-none}" "\${REEL_BROLL_ENGINE:-unset}" >> "${T}/jobs.txt"\n`);
   fs.chmodSync(path.join(bin, "watch-reel.sh"), 0o755);
   const greg = path.join(T, "greg");
-  const env = { ...process.env, REEL_WATCH_ROOT: greg, REEL_CLIENTS: path.join(T, "clients"), REEL_WATCH_DONE: "/greg/Desktop/Reels" };
+  const env = { ...process.env, HOME: T, REEL_WATCH_FAST: "1", REEL_WATCH_ROOT: greg, REEL_CLIENTS: path.join(T, "clients"), REEL_WATCH_DONE: "/greg/Desktop/Reels" };
   delete env.REEL_PRESET; delete env.REEL_CLIENT; delete env.REEL_BROLL_ENGINE;
   for (const [dir] of DROP_FOLDERS) env[{ raw: "REEL_WATCH_RAW", "raw-broll": "REEL_WATCH_RAW_BROLL", "raw-carousel": "REEL_WATCH_RAW_CAROUSEL", "raw-long": "REEL_WATCH_RAW_LONG", "raw-youtube": "REEL_WATCH_RAW_YOUTUBE", "raw-runway": "REEL_WATCH_RAW_RUNWAY" }[dir]] = path.join(greg, dir);
   const p = clientPaths(brand, { REEL_CLIENTS: env.REEL_CLIENTS, REEL_CLIENTS_DESKTOP: path.join(T, "Desktop") });

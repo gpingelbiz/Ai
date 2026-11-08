@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { GREG_PRESETS, isClientMode } from "../src/client-mode.mjs";
+import { GREG_PRESETS, isClientMode, isClientJob } from "../src/client-mode.mjs";
 import { loadPreset, listPresets, mergeOverrides } from "../src/presets.mjs";
 import { checkBrand, brandPreset, personalizeStartHere, personalizeSetupGuide } from "../src/brandkit.mjs";
 import { voiceFile, captionAccess, buildPrompt } from "../scripts/write-caption.mjs";
@@ -11,8 +11,11 @@ import { PKG_ROOT, readJSON } from "../src/util.mjs";
 
 test("client mode recognizes kits and existing hosted clients", () => {
   assert.deepEqual(GREG_PRESETS, ["pingel-brand", "pingel-v2", "pingel-runway"]);
-  for (const env of [{ REEL_CLIENT_MODE: "1" }, { REEL_CLIENT: "sample" }, { REEL_CLIENT_MODE: "0", REEL_CLIENT: "sample" }]) assert.equal(isClientMode(env), true);
-  for (const env of [{}, { REEL_CLIENT_MODE: "0" }, { REEL_CLIENT: "" }]) assert.equal(isClientMode(env), false);
+  // A kit install is client mode; a client folder on Greg's Mac is a client job but keeps Greg's tools.
+  assert.equal(isClientMode({ REEL_CLIENT_MODE: "1" }), true);
+  for (const env of [{}, { REEL_CLIENT_MODE: "0" }, { REEL_CLIENT: "" }, { REEL_CLIENT: "sample" }]) assert.equal(isClientMode(env), false);
+  for (const env of [{ REEL_CLIENT_MODE: "1" }, { REEL_CLIENT: "sample" }, { REEL_CLIENT_MODE: "0", REEL_CLIENT: "sample" }]) assert.equal(isClientJob(env), true);
+  for (const env of [{}, { REEL_CLIENT_MODE: "0" }, { REEL_CLIENT: "" }]) assert.equal(isClientJob(env), false);
 });
 
 test("client presets refuse Greg's names and files, while legacy client brands use neutral defaults", (t) => {

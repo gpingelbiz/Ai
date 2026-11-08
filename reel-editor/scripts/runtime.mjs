@@ -259,6 +259,23 @@ export function writeEnvironment(home, values) {
     const browser = path.join(home, ".local/share/reel-editor/current", browserFile);
     for (const key of ["HYPERFRAMES_BROWSER_PATH", "REEL_BROWSER_PATH"]) content += `export ${key}=${quote(browser)}\n`;
   }
+  if (values.REEL_RUNTIME) {
+    // A weekly update or a rollback switches `current`; read the active release and its tools from it every time,
+    // so these never point at a release that is no longer active. plutil reads JSON and ships with every Mac.
+    content += [
+      'REEL_SHARE="$HOME/.local/share/reel-editor"',
+      'if [ -f "$REEL_SHARE/current/release.json" ]; then',
+      '  _rel="$(/usr/bin/plutil -extract id raw -o - "$REEL_SHARE/current/release.json" 2>/dev/null)"',
+      '  _rt="$(/usr/bin/plutil -extract runtime.id raw -o - "$REEL_SHARE/current/release.json" 2>/dev/null)"',
+      '  if [ -n "$_rel" ] && [ -n "$_rt" ] && [ -f "$REEL_SHARE/runtime/$_rt/.complete" ]; then',
+      '    export REEL_RELEASE="$_rel" REEL_RUNTIME="$REEL_SHARE/runtime/$_rt"',
+      '    export REEL_PYTHON="$REEL_RUNTIME/venv/bin/python" HF_HUB_CACHE="$REEL_RUNTIME/models" PATH="$REEL_RUNTIME/bin:$PATH"',
+      '  fi',
+      '  unset _rel _rt',
+      'fi',
+      '',
+    ].join("\n");
+  }
   content += '[ -f "$HOME/.reel/keys.env" ] && { set -a; . "$HOME/.reel/keys.env"; set +a; }\n';
   atomic(file, content);
   let block = false;
