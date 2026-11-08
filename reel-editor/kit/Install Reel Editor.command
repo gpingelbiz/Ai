@@ -1,20 +1,28 @@
 #!/bin/bash
-# Reel Editor: double-click to install or update (macOS, Apple Silicon).
-# It downloads the latest installer from GitHub and asks four questions: your look, your ElevenLabs key
-# (optional), whether to turn on the drop folder, and Codex for b-roll and carousels (optional). Running it again later updates everything.
+# Double-click to install the tested editor with this kit's brand.
+set -o pipefail
 clear
-printf '\n\033[1mReel Editor\033[0m\n\n'
-printf 'This installs Reel Editor on this Mac. It takes about 10 minutes.\n'
-printf 'If a window asks to install Apple'"'"'s command line tools, click Install, wait, then double-click this file again.\n\n'
-# A brand kit carries a Brand folder next to this file: the installer takes that look and asks no look question.
+printf '\nReel Editor\n\n'
+printf 'This gets editing ready in your account. No Mac password is needed.\n'
+printf 'The first setup downloads tools and speech recognition. Keep this window open.\n\n'
 KIT="$(cd "$(dirname "$0")" && pwd)"
-BRAND_ARGS=()
-[ -f "$KIT/Brand/my-brand.json" ] && BRAND_ARGS=(--brand "$KIT/Brand")
-cd "$HOME" || exit 1
-if curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash -s -- ${BRAND_ARGS[@]+"${BRAND_ARGS[@]}"}; then
-  printf '\n\033[32mAll set.\033[0m Drop a clip into a Raw folder in Desktop/Reels, or open Start Here.html for how to use it.\n'
-else
-  printf '\n\033[31mThe install stopped.\033[0m Read the message above, then double-click this file again. Start Here.html has fixes for the common ones.\n'
+if [ ! -f "$KIT/Brand/my-brand.json" ]; then
+  printf 'The Brand folder is missing next to this file. Unzip the whole kit, then open this file inside it.\n'
+  read -r -p "Press Return to close. " _ < /dev/tty || true
+  exit 1
 fi
-printf '\nYou can close this window.\n'
+if [ ! -f "$KIT/install.sh" ] || [ ! -f "$KIT/release.json" ]; then
+  printf 'The setup files are missing. Unzip the whole kit, then try again.\n'
+  read -r -p "Press Return to close. " _ < /dev/tty || true
+  exit 1
+fi
+cd "$HOME" || exit 1
+bash "$KIT/install.sh" --brand "$KIT/Brand" --release "$KIT/release.json"
+STATUS=$?
+if [ "$STATUS" = 0 ]; then
+  printf '\nUse the Raw folders in Desktop/Reels for your clips. Start Here.html explains the next steps.\n'
+else
+  printf '\nThe install stopped. Read the message above, then double-click this file again to continue.\n'
+fi
 read -r -p "Press Return to close. " _ < /dev/tty || true
+exit "$STATUS"
