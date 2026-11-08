@@ -50,7 +50,9 @@ const problems = checkBrand(brand);
 if (problems.length) { console.error(`Fix the brand file first:\n- ${problems.join("\n- ")}`); process.exit(1); }
 
 if (/[\x00-\x1f/\\]/.test(brand.name) || [".", ".."].includes(brand.name)) { console.error("Use a brand name without slashes or control characters."); process.exit(2); }
-const kitName = `${brand.name} ${GUIDE ? "Reels and Posts" : "Reel Editor"} Kit`;
+// Finder quotes dragged paths, but short plain folder names are easier to recognise.
+const folderName = brand.name.normalize("NFKD").replace(/[^a-zA-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 40).trim() || "Client";
+const kitName = `${folderName} ${GUIDE ? "Reels and Posts" : "Reel Editor"} Kit`;
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), "reel-kit-"));
 const kit = path.join(stage, kitName);
 const B = path.join(kit, "Brand");
@@ -99,6 +101,19 @@ fs.writeFileSync(path.join(kit, "Setup Guide.html"), personalizeSetupGuide(fs.re
 fs.mkdirSync(path.join(kit, "Sign up here"), { recursive: true });
 for (const [name, body] of Object.entries(signupLinks({ studio: !!GUIDE }))) fs.writeFileSync(path.join(kit, "Sign up here", name), body);
 
+// Previews have no bundled release to run. Only complete kits can carry an app.
+if (release) {
+  const app = spawnSync("/bin/bash", [path.join(PKG_ROOT, "scripts/make-installer-app.sh"), kit], { encoding: "utf8" });
+  const skip = "No Developer ID on this Mac: kits ship the Terminal steps.";
+  if (app.stdout?.trim() !== skip && app.stdout) process.stdout.write(app.stdout);
+  if (app.stderr) process.stderr.write(app.stderr);
+  if (app.status !== 0) {
+    fs.rmSync(stage, { recursive: true, force: true });
+    console.error("The installer app could not be prepared. No kit was built.");
+    process.exit(1);
+  }
+}
+
 fs.mkdirSync(OUT, { recursive: true });
 const zip = path.join(OUT, `${kitName}.zip`);
 fs.rmSync(zip, { force: true });
@@ -110,5 +125,9 @@ if (z.status !== 0) { console.error("zip failed"); process.exit(1); }
 console.log(zip);
 
 const message = path.join(OUT, `${kitName} - send-out message.txt`);
-fs.writeFileSync(message, kitSendOutMessage(brand, { studio: !!GUIDE, release, dev }));
+const firstOpen = "Open Terminal (Applications, Utilities). Type bash and a space. Drag the Install file from the kit folder into the Terminal window. Press Return. If double clicking says it can't be opened, use these Terminal steps; never change your security settings.";
+fs.writeFileSync(message, kitSendOutMessage(brand, { studio: !!GUIDE, release, dev }).replace(
+  "It walks you through every step and every question the installer asks.",
+  `It walks you through every step and every question the installer asks. ${firstOpen}`,
+));
 console.log(message);

@@ -672,7 +672,7 @@ test("kit: Start Here keeps the Content Studio section only in a Content Studio 
   assert.match(plain, /Jane's Reel Editor/);
   const studio = personalizeStartHere(html, { name: "Jane" }, { studio: true });
   assert.match(studio, /Jane's reels and posts/);
-  assert.match(studio, /Double click <b>Install Reels\.command<\/b> in this folder/);
+  assert.match(studio, /Drag <b>Install Reels\.command<\/b> from the kit folder into the Terminal window/);
   for (const route of ["Straight from this Mac", "Google Drive", "Dropbox"]) assert.match(studio, new RegExp(route));
   assert.doesNotMatch(studio, /<!-- \/?studio -->/);
   assert.equal(stripStudio(html), stripStudio(stripStudio(html)));

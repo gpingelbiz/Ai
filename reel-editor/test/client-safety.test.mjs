@@ -74,7 +74,7 @@ test("starter brand allows every house look; narrowed lists need two different v
 });
 
 for (const studio of [false, true]) {
-  test(`kit guides keep the brand and release in Terminal fallback (studio=${studio})`, () => {
+  test(`kit guides run the bundled launcher from Terminal (studio=${studio})`, () => {
     const brand = { name: "Example Person" };
     for (const [file, personalize] of [["Start Here.html", personalizeStartHere], ["Setup Guide.html", personalizeSetupGuide]]) {
       const html = personalize(fs.readFileSync(path.join(PKG_ROOT, "kit", file), "utf8"), brand, { studio });
@@ -82,12 +82,12 @@ for (const studio of [false, true]) {
       assert.match(html, /20 to 40 minutes/);
       assert.match(html, /about 2 GB/);
       assert.match(html, /Editing ready/);
-      assert.match(html, /Open Anyway/);
+      assert.match(html, /never change your security settings/);
+      assert.doesNotMatch(html, /Open Anyway|Privacy.*Security|password/i);
       assert.doesNotMatch(html, /curl -fsSL|tools, click Install|enter your Mac password|Pick <b>1<\/b>/);
-      const command = html.match(/<pre>bash ([\s\S]*?)<\/pre>/)?.[1];
-      assert.ok(command);
-      assert.match(command, /--brand "&lt;kit folder&gt;\/Brand" --release "&lt;kit folder&gt;\/release.json"/);
-      assert.equal(command.includes("--studio"), studio);
+      assert.match(html, /Type <code>bash<\/code> and a space/);
+      assert.match(html, /from the kit folder into the Terminal window/);
+      assert.ok(html.includes(studio ? "Install Reels.command" : "Install Reel Editor.command"));
     }
   });
 }

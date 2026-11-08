@@ -25,6 +25,11 @@
   th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em; }
   a { color: var(--accent); }
   .muted { color: var(--muted); font-size: 14px; }
+  .terminal-picture { margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .terminal-bar { padding: 8px 14px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 14px; }
+  .terminal-screen { padding: 18px 14px; background: #16161a; color: #f6f6f8; font: 14px/1.8 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .drag-file { display: inline-block; border: 1px dashed #e0b44c; border-radius: 6px; padding: 3px 8px; color: #e0b44c; }
+  .terminal-picture figcaption { padding: 10px 14px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -38,8 +43,20 @@
 <!-- signups -->
 
   <h2>1. Install (20 to 40 minutes the first time)</h2>
+  <p>The first install downloads about 2 GB.</p>
   <ol>
-    <li>Double click <b>Install Reel Editor.command</b> in this folder. A Terminal window opens and does the work. Keep the whole kit together. The first install downloads about 2 GB.</li>
+    <li>Open <b>Terminal</b> (Applications, Utilities).</li>
+    <li>Type <code>bash</code> and a space.</li>
+    <li>Drag <b>Install Reel Editor.command</b> from the kit folder into the Terminal window.</li>
+    <li>Press <b>Return</b>. Keep the whole kit together and leave Terminal open while it works.</li>
+  </ol>
+  <figure class="terminal-picture" aria-label="Drag the Install file into Terminal after bash and a space">
+    <div class="terminal-bar">Terminal</div>
+    <div class="terminal-screen">% bash <span class="drag-file"><b>Install Reel Editor.command</b> &#8592; drag this file here</span></div>
+    <figcaption>Terminal fills in the file location for you. Then press Return.</figcaption>
+  </figure>
+  <p>You can also double click <b>Install Reel Editor.command</b>. If double clicking says it can't be opened, use the Terminal steps above; never change your security settings. If this kit includes an <b>Install Reel Editor.app</b>, you can double click that instead. Keep it in this folder.</p>
+  <ol start="5">
     <li>Answer these questions:
       <table>
         <tr><th>Question</th><th>What to pick</th></tr>
@@ -55,17 +72,7 @@
     <li>It makes a spoken sample on your Mac, reads it locally and renders a short test reel. Wait for <b>Editing ready (release …)</b>. The result and test reel are in <code>~/Reels/install-test/</code>.</li>
   </ol>
 
-  <div class="card">
-    <p><strong>If your Mac says the file "can't be opened" or "Apple could not verify" it:</strong></p>
-    <ol>
-      <li>Open <b>System Settings</b>, then <b>Privacy &amp; Security</b>.</li>
-      <li>Scroll down to the message about <b>Install Reel Editor.command</b> and click <b>Open Anyway</b>.</li>
-      <li>Confirm and open the installer again. The installer itself needs no password.</li>
-    </ol>
-    <p>Terminal fallback: replace <code>&lt;kit folder&gt;</code> with the full path to this unzipped kit folder (you can drag the folder from Finder into Terminal to see its path). Keep both the Brand folder and release.json from this kit:</p>
-<pre>bash "&lt;kit folder&gt;/install.sh" --brand "&lt;kit folder&gt;/Brand" --release "&lt;kit folder&gt;/release.json"<!-- studio --> --studio<!-- /studio --></pre>
-  </div>
-  <p class="muted">No Homebrew, Apple command line tools or administrator account is needed. The installer never asks for a password. If you see a request to install developer tools or Homebrew, stop and use the installer bundled in this kit.</p>
+  <p class="muted">No Homebrew, Apple command line tools or administrator account is needed. If you see a request to install developer tools or Homebrew, stop and use the installer bundled in this kit.</p>
 
   <h3>Fixes and waiting-reel alerts</h3>
   <p>Your client kit checks for fixes every week on this Mac. It keeps your settings, voice, brand guide, dictionary and look. It installs packages only when the package files changed, checks the update without contacting a service, and returns to the previous version if the check fails. You get a notification when something changed or needs attention. Updates pause while the code folder has unsaved changes. Re-running the installer keeps one update job.</p>
