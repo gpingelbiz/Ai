@@ -247,7 +247,7 @@ export const stripStudio = (html) => String(html).replace(/[ \t]*<!-- studio -->
 export function personalizeStartHere(html, b, { studio = false } = {}) {
   const who = studio ? `${b.name}'s reels and posts` : `${b.name}'s Reel Editor`;
   const page = studio
-    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/<b>Install Reel Editor\.command<\/b>/g, "<b>Install Reels.command</b>")
+    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/Install Reel Editor\.(command|app)/g, "Install Reels.$1")
     : stripStudio(html);
   return page
     .replace("<!-- signups -->", signupsHTML({ studio }))
@@ -267,7 +267,7 @@ export function personalizeSetupGuide(html, b, { studio = false } = {}) {
     .replace("<!-- signups -->", signupsHTML({ studio }))
     .replace("<title>Reel Editor: Setup Guide</title>", `<title>${esc(who)}: Setup Guide</title>`)
     .replace("<h1>Reel Editor: Setup Guide</h1>", `<h1>${esc(who)}: Setup Guide</h1>`)
-    .replace(/Install Reel Editor\.command/g, studio ? "Install Reels.command" : "Install Reel Editor.command")
+    .replace(/Install Reel Editor\.(command|app)/g, studio ? "Install Reels.$1" : "Install Reel Editor.$1")
     .replace(/<tr><td>Your look<\/td><td>[\s\S]*?<\/td><\/tr>/, "");
 }
 

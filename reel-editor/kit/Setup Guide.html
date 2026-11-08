@@ -23,6 +23,11 @@
   label { display: block; margin: 10px 0; }
   a { color: var(--accent); }
   .muted { color: var(--muted); font-size: 14px; }
+  .terminal-picture { margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .terminal-bar { padding: 8px 14px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 14px; }
+  .terminal-screen { padding: 18px 14px; background: #16161a; color: #f6f6f8; font: 14px/1.8 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .drag-file { display: inline-block; border: 1px dashed #e0b44c; border-radius: 6px; padding: 3px 8px; color: #e0b44c; }
+  .terminal-picture figcaption { padding: 10px 14px; font-size: 14px; }
 </style>
 </head><body><main>
 <h1>Reel Editor: Setup Guide</h1>
@@ -51,9 +56,18 @@
 <p>Leave your Mac on and connected for scheduled work. A sleeping Mac runs missed calendar jobs after waking; a shut down Mac cannot edit or post. Check the status after turning it back on.</p>
 <!-- /studio -->
 <h2>Part 4. Install step by step</h2>
-<ol><li>Inside the unzipped kit, double click <b>Install Reel Editor.command</b>.</li><li>If macOS blocks it, open System Settings, then Privacy &amp; Security. Find the message about the installer, click Open Anyway, confirm and open the installer again. The installer itself needs no password. Open the installer again if needed.</li><li>A Terminal window opens. It shows progress as it installs the tools in your own home folder. No password, administrator account, Homebrew or Apple command line tools are needed. If you see a request to install developer tools or Homebrew, stop and use the installer bundled in this kit.</li><li>Answer the questions below in order. Already saved keys and signed in tools may be skipped. A key is a private code from your account; paste it into Terminal, not into a message to Greg.</li></ol>
-<p>Terminal fallback: replace <code>&lt;kit folder&gt;</code> with the full path to this unzipped kit folder (you can drag the folder from Finder into Terminal to see its path). Keep both the Brand folder and release.json from this kit:</p>
-<pre>bash "&lt;kit folder&gt;/install.sh" --brand "&lt;kit folder&gt;/Brand" --release "&lt;kit folder&gt;/release.json"<!-- studio --> --studio<!-- /studio --></pre>
+<ol><li>Open <b>Terminal</b> (Applications, Utilities).</li>
+    <li>Type <code>bash</code> and a space.</li>
+    <li>Drag <b>Install Reel Editor.command</b> from the kit folder into the Terminal window.</li>
+    <li>Press <b>Return</b>. Keep the whole kit together and leave Terminal open while it works.</li></ol>
+<figure class="terminal-picture" aria-label="Drag the Install file into Terminal after bash and a space">
+    <div class="terminal-bar">Terminal</div>
+    <div class="terminal-screen">% bash <span class="drag-file"><b>Install Reel Editor.command</b> &#8592; drag this file here</span></div>
+    <figcaption>Terminal fills in the file location for you. Then press Return.</figcaption>
+  </figure>
+  <p>You can also double click <b>Install Reel Editor.command</b>. If double clicking says it can't be opened, use the Terminal steps above; never change your security settings. If this kit includes an <b>Install Reel Editor.app</b>, you can double click that instead. Keep it in this folder.</p>
+<p>Terminal shows progress as it installs the tools in your own home folder. No administrator account, Homebrew or Apple command line tools are needed. If you see a request to install developer tools or Homebrew, stop and use the installer bundled in this kit.</p>
+<p>Answer the questions below in order. Already saved keys and signed in tools may be skipped. A key is a private code from your account; paste it into Terminal, not into a message to Greg.</p>
 <table><tr><th>It asks</th><th>What to do</th></tr>
 <tr><td>Your look</td><td>Your brand, colors, caption voice and words come with this kit.</td></tr>
 <tr><td>Paste your ElevenLabs API key, or press Return to skip:</td><td>Paste your key from ElevenLabs, Developers, API Keys, or press Return.</td></tr>
@@ -137,7 +151,7 @@
 <!-- studio -->
 <tr><td>A post did not go out</td><td>Read Desktop/Reels/STATUS.txt and Not posted.txt in its Made folder. If Claude signed out, open Terminal, type claude and sign in. If Metricool disconnected, reconnect at claude.ai, Settings, Connectors.</td></tr>
 <!-- /studio -->
-<tr><td>macOS blocks the installer</td><td>Use System Settings, Privacy &amp; Security, Open Anyway as described in Part 4.</td></tr>
+<tr><td>macOS blocks the installer</td><td>Use the Terminal steps in Part 4. Never change your security settings.</td></tr>
 <tr><td>Anything else</td><td>Open Install Reel Editor.command again to update or repair. Existing settings are kept, but read any questions before accepting defaults. If you are still stuck, text Greg with the message you see.</td></tr></table>
 <h2>Part 10. Quick checklist</h2>
 <p>Tick these as you go. Ticks are just for this open page and may reset when you reopen it.</p>
