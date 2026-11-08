@@ -415,7 +415,7 @@ fi
 if [ "$STUDIO" = 1 ]; then
   # The Content Studio: the client's photo folder, Claude, Metricool and posting times (scripts/studio-setup.mjs).
   [ -n "$BRAND" ] || die "--studio needs a Reels kit (its Brand folder)."
-  bold "Your reels and posts"
+  [ -n "$RELEASE" ] || bold "Your reels and posts"
   if [ -n "$RELEASE" ]; then
     # A kit gets editing proven first; the posting setup page opens after the test reel (below).
     note "Posting setup comes right after your test reel."

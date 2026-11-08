@@ -102,6 +102,8 @@ else throw Error('Unexpected reel command');
 `);
   put(path.join(releaseApp, "runtime/requirements.lock"), "faster-whisper==1.2.1 --hash=sha256:fake\n");
   put(path.join(releaseApp, "dictionary.json"), '{"powerWords":[]}');
+  // The posting setup the installer runs after the test reel; it records that it ran and with which answers.
+  put(path.join(releaseApp, "scripts/studio-setup.mjs"), `import fs from 'node:fs'; fs.appendFileSync(process.env.HOME + '/setup-calls', process.argv.slice(2).join(' ') + '\\n');`);
   put(path.join(releaseApp, "voice/default.md"), "Neutral voice.");
   put(path.join(releaseApp, "assets/browser/chrome-headless-shell-mac-arm64/chrome-headless-shell"), "#!/bin/bash\nexit 0\n", true);
   put(path.join(releaseApp, "scripts/client-maintenance.mjs"), "// local fake: no jobs started\n");
@@ -269,10 +271,12 @@ test("kit launchers run their bundled release installer and return its failure",
   }
 });
 
-test("release studio kits keep posting pending without running the old account installers", (t) => {
+test("release studio kits prove editing first, then save setup without running the old account installers", (t) => {
   const f = fixture(t), r = f.run({}, ["--studio"]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /Posting setup pending/);
+  assert.match(r.stdout, /Posting setup comes right after your test reel/);
+  assert.ok(r.stdout.indexOf("Editing ready") < r.stdout.lastIndexOf("Your reels and posts"), "setup runs after the test reel");
+  assert.match(fs.readFileSync(path.join(f.home, "setup-calls"), "utf8"), /--brand .*--yes/);
   assert.match(r.stdout, /Editing ready/);
   assert.equal(fs.existsSync(path.join(f.home, "forbidden")), false);
 });

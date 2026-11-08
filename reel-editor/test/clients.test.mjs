@@ -27,7 +27,10 @@ test("client.env sets every setting that has a Greg default, so ~/.zshrc can nev
   assert.match(clientEnv({ ...brand, brollEngine: "runway" }, p), /^REEL_BROLL_ENGINE='runway'$/m);
   assert.match(env, /^REEL_WATCH_CTA=''$/m, "no CTA unless the brand file names one");
   assert.match(env, /^REEL_CAPTION_WATCHLIST='0'$/m);
-  const r = spawnSync("/bin/bash", ["-c", `set -a; . /dev/stdin; set +a; printf '%s|%s|[%s]' "$REEL_CLIENT" "$REEL_WATCH_DONE" "$REEL_WATCH_CTA"`], { input: env, encoding: "utf8" });
+  // Source a real file: `. /dev/stdin` on a pipe was intermittent when the whole suite runs at once.
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "client-env-")), "client.env"); fs.writeFileSync(file, env);
+  const r = spawnSync("/bin/bash", ["-c", `set -a; . "$1"; set +a; printf '%s|%s|[%s]' "$REEL_CLIENT" "$REEL_WATCH_DONE" "$REEL_WATCH_CTA"`, "bash", file], { encoding: "utf8" });
+  fs.rmSync(path.dirname(file), { recursive: true, force: true });
   assert.equal(r.stdout, "Jane O'Doe|/d/Clients/Jane Doe|[]");
 });
 
