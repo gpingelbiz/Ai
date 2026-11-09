@@ -10,7 +10,7 @@ import { studioHealth, stuckDrops, validPingURL, healthPing } from "../src/studi
 import { guideReady, clientStatus } from "../src/client-status.mjs";
 import { withDefaults, initStudio, studioPaths, loadStudio, readPosts, logPost, checkStudio } from "../src/content-studio.mjs";
 import { studioAgents } from "../src/studio-cli.mjs";
-import { postInput, normalizeScheduled } from "../src/studio-metricool.mjs";
+import { postInput, normalizeScheduled, metricoolCall } from "../src/studio-metricool.mjs";
 import { reelSlot, trialSlotFor, scheduleReel } from "../src/studio-reels.mjs";
 import { runDaily, openSlots, retryable, publishPost } from "../src/daily.mjs";
 import { runStories, parseStory, storySpec, runFilmingPack, parseFilmingPack, filmingPrompt, storyPrompt, HOW_TO_FILM, sameAngle } from "../src/studio-extras.mjs";
@@ -125,26 +125,26 @@ test("health: old raw and Publish videos alert; fresh videos and Done do not", (
 test("health: missed daily run and disconnected Claude notify and write STATUS without telemetry", async (t) => {
   const s = studio(t), notices = [];
   clientStatus(s.paths, "filming", "Your guide is unfinished", NOW);
-  const r = await studioHealth(s.paths.root, { now: new Date("2026-11-08T13:00Z"), deps: { claudeConnected: () => false, notify: (...a) => notices.push(a), healthPing: () => { throw new Error("must not ping"); } } });
+  const r = await studioHealth(s.paths.root, { env: {}, now: new Date("2026-11-08T13:00Z"), deps: { claudeConnected: () => false, notify: (...a) => notices.push(a), healthPing: () => { throw new Error("must not ping"); } } });
   assert.equal(r.issues.length, 2); assert.equal(notices.length, 1);
   assert.match(fs.readFileSync(path.join(s.paths.root, "STATUS.txt"), "utf8"), /filming: Your guide is unfinished/);
 });
 test("health: successful empty daily run is recorded and clears missed-run alert", async (t) => {
   const s = studio(t); await runDaily(s.paths.root, { now: NOW, deps: { writeFilmingPack: async () => JSON.stringify(pack()) } });
-  const r = await studioHealth(s.paths.root, { now: new Date("2026-11-08T13:00Z"), deps: { claudeConnected: () => true, notify: () => assert.fail("healthy run notified") } });
+  const r = await studioHealth(s.paths.root, { env: {}, now: new Date("2026-11-08T13:00Z"), deps: { claudeConnected: () => true, notify: () => assert.fail("healthy run notified") } });
   assert.deepEqual(r.issues, []);
 });
 test("health: Metricool disconnection and post provider errors are visible", async (t) => {
   const s = studio(t, { publish: { mode: "schedule" }, metricool: { blogId: "1", connector: "Metricool" } });
   const deps = { claudeConnected: () => true, detectConnectors: async () => ({ metricool: { connected: false } }), notify: () => {} };
-  assert.match((await studioHealth(s.paths.root, { now: NOW, deps })).message, /Metricool is disconnected/);
+  assert.match((await studioHealth(s.paths.root, { env: {}, now: NOW, deps })).message, /Metricool is disconnected/);
   const posts = normalizeScheduled({ data: [{ date: "2026-11-07T11:00", providers: [{ status: "ERROR", errorMessage: "Token expired" }] }] });
-  const r = await studioHealth(s.paths.root, { now: NOW, deps: { ...deps, detectConnectors: async () => ({ metricool: { name: "Metricool", connected: true } }), scheduledPosts: async () => posts } });
+  const r = await studioHealth(s.paths.root, { env: {}, now: NOW, deps: { ...deps, detectConnectors: async () => ({ metricool: { name: "Metricool", connected: true } }), scheduledPosts: async () => posts } });
   assert.match(r.message, /Metricool post failed.*Token expired/);
 });
 test("health: editor-only checks drops without touching Claude, Metricool or a ping", async (t) => {
   const root = tmp(t);
-  const r = await studioHealth(root, { dropFolders: [], deps: { claudeConnected: () => assert.fail(), detectConnectors: () => assert.fail(), healthPing: () => assert.fail(), notify: () => assert.fail() } });
+  const r = await studioHealth(root, { env: {}, dropFolders: [], deps: { claudeConnected: () => assert.fail(), detectConnectors: () => assert.fail(), healthPing: () => assert.fail(), notify: () => assert.fail() } });
   assert.deepEqual(r.issues, []);
 });
 test("health: only an explicit https ping is sent, with /fail on problems and no content", async () => {
@@ -295,4 +295,81 @@ test("filming: off for existing studios, on for new ones", async (t) => {
   assert.equal((await runFilmingPack(s, { now: NOW, deps: { writeFilmingPack: () => assert.fail() } })).skipped, "off");
   const p = initStudio(path.join(tmp(t), "new"));
   assert.equal(JSON.parse(fs.readFileSync(p.config)).filming.enabled, true);
+});
+
+// Mac bash 3.2 in a UTF-8 locale reads a non-ASCII character after $name as part of the name, so with set -u
+// `$formula…` dies with "unbound variable" (a client's fresh Mac stopped at install.sh line 91). Write ${name}….
+test("shell scripts never put a non-ASCII character right after a bare $variable", () => {
+  const files = ["install.sh", "kit/Install Reel Editor.command", "kit/Install Reels.command", ...fs.readdirSync(path.join(PKG_ROOT, "scripts")).filter((f) => f.endsWith(".sh")).map((f) => `scripts/${f}`)];
+  const bad = [];
+  for (const f of files) fs.readFileSync(path.join(PKG_ROOT, f), "utf8").split("\n").forEach((line, i) => { if (/\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/.test(line)) bad.push(`${f}:${i + 1}`); });
+  assert.deepEqual(bad, []);
+});
+
+test("installer runs its $formula note under Mac bash in a UTF-8 locale", { skip: !fs.existsSync("/bin/bash") }, () => {
+  const line = fs.readFileSync(path.join(PKG_ROOT, "install.sh"), "utf8").split("\n").find((l) => l.includes('note "installing ')).match(/note "installing [^"]*"/)[0];
+  const r = spawnSync("/bin/bash", ["-c", `set -u; note() { echo "$1"; }; formula=ffmpeg; ${line}`], { encoding: "utf8", env: { ...process.env, LC_ALL: "en_US.UTF-8" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /installing ffmpeg/);
+});
+
+function fakeClaude(t, replies) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-claude-"));
+  t.after(() => { delete process.env.REEL_CLAUDE_BIN; fs.rmSync(dir, { recursive: true, force: true }); });
+  const bin = path.join(dir, "claude"), count = path.join(dir, "count");
+  fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));
+  fs.writeFileSync(bin, `#!/usr/bin/env node\nconst fs=require("fs");const c=${JSON.stringify(count)};const n=fs.existsSync(c)?Number(fs.readFileSync(c,"utf8")):0;fs.writeFileSync(c,String(n+1));const r=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(dir, "replies.json"))},"utf8"));process.stdout.write(r[Math.min(n,r.length-1)]);\n`);
+  fs.chmodSync(bin, 0o755);
+  process.env.REEL_CLAUDE_BIN = bin;
+  return () => Number(fs.readFileSync(count, "utf8"));
+}
+const NOT_READY = JSON.stringify({ error: "Tool mcp__claude_ai_Metricool__getBrandSettings is not available in this session" });
+
+test("a connector that is not ready yet is asked again, then the result comes back", async (t) => {
+  const calls = fakeClaude(t, [NOT_READY, "The tool is not available in this session.", JSON.stringify({ data: [{ id: 1 }] })]);
+  const r = await metricoolCall("Metricool", "getBrandSettings", {}, { notReadyWaits: [1, 1] });
+  assert.deepEqual(r, { data: [{ id: 1 }] });
+  assert.equal(calls(), 3);
+});
+
+test("a connector that never loads stops with what to do", async (t) => {
+  const calls = fakeClaude(t, [NOT_READY]);
+  await assert.rejects(metricoolCall("Metricool", "getBrandSettings", {}, { notReadyWaits: [1, 1] }), /\/mcp[\s\S]*Settings, Connectors/);
+  assert.equal(calls(), 3);
+});
+
+test("a real Metricool error is never retried, so a post cannot double", async (t) => {
+  const calls = fakeClaude(t, [JSON.stringify({ error: "Authorization Error" })]);
+  await assert.rejects(metricoolCall("Metricool", "createScheduledPost", {}, { notReadyWaits: [1, 1] }), /Authorization Error/);
+  assert.equal(calls(), 1);
+});
+
+
+test("legacy client studios keep raw intake and the legacy publisher by default", (t) => {
+  const s = studio(t);
+  assert.equal(s.config.reels.rawIntake, true);
+  assert.equal(s.config.reels.publisher, "legacy");
+  assert.equal(fs.existsSync(s.paths.rawReels), true);
+  const source = fs.readFileSync(path.join(PKG_ROOT, "scripts", "client.mjs"), "utf8");
+  assert.match(source, /publish: \{ mode: "off" \}/);
+  assert.doesNotMatch(source, /publisher: "claude"|rawIntake: false/);
+});
+
+// Release kits used to skip the denoiser: the step sat inside the legacy branch of install.sh.
+test("release installs get the DeepFilterNet denoiser step, outside the legacy branch", () => {
+  const sh = fs.readFileSync(path.join(PKG_ROOT, "install.sh"), "utf8");
+  const legacyEnd = sh.indexOf("fi # legacy tools and code"), step = sh.indexOf('bash "$APP/scripts/install-deepfilter.sh"');
+  assert.ok(legacyEnd > 0 && step > legacyEnd, "the denoiser step runs after the release and legacy branches join");
+  assert.equal(sh.split('scripts/install-deepfilter.sh" >/dev/null').length, 2, "one denoiser step");
+});
+
+test("the DeepFilterNet download is refused when its bytes do not match the pinned checksum", { skip: process.platform !== "darwin" || process.arch !== "arm64" }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dfn-")); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // A fake curl writes the wrong bytes to the -o file; nothing reaches the network.
+  fs.mkdirSync(path.join(dir, "bin"));
+  fs.writeFileSync(path.join(dir, "bin/curl"), '#!/bin/bash\nwhile [ $# -gt 0 ]; do [ "$1" = -o ] && { printf "#!/bin/sh\\nexit 0\\n" > "$2"; }; shift; done\n', { mode: 0o755 });
+  const r = spawnSync("/bin/bash", [path.join(PKG_ROOT, "scripts/install-deepfilter.sh")], { encoding: "utf8", env: { PATH: `${dir}/bin:/usr/bin:/bin`, HOME: dir, REEL_CACHE: path.join(dir, "cache") } });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /did not match its checksum/);
+  assert.ok(!fs.existsSync(path.join(dir, "cache/bin/deep-filter")));
 });

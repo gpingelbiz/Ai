@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { run, PKG_ROOT } from "./util.mjs";
 import { driftDuring } from "./motion.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 /**
  * Put the hook where it will not cover the speaker's head: above it when there is room, otherwise between the chin
@@ -13,20 +14,23 @@ import { driftDuring } from "./motion.mjs";
 
 const SWIFT_SRC = path.join(PKG_ROOT, "scripts", "faces.swift");
 
-/** Compile faces.swift once into ~/.cache/reel-editor (recompiled when the source changes). Null off macOS. */
+/** Prefer the built-in face finder; keep the local compiler fallback on Greg's Macs. */
 async function facesBinary() {
-  if (process.platform !== "darwin" || !fs.existsSync(SWIFT_SRC)) return null;
-  const dir = path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"));
-  fs.mkdirSync(dir, { recursive: true });
-  const bin = path.join(dir, `faces-${Math.round(fs.statSync(SWIFT_SRC).mtimeMs)}`);
-  if (!fs.existsSync(bin)) {
-    try {
-      await run("swiftc", ["-O", SWIFT_SRC, "-o", bin], { capture: true });
-    } catch {
-      return null;
+  if (process.platform !== "darwin") return null;
+  try { return await nativeTool("faces", { compile: async () => {
+    if (!fs.existsSync(SWIFT_SRC)) return null;
+    const dir = path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"));
+    fs.mkdirSync(dir, { recursive: true });
+    const bin = path.join(dir, `faces-${Math.round(fs.statSync(SWIFT_SRC).mtimeMs)}`);
+    if (!fs.existsSync(bin)) {
+      try {
+        await run("swiftc", ["-O", SWIFT_SRC, "-o", bin], { capture: true });
+      } catch {
+        return null;
+      }
     }
-  }
-  return bin;
+    return bin;
+  } }); } catch { return null; }
 }
 
 /** Faces and upper bodies in a few frames of `video`, or null when detection is unavailable. */

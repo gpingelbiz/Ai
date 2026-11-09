@@ -4,7 +4,7 @@ import { kitSlug } from "./brandkit.mjs";
 
 /**
  * Clients on this Mac: Greg's team edits a client's footage here, in the client's brand. Each client is a Reels
- * root of its own (~/Reels/clients/<slug>) with the same six drop folders, its own work files, log, music, look
+ * root of its own (~/Reels/clients/<slug>) with the same seven drop folders, its own work files, log, music, look
  * history and word list, a Content Studio whose Publish folder posts finished reels into the client's Metricool brand
  * (posting off until Greg picks that brand), and its finished reels in ~/Desktop/Reels/Clients/<Name>. Nothing of Greg's brand (his
  * colors, @handle, voice, frameworks, Greg card look, Sandcastles watchlist, CTA) reaches a client's reel.
@@ -16,6 +16,7 @@ export const DROP_FOLDERS = [
   ["raw-carousel", "Raw - Carousel"],
   ["raw-long", "Raw - Clips from Long Video"],
   ["raw-youtube", "Raw - Full YouTube Edit"],
+  ["raw-vsl", "Raw - VSL"],
   ["raw-runway", "Raw - Reel with Runway B-roll"],
 ];
 

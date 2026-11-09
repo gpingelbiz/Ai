@@ -14,10 +14,11 @@
     "test": "node --test test/*.test.mjs",
     "test:golden": "node scripts/golden.mjs",
     "test:golden:update": "node scripts/golden.mjs --update",
+    "release": "node scripts/release.mjs",
     "doctor": "node bin/reel.mjs doctor"
   },
   "dependencies": {
-    "hyperframes": "0.8.214"
+    "hyperframes": "0.9.25"
   },
   "devDependencies": {
     "pixelmatch": "^7.2.0",

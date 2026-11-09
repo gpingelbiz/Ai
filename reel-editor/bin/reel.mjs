@@ -2,13 +2,27 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PKG_ROOT } from "../src/util.mjs";
-import { main } from "../src/cli.mjs";
 
-// `elevenlabs onboard` writes ELEVENLABS_API_KEY to .env.local; a value already in the environment wins.
-const envFile = path.join(PKG_ROOT, ".env.local");
-if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+async function start() {
+  const args = process.argv.slice(2);
+  if (args[0] === "setup") {
+    const { setupCommand } = await import("../src/setup-steps.mjs");
+    await setupCommand(args.slice(1));
+    return;
+  }
+  if (args[0] === "accept") {
+    const { acceptCommand } = await import("../src/acceptance.mjs");
+    process.exitCode = await acceptCommand(args.slice(1));
+    return;
+  }
+  // `elevenlabs onboard` writes this file; the offline editing check needs no keys.
+  const envFile = path.join(PKG_ROOT, ".env.local");
+  if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+  const { main } = await import("../src/cli.mjs");
+  await main(args);
+}
 
-main(process.argv.slice(2)).catch((err) => {
+start().catch((err) => {
   console.error("[reel] error:", err?.message || err);
   if (process.env.REEL_DEBUG) console.error(err);
   process.exit(1);

@@ -21,7 +21,7 @@ export const SCHEDULED = "Scheduled";
 export const FAILED = "Not posted";
 const VIDEO = /\.(mp4|mov|m4v)$/i;
 const SKIP_VIDEO = /^(b-roll \d+|clip \d+ - cover)/i;
-const STATE = path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "publish-serve.json");
+const STATE = process.env.REEL_PUBLISH_STATE || path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "publish-serve.json");
 
 /** Caption text from a caption.txt the editor wrote (CAPTION / HASHTAGS sections) or a plain caption file. */
 export function parseCaption(raw) {
@@ -97,8 +97,14 @@ export function trialReel({ entry = "", dir = null, video = "", captionRaw = "",
   return relative.split(path.sep).some((part) => /^trial$/i.test(part));
 }
 
+/** Caption safety gate shared with client studio scheduling. */
+export function reelDraftWhy({ text, textcheck, preflight }) {
+  const hold = (typeof textcheck === "string" ? textcheck : textcheck?.verdict) === "hold";
+  return !text ? "there is no caption" : hold ? `its text check is on hold: ${textcheck?.notes?.[0] || "text check reported a hold"}` : preflight === "fail" ? "its check failed" : "";
+}
+
 /** One dropped item: a folder or a loose video. Returns null when it holds no usable video yet. */
-export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000, sourceRoots = SOURCE_ROOTS } = {}) {
+export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000, sourceRoots = SOURCE_ROOTS, client = false } = {}) {
   const full = path.join(root, entry);
   let st;
   try { st = fs.statSync(full); } catch { return null; }
@@ -166,12 +172,13 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   // reviewer flags intended effects too); they go into the receipt to look at.
   const notes = meta.obvious ? [meta.obvious] : [];
   if (!caption.caption) { draft = true; why = "there is no caption"; }
-  const banned = bannedInCaption(postText(caption));
+  if (client) { why = reelDraftWhy({ text: postText(caption), textcheck, preflight: meta.preflight }); draft = !!why; }
+  const banned = client ? null : bannedInCaption(postText(caption));
   if (banned && !draft) { draft = true; why = banned; }
   const trial = trialReel({ entry, dir, video, captionRaw, meta, root });
-  const trialCopy = wantsTrialCopy({ draft, trial, skip: !trial && publicReel({ entry, dir, video, captionRaw, meta }) });
+  const trialCopy = !client && wantsTrialCopy({ draft, trial, skip: !trial && publicReel({ entry, dir, video, captionRaw, meta }) });
   const text = postText(caption);
-  const providers = reelProviders({ text, names: [entry, dir && path.basename(dir), video && path.basename(video)] });
+  const providers = client ? [] : reelProviders({ text, names: [entry, dir && path.basename(dir), video && path.basename(video)] });
   return { root, entry, dir, video, captionFile, caption, notes, text, isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, trial, trialCopy, instagramType: trial ? "TRIAL_REEL" : "REEL", providers, tiktok: providers.includes("tiktok") ? tiktokData({ isAiGenerated: !!ai }) : null, metaFile: metaPath, checkFile: noteFile || null, textcheckFile: textcheckFile || null, droppedAt: Math.round(st.mtimeMs) };
 }
 
@@ -209,27 +216,27 @@ export function scan({ root = ROOT, now = Date.now() } = {}) {
 }
 
 /** File an item under Scheduled/ or Not posted/ with a receipt next to it. */
-export function fileItem(item, { status, receipt, root = item.root || ROOT }) {
-  const destDir = path.join(root, status === "failed" ? FAILED : SCHEDULED);
+export function fileItem(item, { status, receipt, root = item.root || ROOT, destination = null, name = null }) {
+  const destDir = destination || path.join(root, status === "failed" ? FAILED : SCHEDULED);
   fs.mkdirSync(destDir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", ".");
   if (item.dir) {
     // A Clips folder with more videos left: move only the posted clip (and its own files) out.
     const rest = fs.readdirSync(item.dir).filter((f) => VIDEO.test(f) && !SKIP_VIDEO.test(f) && path.join(item.dir, f) !== item.video);
     if (rest.length) {
-      const sub = path.join(destDir, `${path.basename(item.dir)} - ${path.basename(item.video).replace(VIDEO, "")}`);
+      const sub = destination ? uniquePath(path.join(destDir, name || path.basename(item.dir))) : path.join(destDir, `${path.basename(item.dir)} - ${path.basename(item.video).replace(VIDEO, "")}`);
       fs.mkdirSync(sub, { recursive: true });
       const prefix = path.basename(item.video).split(" - ")[0];
       for (const f of fs.readdirSync(item.dir)) if (f === path.basename(item.video) || (prefix && f.startsWith(prefix + " "))) fs.renameSync(path.join(item.dir, f), path.join(sub, f));
       fs.writeFileSync(path.join(sub, status === "failed" ? "Why it did not post.txt" : "Scheduled.txt"), receipt);
       return sub;
     }
-    const dest = uniquePath(path.join(destDir, path.basename(item.dir)));
+    const dest = uniquePath(path.join(destDir, name || path.basename(item.dir)));
     fs.renameSync(item.dir, dest);
     fs.writeFileSync(path.join(dest, status === "failed" ? "Why it did not post.txt" : "Scheduled.txt"), receipt);
     return dest;
   }
-  const sub = uniquePath(path.join(destDir, `${path.basename(item.video).replace(VIDEO, "")} (${stamp})`));
+  const sub = uniquePath(path.join(destDir, name || `${path.basename(item.video).replace(VIDEO, "")} (${stamp})`));
   fs.mkdirSync(sub, { recursive: true });
   fs.renameSync(item.video, path.join(sub, path.basename(item.video)));
   if (item.captionFile && fs.existsSync(item.captionFile)) fs.renameSync(item.captionFile, path.join(sub, path.basename(item.captionFile)));
@@ -318,33 +325,33 @@ export async function serveChild(file, { maxMinutes = 20 } = {}) {
 }
 
 /** Start serving `file` in the background and wait until its public link answers. Returns the link. */
-export async function serve(file, { timeoutMs = 120000, script } = {}) {
+export async function serve(file, { timeoutMs = 120000, script, state = STATE } = {}) {
   if (!cloudflaredBin()) throw new Error("cloudflared is not installed (scripts/install-cloudflared.sh)");
-  await stop();
-  const child = spawn(process.execPath, [script, "serve-child", file], { detached: true, stdio: "ignore" });
+  await stop({ state });
+  const child = spawn(process.execPath, [script, "serve-child", file], { detached: true, stdio: "ignore", env: { ...process.env, REEL_PUBLISH_STATE: state } });
   child.unref();
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) {
     await new Promise((r) => setTimeout(r, 1000));
     let st = null;
-    try { st = JSON.parse(fs.readFileSync(STATE, "utf8")); } catch {}
+    try { st = JSON.parse(fs.readFileSync(state, "utf8")); } catch {}
     if (!st?.url) continue;
     // A brand-new trycloudflare name needs a few seconds in DNS; asking too early makes the Mac cache the miss.
-    if (!st.ready) { await new Promise((r) => setTimeout(r, 10000)); st.ready = true; fs.writeFileSync(STATE, JSON.stringify(st)); }
+    if (!st.ready) { await new Promise((r) => setTimeout(r, 10000)); st.ready = true; fs.writeFileSync(state, JSON.stringify(st)); }
     try {
       const res = await fetch(st.url, { method: "HEAD" });
       if (res.ok) return st.url;
     } catch {}
   }
-  await stop();
+  await stop({ state });
   throw new Error("the temporary link did not come up within two minutes");
 }
 
 /** Close the temporary link. */
-export async function stop() {
+export async function stop({ state = STATE } = {}) {
   let st = null;
-  try { st = JSON.parse(fs.readFileSync(STATE, "utf8")); } catch { return false; }
+  try { st = JSON.parse(fs.readFileSync(state, "utf8")); } catch { return false; }
   for (const pid of [st.cf, st.pid]) { try { process.kill(pid, "SIGTERM"); } catch {} }
-  try { fs.rmSync(STATE, { force: true }); } catch {}
+  try { fs.rmSync(state, { force: true }); } catch {}
   return true;
 }

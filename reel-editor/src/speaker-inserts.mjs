@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { run as execute, readJSON, writeJSON, PKG_ROOT, r3, warn, log as statusLog } from "./util.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 export const INSERT_VERSION = 1;
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
@@ -89,17 +90,19 @@ export function classifySegments(segments, features) {
 
 let unavailableBinary = false;
 
-/** Compile locally, independently of ASR and all transcript cache versions. */
-export async function featureprintBinary({ run = execute, cacheDir = process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor") } = {}) {
+/** Resolve independently of ASR and all transcript cache versions. */
+export async function featureprintBinary({ run = execute, cacheDir = process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), resolveTool = nativeTool } = {}) {
   if (process.platform !== "darwin" || (run === execute && unavailableBinary)) return null;
   try {
-    const src = path.join(PKG_ROOT, "scripts", "featureprint.swift");
-    const bin = path.join(cacheDir, `featureprint-${Math.round(fs.statSync(src).mtimeMs)}`);
-    if (!fs.existsSync(bin)) {
-      fs.mkdirSync(cacheDir, { recursive: true });
-      await run("swiftc", ["-O", src, "-o", bin], { capture: true });
-    }
-    return bin;
+    return await resolveTool("featureprint", { compile: async () => {
+      const src = path.join(PKG_ROOT, "scripts", "featureprint.swift");
+      const bin = path.join(cacheDir, `featureprint-${Math.round(fs.statSync(src).mtimeMs)}`);
+      if (!fs.existsSync(bin)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
+        await run("swiftc", ["-O", src, "-o", bin], { capture: true });
+      }
+      return bin;
+    } });
   } catch { if (run === execute) unavailableBinary = true; return null; }
 }
 

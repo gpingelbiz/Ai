@@ -1,11 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
 import { run, writeJSON, r3, PKG_ROOT } from "./util.mjs";
+import { hyperframesBin as localHyperframes } from "./render.mjs";
 
 const PY_SCRIPT = path.join(PKG_ROOT, "scripts", "transcribe_words.py");
 
 import { norm as normBase } from "./text.mjs";
 const norm = (t) => normBase(String(t).replace(/%/g, " percent"));
+
+export function whisperPin(env = process.env) {
+  const file = env.REEL_RUNTIME && path.join(env.REEL_RUNTIME, "runtime.json");
+  if (!file || !fs.existsSync(file)) return null;
+  const { whisper } = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (!whisper?.model || !/^[a-f0-9]{40}$/.test(whisper.revision || "")) throw new Error("The speech tool's saved version is missing. Run your kit's installer again.");
+  return whisper;
+}
 
 /** Accept the common word-timestamp shapes and return [{text,start,end}]. */
 export function normalizeWords(obj) {
@@ -109,13 +118,16 @@ export async function transcribe(input, { engine = "auto", model = "large-v3-tur
   let words;
   if (engine === "faster-whisper") {
     const python = process.env.REEL_PYTHON || "python3";
-    await run(python, [PY_SCRIPT, input, "-o", out, "--model", model, "--lang", language, "--prompt", prompt]);
+    const pin = whisperPin();
+    if (pin) model = pin.model;
+    await run(python, [PY_SCRIPT, input, "-o", out, "--model", model, "--lang", language, "--prompt", prompt, ...(pin ? ["--revision", pin.revision] : [])]);
     words = normalizeWords(JSON.parse(fs.readFileSync(out, "utf8")));
   } else if (engine === "elevenlabs") {
     const { scribe } = await import("./elevenlabs.mjs");
     words = await scribe(input, { language });
   } else if (engine === "hyperframes") {
-    const bin = hyperframesBin || ["npx", "hyperframes"];
+    const bin = hyperframesBin || localHyperframes();
+    if (process.env.REEL_CLIENT_MODE === "1" && /^(?:npx|npm)(?:\.cmd)?$/.test(path.basename(bin[0]))) throw new Error("The speech tool must use this kit's installed renderer. Run your kit's installer again.");
     const m = model.includes(".") || model.startsWith("large") ? model : `${model}.en`;
     const { out: o } = await run(bin[0], [...bin.slice(1), "transcribe", input, "-d", path.dirname(out), "--json", "--model", m], { capture: true });
     const start = o.indexOf("{") >= 0 ? Math.min(...[o.indexOf("{"), o.indexOf("[")].filter((x) => x >= 0)) : -1;

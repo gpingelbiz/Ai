@@ -84,7 +84,7 @@ test("injected Vision returns normalized signatures and retains upright geometry
 });
 
 test("Vision compilation failure is optional and injectable", async (t) => {
-  const result = await featureprintBinary({ cacheDir: temp(t), run: async () => { throw new Error("no SDK"); } });
+  const result = await featureprintBinary({ cacheDir: temp(t), resolveTool: async (_, { compile }) => compile(), run: async () => { throw new Error("no SDK"); } });
   assert.equal(result, null);
 });
 

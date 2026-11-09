@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { isMain } from "../src/util.mjs";
 
 const TOOL = "mcp__claude_ai_metricool__createScheduledPostForReview";
 const SETTINGS = "mcp__claude_ai_metricool__getBrandSettings";
@@ -78,4 +79,4 @@ async function main() {
   console.log(reply.trim());
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main().catch((e) => { console.error(e.message); process.exit(1); });
+if (isMain(import.meta.url)) main().catch((e) => { console.error(e.message); process.exit(1); });

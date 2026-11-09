@@ -8,15 +8,21 @@ import { fileURLToPath } from "node:url";
 import { updateClient } from "../src/client-update.mjs";
 import { studioHealth } from "../src/studio-health.mjs";
 import { ensureDir, readJSON, writeJSON, PKG_ROOT } from "../src/util.mjs";
+import { isMain } from "../src/util.mjs";
 
 const xml = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-export function maintenanceAgents({ app = PKG_ROOT, home = os.homedir(), state = path.join(home, ".reel", "maintenance"), studio = false, node = process.execPath } = {}) {
-  const suffix = createHash("sha256").update(path.resolve(app)).digest("hex").slice(0, 12);
+const stableApp = (app, home) => path.resolve(app).startsWith(path.join(home, ".local/share/reel-editor") + path.sep) ? path.join(home, "Ai/reel-editor") : app;
+const agentSuffix = (app) => createHash("sha256").update(path.resolve(app)).digest("hex").slice(0, 12);
+export function maintenanceAgents({ app = PKG_ROOT, home = os.homedir(), state = path.join(home, ".reel", "maintenance"), studio = false } = {}) {
+  app = stableApp(app, home);
+  const suffix = agentSuffix(app);
   return ["update", ...studio ? [] : ["health"]].map((job) => {
     const label = `com.pingel.reel-client.${job}.${suffix}`;
-    const args = [node, path.join(app, "scripts", "client-maintenance.mjs"), job, "--state", state];
+    // launchd starts with a small environment; source the same file as the user's shell.
+    const shell = 'if [ -f "$HOME/.reel/env.sh" ]; then . "$HOME/.reel/env.sh" || exit 1; fi\nexec node "$1/scripts/client-maintenance.mjs" "${@:2}"';
+    const args = ["/bin/bash", "-c", shell, "reel-maintenance", app, job, "--state", state];
     const schedule = job === "update" ? "<dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>5</integer><key>Minute</key><integer>17</integer></dict>" : [9, 13, 18].map((h) => `<dict><key>Hour</key><integer>${h}</integer><key>Minute</key><integer>23</integer></dict>`).join("");
-    return { label, plist: `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map((a) => `<string>${xml(a)}</string>`).join("")}</array><key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml([path.dirname(node), path.join(home, ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].join(":"))}</string></dict><key>StartCalendarInterval</key><array>${schedule}</array><key>StandardOutPath</key><string>${xml(path.join(state, `${job}.log`))}</string><key>StandardErrorPath</key><string>${xml(path.join(state, `${job}.log`))}</string></dict></plist>\n` };
+    return { label, plist: `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map((a) => `<string>${xml(a)}</string>`).join("")}</array><key>EnvironmentVariables</key><dict><key>HOME</key><string>${xml(home)}</string><key>PATH</key><string>${xml([path.join(home, ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].join(":"))}</string></dict><key>StartCalendarInterval</key><array>${schedule}</array><key>StandardOutPath</key><string>${xml(path.join(state, `${job}.log`))}</string><key>StandardErrorPath</key><string>${xml(path.join(state, `${job}.log`))}</string></dict></plist>\n` };
   });
 }
 
@@ -24,11 +30,13 @@ export function installMaintenance({ app = PKG_ROOT, home = os.homedir(), state 
   ensureDir(state);
   let previous = null;
   try { previous = readJSON(path.join(state, "client.json")); } catch {}
-  writeJSON(path.join(state, "client.json"), { app, dropFolders: watch ? ["raw", "raw-broll", "raw-carousel", "raw-long", "raw-youtube", "raw-runway"].map((d) => path.join(home, "Reels", d)) : [] });
+  writeJSON(path.join(state, "client.json"), { app: stableApp(app, home), dropFolders: watch ? ["raw", "raw-broll", "raw-carousel", "raw-long", "raw-youtube", "raw-runway"].map((d) => path.join(home, "Reels", d)) : [] });
   const agents = maintenanceAgents({ app, home, state, studio });
   const all = [...new Map([
     ...maintenanceAgents({ app, home, state }),
     ...previous?.app && previous.app !== app ? maintenanceAgents({ app: previous.app, home, state }) : [],
+    ...[app, previous?.app].filter(Boolean).flatMap((old) => ["update", "health"].map((job) => ({ label: `com.pingel.reel-client.${job}.${agentSuffix(old)}` }))),
+    ...agents,
   ].map((a) => [a.label, a])).values()];
   const dir = ensureDir(path.join(home, "Library", "LaunchAgents"));
   for (const a of all) {
@@ -52,4 +60,4 @@ async function main() {
   if (job === "health") { const r = await studioHealth(state, { dropFolders: config.dropFolders }); if (r.issues.length) process.exitCode = 1; return; }
   throw new Error("client-maintenance: install, update or health");
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main().catch((e) => { console.error(e.message); process.exitCode = 1; });
+if (isMain(import.meta.url)) main().catch((e) => { console.error(e.message); process.exitCode = 1; });

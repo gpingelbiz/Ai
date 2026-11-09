@@ -104,7 +104,7 @@ export async function runStories(studio, { now = new Date(), noPublish = false, 
       record = { id, day, time, format: "story", hook: game.question, made, files, text: game.visible, altText: [game.visible], ai: studio.config.ai.label === "always", preflight, status: "made" };
       writeJSON(path.join(made, "game.json"), game);
       logPost(studio.paths, record);
-      results.push(noPublish ? record : await publishPost(studio, record, { deps }));
+      results.push(noPublish || studio.config.daily.publisher === "claude" ? record : await publishPost(studio, record, { deps }));
     } catch (e) {
       record = { ...record, id, day, time, format: "story", status: record?.made ? "not-posted" : "failed", why: e.message };
       logPost(studio.paths, record); results.push(record);
@@ -144,7 +144,7 @@ export function parseFilmingPack(reply, studio, recent = []) {
   return { prompts, broll };
 }
 
-export const HOW_TO_FILM = "> **How to film**\n> Eye-level phone. Window light. One take. Drop into Content Studio/Raw Reels or Desktop/Reels/Raw - Reel with B-roll.";
+export const HOW_TO_FILM = "> **How to film**\n> Phone at eye level. Window light. One take. Drop into a Raw folder in Desktop/Reels. Watch the finished reel, then drag it into Desktop/Reels/Publish. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open.";
 export function filmingMarkdown(pack, monday) {
   return [`# ${monday} filming pack`, "", ...pack.prompts.flatMap((p, i) => [
     `## ${i + 1}. ${p.angle} (${p.seconds} s)`, `Opening: ${p.opening}`, ...p.beats.map((b) => `- ${b}`), `Last line: ${p.lastLine}`, "",

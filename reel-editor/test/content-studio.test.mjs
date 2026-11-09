@@ -412,6 +412,10 @@ test("metricool: the scheduled list and the tool prompt", () => {
   const list = normalizeScheduled({ data: [{ id: 1, publicationDate: { dateTime: "2026-11-02T10:00:00" }, instagramData: { type: "REEL" }, draft: true }, { bad: 1 }] });
   assert.deepEqual(list, [{ day: "2026-11-02", hour: 10, minute: 0, type: "REEL", draft: true, text: "", id: 1 }]);
   assert.match(toolPrompt("mcp__x__y", { a: 1 }), /exactly once[\s\S]*\{"a":1\}/);
+  // The search may repeat while the connector loads; the tool itself never runs twice.
+  assert.match(toolPrompt("mcp__x__y", {}), /ToolSearch, query "select:mcp__x__y"[\s\S]*search again/);
+  assert.match(toolPrompt("mcp__x__y", {}), /never call this one a second time/);
+  assert.doesNotMatch(toolPrompt("mcp__x__y", {}), /do not retry/i);
 });
 
 /* ---------- image routes ---------- */
@@ -667,12 +671,12 @@ test("kit: Start Here keeps the Content Studio section only in a Content Studio 
   assert.doesNotMatch(plain, /Content Studio|<!-- studio/);
   assert.match(plain, /Jane's Reel Editor/);
   const studio = personalizeStartHere(html, { name: "Jane" }, { studio: true });
-  assert.match(studio, /Jane's Content Studio/);
-  assert.match(studio, /Double-click <b>Install Content Studio\.command<\/b> in this folder/);
+  assert.match(studio, /Jane's reels and posts/);
+  assert.match(studio, /Drag <b>Install Reels\.command<\/b> from the kit folder into the Terminal window/);
   for (const route of ["Straight from this Mac", "Google Drive", "Dropbox"]) assert.match(studio, new RegExp(route));
   assert.doesNotMatch(studio, /<!-- \/?studio -->/);
   assert.equal(stripStudio(html), stripStudio(stripStudio(html)));
-  assert.ok(fs.statSync(path.join(PKG_ROOT, "kit", "Install Content Studio.command")).mode & 0o100, "the kit installer double-clicks");
+  assert.ok(fs.statSync(path.join(PKG_ROOT, "kit", "Install Reels.command")).mode & 0o100, "the kit installer double-clicks");
 });
 
 test("slides: a long sentence-case headline is set smaller; a short one keeps its kind's size", () => {
@@ -869,4 +873,17 @@ test("kit: Start Here lists every service to sign up for with a clickable link; 
   assert.match(links["Pixabay (free).webloc"], /<string>https:\/\/pixabay\.com\/api\/docs\/<\/string>/);
   assert.match(links["Metricool.webloc"], /<string>https:\/\/metricool\.com\/pricing\/<\/string>/);
   assert.ok(!("Metricool.webloc" in signupLinks()), "reel kit: no Metricool link");
+});
+
+
+test("kit setup gates intake and posting agents without changing legacy studio defaults", () => {
+  const dir = path.join(tmp(), "kit");
+  try {
+    const p = initStudio(dir, { config: { reels: { rawIntake: false, publisher: "claude" } } });
+    assert.equal(fs.existsSync(p.rawReels), false);
+    assert.deepEqual(studioAgents(dir).map((a) => a.label.split(".")[3]), ["daily", "health"]);
+    const source = fs.readFileSync(path.join(PKG_ROOT, "src", "setup-steps.mjs"), "utf8");
+    assert.match(source, /rawIntake: false, publisher: "claude"/);
+    assert.match(source, /slots: \[\], publish: \{ mode: "off" \}/);
+  } finally { fs.rmSync(path.dirname(dir), { recursive: true, force: true }); }
 });

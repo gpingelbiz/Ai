@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { loadStudio, readPosts, logPost, studioLog, takeLock, parseTime } from "./content-studio.mjs";
-import { pickSlot, parseCaption, postText, coverMilliseconds, trialReel } from "./publish-folder.mjs";
+import { pickSlot, parseCaption, postText, coverMilliseconds, trialReel, reelDraftWhy } from "./publish-folder.mjs";
 import { scheduledPosts, postInput, createPost, metricoolCall } from "./studio-metricool.mjs";
 import { hostFiles } from "./studio-host.mjs";
 import { hasCodex } from "./codex.mjs";
@@ -144,7 +144,7 @@ function uniqueDir(p) {
 }
 
 /** The Made/ folder for a reel: "2026-11-02 12.00 Reel - <hook>". */
-const reelMadeName = (slot, hook) => `${slot.day} ${String(slot.hour).padStart(2, "0")}.00 Reel${hook ? ` - ${String(hook).replace(/\*/g, "").replace(/[/:\\*?"<>|]+/g, " ").trim().slice(0, 48)}` : ""}`;
+export const reelMadeName = (slot, hook) => `${slot.day} ${String(slot.hour).padStart(2, "0")}.00 Reel${hook ? ` - ${String(hook).replace(/\*/g, "").replace(/[/:\\*?"<>|]+/g, " ").trim().slice(0, 48)}` : ""}`;
 
 /**
  * Every waiting clip: edit it, then file and schedule every edited reel still in the delivered folder (a reel whose
@@ -153,11 +153,11 @@ const reelMadeName = (slot, hook) => `${slot.day} ${String(slot.hour).padStart(2
 export async function runReels(dir, { now = new Date(), deps = {} } = {}) {
   const studio = loadStudio(dir);
   const c = studio.config;
-  if (c.reels?.enabled === false) return [];
+  if (c.reels?.enabled === false || c.reels?.publisher === "claude") return [];
   const seenFile = path.join(studio.paths.reels, "seen.json");
   let seen = {};
   try { seen = readJSON(seenFile); } catch {}
-  const clips = waitingClips(studio.paths.rawReels, seen, { now: now.getTime() });
+  const clips = c.reels.rawIntake === false ? [] : waitingClips(studio.paths.rawReels, seen, { now: now.getTime() });
   const delivered = path.join(studio.paths.reels, "delivered");
   // Only folders with a video are reels: the editor also keeps its cover history (covers/history.json) here.
   const hasVideo = (d) => { try { return fs.statSync(d).isDirectory() && fs.readdirSync(d).some((f) => VIDEO.test(f)); } catch { return false; } };
@@ -216,9 +216,7 @@ export async function scheduleReel(studio, edited, { now = new Date(), deps = {}
   try { meta = readJSON(path.join(folder, ".reel.json")); } catch {}
   const prefix = String(c.publish?.captionPrefix || "").trim();
   const text = [prefix, postText(caption)].filter(Boolean).join("\n\n");
-  const textcheck = meta.textcheck;
-  const textHold = (typeof textcheck === "string" ? textcheck : textcheck?.verdict) === "hold";
-  const why = !postText(caption) ? "there is no caption" : textHold ? `its text check is on hold: ${textcheck?.notes?.[0] || "text check reported a hold"}` : meta.preflight === "fail" ? "its check failed" : "";
+  const why = reelDraftWhy({ text: postText(caption), textcheck: meta.textcheck, preflight: meta.preflight });
   const ai = c.ai?.label === "always" || !!meta.isAiGenerated;
   // reels.trial: every reel goes out as a Trial Reel (a client who allows Trial Reels only); otherwise #trial or trial: true.
   const trial = c.reels?.trial !== "both" && (c.reels?.trial === true || trialReel({ entry: path.basename(folder), dir: folder, video, captionRaw, meta, root: path.dirname(folder) }));
@@ -288,13 +286,7 @@ export async function publishReel(studio, record, { deps = {} } = {}) {
     host = await (deps.hostFiles || hostFiles)(record.files, { hosting: c.hosting, postId: record.id });
     const input = postInput({ blogId: c.metricool.blogId, day: record.day, time: record.time, tz: c.timezone, text: record.text, media: host.urls, kind: "reel", ai: record.ai, draft, trial: record.trial, networks: record.format === "trial" ? ["instagram"] : c.metricool.networks, coverMs: record.coverMs });
     const r = await (deps.createPost || createPost)(c.metricool.connector, input);
-    const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: record.draftWhy || (draft ? "the studio is set to drafts" : "") };
-    fs.writeFileSync(path.join(record.made, `${note}Scheduled.txt`), `${draft ? `Saved as a DRAFT in Metricool (${next.why}).` : `Scheduled to post ${record.day} at ${record.time} (${c.timezone}).`}\n${record.trial ? "Trial Reel: yes, manual graduation.\n" : ""}Metricool: ${r.plannerUrl || "(no link returned)"}\n${record.ai ? "Marked as made with AI (Instagram's AI label).\n" : ""}`);
-    fs.rmSync(path.join(record.made, `${note}Not posted.txt`), { force: true });
-    logPost(studio.paths, next);
-    studioLog(studio.paths, `reel ${next.status} ${record.id} ${r.plannerUrl || ""}`);
-    (deps.notify || notify)(`${c.client}: reel ${draft ? "saved as a draft" : "scheduled"}`, `${record.hook}: ${record.day} ${record.time}`);
-    return next;
+    return recordReelSuccess(studio, record, r, deps);
   } catch (e) {
     const next = { ...record, status: "not-posted", why: String(e.message).split("\n")[0] };
     fs.writeFileSync(path.join(record.made, `${note}Not posted.txt`), `Not in Metricool yet: ${next.why}\nThe next daily run tries again.\n`);
@@ -303,4 +295,28 @@ export async function publishReel(studio, record, { deps = {} } = {}) {
     (deps.notify || notify)(`${c.client}: reel not scheduled`, next.why);
     return next;
   } finally { await host?.close(); }
+}
+
+/** Desktop routine values; its caption safety gate is shared with legacy scheduling. */
+export function reelDetails(studio, item) {
+  const c = studio.config;
+  const prefix = String(c.publish.captionPrefix || "").trim();
+  const trial = c.reels.trial !== "both" && (c.reels.trial === true || item.trial);
+  const draftWhy = item.why || (c.publish.mode === "draft" ? "the studio is set to drafts" : "");
+  return { text: [prefix, item.text].filter(Boolean).join("\n\n"), ai: c.ai.label === "always" || item.isAiGenerated,
+    trial, coverMs: item.coverMs, draftWhy, draft: !!draftWhy, trialCopy: c.reels.trial === "both" };
+}
+
+/** Save the connector receipt and update the same post log for either publishing runner. */
+export function recordReelSuccess(studio, record, r, deps = {}) {
+  const c = studio.config;
+  const draft = c.publish.mode === "draft" || !!record.draftWhy;
+  const note = record.format === "trial" ? "Trial " : "";
+  const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: record.draftWhy || (draft ? "the studio is set to drafts" : "") };
+  fs.writeFileSync(path.join(record.made, `${note}Scheduled.txt`), `${draft ? `Saved as a DRAFT in Metricool (${next.why}).` : `Scheduled to post ${record.day} at ${record.time} (${c.timezone}).`}\n${record.trial ? "Trial Reel: yes, manual graduation.\n" : ""}Metricool: ${r.plannerUrl || "(no link returned)"}\n${record.ai ? "Marked as made with AI (Instagram's AI label).\n" : ""}`);
+  fs.rmSync(path.join(record.made, `${note}Not posted.txt`), { force: true });
+  logPost(studio.paths, next);
+  studioLog(studio.paths, `reel ${next.status} ${record.id} ${r.plannerUrl || ""}`);
+  (deps.notify || notify)(`${c.client}: reel ${draft ? "saved as a draft" : "scheduled"}`, `${record.hook}: ${record.day} ${record.time}`);
+  return next;
 }

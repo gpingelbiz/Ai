@@ -484,7 +484,7 @@ test("local Mac checks inspect every sampled frame, reject text and human faces,
   const frames = [{ file: "a.png", time: 0 }, { file: "b.png", time: 0.25 }];
   for (const scenario of ["clear", "text", "human", "animal", "missing"]) {
     const dir = folder(), runs = [];
-    const check = () => localClipCheck(frames, { dir, pick: { shows: "gorilla" }, runFn: async (cmd, args) => {
+    const check = () => localClipCheck(frames, { dir, resolveTool: async (_, { compile }) => compile(), pick: { shows: "gorilla" }, runFn: async (cmd, args) => {
       runs.push(cmd);
       if (cmd === "swiftc") { fs.writeFileSync(args[args.indexOf("-o") + 1], "binary"); return {}; }
       return { out: JSON.stringify({ width: 360, height: 640, lines: scenario === "text" ? [{ text: "SALE", confidence: 0.9 }] : [], faces: ["human", "animal"].includes(scenario) ? [{ confidence: 0.9 }] : scenario === "missing" ? undefined : [] }) };

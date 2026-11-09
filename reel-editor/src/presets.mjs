@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { readJSON, deepMerge, PKG_ROOT, warn } from "./util.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
+import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 
 const PRESET_DIR = path.join(PKG_ROOT, "presets");
 
@@ -9,7 +10,8 @@ export function listPresets() {
   return fs
     .readdirSync(PRESET_DIR)
     .filter((f) => f.endsWith(".json") && !f.startsWith("_") && !f.startsWith("pace-") && f !== "broll-shotlist.json")
-    .map((f) => f.replace(/\.json$/, ""));
+    .map((f) => f.replace(/\.json$/, ""))
+    .filter((name) => !isClientJob() || !GREG_PRESETS.includes(name));
 }
 
 /**
@@ -24,12 +26,20 @@ export const CLIENT_BASE = { captions: CLIENT_CAPTIONS, zooms: { minSpacing: 10,
 export const isClientBrand = (own = {}) => own.extends === "pingel-brand" && /^brand-/.test(String(own.name || ""));
 
 /** Default preset: REEL_PRESET (a name in presets/ or a path to a .json, set by install.sh), else pingel-brand. */
-export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand") {
+export function loadPreset(nameOrPath = process.env.REEL_PRESET || (isClientJob() ? "clean" : "pingel-brand")) {
+  const client = isClientJob();
+  const personal = (name) => GREG_PRESETS.includes(path.basename(String(name || ""), ".json").toLowerCase());
+  const refuse = () => { throw new Error("This look belongs to Greg. Choose your own brand look or clean."); };
+  if (client && personal(nameOrPath)) refuse();
   const file = fs.existsSync(nameOrPath) && nameOrPath.endsWith(".json") ? nameOrPath : path.join(PRESET_DIR, `${nameOrPath}.json`);
   if (!fs.existsSync(file)) throw new Error(`preset not found: ${nameOrPath} (have: ${listPresets().join(", ")})`);
   const base = readJSON(path.join(PRESET_DIR, "_defaults.json"));
   const own = readJSON(file);
-  // "extends": another preset's settings underneath this one's (pingel-runway builds on pingel-brand).
+  if (client && personal(own.name)) refuse();
+  // "extends": another preset's settings underneath this one's (pingel-runway builds on pingel-brand). A client
+  // brand (brand-<slug>) keeps pingel-brand as its engine base, as every kit always has, so a kit renders exactly
+  // like today; client mode only stops a client picking one of Greg's looks as their own look.
+  if (client && personal(own.extends) && !isClientBrand(own)) refuse();
   let parent = own.extends ? deepMerge(base, readJSON(path.join(PRESET_DIR, `${own.extends}.json`))) : base;
   if (isClientBrand(own)) parent = deepMerge(parent, CLIENT_BASE);
   const p = deepMerge(parent, own);
@@ -50,6 +60,14 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || "pingel-brand
       try { brand = readJSON(brandPath); }
       catch (error) { warn(`brand tokens: ${error.message}; using preset colors and fonts`); }
     } else warn(`brand tokens: file not found: ${p.brandFile}; using preset colors and fonts`);
+  }
+  if (own.name === "vsl" && process.env.REEL_PRESET && !personal(process.env.REEL_PRESET) && path.resolve(process.env.REEL_PRESET) !== path.resolve(file) && process.env.REEL_PRESET !== "vsl") {
+    const active = loadPreset(process.env.REEL_PRESET);
+    if (client || process.env.REEL_CLIENT || active.name.startsWith("brand-")) {
+      p.colors = structuredClone(active.colors);
+      if (active.fonts) p.fonts = structuredClone(active.fonts);
+      brand = structuredClone(active.brand);
+    }
   }
   p.brand = resolveBrandTokens({ preset: p, brand });
   // Privacy is the preset-safe default. Only the explicit CLI escape hatch may turn it off for one edit.

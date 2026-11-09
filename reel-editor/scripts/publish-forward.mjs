@@ -25,6 +25,7 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { readItem, SCHEDULED, FAILED } from "../src/publish-folder.mjs";
+import { isMain as isMainModule } from "../src/util.mjs";
 
 export const SENT = "Sent to the Mini";
 const SKIP = new Set([SENT, SCHEDULED, FAILED]);
@@ -169,7 +170,7 @@ export function runForward(over = {}) {
   return locked.busy ? [{ entry: "(another run is sending)", ok: false, why: "busy", waiting: true }] : locked;
 }
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = isMainModule(import.meta.url);
 if (isMain) {
   const cmd = process.argv[2] || "run";
   const c = cfg();

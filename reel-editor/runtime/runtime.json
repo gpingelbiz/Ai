@@ -1,0 +1,93 @@
+{
+  "_note": "The exact tools every install gets (client kits and Greg's own Macs), each a pinned download checked by sha256 before use. Upgraded 2026-11-08 on Greg's call (\"My Macs and Phase 1 now\"): tests, goldens (0.000% diff) and a real spoken edit passed on these. Change a version only together with its sha256, then run the release checks.",
+  "id": "rt-2026.11.08-4",
+  "platform": "darwin-arm64",
+  "minMacOS": "14.0",
+  "tools": {
+    "node": {
+      "version": "24.22.2",
+      "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-darwin-arm64.tar.gz",
+      "sha256": "aa9549349e47dffaa42dcf95d6e06ade8c4bdafc980979883b88767670df385a",
+      "kind": "tar.gz",
+      "strip": 1
+    },
+    "ffmpeg": {
+      "version": "8.1.2",
+      "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/ffmpeg.zip",
+      "sha256": "ef1aa60006c7b77ce170c1608c08d8e4ba1c30c5746f2ac986ded932d0ac2c3c",
+      "kind": "zip",
+      "bin": "ffmpeg"
+    },
+    "ffprobe": {
+      "version": "8.1.2",
+      "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/ffprobe.zip",
+      "sha256": "c39787f4af7a3932502d2d48db6f6feaaa836b48a73ef78c32cc3285df61dfaf",
+      "kind": "zip",
+      "bin": "ffprobe"
+    },
+    "uv": {
+      "version": "0.11.28",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.11.28/uv-aarch64-apple-darwin.tar.gz",
+      "sha256": "33540eb7c883ab857eff79bd5ac2aa31fe27b595abecb4a9c003a2c998447232",
+      "kind": "tar.gz",
+      "strip": 1
+    },
+    "yt-dlp": {
+      "version": "2026.10.26",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp_macos",
+      "sha256": "0f922c15ccc0b83eefa1c8bc9104e434318c4bf16e408e1ee93b7745a6efe0aa",
+      "kind": "file",
+      "bin": "yt-dlp"
+    },
+    "cloudflared": {
+      "version": "2026.10.7",
+      "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-darwin-arm64.tgz",
+      "sha256": "3586ccf397e98e5f437e60e7c307ca6ac463e110580503af8bb8e6f9ebf831bd",
+      "kind": "tar.gz",
+      "strip": 0,
+      "_note": "posting: a quick tunnel lends one finished reel a temporary link while Metricool copies it; same binary as Greg's MacBook, signed by Cloudflare"
+    }
+  },
+  "python": {
+    "version": "3.12.13",
+    "_note": "Installed by the pinned uv (uv python install 3.12.13), so the CPython build is uv 0.11.28's.",
+    "requirements": "runtime/requirements.lock",
+    "_lock": "Greg's ~/.reel-venv exactly (pip freeze 2026-11-08), hashes for every wheel; install with --require-hashes --only-binary :all:. onnxruntime 1.31.0 needs macOS 14 or newer."
+  },
+  "whisper": {
+    "model": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+    "files": {
+      "config.json": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e",
+      "model.bin": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+      "preprocessor_config.json": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+      "tokenizer.json": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+      "vocabulary.json": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+    },
+    "_files": "sha256 of each file the model needs, from Greg's MacBook copy and a fresh download (identical); model.bin also matches HuggingFace's LFS sha256."
+  },
+  "hyperframes": {
+    "version": "0.9.25",
+    "_note": "pinned in package.json and package-lock.json (0.9 drops only HyperFrames' cloud render protocol, which reel never uses); its render browser comes from `hyperframes browser ensure` for that version"
+  },
+  "services": {
+    "_note": "Online services the editor calls with the client's own keys. Not installed; listed so every install records which models it uses. Change a model only after a side by side test on a real reel.",
+    "elevenlabs": {
+      "transcription": "scribe_v1",
+      "voiceover": "eleven_multilingual_v2"
+    },
+    "runway": {
+      "apiVersion": "2024-11-06",
+      "video": "gen4.5 (presets), gen4_turbo (code default)",
+      "image": "nano_banana_2.1 (presets), gen4_image (code default)",
+      "sound": "mirelo_sfx_2_0"
+    },
+    "stock": [
+      "Pixabay videos API",
+      "Pexels videos API",
+      "Wikimedia Commons API"
+    ],
+    "codex": "the Codex config default, then gpt-5.6-sol",
+    "claude": "the Claude Code default model on the client's plan"
+  }
+}

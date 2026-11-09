@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { run, r3 } from "./util.mjs";
+import { openingEndingChecks } from "./ending.mjs";
 import { probe } from "./probe.mjs";
 import { hookBlockHeight } from "./placement.mjs";
 import { isPersistentScene, numberMotion, sceneDuration } from "./graphics.mjs";
@@ -347,7 +348,8 @@ export function graphicChecks(plan) {
     if (bottom > captionTop) bad.push(`bottom ${Math.round(bottom)}px past captions at ${Math.round(captionTop)}px`);
     const source = box.estimated ? `estimated ${card.type || "card"} box` : `${card.type || "card"} box`;
     if (bad.length) items.push({ level: "warn", code: "card-bounds", message: `${source} at ${at(card)} is outside x ${rules.left}-${rules.right}px / y ${rules.top}px-caption top (${bad.join(", ")})` });
-    if (right > rules.right && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "card-right-rail", message: `${source} at ${at(card)} reaches the right action rail below ${pct(SAFE.rightFrom)}` });
+    // Instagram's action rail only exists on a 9:16 reel.
+    if (H > W && right > rules.right && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "card-right-rail", message: `${source} at ${at(card)} reaches the right action rail below ${pct(SAFE.rightFrom)}` });
     if (persistent && (+card.fontSize || 0) < 40) items.push({ level: "warn", code: "persistent-size", message: `${card.type || "persistent card"} at ${at(card)} uses ${+card.fontSize || 0}px item text (minimum 40px)` });
     if (persistent && card.head) {
       const face = { x: (card.head.cx - card.head.w / 2) * W, y: (card.head.cy - card.head.h / 2) * H, w: card.head.w * W, h: card.head.h * H };
@@ -374,6 +376,8 @@ export function graphicChecks(plan) {
   const maxEvents = maxMajorEvents(plan, rules.eventWindow);
   if (maxEvents > rules.maxMajorStarts) items.push({ level: "warn", code: "major-event-budget", message: `${maxEvents} cards/cutaways start inside one rolling ${rules.eventWindow} s window (maximum ${rules.maxMajorStarts})` });
 
+  // A VSL opens on the speaker, not a hook line (preflight.hookCheck: false).
+  if (plan.style?.preflight?.hookCheck === false) return items;
   const hook = plan.hook;
   const hookCount = hook && (+hook.start || 0) <= 1 / 30 ? words(hook.text).length : 0;
   if (hookCount < 4) items.push({ level: "warn", code: "frame-zero-hook", message: `frame zero has ${hookCount} hook words (target 4-8)` });
@@ -458,13 +462,15 @@ export async function runPreflight(file, { plan = null, loudnessTarget = -14, lo
   if (black >= 0.3) items.push({ level: "fail", code: "black-open", message: `the first ${black}s are black` });
   const motion = await openMotion(file);
   measures.openMotion = motion;
-  if (motion != null && motion < 0.4) items.push({ level: "warn", code: "static-open", message: `almost nothing moves in the first 2 s (motion ${motion})` });
+  if (motion != null && motion < 0.4 && plan?.style?.preflight?.openMotion !== false) items.push({ level: "warn", code: "static-open", message: `almost nothing moves in the first 2 s (motion ${motion})` });
   items.push(...layoutChecks(plan));
   const pace = pacingChecks(plan);
   items.push(...pace.items);
   if (pace.stats) measures.pacing = pace.stats;
+  const reports = openingEndingChecks(plan?.words || [], plan, meta.duration);
+  items.push(...reports.items);
   const status = items.some((i) => i.level === "fail") ? "fail" : items.length ? "warn" : "ok";
-  return { status, items, measures };
+  return { status, items, measures, opening: reports.opening, ending: reports.ending };
 }
 
 const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -473,7 +479,7 @@ export function preflightText(res) {
   const m = res.measures || {};
   const head = res.status === "ok" ? "Preflight: OK" : res.status === "warn" ? "Preflight: check these" : "Preflight: FAILED";
   const lines = [head, ""];
-  for (const i of res.items) lines.push(`${i.level === "fail" ? "FAIL" : "warn"}  ${i.message}`);
+  for (const i of res.items) lines.push(`${i.level === "fail" ? "FAIL" : i.level === "check" ? "check" : "warn"}  ${i.message}`);
   if (res.items.length) lines.push("");
   const facts = [];
   if (m.lufs != null) facts.push(`${m.lufs} LUFS`);

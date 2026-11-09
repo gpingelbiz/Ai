@@ -15,7 +15,7 @@ test("client paths: a root of its own under the clients folder, finished reels i
   const p = clientPaths(brand, { REEL_CLIENTS: "/x/clients", REEL_CLIENTS_DESKTOP: "/d/Clients" });
   assert.equal(p.root, "/x/clients/jane-doe");
   assert.equal(p.desktop, "/d/Clients/Jane Doe");
-  assert.equal(p.drops.length, 6);
+  assert.equal(p.drops.length, 7);
   assert.equal(p.label, "com.pingel.reel-watch.client.jane-doe");
 });
 
@@ -27,7 +27,10 @@ test("client.env sets every setting that has a Greg default, so ~/.zshrc can nev
   assert.match(clientEnv({ ...brand, brollEngine: "runway" }, p), /^REEL_BROLL_ENGINE='runway'$/m);
   assert.match(env, /^REEL_WATCH_CTA=''$/m, "no CTA unless the brand file names one");
   assert.match(env, /^REEL_CAPTION_WATCHLIST='0'$/m);
-  const r = spawnSync("/bin/bash", ["-c", `set -a; . /dev/stdin; set +a; printf '%s|%s|[%s]' "$REEL_CLIENT" "$REEL_WATCH_DONE" "$REEL_WATCH_CTA"`], { input: env, encoding: "utf8" });
+  // Source a real file: `. /dev/stdin` on a pipe was intermittent when the whole suite runs at once.
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "client-env-")), "client.env"); fs.writeFileSync(file, env);
+  const r = spawnSync("/bin/bash", ["-c", `set -a; . "$1"; set +a; printf '%s|%s|[%s]' "$REEL_CLIENT" "$REEL_WATCH_DONE" "$REEL_WATCH_CTA"`, "bash", file], { encoding: "utf8" });
+  fs.rmSync(path.dirname(file), { recursive: true, force: true });
   assert.equal(r.stdout, "Jane O'Doe|/d/Clients/Jane Doe|[]");
 });
 
@@ -63,9 +66,9 @@ test("the watcher edits Greg's drops as Greg and a client's drops with the clien
   fs.writeFileSync(path.join(bin, "watch-reel.sh"), `#!/bin/bash\nprintf '%s|%s|%s|%s|%s|%s\\n' "$(basename "$1")" "$2" "\${REEL_CLIENT:-greg}" "\${REEL_PRESET:-default}" "\${REEL_WATCH_DONE:-none}" "\${REEL_BROLL_ENGINE:-unset}" >> "${T}/jobs.txt"\n`);
   fs.chmodSync(path.join(bin, "watch-reel.sh"), 0o755);
   const greg = path.join(T, "greg");
-  const env = { ...process.env, REEL_WATCH_ROOT: greg, REEL_CLIENTS: path.join(T, "clients"), REEL_WATCH_DONE: "/greg/Desktop/Reels" };
+  const env = { ...process.env, HOME: T, REEL_WATCH_FAST: "1", REEL_WATCH_ROOT: greg, REEL_CLIENTS: path.join(T, "clients"), REEL_WATCH_DONE: "/greg/Desktop/Reels" };
   delete env.REEL_PRESET; delete env.REEL_CLIENT; delete env.REEL_BROLL_ENGINE;
-  for (const [dir] of DROP_FOLDERS) env[{ raw: "REEL_WATCH_RAW", "raw-broll": "REEL_WATCH_RAW_BROLL", "raw-carousel": "REEL_WATCH_RAW_CAROUSEL", "raw-long": "REEL_WATCH_RAW_LONG", "raw-youtube": "REEL_WATCH_RAW_YOUTUBE", "raw-runway": "REEL_WATCH_RAW_RUNWAY" }[dir]] = path.join(greg, dir);
+  for (const [dir] of DROP_FOLDERS) env[{ raw: "REEL_WATCH_RAW", "raw-broll": "REEL_WATCH_RAW_BROLL", "raw-carousel": "REEL_WATCH_RAW_CAROUSEL", "raw-long": "REEL_WATCH_RAW_LONG", "raw-youtube": "REEL_WATCH_RAW_YOUTUBE", "raw-vsl": "REEL_WATCH_RAW_VSL", "raw-runway": "REEL_WATCH_RAW_RUNWAY" }[dir]] = path.join(greg, dir);
   const p = clientPaths(brand, { REEL_CLIENTS: env.REEL_CLIENTS, REEL_CLIENTS_DESKTOP: path.join(T, "Desktop") });
   for (const d of p.drops) fs.mkdirSync(d.dir, { recursive: true });
   fs.writeFileSync(p.env, clientEnv({ ...brand, brollEngine: "runway" }, p));

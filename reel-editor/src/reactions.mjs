@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { run as execute, PKG_ROOT, ensureDir, readJSON, writeJSON, sha1, r3, warn } from "./util.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 const SETTINGS = { enter: { applause: 0.75, laughter: 0.65, cheering: 0.75 }, exit: 0.35, minWindows: 2, mergeGap: 0.5, review: 0.40, window: 1.5, hop: 0.75, exitHold: 1 };
 
@@ -61,15 +62,17 @@ export function spansFromScores(rows, options = {}) {
   return merged.sort((a, b) => a.start - b.start || a.kind.localeCompare(b.kind));
 }
 
-async function reactionsBinary(run, cacheDir) {
+async function reactionsBinary(run, cacheDir, resolveTool) {
   if (process.platform !== "darwin" && run === execute) throw new Error("Apple SoundAnalysis requires macOS");
-  const src = path.join(PKG_ROOT, "scripts", "reactions.swift");
-  const bin = path.join(cacheDir, `reactions-${sha1(fs.readFileSync(src)).slice(0, 12)}-${process.arch}`);
-  if (!fs.existsSync(bin)) {
-    ensureDir(cacheDir);
-    await run("swiftc", ["-O", "-o", bin, src], { capture: true });
-  }
-  return bin;
+  return resolveTool("reactions", { compile: async () => {
+    const src = path.join(PKG_ROOT, "scripts", "reactions.swift");
+    const bin = path.join(cacheDir, `reactions-${sha1(fs.readFileSync(src)).slice(0, 12)}-${process.arch}`);
+    if (!fs.existsSync(bin)) {
+      ensureDir(cacheDir);
+      await run("swiftc", ["-O", "-o", bin, src], { capture: true });
+    }
+    return bin;
+  } });
 }
 
 function clientWork(file) {
@@ -87,7 +90,7 @@ function clientWork(file) {
  * workDir is <client>/work (auto-discovered from speaker-manifest.json); key is the source index key.
  * Returns observation spans with stable IDs. Only an operator may later add verified:true.
  */
-export async function findReactions(file, { run = execute, workDir = clientWork(file), key, sourceId, force = false, cacheDir = process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), thresholds = {}, log = warn } = {}) {
+export async function findReactions(file, { run = execute, workDir = clientWork(file), key, sourceId, force = false, cacheDir = process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), thresholds = {}, log = warn, resolveTool = nativeTool } = {}) {
   if (!fs.existsSync(file)) throw new Error(`reactions: no such source file: ${file}`);
   const stat = fs.statSync(file);
   const fingerprint = sha1(JSON.stringify([path.resolve(file), stat.size, stat.mtimeMs, fs.readFileSync(path.join(PKG_ROOT, "scripts", "reactions.swift"), "utf8"), SETTINGS, thresholds]));
@@ -101,7 +104,7 @@ export async function findReactions(file, { run = execute, workDir = clientWork(
     } catch {}
   }
   try {
-    const bin = await reactionsBinary(run, cacheDir);
+    const bin = await reactionsBinary(run, cacheDir, resolveTool);
     // AVAudioFile/SoundAnalysis support audio containers. Decode the original audio losslessly to PCM;
     // no denoise, gain, time edits or resampling. This also handles video containers consistently.
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), "speaker-reactions-"));

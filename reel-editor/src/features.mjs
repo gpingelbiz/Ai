@@ -1,8 +1,27 @@
 import path from "node:path";
+import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { hookBlockHeight } from "./placement.mjs";
 import { CARD_RULES, cardWords, cardOccupancy, maxMajorEvents } from "./preflight.mjs";
-import { PKG_ROOT, r3, writeJSON } from "./util.mjs";
+import { PKG_ROOT, r3, readJSON, writeJSON } from "./util.mjs";
+
+/** Engagement asks, in reading order. Ordinary uses such as "save money" are not asks. */
+export function findAsks(line) {
+  const text = String(line || "").trim().replace(/^[-–—•*]+\s+/, "");
+  const start = "(?:^|[.!?;,&—–―‒]\\s*|\\s+-{1,2}\\s+|\\b(?:please|then|and|or|also|remember to|you can|don't forget to|do not forget to|make sure to|make sure you)\\s+)";
+  const patterns = {
+    save: new RegExp(start + "save\\s+(?:(?:this|the)\\s+)?(?:this|it|post|reel|video|tip|checklist|for\\s+later|and)\\b", "i"),
+    send: new RegExp(start + "send\\s+(?:(?:this|the)\\s+)?(?:this|it|post|reel|video|to)\\b", "i"),
+    share: new RegExp(start + "share\\s+(?:(?:this|the)\\s+)?(?:this|it|post|reel|video|with|to)\\b", "i"),
+    comment: new RegExp(start + "(?:comment\\s+(?!from\\b|by\\b|was\\b|is\\b|about\\b)\\S+|(?:leave|drop|add)\\s+(?:a|your)\\s+comment\\b)", "i"),
+    dm: new RegExp(start + "(?:dm\\s+\\S+|(?:send|drop|message)\\s+(?:me|us)\\b)", "i"),
+    follow: new RegExp(start + "follow\\s+(?:me\\b|us\\b|for\\b|along\\b|@|this\\s+(?:page|account)\\b)", "i"),
+    link: /\b(?:click|tap|visit|check|use|hit|open)\s+(?:on\s+)?(?:the\s+)?link\b|\blink\s+in\s+(?:(?:my|the)\s+)?bio\b/i,
+  };
+  return Object.entries(patterns).flatMap(([ask, pattern]) =>
+    [...text.matchAll(new RegExp(pattern.source, "gi"))].map((match) => ({ ask, at: match.index })))
+    .sort((a, b) => a.at - b.at).map(({ ask }) => ask);
+}
 
 const tokens = (text) => String(text || "").replace(/\*/g, "").toLowerCase().split(/\s+/).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")).filter(Boolean);
 const NUMBER = /\d|\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|hundred|thousand|million|first|second|third)\b/i;
@@ -59,7 +78,7 @@ export function editorGitSha(cwd = PKG_ROOT) {
   try { return execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null; } catch { return null; }
 }
 
-export function makeFeatures(plan, { gitSha, sceneSchema } = {}) {
+export function makeFeatures(plan, { gitSha, sceneSchema, cuts, createdAt = new Date().toISOString() } = {}) {
   const graphics = plan.graphics || [];
   const reading = { ...CARD_RULES, ...(plan.style?.preflight?.cards || {}) };
   const schema = sceneSchema ?? plan.scenes?.schema ?? 1;
@@ -90,7 +109,37 @@ export function makeFeatures(plan, { gitSha, sceneSchema } = {}) {
   const hookTokens = tokens(hookText);
   const duration = plan.video?.duration || 0;
   const firstCard = featureGraphics.length ? Math.min(...featureGraphics.map((g) => g.start)) : null;
+  const cutsByReason = Object.create(null);
+  for (const cut of cuts?.removed || []) {
+    const reason = cut.reason || "unknown";
+    const group = cutsByReason[reason] ||= { count: 0, seconds: 0 };
+    group.count++;
+    group.seconds += Math.max(0, cut.end - cut.start);
+  }
+  for (const group of Object.values(cutsByReason)) group.seconds = r3(group.seconds);
+  const firstWordAt = (plan.words || []).filter((w) => Number.isFinite(w.start)).map((w) => w.start);
+  const wordEnds = (plan.words || []).filter((w) => Number.isFinite(w.end)).map((w) => w.end);
+  const firstCaption = [...(plan.captions || [])].sort((a, b) => a.start - b.start)[0];
   return {
+    recordSchema: 1,
+    record: {
+      source: { path: plan.source || null, basename: plan.source ? path.basename(plan.source) : null },
+      preset: plan.preset || plan.style?.name || null,
+      look: plan.style?.look || graphics.find((g) => g.look)?.look || graphics[0]?.skin || plan.style?.name || null,
+      style: plan.style?.name || null,
+      sourceDuration: cuts?.originalDuration ?? null,
+      finishedDuration: cuts?.keptDuration ?? plan.video?.duration ?? null,
+      cutsByReason: Object.fromEntries(Object.entries(cutsByReason)),
+      zoomCount: (plan.zooms || []).filter((z) => !z.cut && z.scale > 1).length,
+      broll: { count: (plan.broll || []).length, seconds: r3((plan.broll || []).reduce((n, b) => n + Math.max(0, b.duration ?? (b.end - b.start)), 0)) },
+      coldOpen: !!plan.coldOpen,
+      hookText,
+      opening: { firstWordAt: firstWordAt.length ? Math.min(...firstWordAt) : null, firstCaption: firstCaption?.text ?? null },
+      ending: plan.ending ? structuredClone(plan.ending) : { lastWordEnd: wordEnds.length ? Math.max(...wordEnds) : null },
+      captionEnding: null,
+      captionAsks: [],
+      createdAt,
+    },
     experiment: {
       graphics: graphicVersions,
       graphicsEnabled: plan.style?.graphics?.enabled ?? (graphics.length > 0),
@@ -126,6 +175,23 @@ export function makeFeatures(plan, { gitSha, sceneSchema } = {}) {
 
 export function writeFeatures(dir, plan, options = {}) {
   const file = path.join(dir, "analytics-features.json");
-  writeJSON(file, makeFeatures(plan, options));
+  const cutsFile = path.join(dir, "cuts.json");
+  const cuts = fs.existsSync(cutsFile) ? readJSON(cutsFile) : options.cuts;
+  writeJSON(file, makeFeatures(plan, { ...options, cuts }));
+  const captionFile = path.join(dir, "caption.txt");
+  if (fs.existsSync(captionFile)) addCaptionToFeatures(dir, fs.readFileSync(captionFile, "utf8"));
   return file;
+}
+
+/** Update only caption metadata. A caption can also be written before a sidecar exists. */
+export function addCaptionToFeatures(dir, captionText) {
+  const file = path.join(dir, "analytics-features.json");
+  if (!fs.existsSync(file)) return;
+  const features = readJSON(file);
+  const lines = String(captionText || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  features.recordSchema = 1;
+  features.record ||= {};
+  features.record.captionEnding = lines.at(-1) ?? null;
+  features.record.captionAsks = lines.flatMap(findAsks);
+  writeJSON(file, features);
 }

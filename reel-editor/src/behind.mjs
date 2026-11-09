@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { run, PKG_ROOT, r3 } from "./util.mjs";
+import { nativeTool } from "./native-tool.mjs";
+import { isClientMode } from "./client-mode.mjs";
 
 /**
  * Text behind you: Apple Vision cuts the person out of the hook window frame by frame (scripts/matte.swift), and the
@@ -12,18 +14,21 @@ import { run, PKG_ROOT, r3 } from "./util.mjs";
 const SWIFT_SRC = path.join(PKG_ROOT, "scripts", "matte.swift");
 
 async function matteBinary() {
-  if (process.platform !== "darwin" || !fs.existsSync(SWIFT_SRC)) return null;
-  const dir = process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor");
-  fs.mkdirSync(dir, { recursive: true });
-  const bin = path.join(dir, `matte-${Math.round(fs.statSync(SWIFT_SRC).mtimeMs)}`);
-  if (!fs.existsSync(bin)) {
-    try {
-      await run("swiftc", ["-O", SWIFT_SRC, "-o", bin], { capture: true });
-    } catch {
-      return null;
+  if (process.platform !== "darwin") return null;
+  try { return await nativeTool("matte", { compile: async () => {
+    if (!fs.existsSync(SWIFT_SRC)) return null;
+    const dir = process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor");
+    fs.mkdirSync(dir, { recursive: true });
+    const bin = path.join(dir, `matte-${Math.round(fs.statSync(SWIFT_SRC).mtimeMs)}`);
+    if (!fs.existsSync(bin)) {
+      try {
+        await run("swiftc", ["-O", SWIFT_SRC, "-o", bin], { capture: true });
+      } catch {
+        return null;
+      }
     }
-  }
-  return bin;
+    return bin;
+  } }); } catch { return null; }
 }
 
 /**
@@ -32,7 +37,7 @@ async function matteBinary() {
  */
 export async function makeCutout({ video, start = 0, duration = 3, fps = 30, outDir, quality = "accurate", minCoverage = 0.04, maxCoverage = 0.8, name = "cutout", grid = null }) {
   const bin = await matteBinary();
-  if (!bin) return { error: "person cutout needs Swift (xcode-select --install)" };
+  if (!bin) return { error: isClientMode() ? "the person cutout tool is unavailable" : "person cutout needs Swift (xcode-select --install)" };
   const stem = String(name).replace(/[^a-z0-9-]+/gi, "-");
   const maskDir = path.join(outDir, stem === "cutout" ? "matte" : `${stem}-matte`);
   fs.rmSync(maskDir, { recursive: true, force: true });

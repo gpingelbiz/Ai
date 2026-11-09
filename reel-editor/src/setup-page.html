@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your Reels setup</title>
+<style nonce="__NONCE__">
+:root{font-family:system-ui,sans-serif;color:#202826;background:#f4f6f2}body{max-width:860px;margin:40px auto;padding:0 20px}h1{font-size:32px}p{line-height:1.5}section{background:white;border:1px solid #d5ded4;border-radius:14px;padding:20px;margin:16px 0}h2{font-size:20px;margin:0 0 12px}.status{font-size:14px;color:#435d4d;margin-left:14px}button,input,select,textarea{font:inherit;padding:10px;border:1px solid #899f91;border-radius:7px}button{background:#edf4ec;cursor:pointer;margin:10px 8px 0 0}button:disabled{opacity:.5;cursor:wait}label{display:block;margin:12px 0}input[type=text],input[type=password],input[type=url],textarea{display:block;width:95%;margin-top:6px}input[type=checkbox]{margin-right:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}a{color:#245c39}#notice{font-weight:600}details{margin:14px 0}summary{cursor:pointer}footer{margin:28px 0}small{display:block;margin-top:8px}
+</style>
+</head>
+<body>
+<h1>Your Reels setup</h1>
+<p>Your answers are saved on this Mac after every choice. You can stop and come back any time. Account sign ins happen on the provider’s own page.</p>
+<p id="notice" role="status"></p><main id="steps"></main>
+<footer><button id="finish">Finish</button><p>Photo post times stay empty until you finish your brand guide and choose them here. Posting stays off until you choose Turn on posting.</p></footer>
+<script nonce="__NONCE__">
+'use strict';
+const token = new URL(location.href).searchParams.get('token');
+const main = document.getElementById('steps'), notice = document.getElementById('notice');
+const links = {claude:'https://claude.ai/',metricool:'https://claude.ai/settings/connectors',codex:'https://chatgpt.com/',desktop:'https://claude.com/download',elevenlabs:'https://elevenlabs.io/app/developers/api-keys',runway:'https://dev.runwayml.com/',pixabay:'https://pixabay.com/api/docs/',pexels:'https://www.pexels.com/api/'};
+const node = (tag, text, parent) => { const el = document.createElement(tag); if (text) el.textContent = text; if (parent) parent.append(el); return el; };
+const field = (parent, title, type = 'text', value = '') => { const label = node('label', title, parent), el = node('input', '', label); el.type = type; el.value = value; if (type === 'password') { el.autocomplete = 'off'; el.spellcheck = false; } return el; };
+const link = (parent, title, url) => { const a = node('a', title, parent); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; };
+async function api(route, body) {
+  const response = await fetch(route, {method:body ? 'POST' : 'GET',headers:{'X-Reel-Setup-Token':token,...(body ? {'Content-Type':'application/json'} : {})},...(body ? {body:JSON.stringify(body)} : {}),cache:'no-store',credentials:'omit'});
+  const value = await response.json();
+  if (!response.ok) throw new Error(value.error || 'This step could not finish.');
+  return value;
+}
+function describe(id, answer) {
+  if (answer.choice) return answer.choice === 'later' ? 'Add later.' : 'Skipped.';
+  if (answer.signedIn) return 'Signed in.';
+  if (id === 'metricool' && answer.brand) return `${answer.brand}: ${answer.networks.join(', ')}. Time zone: ${answer.timezone}.`;
+  if (id === 'photos') return answer.folder || '';
+  if (id === 'media') return answer.route === 'tunnel' ? 'Directly from this Mac.' : `${answer.route === 'drive' ? 'Google Drive' : 'Dropbox'}: ${answer.folder}`;
+  if (id === 'schedule') return `Posting is ${answer.posting === 'off' ? 'off' : 'on'}. Photo times: ${answer.slots?.map((s) => `${s.format} at ${s.time}`).join(', ') || 'None'}.`;
+  if (answer.saved) return answer.verified ? 'Key saved and checked.' : 'Key already saved. It has not been checked here.';
+  if (answer.removed) return 'Key removed.';
+  if (answer.configured) return 'Health ping address saved.';
+  if (answer.tasks) return 'Routines checked in the Claude app.';
+  return 'This step needs attention.';
+}
+let working = false;
+async function send(id, answer) {
+  if (working) return;
+  working = true;
+  document.querySelectorAll('button').forEach((b) => b.disabled = true);
+  notice.textContent = 'Saving your answer and checking this step…';
+  try { render(await api('/api/answer', {id,answer})); }
+  catch (error) { notice.textContent = error.message; }
+  finally { working = false; document.querySelectorAll('button').forEach((b) => b.disabled = false); }
+}
+const button = (parent, title, action) => { const b = node('button', title, parent); b.type = 'button'; b.addEventListener('click', action); return b; };
+function render(state) {
+  main.replaceChildren();
+  notice.textContent = state.posting === 'off' ? 'Posting is off.' : 'Posting is on.';
+  for (const step of state.steps) {
+    const section = node('section', '', main), title = node('h2', step.title, section);
+    node('span', step.status === 'done' ? 'Done' : step.status === 'skipped' ? 'Skipped' : 'Needs you', title).className = 'status';
+    if (step.message) node('p', step.message, section);
+    if (step.answer && Object.keys(step.answer).length) {
+      const saved = node('details', '', section); node('summary', 'Saved answer', saved); node('p', describe(step.id, step.answer), saved);
+    }
+    if (step.secret) {
+      const service = step.id.replace('key-', '');
+      link(section, 'Open your key page', links[service]);
+      const key = field(section, 'Your key', 'password');
+      button(section, 'Check and save', () => { const value = key.value; key.value = ''; send(step.id, {value}); });
+      if (step.answer.saved) button(section, 'Remove key', () => send(step.id, {action:'remove'}));
+    } else if (step.id === 'claude' || step.id === 'codex') {
+      link(section, step.id === 'claude' ? 'Open Claude' : 'Open ChatGPT', links[step.id]);
+      button(section, 'Sign in', () => send(step.id, {action:'login'}));
+      if (step.id === 'claude') button(section, 'Install Claude Code', () => send(step.id, {action:'install'}));
+      else node('p', 'Use Codex on this Mac and sign in with ChatGPT. If it is not installed, you can add it later.', section);
+    } else if (step.id === 'metricool') {
+      link(section, 'Connect Metricool in Claude', links.metricool);
+      node('p', 'Click Check to see your brands. Choose a name, then confirm its networks and timezone.', section);
+      if (step.brands?.length) {
+        const select = node('select', '', section); select.setAttribute('aria-label', 'Your Metricool brand');
+        const placeholder = node('option', 'Choose your brand', select); placeholder.value = '';
+        step.brands.forEach((b, i) => { const opt = node('option', `${b.name} (${b.id})`, select); opt.value = String(i); });
+        const detail = node('div', '', section); let chosen, networks = [];
+        select.addEventListener('change', () => {
+          detail.replaceChildren(); networks = []; confirm.checked = false; chosen = step.brands[select.value];
+          if (!chosen) return;
+          node('p', `Timezone: ${chosen.timezone}. Connected networks: ${chosen.networks.join(', ')}.`, detail);
+          chosen.networks.forEach((name) => { const check = field(detail, name, 'checkbox'); networks.push([name, check]); });
+        });
+        const confirm = field(section, 'I choose this brand and these networks', 'checkbox');
+        button(section, 'Save brand', () => send(step.id, {brand:chosen?.name,brandId:chosen?.id,networks:networks.filter(([,c]) => c.checked).map(([name]) => name),confirm:confirm.checked}));
+      }
+    } else if (step.id === 'photos') {
+      const folder = field(section, 'Folder path on this Mac', 'text', step.answer.folder || `${state.studioRoot}/Photos`);
+      button(section, 'Save folder', () => send(step.id, {folder:folder.value}));
+    } else if (step.id === 'media') {
+      node('p', 'Directly from this Mac is the default. Metricool copies the files from a temporary private link while your Mac is on.', section);
+      button(section, 'Use this Mac', () => send(step.id, {route:'tunnel'}));
+      const advanced = node('details', '', section); node('summary', 'Advanced: Google Drive or Dropbox', advanced);
+      const route = node('select', '', advanced); route.setAttribute('aria-label', 'Upload service');
+      ['drive','dropbox'].forEach((name) => { const opt = node('option', name === 'drive' ? 'Google Drive' : 'Dropbox', route); opt.value = name; });
+      const folder = field(advanced, 'Shared upload folder path');
+      node('p', 'Install and sign in to the service’s own app first. Share this folder so Metricool can read links to these files. Connect Google Drive in Metricool, or Dropbox in Claude.', advanced);
+      const shared = field(advanced, 'I have shared this folder and connected the service', 'checkbox');
+      button(advanced, 'Save advanced choice', () => send(step.id, {route:route.value,folder:folder.value,shared:shared.checked}));
+    } else if (step.id === 'schedule') {
+      node('p', `Photo times: ${state.slots.length ? state.slots.map((s) => `${s.format} at ${s.time}`).join(', ') : 'None'}. Finish your brand guide before adding photo posts.`, section);
+      button(section, 'Keep posting off', () => send(step.id, {posting:'off'}));
+      button(section, 'Turn on posting', () => send(step.id, {posting:'Turn on posting'}));
+      const advanced = node('details', '', section); node('summary', 'Choose photo post times', advanced);
+      const guide = field(advanced, 'I have finished my brand guide', 'checkbox');
+      const carousel = field(advanced, 'Carousel time, or leave empty for none', 'text', state.slots.find((s) => s.format === 'carousel')?.time || '');
+      const photo = field(advanced, 'Static photo time, or leave empty for none', 'text', state.slots.find((s) => s.format === 'static')?.time || '');
+      button(advanced, 'Save photo times', () => send(step.id, {posting:'keep',brandGuideComplete:guide.checked,slots:[{format:'carousel',time:carousel.value},{format:'static',time:photo.value}].filter((s) => s.time)}));
+    } else if (step.id === 'health') {
+      node('p', 'Optional. Use your own health check address. Setup saves it without sending a ping.', section);
+      const url = field(section, 'Your https health ping address', 'password');
+      button(section, 'Save address', () => { const value = url.value; url.value = ''; send(step.id, {url:value}); });
+    } else if (step.id === 'routines') {
+      node('p', 'Keep this Mac on and the Claude app open for local routines. A copied setup request alone does not mean routines are ready.', section);
+      link(section, 'Download the Claude app', links.desktop);
+      button(section, 'Open routine setup', () => send(step.id, {action:'prepare'}));
+      if (step.instructions) { node('p', 'Paste this into a local Code session in the Claude app:', section); node('pre', step.instructions, section); }
+      if (step.tasks) step.tasks.forEach((task) => node('p', `${task.id}: ${task.enabled ? 'On' : 'Off'}. Schedule: ${task.schedule}. Folder: ${task.folder}.`, section));
+    }
+    button(section, step.status === 'needs-you' ? 'Check' : 'Retry', () => send(step.id, {action:'check'}));
+    if (step.skip) {
+      button(section, 'Skip', () => send(step.id, {action:'skip'}));
+      button(section, 'Add later', () => send(step.id, {action:'later'}));
+    }
+  }
+}
+document.getElementById('finish').addEventListener('click', async () => {
+  if (working) return;
+  try {
+    await api('/api/finish', {});
+    main.replaceChildren(); document.querySelector('footer').remove();
+    notice.textContent = 'Your setup is saved. You can close this page and run reel setup any time.';
+    window.close();
+  } catch (error) { notice.textContent = error.message; }
+});
+api('/api/state').then(render).catch((error) => notice.textContent = error.message);
+</script>
+</body>
+</html>
