@@ -8,6 +8,7 @@ import { signatureSafeArea, titlePlate } from "./signature.mjs";
 import { tokensCSS } from "./brandtokens.mjs";
 import { esc } from "./text.mjs";
 import { ensureDir, log, PKG_ROOT, r3, run, warn, writeJSON } from "./util.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".heic"]);
 const POINTING_PHRASES = ["he sent me", "she sent me", "they sent me", "look at this", "this is the message", "i got this"];
@@ -217,15 +218,17 @@ export function chooseEvidenceLayout({ requested = "auto", quoted = [], cutoutAv
 
 export function ocrBinary() {
   if (process.platform !== "darwin") return Promise.resolve(null);
-  const bin = path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "ocr");
-  const src = path.join(PKG_ROOT, "scripts", "ocr.swift");
-  try {
-    if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(src).mtimeMs) {
-      ensureDir(path.dirname(bin));
-      return run("swiftc", ["-O", "-o", bin, src], { capture: true }).then(() => bin).catch(() => null);
-    }
-    return Promise.resolve(bin);
-  } catch { return Promise.resolve(null); }
+  return nativeTool("ocr", { compile: () => {
+    const bin = path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "ocr");
+    const src = path.join(PKG_ROOT, "scripts", "ocr.swift");
+    try {
+      if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(src).mtimeMs) {
+        ensureDir(path.dirname(bin));
+        return run("swiftc", ["-O", "-o", bin, src], { capture: true }).then(() => bin).catch(() => null);
+      }
+      return Promise.resolve(bin);
+    } catch { return Promise.resolve(null); }
+  } }).catch(() => null);
 }
 
 async function pngSource(source, dir, index) {

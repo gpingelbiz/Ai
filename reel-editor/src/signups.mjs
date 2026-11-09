@@ -10,8 +10,9 @@ export const SIGNUPS = [
   { id: "claude", name: "Claude (Pro or Max)", url: "https://claude.com/pricing", what: "graphic cards, captions and hook ideas in your reels", whatStudio: "graphic cards, captions and hook ideas in your reels; it also writes your posts and schedules them", studio: "Needed", reel: "Recommended" },
   { id: "metricool", name: "Metricool", url: "https://metricool.com/pricing/", what: "posts everything to your Instagram by itself (and TikTok, Facebook, LinkedIn or Threads if you connect them there)", studio: "Needed", reel: "" },
   { id: "epidemic", name: "Epidemic Sound", url: "https://www.epidemicsound.com/pricing/", what: "the music under your reels, on your own plan so the license covers your channels", studio: "For music", reel: "For music" },
-  { id: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com/pricing/", what: "AI b-roll pictures and carousel images (Codex, on your ChatGPT plan)", studio: "Optional", reel: "Optional" },
+  { id: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com/pricing/", what: "picks the B-roll moments in your reels and makes carousel images (Codex, on your ChatGPT plan)", studio: "Optional", reel: "Optional" },
   { id: "elevenlabs", name: "ElevenLabs", url: "https://elevenlabs.io/pricing", what: "the most accurate transcription (your API key: Developers, API Keys)", studio: "Optional", reel: "Optional" },
+  { id: "pixabay", name: "Pixabay (free)", url: "https://pixabay.com/api/docs/", what: "free stock video for Raw - Reel with B-roll (free account; your API key shows on that page once you log in)", studio: "Optional", reel: "Recommended" },
   { id: "runway", name: "Runway API", url: "https://dev.runwayml.com/", what: "short AI video clips as b-roll in Raw - Reel with Runway B-roll, about 30 cents a clip (buy credits and make an API key there)", studio: "Optional", reel: "Optional" },
   { id: "sandcastles", name: "Sandcastles", url: "https://sandcastles.ai/#pricing", what: "captions and hooks that follow what is winning on short video right now (connect it in Claude)", studio: "Optional", reel: "Optional" },
 ];

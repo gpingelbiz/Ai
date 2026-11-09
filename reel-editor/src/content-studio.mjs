@@ -65,7 +65,11 @@ export const STUDIO_DEFAULTS = {
   daysAhead: 3,
   maxPerRun: 4,
   carouselSlides: [5, 8],
-  reels: { enabled: true, earliest: 8, latest: 20, fallbackHour: 12, gapHours: 2, look: "auto", trial: false },
+  daily: { publisher: "legacy" },
+  reels: { rawIntake: true, publisher: "legacy", enabled: true, earliest: 8, latest: 20, fallbackHour: 12, gapHours: 2, look: "auto", trial: false },
+  stories: { enabled: false, slots: ["08:00", "11:00", "17:00"] },
+  filming: { enabled: false },
+  health: { pingUrl: "" },
   metricool: { brand: "", blogId: "", networks: ["instagram"], connector: "" },
   publish: { mode: "schedule" },
   hosting: { route: "tunnel", folder: "" },
@@ -134,7 +138,14 @@ export function checkStudio(config, { publishing = true } = {}) {
   if (!nets.length || nets.some((n) => !NETWORKS.includes(n))) out.push(`metricool.networks lists where posts go: ${NETWORKS.join(", ")}`);
   if (!["auto", "always"].includes(c.ai?.label)) out.push('ai.label is "auto" (labelled when a picture is AI-made) or "always"; AI pictures are always labelled');
   if (![true, false, "auto"].includes(c.ai?.broll)) out.push('ai.broll is true, false or "auto" (AI pictures only when Codex is set up)');
-  if (typeof c.reels?.trial !== "boolean") out.push("reels.trial is true (every reel posts as an Instagram Trial Reel) or false");
+  for (const kind of ["daily", "reels"]) if (!["legacy", "claude"].includes(c[kind]?.publisher)) out.push(`${kind}.publisher is legacy or claude`);
+  if (![true, false, "both"].includes(c.reels?.trial)) out.push('reels.trial is true (Trial Reel only), false (normal reel), or "both" (normal plus a separate Trial Reel)');
+  if (typeof c.stories?.enabled !== "boolean" || !Array.isArray(c.stories?.slots) || c.stories.slots.some((s) => !parseTime(s))) out.push("stories needs enabled (true or false) and slots like [\"08:00\",\"11:00\",\"17:00\"]");
+  if (typeof c.filming?.enabled !== "boolean") out.push("filming.enabled is true (a Sunday filming pack) or false");
+  if (c.health?.pingUrl) {
+    try { const u = new URL(c.health.pingUrl); if (u.protocol !== "https:" || u.username || u.password || u.hash) throw new Error(); }
+    catch { out.push("health.pingUrl must be an https URL without a login or fragment"); }
+  }
   const sc = c.slideColors;
   if (!sc || typeof sc !== "object" || Array.isArray(sc)) out.push('slideColors is like {"bg": "#FFF3EE", "text": "#111111", "accent": "#FFB27D"}');
   else {
@@ -206,14 +217,14 @@ const readText = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { ret
 /** studio.json, the brand, the voice and the brand guide, ready for a run. Throws with every problem in words. */
 export function loadStudio(dir, { publishing = true } = {}) {
   const paths = studioPaths(dir);
-  if (!fs.existsSync(paths.config)) throw new Error(`no studio.json in ${paths.root} (run the Content Studio installer)`);
+  if (!fs.existsSync(paths.config)) throw new Error(`no studio.json in ${paths.root} (run the Reels installer)`);
   const config = withDefaults(readJSON(paths.config));
   if (!config.timezone) config.timezone = macZone();
   const problems = checkStudio(config, { publishing });
   if (!fs.existsSync(paths.brandJson)) problems.push(`brand/brand.json is missing in ${paths.root}`);
   if (problems.length) throw new Error(`studio.json needs fixing:\n- ${problems.join("\n- ")}`);
   const brand = studioBrand(paths, config.slideColors);
-  for (const d of [paths.state, paths.made, paths.rawReels]) ensureDir(d);
+  for (const d of [paths.state, paths.made, paths.publish, ...(config.reels.rawIntake === false ? [] : [paths.rawReels])]) ensureDir(d);
   return { paths, config, brand: brand.raw, tokens: brand.tokens, voice: readText(paths.voice), guide: readText(paths.guide), photos: photosDir(config, paths) };
 }
 
@@ -253,24 +264,34 @@ export function takeLock(paths, name = "run") {
   } catch {
     let age = 0;
     try { age = Date.now() - fs.statSync(lock).mtimeMs; } catch {}
-    if (age < 3 * 3600000) return null;
+    let dead = false;
+    try { const pid = Number(fs.readFileSync(path.join(lock, "who"), "utf8").trim().split(" ").at(-1)); if (pid > 0) { try { process.kill(pid, 0); } catch (e) { dead = e.code === "ESRCH"; } } } catch {}
+    if (!dead && age < 3 * 3600000) return null;
     fs.rmSync(lock, { recursive: true, force: true });
     try { fs.mkdirSync(lock); } catch { return null; }
   }
   fs.writeFileSync(path.join(lock, "who"), `${name} ${process.pid}\n`);
+  // A weekly update is switching the editor: step aside (after taking our lock, so the updater's wait sees us).
+  if (fs.existsSync(path.join(os.homedir(), ".reel", "maintenance", "update.lock"))) { fs.rmSync(lock, { recursive: true, force: true }); return null; }
   return () => fs.rmSync(lock, { recursive: true, force: true });
 }
 
 /** A new studio folder: the subfolders, studio.json (kept when present) and the brand files copied from `brandFrom`. */
 export function initStudio(dir, { config = {}, brandFrom = null } = {}) {
   const paths = studioPaths(dir);
-  for (const d of [paths.root, paths.rawReels, paths.publish, paths.made, paths.brand, paths.state]) ensureDir(d);
+  for (const d of [paths.root, paths.publish, paths.made, paths.brand, paths.state]) ensureDir(d);
   if (brandFrom) {
     for (const f of ["brand.json", "voice.md", "brand-guide.md", "my-brand.json", "my-youtube.json", "dictionary.json"]) {
       const src = path.join(brandFrom, f);
       // The voice, guide and word list are the client's to edit: a re-run keeps their edited copies.
-      const keep = ["voice.md", "brand-guide.md", "dictionary.json"].includes(f) && fs.existsSync(path.join(paths.brand, f));
-      if (fs.existsSync(src) && !keep) fs.copyFileSync(src, path.join(paths.brand, f));
+      const dest = path.join(paths.brand, f), last = path.join(paths.brand, ".kit-my-brand.json");
+      // my-brand.json is kept only when they edited it since the last kit; an untouched copy takes the new kit's settings.
+      const edited = f === "my-brand.json" && fs.existsSync(dest) && fs.existsSync(last) && fs.existsSync(src)
+        && fs.readFileSync(dest, "utf8") !== fs.readFileSync(last, "utf8") && fs.readFileSync(dest, "utf8") !== fs.readFileSync(src, "utf8");
+      const keep = edited || (["voice.md", "brand-guide.md", "dictionary.json"].includes(f) && fs.existsSync(dest));
+      if (fs.existsSync(src) && !keep) fs.copyFileSync(src, dest);
+      if (edited) fs.copyFileSync(src, path.join(paths.brand, "my-brand.kit-new.json"));
+      if (f === "my-brand.json" && fs.existsSync(src)) fs.copyFileSync(src, last);
     }
     const fonts = path.join(brandFrom, "fonts");
     if (fs.existsSync(fonts)) {
@@ -279,8 +300,12 @@ export function initStudio(dir, { config = {}, brandFrom = null } = {}) {
     }
   }
   const existing = fs.existsSync(paths.config) ? readJSON(paths.config) : {};
-  const next = merge(merge(structuredClone(STUDIO_DEFAULTS), existing), config);
-  writeJSON(paths.config, { _how: "Content Studio settings. Edit and save; the next run uses them. Times are in timezone. Re-run the installer to change the Metricool brand or the image route.", ...next });
+  // Defaults at creation are separate from runtime defaults: old configs with no trial key keep normal reels.
+  const defaults = structuredClone(STUDIO_DEFAULTS);
+  if (!fs.existsSync(paths.config)) { defaults.reels.trial = "both"; defaults.filming.enabled = true; }
+  const next = merge(merge(defaults, existing), config);
+  if (next.reels.rawIntake !== false) ensureDir(paths.rawReels);
+  writeJSON(paths.config, { _how: "Your reels and posts settings. Edit and save; the next run uses them. Times are in timezone. Re-run the installer to change the Metricool brand or the image route.", ...next });
   if (photosDir(next, paths) === paths.photos) ensureDir(paths.photos);
   return paths;
 }

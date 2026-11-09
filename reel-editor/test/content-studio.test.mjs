@@ -33,6 +33,13 @@ function sampleCopy(over = {}) {
   return dir;
 }
 
+// Feed tests use a fixed Sunday. Supply its already-written pack so they never launch a real copy writer.
+function skipFilmingFixture(dir) {
+  const folder = path.join(dir, "Filming packs");
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, "2026-11-02 filming pack.md"), "Offline feed test fixture.\n");
+}
+
 /* ---------- studio.json ---------- */
 
 test("studio: defaults are hands-off and valid once the client and Metricool brand are set", () => {
@@ -405,6 +412,10 @@ test("metricool: the scheduled list and the tool prompt", () => {
   const list = normalizeScheduled({ data: [{ id: 1, publicationDate: { dateTime: "2026-11-02T10:00:00" }, instagramData: { type: "REEL" }, draft: true }, { bad: 1 }] });
   assert.deepEqual(list, [{ day: "2026-11-02", hour: 10, minute: 0, type: "REEL", draft: true, text: "", id: 1 }]);
   assert.match(toolPrompt("mcp__x__y", { a: 1 }), /exactly once[\s\S]*\{"a":1\}/);
+  // The search may repeat while the connector loads; the tool itself never runs twice.
+  assert.match(toolPrompt("mcp__x__y", {}), /ToolSearch, query "select:mcp__x__y"[\s\S]*search again/);
+  assert.match(toolPrompt("mcp__x__y", {}), /never call this one a second time/);
+  assert.doesNotMatch(toolPrompt("mcp__x__y", {}), /do not retry/i);
 });
 
 /* ---------- image routes ---------- */
@@ -467,6 +478,7 @@ test("daily: a whole run with stubs: Made copy, ledger, log, draft gate, AI labe
   const dir = sampleCopy({ timezone: "America/Phoenix", slots: [{ time: "10:00", format: "carousel" }, { time: "18:00", format: "static" }], publish: { mode: "schedule", captionPrefix: "HOLD TEST" }, ai: { label: "auto", broll: false }, neverSay: ["hustle"], daysAhead: 1, maxPerRun: 3 });
   const created = [];
   const deps = {
+    writeFilmingPack: async () => JSON.stringify({ prompts: [], broll: [] }),
     scheduledPosts: async () => [],
     writeCopy: async (studio, slot) => (slot.format === "static"
       ? parseCopy(JSON.stringify({ hook: "Hustle less", slides: [{ role: "static", headline: "Hustle *less*", body: "Text the member." }], caption: "Hustle less.", hashtags: ["#gymowner"] }), { format: "static" })
@@ -480,6 +492,7 @@ test("daily: a whole run with stubs: Made copy, ledger, log, draft gate, AI labe
   };
   const detectFake = async () => ({ usable: [], skipped: [], all: [], used: [] });
   deps.choosePhotos = async (studio, copy) => ({ bySlide: copy.slides.map(() => null), vetoed: [], pool: await detectFake() });
+  skipFilmingFixture(dir);
   const r = await runDaily(dir, { now: NOW, deps });
   assert.deepEqual(r.made.map((m) => `${m.day} ${m.time} ${m.format} ${m.status}`), ["2026-11-01 18:00 static draft", "2026-11-02 10:00 carousel scheduled", "2026-11-02 18:00 static draft"]);
   assert.equal(created.length, 3);
@@ -503,6 +516,7 @@ test("daily: a failed schedule leaves the post in Made and the next run sends it
   const dir = sampleCopy({ timezone: "America/Phoenix", slots: [{ time: "18:00", format: "static" }], daysAhead: 0, publish: { mode: "schedule" } });
   let fail = true;
   const deps = {
+    writeFilmingPack: async () => JSON.stringify({ prompts: [], broll: [] }),
     scheduledPosts: async () => [],
     writeCopy: async () => parseCopy(JSON.stringify({ slides: [{ role: "static", headline: "A *b*" }], caption: "c", hashtags: [] }), { format: "static" }),
     choosePhotos: async (s, copy) => ({ bySlide: copy.slides.map(() => null), vetoed: [] }),
@@ -512,6 +526,7 @@ test("daily: a failed schedule leaves the post in Made and the next run sends it
     hostFiles: async () => ({ urls: ["u"], close: async () => {} }),
     createPost: async () => { if (fail) throw new Error("Metricool is down"); return { plannerUrl: "p", id: 1 }; },
   };
+  skipFilmingFixture(dir);
   const first = await runDaily(dir, { now: NOW, deps });
   assert.equal(first.made[0].status, "not-posted");
   assert.ok(fs.existsSync(path.join(first.made[0].made, "Not posted.txt")));
@@ -525,6 +540,7 @@ async function gateRun(verdicts) {
   const dir = sampleCopy({ timezone: "America/Phoenix", slots: [{ time: "18:00", format: "static" }], daysAhead: 0, publish: { mode: "schedule" }, ai: { label: "auto", broll: false } });
   const calls = { render: 0, preflight: 0, host: 0, schedule: 0 };
   const deps = {
+    writeFilmingPack: async () => JSON.stringify({ prompts: [], broll: [] }),
     scheduledPosts: async () => [],
     writeCopy: async () => parseCopy(JSON.stringify({ hook: "One useful check", slides: [{ role: "static", headline: "One *useful* check", body: "Use the words supplied." }], caption: "One useful check.", hashtags: [] }), { format: "static" }),
     choosePhotos: async (studio, copy) => ({ bySlide: copy.slides.map(() => null), vetoed: [], pool: { usable: [], skipped: [] } }),
@@ -543,6 +559,7 @@ async function gateRun(verdicts) {
     hostFiles: async () => { calls.host++; return { urls: ["https://host/1"], close: async () => {} }; },
     createPost: async () => { calls.schedule++; return { plannerUrl: "https://app.metricool.com/planner/1", id: 1 }; },
   };
+  skipFilmingFixture(dir);
   const result = await runDaily(dir, { now: NOW, deps });
   return { dir, calls, result, record: result.made[0] };
 }
@@ -654,12 +671,12 @@ test("kit: Start Here keeps the Content Studio section only in a Content Studio 
   assert.doesNotMatch(plain, /Content Studio|<!-- studio/);
   assert.match(plain, /Jane's Reel Editor/);
   const studio = personalizeStartHere(html, { name: "Jane" }, { studio: true });
-  assert.match(studio, /Jane's Content Studio/);
-  assert.match(studio, /Double-click <b>Install Content Studio\.command<\/b> in this folder/);
+  assert.match(studio, /Jane's reels and posts/);
+  assert.match(studio, /Drag <b>Install Reels\.command<\/b> from the kit folder into the Terminal window/);
   for (const route of ["Straight from this Mac", "Google Drive", "Dropbox"]) assert.match(studio, new RegExp(route));
   assert.doesNotMatch(studio, /<!-- \/?studio -->/);
   assert.equal(stripStudio(html), stripStudio(stripStudio(html)));
-  assert.ok(fs.statSync(path.join(PKG_ROOT, "kit", "Install Content Studio.command")).mode & 0o100, "the kit installer double-clicks");
+  assert.ok(fs.statSync(path.join(PKG_ROOT, "kit", "Install Reels.command")).mode & 0o100, "the kit installer double-clicks");
 });
 
 test("slides: a long sentence-case headline is set smaller; a short one keeps its kind's size", () => {
@@ -731,6 +748,7 @@ test("reels: an edited reel is filed in Made and scheduled; one stranded in deli
   };
   const deps = {
     editClip: async () => ({ folder: deliver("2026-11-01 Reel 1"), output: "", hook: "" }),
+    writeFilmingPack: async () => JSON.stringify({ prompts: [], broll: [] }),
     scheduledPosts: async () => [],
     bestTimes: async () => ({ data: [{ dateTime: "2026-11-01T15:00:00", value: 9 }] }),
     hostFiles: async (files) => ({ urls: files.map(() => "https://host/v.mp4"), close: async () => {} }),
@@ -759,6 +777,7 @@ test("reels: reels.trial posts every reel as a Trial Reel; the studio checks it 
   fs.writeFileSync(path.join(folder, ".reel.json"), JSON.stringify({ preflight: "pass" }));
   const created = [];
   const deps = {
+    writeFilmingPack: async () => JSON.stringify({ prompts: [], broll: [] }),
     scheduledPosts: async () => [],
     bestTimes: async () => ({ data: [] }),
     hostFiles: async (files) => ({ urls: files.map(() => "https://host/v.mp4"), close: async () => {} }),
@@ -772,7 +791,7 @@ test("reels: reels.trial posts every reel as a Trial Reel; the studio checks it 
   assert.equal(r[0].trial, true);
   assert.equal(created[0].instagramData.type, "TRIAL_REEL");
   assert.match(fs.readFileSync(path.join(r[0].made, "Scheduled.txt"), "utf8"), /Trial Reel: yes/);
-  assert.deepEqual(checkStudio({ client: "x", reels: { trial: "yes" } }, { publishing: false }), ["reels.trial is true (every reel posts as an Instagram Trial Reel) or false"]);
+  assert.deepEqual(checkStudio({ client: "x", reels: { trial: "yes" } }, { publishing: false }), ['reels.trial is true (Trial Reel only), false (normal reel), or "both" (normal plus a separate Trial Reel)']);
   assert.deepEqual(checkStudio({ client: "x" }, { publishing: false }), [], "off by default");
 });
 
@@ -800,6 +819,7 @@ test("publish: a finished reel folder or a loose video with its caption is sched
   fs.writeFileSync(path.join(s.paths.publish, "notes.txt"), "not a reel");
   const created = [];
   const deps = {
+    writeFilmingPack: async () => JSON.stringify({ prompts: [], broll: [] }),
     scheduledPosts: async () => [],
     bestTimes: async () => ({ data: [] }),
     hostFiles: async (files) => ({ urls: files.map(() => "https://host/v.mp4"), close: async () => {} }),
@@ -847,9 +867,23 @@ test("kit: Start Here lists every service to sign up for with a clickable link; 
   }
   assert.match(studio, /<a href="https:\/\/metricool\.com\/pricing\/">Metricool<\/a><\/td><td>Needed<\/td>/);
   assert.doesNotMatch(reel, /metricool\.com\/pricing/, "a reel-only kit does not post, so no Metricool");
-  assert.deepEqual(signupsFor({ studio: true }).map((s) => s.id), ["claude", "metricool", "epidemic", "chatgpt", "elevenlabs", "runway", "sandcastles"]);
+  assert.deepEqual(signupsFor({ studio: true }).map((s) => s.id), ["claude", "metricool", "epidemic", "chatgpt", "elevenlabs", "pixabay", "runway", "sandcastles"]);
   const links = signupLinks({ studio: true });
-  assert.equal(Object.keys(links).length, 7);
+  assert.equal(Object.keys(links).length, 8);
+  assert.match(links["Pixabay (free).webloc"], /<string>https:\/\/pixabay\.com\/api\/docs\/<\/string>/);
   assert.match(links["Metricool.webloc"], /<string>https:\/\/metricool\.com\/pricing\/<\/string>/);
   assert.ok(!("Metricool.webloc" in signupLinks()), "reel kit: no Metricool link");
+});
+
+
+test("kit setup gates intake and posting agents without changing legacy studio defaults", () => {
+  const dir = path.join(tmp(), "kit");
+  try {
+    const p = initStudio(dir, { config: { reels: { rawIntake: false, publisher: "claude" } } });
+    assert.equal(fs.existsSync(p.rawReels), false);
+    assert.deepEqual(studioAgents(dir).map((a) => a.label.split(".")[3]), ["daily", "health"]);
+    const source = fs.readFileSync(path.join(PKG_ROOT, "src", "setup-steps.mjs"), "utf8");
+    assert.match(source, /rawIntake: false, publisher: "claude"/);
+    assert.match(source, /slots: \[\], publish: \{ mode: "off" \}/);
+  } finally { fs.rmSync(path.dirname(dir), { recursive: true, force: true }); }
 });

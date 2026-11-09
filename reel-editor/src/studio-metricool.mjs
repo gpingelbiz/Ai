@@ -47,25 +47,50 @@ export async function detectConnectors() {
   return parseConnectors(out);
 }
 
-/** The prompt for one tool call. Pure, so it can be tested. */
+/**
+ * The prompt for one tool call. Pure, so it can be tested. A claude.ai connector arrives seconds after headless Claude
+ * starts, and on a current Claude a first search can beat it, so searching again has to be allowed: "do not retry" alone
+ * made it give up every time on a client's Mac, where the same search found the tool on its third try.
+ */
 export function toolPrompt(tool, input) {
   return [
-    `Call the tool ${tool} exactly once, with exactly this input (do not change, add or drop any field or character):`,
+    `The tool ${tool} can take up to a minute to appear, because connectors load just after you start. Load it with ToolSearch, query "select:${tool}". If the search finds nothing, search again the same way, up to 15 times.`,
+    "",
+    "Then call the tool exactly once, with exactly this input (do not change, add or drop any field or character):",
     JSON.stringify(input),
     "",
-    "Do not call any other tool and do not retry. Then reply with only the tool's result, unchanged, as JSON (if the tool returned an error, reply {\"error\": \"<the exact error text>\"}). No prose, no code fence.",
+    `Do not use any tool other than ToolSearch and this one, and never call this one a second time. Then reply with only the tool's result, unchanged, as JSON (if the tool returned an error, reply {"error": "<the exact error text>"}; if it never appeared, reply {"error": "Tool ${tool} is not available in this session"}). No prose, no code fence.`,
   ].join("\n");
 }
 
+// A reply about loading a tool is not proof that a write never ran.
+const TOOL_NOT_READY = /not available in this session|no such tool|tool\b.*\bnot (found|available)/i;
+const NOT_READY_WAITS = [20000, 45000];
+const READ_TOOLS = new Set(["getBrandSettings", "getScheduledPosts", "getBestTimeToPostByNetwork"]);
+function callError(tool, message, uncertain) {
+  const error = new Error(`Metricool ${tool}: ${message}`);
+  if (uncertain) error.uncertain = true;
+  return error;
+}
+
 /** One Metricool tool call. Returns the parsed result; throws on an error result. */
-export async function metricoolCall(connector, tool, input, { timeoutMs } = {}) {
+export async function metricoolCall(connector, tool, input, { timeoutMs, notReadyWaits = NOT_READY_WAITS } = {}) {
   if (!connector) throw new Error("no Metricool connector name in studio.json (run the installer again)");
   const name = `${connectorPrefix(connector)}${tool}`;
-  const reply = await runClaude(["-p", toolPrompt(name, input), "--allowedTools", name, "--disallowedTools", DENY.join(","), "--output-format", "text"], { timeoutMs });
-  let result;
-  try { result = firstJSON(reply); } catch { throw new Error(`Metricool ${tool}: no result came back (${reply.trim().slice(0, 200)})`); }
-  if (result && typeof result === "object" && result.error) throw new Error(`Metricool ${tool}: ${typeof result.error === "string" ? result.error : JSON.stringify(result.error)}`);
-  return result;
+  const readOnly = READ_TOOLS.has(tool);
+  for (let attempt = 0; ; attempt++) {
+    let reply;
+    try { reply = await runClaude(["-p", toolPrompt(name, input), "--allowedTools", name, "--disallowedTools", DENY.join(","), "--output-format", "text"], { timeoutMs }); }
+    catch { throw callError(tool, "The connection stopped before a result came back. Check Metricool before trying again.", !readOnly); }
+    let result, problem = "";
+    try { result = firstJSON(reply); if (result && typeof result === "object" && result.error) problem = typeof result.error === "string" ? result.error : JSON.stringify(result.error); }
+    catch { problem = `no result came back (${reply.trim().slice(0, 200)})`; }
+    if (!problem && (!result || typeof result !== "object" || !Object.keys(result).length)) problem = "No confirmed result came back";
+    if (!problem) return result;
+    if (!readOnly || !TOOL_NOT_READY.test(problem)) throw callError(tool, problem, !readOnly);
+    if (attempt >= notReadyWaits.length) throw new Error(`Metricool ${tool}: Claude could not load the Metricool connector on this Mac (${problem}). Open Terminal, type claude, press Return, type /mcp and check Metricool shows connected; if not, reconnect it at claude.ai, Settings, Connectors. Then try again.`);
+    await new Promise((r) => setTimeout(r, notReadyWaits[attempt]));
+  }
 }
 
 /** The Metricool brands on the account: [{id, label, timezone, networks}]. */
@@ -97,6 +122,21 @@ export async function scheduledPosts(connector, { blogId, from, to, tz }) {
   return normalizeScheduled(r);
 }
 
+/** Provider failures can live below a post's overall status. Keep them for health alerts. */
+export function scheduledError(post) {
+  if (!post || typeof post !== "object") return "";
+  for (const [key, value] of Object.entries(post)) {
+    if (/^(error|errorMessage|errorText)$/i.test(key) && value && (typeof value !== "object" || Object.keys(value).length)) return typeof value === "string" ? value : JSON.stringify(value);
+  }
+  for (const value of Object.values(post)) {
+    if (value && typeof value === "object") { const error = scheduledError(value); if (error) return error; }
+  }
+  for (const [key, value] of Object.entries(post)) {
+    if (/status|state/i.test(key) && typeof value === "string" && /error|fail/i.test(value)) return value;
+  }
+  return "";
+}
+
 /** Pure: Metricool's scheduled-post list as {day, hour, minute, type, draft}. */
 export function normalizeScheduled(r) {
   const list = Array.isArray(r?.data) ? r.data : Array.isArray(r) ? r : Array.isArray(r?.posts) ? r.posts : [];
@@ -104,7 +144,7 @@ export function normalizeScheduled(r) {
     const dt = String(p.publicationDate?.dateTime || p.publicationDate || p.date || "");
     const m = dt.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
     if (!m) return null;
-    return { day: m[1], hour: Number(m[2]), minute: Number(m[3]), type: String(p.instagramData?.type || p.type || "POST").toUpperCase(), draft: !!p.draft, text: String(p.text || "").slice(0, 80), id: p.id ?? p.uuid ?? null };
+    return { day: m[1], hour: Number(m[2]), minute: Number(m[3]), type: String(p.instagramData?.type || p.type || "POST").toUpperCase(), draft: !!p.draft, text: String(p.text || ""), id: p.id ?? p.uuid ?? null, ...(p.status || p.publicationStatus ? { status: String(p.status || p.publicationStatus) } : {}), ...(scheduledError(p) ? { error: scheduledError(p) } : {}) };
   }).filter(Boolean);
 }
 
@@ -114,6 +154,7 @@ export function normalizeScheduled(r) {
  */
 export function postInput({ blogId, day, time, tz, text, media, altText = [], kind, ai = false, draft = false, trial = false, networks = ["instagram"], title = "", coverMs = null }) {
   const reel = kind === "reel";
+  if (kind === "story") networks = ["instagram"];
   const providers = networks.map((network) => ({ network }));
   const info = {
     autoPublish: true,
@@ -130,7 +171,7 @@ export function postInput({ blogId, day, time, tz, text, media, altText = [], ki
     text,
   };
   if (reel && Number.isFinite(coverMs)) info.videoCoverMilliseconds = Math.max(0, Math.round(coverMs));
-  if (networks.includes("instagram")) info.instagramData = { autoPublish: true, type: reel ? (trial ? "TRIAL_REEL" : "REEL") : "POST", showReelOnFeed: true, isAiGenerated: !!ai };
+  if (networks.includes("instagram")) info.instagramData = { autoPublish: true, type: reel ? (trial ? "TRIAL_REEL" : "REEL") : kind === "story" ? "STORY" : "POST", showReelOnFeed: !trial, isAiGenerated: !!ai };
   if (networks.includes("facebook")) info.facebookData = { type: reel ? "REEL" : "POST" };
   if (networks.includes("linkedin")) info.linkedinData = kind === "carousel" ? { documentTitle: title.slice(0, 100), publishImagesAsPDF: true, previewIncluded: true, type: "post" } : { previewIncluded: true, type: "post" };
   if (networks.includes("tiktok")) info.tiktokData = { isAigc: !!ai };
@@ -157,5 +198,7 @@ export function createdPost(r) {
 /** Schedule one post. Returns {plannerUrl, id, raw}. */
 export async function createPost(connector, input) {
   const r = await metricoolCall(connector, "createScheduledPost", input, { timeoutMs: 420000 });
-  return { ...createdPost(r), raw: r };
+  const post = createdPost(r);
+  if (post.id == null || post.id === "") throw callError("createScheduledPost", "No post id came back. Check Metricool before trying again.", true);
+  return { ...post, raw: r };
 }

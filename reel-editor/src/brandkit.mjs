@@ -9,7 +9,7 @@ import { deepMerge, readJSON } from "./util.mjs";
 import { resolveBrandTokens } from "./brandtokens.mjs";
 import { assertNoGreg } from "./speaker-intake.mjs";
 // Client captions keep the quieter October 30 look as Greg restores his bigger, gold captions.
-import { CLIENT_CAPTIONS } from "./presets.mjs";
+import { CLIENT_CAPTIONS, CLIENT_BASE } from "./presets.mjs";
 
 /**
  * Brand kits: one brand file (kit/brand-template.json) becomes a Reel Editor Kit zip for someone else, with their
@@ -38,9 +38,10 @@ export function checkBrand(b) {
   if (b.brollEngine != null && !["codex", "runway"].includes(b.brollEngine)) out.push('brollEngine is "codex" or "runway"');
   if (b.captionKeywords != null && b.captionKeywords !== "auto") out.push('captionKeywords is "auto" (or leave it out)');
   if (b.looks?.only != null) {
+    if (!Array.isArray(b.looks.only)) out.push("looks.only must be a list; leave it empty to allow every house look");
     const only = Array.isArray(b.looks.only) ? b.looks.only.map((x) => String(x).toLowerCase().trim()) : [];
     for (const x of only) if (!LOOK_IDS.includes(x) || x === "gregcard") out.push(`looks.only: "${x}" is not a look they can use (${LOOK_IDS.filter((id) => id !== "gregcard").join(", ")})`);
-    if (only.filter((x) => LOOK_IDS.includes(x) && x !== "gregcard").length < 2) out.push("looks.only needs at least 2 looks, so reels can vary");
+    if (only.length && new Set(only.filter((x) => LOOK_IDS.includes(x) && x !== "gregcard")).size < 2) out.push("looks.only needs at least 2 looks, so reels can vary");
   }
   return out;
 }
@@ -122,8 +123,8 @@ export function brandPreset(b, { fonts = {} } = {}) {
     // The Greg card is Greg's signature look; nobody else's reels get it. looks.only narrows the catalog to the
     // looks listed and opts into the brand looks among them (atelier, note, serifonlife).
     graphics: { ...lookChoice(legacy), ...(calm ? { every: 14, max: 4 } : { every: 10, max: 6 }), clearStart: 0 },
-    // worldInPrompt: the Codex stills come from their world, not Greg's built-in examples.
-    broll: { ...broll, stock: compat.stock ?? [], library: compat.library === true, engine: brollEngine, world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
+    // Their footage brief uses their world; the free sources can still be overridden by the brand.
+    broll: { ...broll, stock: compat.stock ?? (brollEngine === "runway" ? [] : [...CLIENT_BASE.broll.stock]), library: compat.library ?? (brollEngine !== "runway"), ...(compat.stillFallback != null ? { stillFallback: compat.stillFallback } : {}), engine: brollEngine, world: String(compat.world ?? b.world ?? "").trim(), worldInPrompt: true, style: String(compat.brollStyle ?? b.brollStyle ?? "").trim() },
     carousel: { handle: identity.handle || "", style: String(compat.carouselStyle ?? b.carouselStyle ?? "").trim() },
     lowerThird: { name: identity.name, handle: identity.handle || "" },
   };
@@ -241,13 +242,13 @@ export const stripStudio = (html) => String(html).replace(/[ \t]*<!-- studio -->
 
 /**
  * The Start Here page with their name on it and the look question gone (their look comes with the kit). A Content
- * Studio kit (`studio: true`) keeps the Content Studio section and points at Install Content Studio.command; any
+ * Studio kit (`studio: true`) keeps the Content Studio section and points at Install Reels.command; any
  * other kit drops it.
  */
 export function personalizeStartHere(html, b, { studio = false } = {}) {
-  const who = studio ? `${b.name}'s Content Studio` : `${b.name}'s Reel Editor`;
+  const who = studio ? `${b.name}'s reels and posts` : `${b.name}'s Reel Editor`;
   const page = studio
-    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/<b>Install Reel Editor\.command<\/b>/g, "<b>Install Content Studio.command</b>")
+    ? String(html).replace(/<!-- \/?studio -->\n?/g, "").replace(/Install Reel Editor\.(command|app)/g, "Install Reels.$1")
     : stripStudio(html);
   return page
     .replace("<!-- signups -->", signupsHTML({ studio }))
@@ -258,3 +259,40 @@ export function personalizeStartHere(html, b, { studio = false } = {}) {
 }
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+/** Beginner walkthrough for either kind of client kit. */
+export function personalizeSetupGuide(html, b, { studio = false } = {}) {
+  const who = `${b.name}'s ${studio ? "reels and posts" : "Reel Editor"}`;
+  return (studio ? String(html).replace(/<!-- \/?studio -->\n?/g, "") : stripStudio(html))
+    .replace(/<!-- (reel-claude|reel-guide) -->[\s\S]*?<!-- \/\1 -->/g, (block) => studio ? "" : block.replace(/<!--[^>]*-->/g, ""))
+    .replace("<!-- signups -->", signupsHTML({ studio }))
+    .replace("<title>Reel Editor: Setup Guide</title>", `<title>${esc(who)}: Setup Guide</title>`)
+    .replace("<h1>Reel Editor: Setup Guide</h1>", `<h1>${esc(who)}: Setup Guide</h1>`)
+    .replace(/Install Reel Editor\.(command|app)/g, studio ? "Install Reels.$1" : "Install Reel Editor.$1")
+    .replace(/<tr><td>Your look<\/td><td>[\s\S]*?<\/td><\/tr>/, "");
+}
+
+/** Pasteable delivery text, kept beside the zip rather than inside it. */
+export function kitSendOutMessage(b, { studio = false, release, dev = false } = {}) {
+  // brand.names is the spelling list, so it can hold company names too: greet the people only when there are one or
+  // two two-word names (like "Zack Straughn"), otherwise just say hi. Greg adds the name before sending.
+  const people = (Array.isArray(b.names) ? b.names : []).map((n) => String(n).trim()).filter((n) => /^\S+ \S+$/.test(n));
+  const firsts = people.length && people.length <= 2 && people.length === b.names.length ? people.map((n) => n.split(" ")[0]) : [];
+  const greeting = firsts.length ? ` ${firsts.join(" and ")}` : "";
+  const studioLine = studio ? " and schedules them through your own Metricool" : "";
+  return [
+    ...(dev ? ["WARNING: This is a development kit. It is not pinned to a tested release. Do not send it to a client.", ""] : []),
+    `Hi${greeting}, here is your ${studio ? "reels and posts" : "Reel Editor"} kit. It turns your talking clips into finished reels${studioLine}.`,
+    ...(release ? [`This kit installs tested release ${release.id}.`, ""] : []),
+    "",
+    "1. Get the zip onto your Mac. Open the link on your Mac and download it, or AirDrop it from your phone. Zip files sent by text often come through blank, so ask me for a link if that happens.",
+    "2. Double click the zip to unzip it, then open Setup Guide.html first. It walks you through every step and every question the installer asks.",
+    `3. Before you install, have your Claude Pro or Max account ready${studio ? ", plus a Metricool account with your Instagram connected" : ""}. The Sign up here folder has every link.`,
+    "4. After the install, fill in your own brand guide with Claude Code. The guide has the exact words to paste.",
+    "",
+    ...(studio ? ["Use only Desktop/Reels: film, drop in a Raw folder, watch the finished reel, then drag it to Publish. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open.", "After your test reel, a setup page opens in your browser. It connects Claude and Metricool, sets your posting times and turns on the two Claude routines. It saves as you go; type reel setup in Terminal to open it again. Carousels and statics start once your brand guide is finished, then they are made and scheduled at 6 AM and noon.", ""] : []),
+    "Text me if you get stuck.",
+    "Greg",
+    "",
+  ].join("\n");
+}

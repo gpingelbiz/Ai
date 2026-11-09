@@ -10,6 +10,7 @@ import { resolveBrandTokens, tokensCSS } from "./brandtokens.mjs";
 import { detectFaces, headBoxFor } from "./placement.mjs";
 import { signatureRulesCSS, signatureHTML } from "./signature.mjs";
 import { profileCrop } from "./profile-crop.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 const GREG_HANDLE = "@officialgregpingel";
 const POWER = ["broke", "kills", "costs", "cost", "quit", "lies", "lie", "wrong", "nobody", "expensive", "losing", "lose", "weak", "rich", "pay", "beg", "every", "never", "stop", "fire", "fired", "blame", "own", "truth", "late", "dead", "fail", "failed"];
@@ -234,15 +235,17 @@ export function scoreFrameCandidates(candidates, { duration = Infinity, hookEnd 
 
 export function personBinary({ cacheDir } = {}) {
   if (process.platform !== "darwin") return Promise.resolve(null);
-  const bin = path.join(cacheDir || process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "person");
-  const src = path.join(PKG_ROOT, "scripts", "person.swift");
-  try {
-    if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(src).mtimeMs) {
-      ensureDir(path.dirname(bin));
-      return run("swiftc", ["-O", "-o", bin, src], { capture: true }).then(() => bin).catch(() => null);
-    }
-    return Promise.resolve(bin);
-  } catch { return Promise.resolve(null); }
+  return nativeTool("person", { compile: () => {
+    const bin = path.join(cacheDir || process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "person");
+    const src = path.join(PKG_ROOT, "scripts", "person.swift");
+    try {
+      if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(src).mtimeMs) {
+        ensureDir(path.dirname(bin));
+        return run("swiftc", ["-O", "-o", bin, src], { capture: true }).then(() => bin).catch(() => null);
+      }
+      return Promise.resolve(bin);
+    } catch { return Promise.resolve(null); }
+  } }).catch(() => null);
 }
 
 function faceOverlapWithHook(face, plan, t) {

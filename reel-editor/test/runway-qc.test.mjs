@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { visionJSON, subjectMotion, videoFrames, motionCrops, landingCrops, DEFECT_QUESTIONS, reviewTimes, contactSheet, validTimeline, eventInPoint, momentInPoint, phonePreviews, localClipCheck, audioPeak, soundMix, verifySound } from "../src/broll-qc.mjs";
+import { visionJSON, subjectMotion, videoFrames, motionCrops, landingCrops, DEFECT_QUESTIONS, reviewTimes, contactSheet, validTimeline, eventInPoint, momentInPoint, motionWindowInPoint, phonePreviews, localClipCheck, audioPeak, soundMix, verifySound } from "../src/broll-qc.mjs";
 import { run } from "../src/util.mjs";
-import { runwayTiming, rapidListPicks, placeRunwayBroll, planShotBudget, videoMotion, hasPhysicalSound, checkRunwayVideo } from "../src/broll-runway.mjs";
+import { runwayTiming, rapidListPicks, placeRunwayBroll, planShotBudget, videoMotion, hasPhysicalSound, checkRunwayVideo, trimRunwayClip, clipCheckPrompt } from "../src/broll-runway.mjs";
 import { generateTask, failurePolicy, waitForTask, makeStill } from "../src/runway.mjs";
 import { bakeoffOptions, runBakeoff } from "../scripts/runway-bakeoff.mjs";
 import { recordUsage, readUsage } from "../src/usage.mjs";
@@ -484,7 +484,7 @@ test("local Mac checks inspect every sampled frame, reject text and human faces,
   const frames = [{ file: "a.png", time: 0 }, { file: "b.png", time: 0.25 }];
   for (const scenario of ["clear", "text", "human", "animal", "missing"]) {
     const dir = folder(), runs = [];
-    const check = () => localClipCheck(frames, { dir, pick: { shows: "gorilla" }, runFn: async (cmd, args) => {
+    const check = () => localClipCheck(frames, { dir, resolveTool: async (_, { compile }) => compile(), pick: { shows: "gorilla" }, runFn: async (cmd, args) => {
       runs.push(cmd);
       if (cmd === "swiftc") { fs.writeFileSync(args[args.indexOf("-o") + 1], "binary"); return {}; }
       return { out: JSON.stringify({ width: 360, height: 640, lines: scenario === "text" ? [{ text: "SALE", confidence: 0.9 }] : [], faces: ["human", "animal"].includes(scenario) ? [{ confidence: 0.9 }] : scenario === "missing" ? undefined : [] }) };
@@ -569,4 +569,67 @@ test("phone preview preserves the rendered caption casing", async () => {
   const dir = folder();
   await phonePreviews("still.jpg", { start: 1, duration: 1 }, [{ start: 1, end: 2, text: "a coconut lands" }], { dir, caption: { uppercase: true }, runFn: fakeRun });
   assert.equal(fs.readFileSync(path.join(dir, "caption-1.txt"), "utf8"), "A COCONUT LANDS");
+});
+
+
+test("ambient moving settings need no event while every timed defect and motion floor still vetoes them", async () => {
+  const pick = { shows: "mountains", kind: "ambient", scene: "Clouds drifting over mountains", action: "Clouds drift" };
+  const prompt = clipCheckPrompt({ seen: "clouds over mountains", frames: [], sheets: [], crops: [], pick, shot: { start: 0, duration: 2 }, groups: [] });
+  assert.match(prompt, /No discrete event, payoff or word-fitting event is required/);
+  assert.doesNotMatch(prompt, /Meaningful word-fitting subject action must begin/);
+  for (const question of Object.values(DEFECT_QUESTIONS)) assert.ok(prompt.includes(question));
+  for (const defect of [null, ...Object.keys(DEFECT_QUESTIONS), "frozen", "slow", "swing", "local", "wrong-setting"]) {
+    const dir = folder(), checks = structuredClone(pass.checks);
+    if (checks[defect]) checks[defect] = { yes: true, time: 0.5, why: "visible defect at this frame" };
+    const result = await checkRunwayVideo({ file: "ambient.mp4", dir, shot: { start: 0, duration: 2 }, pick, groups: [], deps: {
+      runFn: fakeRun, log: () => {},
+      measureMotion: async () => ({ mean: defect === "frozen" ? 0 : defect === "slow" ? 2 : 6, sustained: defect === "slow" ? 2 : 6, local: 0, cameraSpeed: defect === "swing" ? 0.5 : 0, peakTime: 0, regions: [{ time: 0, x: 0.25, y: 0.25, width: 0.5, height: 0.5, change: 6 }] }),
+      localClipCheck: async () => ({ ok: defect !== "local", why: "readable text in local check" }),
+      claudeLook: async (p) => {
+        if (!p.startsWith("Used source")) return '{"seen":"clouds moving over the spoken mountains","contact":null}';
+        assert.match(p, /No discrete event/);
+        return JSON.stringify({ ...pass, shows: defect !== "wrong-setting", checks, eventType: "continuous", onset: 0, contact: null, completion: null });
+      },
+    } });
+    assert.equal(result.ok, defect === null, `${defect}: ${result.why}`);
+    assert.equal(result.unavailable, undefined, `${defect}: ${result.why}`);
+  }
+});
+
+test("reviewMovingClip keeps ambient kind through both inspections and checks the actual cut", async () => {
+  const { reviewMovingClip } = await import("../src/broll-library.mjs");
+  const calls = [], dir = folder(), pick = { kind: "ambient", shows: "road", action: "Road passes during the drive" };
+  const accepted = await reviewMovingClip({ file: "road.mp4", duration: 6, shot: { start: 10, duration: 1.2 }, pick, groups: [], dir, deps: {
+    checkRunwayVideo: async (args) => { calls.push(args); return { ...pass, ok: true, look: "pass", eventType: "continuous", onset: 0, contact: null, completion: null }; },
+    trimRunwayClip: async (_file, duration, options) => { assert.equal(duration, 1.2); assert.equal(options.timeline, undefined); return { inPoint: 2, full: "road.full.mp4" }; },
+  } });
+  assert.ok(accepted); assert.equal(accepted.kind, "ambient");
+  assert.equal(calls.length, 2); assert.equal(calls[0].eventOnly, true); assert.equal(calls[1].inPoint, 2);
+  assert.ok(calls.every((c) => c.pick.kind === "ambient"));
+});
+
+test("moving subject windows prefer measured movement inside the located event and retain landing constraints", () => {
+  const motion = { changes: Array.from({ length: 64 }, (_, i) => i >= 32 && i < 48 ? 10 : 0) };
+  const timeline = { eventType: "continuous", onset: 0, contact: null, completion: 7 };
+  assert.equal(momentInPoint(timeline, 1.2, 8, motion), 4);
+  assert.equal(eventInPoint(timeline, 1.2, 8, 0, motion), 4);
+  const lateOutsideEvent = { changes: Array.from({ length: 64 }, (_, i) => i > 48 ? 100 : i >= 16 && i < 32 ? 5 : 0) };
+  assert.equal(motionWindowInPoint({ ...timeline, onset: 1, completion: 4 }, 1.2, 8, lateOutsideEvent), 2);
+  const landing = { eventType: "drop-land", onset: 1, contact: 1.4, completion: 1.6 };
+  const start = eventInPoint(landing, 1.2, 8, 0, motion);
+  assert.ok(start <= 1 && start + 1.2 >= 1.8, "a later motion peak must not lose the landing event");
+});
+
+test("trimRunwayClip measures subject movement before cutting a continuous event", async () => {
+  const dir = folder(), file = path.join(dir, "plane.mp4"), cuts = [];
+  fs.writeFileSync(file, "plane crossing then empty sky");
+  const frames = Array.from({ length: 64 }, (_, i) => Buffer.alloc(4096, i >= 32 && i < 48 ? i % 2 * 30 : 0));
+  const trimmed = await trimRunwayClip(file, 1.2, { dir, timeline: { eventType: "continuous", onset: 0, contact: null, completion: 7 }, inPoint: 0, runFn: async (cmd, args) => {
+    if (cmd === "ffprobe") return { out: "8" };
+    if (args.at(-1).endsWith("frames.gray")) fs.writeFileSync(args.at(-1), Buffer.concat(frames));
+    else { cuts.push(args); fs.writeFileSync(args.at(-1), "moving plane interval"); }
+  } });
+  assert.ok(trimmed.inPoint >= 4 && trimmed.inPoint < 5, `cut at ${trimmed.inPoint}`);
+  assert.equal(cuts[0][cuts[0].indexOf("-ss") + 1], String(trimmed.inPoint));
+  assert.equal(fs.readFileSync(trimmed.full, "utf8"), "plane crossing then empty sky");
 });

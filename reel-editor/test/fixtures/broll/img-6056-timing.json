@@ -1,0 +1,1073 @@
+{
+  "note": "Small caption word slices from both IMG_6056 words.json files, mapped through cuts.json and checked against saved broll caption groups. Scenes are the saved Codex picks. Original rejected duration/endsAt/endsBefore fields were not retained; regression boundaries explicitly include following related clauses. Caption line indices are local to each slice.",
+  "cases": [
+    {
+      "name": "greg line 16: driving",
+      "originalLine": 16,
+      "groups": [
+        {
+          "start": 12.67,
+          "end": 14.95,
+          "text": "and driving to Arizona",
+          "words": [
+            {
+              "text": "and",
+              "start": 12.72,
+              "end": 12.84
+            },
+            {
+              "text": "driving",
+              "start": 12.96,
+              "end": 13.52
+            },
+            {
+              "text": "to",
+              "start": 13.62,
+              "end": 14.14
+            },
+            {
+              "text": "Arizona",
+              "start": 14.2,
+              "end": 14.74
+            }
+          ]
+        },
+        {
+          "start": 14.95,
+          "end": 15.75,
+          "text": "Well no",
+          "words": [
+            {
+              "text": "Well",
+              "start": 15,
+              "end": 15.14
+            },
+            {
+              "text": "no",
+              "start": 15.34,
+              "end": 15.48
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "driving",
+        "scene": "Forward-facing phone-camera view from inside a moving car; an open desert highway leading through Arizona terrain with scrub and distant mesas; early natural daylight, believable muted colour and readable shadows; deep portrait composition with the road filling the central third above the captions.",
+        "kind": "ambient",
+        "action": "The highway flows steadily beneath the car while desert scrub and distant mesas pass on both sides.",
+        "stockQuery": "desert highway driving",
+        "stockSynonyms": [
+          "highway",
+          "road"
+        ],
+        "duration": 2.2,
+        "endsAt": {
+          "line": 0,
+          "wordIndex": 3,
+          "text": "Arizona"
+        },
+        "endsBefore": {
+          "line": 1,
+          "wordIndex": 0,
+          "text": "Well"
+        }
+      }
+    },
+    {
+      "name": "greg line 40: driving",
+      "originalLine": 40,
+      "groups": [
+        {
+          "start": 33.703,
+          "end": 34.983,
+          "text": "be driving down",
+          "words": [
+            {
+              "text": "be",
+              "start": 33.753,
+              "end": 34.013
+            },
+            {
+              "text": "driving",
+              "start": 34.073,
+              "end": 34.493
+            },
+            {
+              "text": "down",
+              "start": 34.553,
+              "end": 34.873
+            }
+          ]
+        },
+        {
+          "start": 34.983,
+          "end": 36.043,
+          "text": "through the mountains",
+          "words": [
+            {
+              "text": "through",
+              "start": 35.033,
+              "end": 35.213
+            },
+            {
+              "text": "the",
+              "start": 35.233,
+              "end": 35.293
+            },
+            {
+              "text": "mountains",
+              "start": 35.333,
+              "end": 36.013
+            }
+          ]
+        },
+        {
+          "start": 36.043,
+          "end": 37.609,
+          "text": "to see you",
+          "words": [
+            {
+              "text": "to",
+              "start": 36.093,
+              "end": 36.553
+            },
+            {
+              "text": "see",
+              "start": 36.779,
+              "end": 36.899
+            },
+            {
+              "text": "you",
+              "start": 36.959,
+              "end": 37.179
+            }
+          ]
+        },
+        {
+          "start": 37.609,
+          "end": 38.309,
+          "text": "So I'm staying",
+          "words": [
+            {
+              "text": "So",
+              "start": 37.659,
+              "end": 37.999
+            },
+            {
+              "text": "I'm",
+              "start": 38.059,
+              "end": 38.139
+            },
+            {
+              "text": "staying",
+              "start": 38.159,
+              "end": 38.319
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "driving",
+        "scene": "Forward-facing phone-camera view from inside a moving car; a winding mountain road descending between rocky slopes and scattered desert trees; bright natural daylight, believable colour and crisp readable shadows; deep portrait composition with the next bend and surrounding mountains clear above the captions.",
+        "kind": "ambient",
+        "action": "The car follows the descending bends as roadside rocks and trees sweep steadily past.",
+        "stockQuery": "mountain road driving",
+        "stockSynonyms": [
+          "hills",
+          "pass"
+        ],
+        "duration": 2.2,
+        "endsAt": {
+          "line": 1,
+          "wordIndex": 2,
+          "text": "mountains"
+        },
+        "endsBefore": {
+          "line": 3,
+          "wordIndex": 0,
+          "text": "So"
+        }
+      }
+    },
+    {
+      "name": "greg line 56: flight",
+      "originalLine": 56,
+      "groups": [
+        {
+          "start": 47.563,
+          "end": 48.503,
+          "text": "to catch a flight",
+          "words": [
+            {
+              "text": "to",
+              "start": 47.613,
+              "end": 47.753
+            },
+            {
+              "text": "catch",
+              "start": 47.813,
+              "end": 48.073
+            },
+            {
+              "text": "a",
+              "start": 48.153,
+              "end": 48.213
+            },
+            {
+              "text": "flight",
+              "start": 48.253,
+              "end": 48.513
+            }
+          ]
+        },
+        {
+          "start": 48.503,
+          "end": 49.603,
+          "text": "back to Dallas",
+          "words": [
+            {
+              "text": "back",
+              "start": 48.553,
+              "end": 48.833
+            },
+            {
+              "text": "to",
+              "start": 48.913,
+              "end": 49.233
+            },
+            {
+              "text": "Dallas",
+              "start": 49.293,
+              "end": 49.573
+            }
+          ]
+        },
+        {
+          "start": 49.603,
+          "end": 50.503,
+          "text": "So that's",
+          "words": [
+            {
+              "text": "So",
+              "start": 49.653,
+              "end": 49.793
+            },
+            {
+              "text": "that's",
+              "start": 50.353,
+              "end": 50.533
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "flight",
+        "scene": "Medium low-angle phone-camera shot; a passenger airplane aligned on an airport runway with open sky and clear forward space; bright natural daylight, believable colour and readable shadows; sharp portrait composition with the airplane filling over a third of the frame above the captions.",
+        "kind": "action",
+        "action": "The airplane accelerates forward and lifts cleanly from the runway into the sky.",
+        "stockQuery": "airplane taking off",
+        "stockSynonyms": [
+          "airplane",
+          "jet"
+        ],
+        "duration": 1.8,
+        "endsAt": {
+          "line": 1,
+          "wordIndex": 2,
+          "text": "Dallas"
+        },
+        "endsBefore": {
+          "line": 2,
+          "wordIndex": 0,
+          "text": "So"
+        }
+      }
+    },
+    {
+      "name": "greg line 31: middle of nowhere",
+      "originalLine": 31,
+      "groups": [
+        {
+          "start": 26.944,
+          "end": 27.304,
+          "text": "in the middle",
+          "words": [
+            {
+              "text": "in",
+              "start": 26.994,
+              "end": 27.044
+            },
+            {
+              "text": "the",
+              "start": 27.074,
+              "end": 27.124
+            },
+            {
+              "text": "middle",
+              "start": 27.154,
+              "end": 27.314
+            }
+          ]
+        },
+        {
+          "start": 27.304,
+          "end": 28.137,
+          "text": "of nowhere",
+          "words": [
+            {
+              "text": "of",
+              "start": 27.354,
+              "end": 27.413
+            },
+            {
+              "text": "nowhere",
+              "start": 27.534,
+              "end": 27.934
+            }
+          ]
+        },
+        {
+          "start": 28.137,
+          "end": 29.197,
+          "text": "That's where my mother lives",
+          "words": [
+            {
+              "text": "That's",
+              "start": 28.187,
+              "end": 28.347
+            },
+            {
+              "text": "where",
+              "start": 28.367,
+              "end": 28.447
+            },
+            {
+              "text": "my",
+              "start": 28.487,
+              "end": 28.567
+            },
+            {
+              "text": "mother",
+              "start": 28.627,
+              "end": 28.807
+            },
+            {
+              "text": "lives",
+              "start": 28.867,
+              "end": 29.167
+            }
+          ]
+        },
+        {
+          "start": 29.197,
+          "end": 29.637,
+          "text": "and so I'm gonna",
+          "words": [
+            {
+              "text": "and",
+              "start": 29.247,
+              "end": 29.367
+            },
+            {
+              "text": "so",
+              "start": 29.427,
+              "end": 29.507
+            },
+            {
+              "text": "I'm",
+              "start": 29.527,
+              "end": 29.577
+            },
+            {
+              "text": "gonna",
+              "start": 29.587,
+              "end": 29.647
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "middle of nowhere",
+        "scene": "Wide eye-level phone-camera shot; a lonely paved road crossing remote high-desert country near Concho with sparse scrub and distant low hills; clear natural daylight, believable earth colours and readable shadows; portrait composition with the empty road prominent above the captions.",
+        "kind": "ambient",
+        "action": "Light wind ripples the roadside grass while small cloud shadows travel across the empty remote landscape.",
+        "stockQuery": "remote desert road",
+        "stockSynonyms": [
+          "backcountry",
+          "wilderness"
+        ],
+        "duration": 1.8,
+        "endsAt": {
+          "line": 1,
+          "wordIndex": 1,
+          "text": "nowhere"
+        },
+        "endsBefore": {
+          "line": 3,
+          "wordIndex": 0,
+          "text": "and"
+        }
+      }
+    },
+    {
+      "name": "greg line 48: laptop",
+      "originalLine": 48,
+      "groups": [
+        {
+          "start": 41.663,
+          "end": 42.943,
+          "text": "you my laptop",
+          "words": [
+            {
+              "text": "you",
+              "start": 41.713,
+              "end": 41.773
+            },
+            {
+              "text": "my",
+              "start": 41.813,
+              "end": 41.913
+            },
+            {
+              "text": "laptop",
+              "start": 41.973,
+              "end": 42.493
+            }
+          ]
+        },
+        {
+          "start": 42.943,
+          "end": 43.423,
+          "text": "hopefully if I'm",
+          "words": [
+            {
+              "text": "hopefully",
+              "start": 42.993,
+              "end": 43.253
+            },
+            {
+              "text": "if",
+              "start": 43.273,
+              "end": 43.333
+            },
+            {
+              "text": "I'm",
+              "start": 43.393,
+              "end": 43.453
+            }
+          ]
+        },
+        {
+          "start": 43.423,
+          "end": 44.783,
+          "text": "not down there too late",
+          "words": [
+            {
+              "text": "not",
+              "start": 43.473,
+              "end": 43.573
+            },
+            {
+              "text": "down",
+              "start": 43.613,
+              "end": 43.713
+            },
+            {
+              "text": "there",
+              "start": 43.733,
+              "end": 43.833
+            },
+            {
+              "text": "too",
+              "start": 43.873,
+              "end": 43.973
+            },
+            {
+              "text": "late",
+              "start": 44.033,
+              "end": 44.273
+            }
+          ]
+        },
+        {
+          "start": 44.783,
+          "end": 45.203,
+          "text": "and be",
+          "words": [
+            {
+              "text": "and",
+              "start": 44.833,
+              "end": 45.093
+            },
+            {
+              "text": "be",
+              "start": 45.153,
+              "end": 45.213
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "laptop",
+        "scene": "Close side-angle phone-camera shot; a plain unmarked laptop held in two hands across an office desk with another pair of hands ready to receive it; soft natural daylight, believable neutral colour and readable shadows; sharp portrait focus with the laptop filling over a third of the frame above the captions.",
+        "kind": "action",
+        "action": "The laptop moves across the desk and settles securely into the receiving hands.",
+        "stockQuery": "handing over laptop",
+        "stockSynonyms": [
+          "computer",
+          "notebook"
+        ],
+        "duration": 1.8,
+        "endsAt": {
+          "line": 0,
+          "wordIndex": 2,
+          "text": "laptop"
+        },
+        "endsBefore": {
+          "line": 3,
+          "wordIndex": 0,
+          "text": "and"
+        }
+      }
+    },
+    {
+      "name": "julee line 16: driving",
+      "originalLine": 16,
+      "groups": [
+        {
+          "start": 12.67,
+          "end": 14.95,
+          "text": "and driving to Arizona",
+          "words": [
+            {
+              "text": "and",
+              "start": 12.72,
+              "end": 12.84
+            },
+            {
+              "text": "driving",
+              "start": 12.96,
+              "end": 13.52
+            },
+            {
+              "text": "to",
+              "start": 13.62,
+              "end": 14.14
+            },
+            {
+              "text": "Arizona",
+              "start": 14.2,
+              "end": 14.74
+            }
+          ]
+        },
+        {
+          "start": 14.95,
+          "end": 15.75,
+          "text": "Well no",
+          "words": [
+            {
+              "text": "Well",
+              "start": 15,
+              "end": 15.14
+            },
+            {
+              "text": "no",
+              "start": 15.34,
+              "end": 15.48
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "driving",
+        "scene": "Forward-facing phone-camera view from inside a moving car; an open desert highway leading through Arizona terrain with scrub and distant mesas; early natural daylight, believable muted colour and readable shadows; deep portrait composition with the road filling the central third above the captions.",
+        "kind": "ambient",
+        "action": "The highway flows steadily beneath the car while desert scrub and distant mesas pass on both sides.",
+        "stockQuery": "desert highway driving",
+        "stockSynonyms": [
+          "highway",
+          "road"
+        ],
+        "duration": 2.2,
+        "endsAt": {
+          "line": 0,
+          "wordIndex": 3,
+          "text": "Arizona"
+        },
+        "endsBefore": {
+          "line": 1,
+          "wordIndex": 0,
+          "text": "Well"
+        }
+      }
+    },
+    {
+      "name": "julee line 40: driving",
+      "originalLine": 40,
+      "groups": [
+        {
+          "start": 33.683,
+          "end": 34.983,
+          "text": "be driving down",
+          "words": [
+            {
+              "text": "be",
+              "start": 33.733,
+              "end": 34.013
+            },
+            {
+              "text": "driving",
+              "start": 34.073,
+              "end": 34.493
+            },
+            {
+              "text": "down",
+              "start": 34.573,
+              "end": 34.873
+            }
+          ]
+        },
+        {
+          "start": 34.983,
+          "end": 36.043,
+          "text": "through the mountains",
+          "words": [
+            {
+              "text": "through",
+              "start": 35.033,
+              "end": 35.213
+            },
+            {
+              "text": "the",
+              "start": 35.233,
+              "end": 35.293
+            },
+            {
+              "text": "mountains",
+              "start": 35.333,
+              "end": 36.013
+            }
+          ]
+        },
+        {
+          "start": 36.043,
+          "end": 37.609,
+          "text": "to see you",
+          "words": [
+            {
+              "text": "to",
+              "start": 36.093,
+              "end": 36.553
+            },
+            {
+              "text": "see",
+              "start": 36.779,
+              "end": 36.899
+            },
+            {
+              "text": "you",
+              "start": 36.959,
+              "end": 37.179
+            }
+          ]
+        },
+        {
+          "start": 37.609,
+          "end": 38.309,
+          "text": "So I'm staying",
+          "words": [
+            {
+              "text": "So",
+              "start": 37.659,
+              "end": 37.999
+            },
+            {
+              "text": "I'm",
+              "start": 38.059,
+              "end": 38.139
+            },
+            {
+              "text": "staying",
+              "start": 38.159,
+              "end": 38.319
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "driving",
+        "scene": "Forward-facing phone-camera view from inside a moving car; a winding mountain road descending between rocky slopes and scattered desert trees; bright natural daylight, believable colour and crisp readable shadows; deep portrait composition with the next bend and surrounding mountains clear above the captions.",
+        "kind": "ambient",
+        "action": "The car follows the descending bends as roadside rocks and trees sweep steadily past.",
+        "stockQuery": "mountain road driving",
+        "stockSynonyms": [
+          "hills",
+          "pass"
+        ],
+        "duration": 2.2,
+        "endsAt": {
+          "line": 1,
+          "wordIndex": 2,
+          "text": "mountains"
+        },
+        "endsBefore": {
+          "line": 3,
+          "wordIndex": 0,
+          "text": "So"
+        }
+      }
+    },
+    {
+      "name": "julee line 56: flight",
+      "originalLine": 56,
+      "groups": [
+        {
+          "start": 47.583,
+          "end": 48.503,
+          "text": "to catch a flight",
+          "words": [
+            {
+              "text": "to",
+              "start": 47.633,
+              "end": 47.753
+            },
+            {
+              "text": "catch",
+              "start": 47.813,
+              "end": 48.073
+            },
+            {
+              "text": "a",
+              "start": 48.173,
+              "end": 48.223
+            },
+            {
+              "text": "flight",
+              "start": 48.253,
+              "end": 48.513
+            }
+          ]
+        },
+        {
+          "start": 48.503,
+          "end": 49.603,
+          "text": "back to Dallas",
+          "words": [
+            {
+              "text": "back",
+              "start": 48.553,
+              "end": 48.833
+            },
+            {
+              "text": "to",
+              "start": 48.913,
+              "end": 49.233
+            },
+            {
+              "text": "Dallas",
+              "start": 49.293,
+              "end": 49.593
+            }
+          ]
+        },
+        {
+          "start": 49.603,
+          "end": 50.503,
+          "text": "So that's",
+          "words": [
+            {
+              "text": "So",
+              "start": 49.653,
+              "end": 49.793
+            },
+            {
+              "text": "that's",
+              "start": 50.353,
+              "end": 50.533
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "flight",
+        "scene": "Medium low-angle phone-camera shot; a passenger airplane aligned on an airport runway with open sky and clear forward space; bright natural daylight, believable colour and readable shadows; sharp portrait composition with the airplane filling over a third of the frame above the captions.",
+        "kind": "action",
+        "action": "The airplane accelerates forward and lifts cleanly from the runway into the sky.",
+        "stockQuery": "airplane taking off",
+        "stockSynonyms": [
+          "airplane",
+          "jet"
+        ],
+        "duration": 1.8,
+        "endsAt": {
+          "line": 1,
+          "wordIndex": 2,
+          "text": "Dallas"
+        },
+        "endsBefore": {
+          "line": 2,
+          "wordIndex": 0,
+          "text": "So"
+        }
+      }
+    },
+    {
+      "name": "julee line 31: middle of nowhere",
+      "originalLine": 31,
+      "groups": [
+        {
+          "start": 26.944,
+          "end": 27.304,
+          "text": "in the middle",
+          "words": [
+            {
+              "text": "in",
+              "start": 26.994,
+              "end": 27.044
+            },
+            {
+              "text": "the",
+              "start": 27.074,
+              "end": 27.124
+            },
+            {
+              "text": "middle",
+              "start": 27.154,
+              "end": 27.314
+            }
+          ]
+        },
+        {
+          "start": 27.304,
+          "end": 28.137,
+          "text": "of nowhere",
+          "words": [
+            {
+              "text": "of",
+              "start": 27.354,
+              "end": 27.413
+            },
+            {
+              "text": "nowhere",
+              "start": 27.534,
+              "end": 27.934
+            }
+          ]
+        },
+        {
+          "start": 28.137,
+          "end": 29.197,
+          "text": "That's where my mother lives",
+          "words": [
+            {
+              "text": "That's",
+              "start": 28.187,
+              "end": 28.347
+            },
+            {
+              "text": "where",
+              "start": 28.367,
+              "end": 28.447
+            },
+            {
+              "text": "my",
+              "start": 28.487,
+              "end": 28.567
+            },
+            {
+              "text": "mother",
+              "start": 28.627,
+              "end": 28.807
+            },
+            {
+              "text": "lives",
+              "start": 28.867,
+              "end": 29.167
+            }
+          ]
+        },
+        {
+          "start": 29.197,
+          "end": 29.637,
+          "text": "and so I'm gonna",
+          "words": [
+            {
+              "text": "and",
+              "start": 29.247,
+              "end": 29.367
+            },
+            {
+              "text": "so",
+              "start": 29.427,
+              "end": 29.507
+            },
+            {
+              "text": "I'm",
+              "start": 29.527,
+              "end": 29.577
+            },
+            {
+              "text": "gonna",
+              "start": 29.587,
+              "end": 29.647
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "middle of nowhere",
+        "scene": "Wide eye-level phone-camera shot; a lonely paved road crossing remote high-desert country near Concho with sparse scrub and distant low hills; clear natural daylight, believable earth colours and readable shadows; portrait composition with the empty road prominent above the captions.",
+        "kind": "ambient",
+        "action": "Light wind ripples the roadside grass while small cloud shadows travel across the empty remote landscape.",
+        "stockQuery": "remote desert road",
+        "stockSynonyms": [
+          "backcountry",
+          "wilderness"
+        ],
+        "duration": 1.8,
+        "endsAt": {
+          "line": 1,
+          "wordIndex": 1,
+          "text": "nowhere"
+        },
+        "endsBefore": {
+          "line": 3,
+          "wordIndex": 0,
+          "text": "and"
+        }
+      }
+    },
+    {
+      "name": "julee line 48: laptop",
+      "originalLine": 48,
+      "groups": [
+        {
+          "start": 41.663,
+          "end": 42.943,
+          "text": "you my laptop",
+          "words": [
+            {
+              "text": "you",
+              "start": 41.713,
+              "end": 41.773
+            },
+            {
+              "text": "my",
+              "start": 41.813,
+              "end": 41.913
+            },
+            {
+              "text": "laptop",
+              "start": 41.973,
+              "end": 42.493
+            }
+          ]
+        },
+        {
+          "start": 42.943,
+          "end": 43.423,
+          "text": "hopefully if I'm",
+          "words": [
+            {
+              "text": "hopefully",
+              "start": 42.993,
+              "end": 43.253
+            },
+            {
+              "text": "if",
+              "start": 43.273,
+              "end": 43.333
+            },
+            {
+              "text": "I'm",
+              "start": 43.393,
+              "end": 43.453
+            }
+          ]
+        },
+        {
+          "start": 43.423,
+          "end": 44.783,
+          "text": "not down there too late",
+          "words": [
+            {
+              "text": "not",
+              "start": 43.473,
+              "end": 43.573
+            },
+            {
+              "text": "down",
+              "start": 43.613,
+              "end": 43.713
+            },
+            {
+              "text": "there",
+              "start": 43.733,
+              "end": 43.833
+            },
+            {
+              "text": "too",
+              "start": 43.873,
+              "end": 43.973
+            },
+            {
+              "text": "late",
+              "start": 44.033,
+              "end": 44.273
+            }
+          ]
+        },
+        {
+          "start": 44.783,
+          "end": 45.203,
+          "text": "and be",
+          "words": [
+            {
+              "text": "and",
+              "start": 44.833,
+              "end": 45.093
+            },
+            {
+              "text": "be",
+              "start": 45.153,
+              "end": 45.213
+            }
+          ]
+        }
+      ],
+      "pick": {
+        "line": 0,
+        "shows": "laptop",
+        "scene": "Close side-angle phone-camera shot; a plain unmarked laptop held in two hands across an office desk with another pair of hands ready to receive it; soft natural daylight, believable neutral colour and readable shadows; sharp portrait focus with the laptop filling over a third of the frame above the captions.",
+        "kind": "action",
+        "action": "The laptop moves across the desk and settles securely into the receiving hands.",
+        "stockQuery": "handing over laptop",
+        "stockSynonyms": [
+          "computer",
+          "notebook"
+        ],
+        "duration": 1.8,
+        "endsAt": {
+          "line": 0,
+          "wordIndex": 2,
+          "text": "laptop"
+        },
+        "endsBefore": {
+          "line": 3,
+          "wordIndex": 0,
+          "text": "and"
+        }
+      }
+    }
+  ]
+}

@@ -277,6 +277,10 @@ export function persistentDuckSchedule({ scene, cards = [], broll = [], slams = 
 /** Tidy one scene from Claude: known type, short text, the fields that type needs. Returns null if unusable. */
 export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
   if (!raw || !TYPES.includes(raw.type)) return null;
+  const scripted = raw.source === "script";
+  // Approved script copy is not a planner summary: preserve its words and attribution verbatim.
+  const copy = (value, max) => clean(value, scripted ? Infinity : max);
+  if (scripted && [raw.eyebrow, raw.title, raw.text, raw.value, raw.value2, raw.sub, ...(Array.isArray(raw.items) ? raw.items : []).flatMap((item) => [typeof item === "string" ? item : item?.text, item?.tag])].some((value) => String(value || "").includes("["))) return null;
   if (raw.type === "progress") {
     const s = { type: "progress", title: shortWords(raw.title), style: raw.style === "count" ? "count" : "journey" };
     s.items = (Array.isArray(raw.items) ? raw.items : [])
@@ -286,7 +290,7 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
     if (s.items.length < 2) return null;
     return s;
   }
-  const s = { type: raw.type, line: Number.isInteger(raw.line) ? raw.line : parseInt(raw.line, 10), eyebrow: clean(raw.eyebrow, 40) };
+  const s = { type: raw.type, line: Number.isInteger(raw.line) ? raw.line : parseInt(raw.line, 10), eyebrow: copy(raw.eyebrow, 40), ...(scripted ? { source: "script" } : {}) };
   if (!Number.isInteger(s.line)) return null;
   if (["list", "steps", "ladder"].includes(s.type) && raw.persistent === true) {
     s.persistent = true;
@@ -294,17 +298,17 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
     if (Number.isInteger(endLine)) s.endLine = endLine;
   }
   if (s.type === "stat") {
-    s.value = clean(raw.value, 16);
-    s.value2 = clean(raw.value2, 16);
-    s.sub = clean(raw.sub, 60);
+    s.value = copy(raw.value, 16);
+    s.value2 = copy(raw.value2, 16);
+    s.sub = copy(raw.sub, 60);
     if (!s.value) return null;
   } else if (s.type === "list" || s.type === "steps") {
-    s.title = clean(raw.title, 48);
+    s.title = copy(raw.title, 48);
     const items = (Array.isArray(raw.items) ? raw.items : [])
       .map((it) => (typeof it === "string" ? { text: it } : it || {}))
-      .map((it) => ({ text: clean(it.text, 32), tag: clean(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain", icon: s.type === "list" ? iconFor(it.text, clean(it.icon, 12).toLowerCase()) : "", ...((it.line !== undefined && it.line !== null && it.line !== "") ? { line: itemLine(it.line) } : {}) }))
+      .map((it) => ({ text: copy(it.text, 32), tag: copy(it.tag, 18), state: ["check", "strike"].includes(it.state) ? it.state : "plain", icon: s.type === "list" && !scripted ? iconFor(it.text, clean(it.icon, 12).toLowerCase()) : "", ...((it.line !== undefined && it.line !== null && it.line !== "") ? { line: itemLine(it.line) } : {}) }))
       .filter((it) => it.text)
-      .slice(0, s.persistent ? 7 : 4);
+      .slice(0, s.persistent ? 7 : scripted ? 5 : 4);
     if (items.length < (s.persistent ? 3 : 2)) return null;
     const supplied = items.filter((it) => Object.hasOwn(it, "line"));
     const lined = items.filter((it) => Number.isInteger(it.line));
@@ -375,7 +379,7 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
     s.number = Number.isInteger(raw.number) ? raw.number : 0;
     if (!s.text) return null;
   } else {
-    s.text = clean(raw.text, s.type === "quote" ? 140 : 60);
+    s.text = copy(raw.text, s.type === "quote" ? 140 : 60);
     if (!s.text) return null;
   }
   if (s.type === "stat" || s.type === "bars") s.motion = numberMotion({ ...s, motion: raw.motion }, { schema }) || "reveal";
@@ -464,19 +468,33 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
 
 const transcriptWords = (groups) => new Set(groups.flatMap((g) => String(g.text || "").toLowerCase().replace(/[^a-z0-9'’]+/g, " ").split(/\s+/).filter(Boolean)));
 
+/** Approved script cards alone may introduce copy absent from the speaker's transcript. */
+export function sceneUsesSpeakerWords(scene, groups) {
+  const printed = (value) => {
+    if (!value || typeof value !== "object") return [];
+    const fields = ["eyebrow", "title", "text", "value", "value2", "sub", "label", "tag", "note", "unit", "contact", "context"];
+    return [...fields.map((key) => value[key]).filter((text) => typeof text === "string"),
+      ...(value.items || []).flatMap((item) => typeof item === "string" ? [item] : printed(item)),
+      ...(value.rungs || []).flatMap(printed),
+      ...[value.a, value.b, value.outcome].flatMap(printed)];
+  };
+  const copy = printed(scene).join(" ");
+  if (scene?.source === "script") return !copy.includes("[");
+  const spoken = transcriptWords(groups);
+  return [...transcriptWords([{ text: copy }])].every((word) => spoken.has(word));
+}
+
 /** A progress rail starts with the hook, not on an ordinary card candidate. Its item lines are its later pulses. */
 export function resolveProgressScenes(scenes, groups, { hook, duration, cards = [] } = {}) {
   if (!hook) return [];
-  const words = transcriptWords(groups);
   const numberWords = { two: 2, three: 3, four: 4 };
   const promised = String(hook.text || "").toLowerCase().match(/\b(?:2|3|4|two|three|four)\b/);
   const promisedCount = promised ? numberWords[promised[0]] || Number(promised[0]) : 0;
-  const truthSafe = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9'’]+/g, " ").split(/\s+/).filter(Boolean).every((w) => words.has(w));
   const byLine = new Map(groups.map((g, i) => [i, g]));
   const overlapsCard = (at) => cards.some((c) => c.type !== "progress" && at < c.start + c.duration && at + 1.4 > c.start);
   for (const s of scenes.filter((x) => x?.type === "progress").slice(0, 1)) {
     if (s.style === "count" && promisedCount !== s.items.length) continue;
-    if ((s.title && !truthSafe(s.title)) || s.items.some((it) => !truthSafe(it.label))) continue;
+    if (!sceneUsesSpeakerWords(s, groups)) continue;
     if (s.items.some((it) => !byLine.has(it.line))) continue;
     const starts = s.items.map((it) => byLine.get(it.line).start);
     if (starts.some((at, i) => i && at <= starts[i - 1])) continue;
@@ -570,7 +588,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const byStart = (s) => candidates.find((c) => Math.abs(c.start - (s.start ?? -1)) < 0.05);
     const sameLines = Array.isArray(saved.scenes) && saved.scenes.length && saved.scenes.filter((s) => s.type !== "progress").every(byStart);
     const sameFeatures = saved.features ? saved.features.persistent === features.persistent && saved.features.ladder === features.ladder : !features.persistent && !features.ladder;
-    if (sameFeatures && (saved.key === key || sameLines) && Array.isArray(saved.scenes)) {
+    if (Array.isArray(saved.scenes) && saved.source !== "script" && !saved.scenes.some((scene) => scene.source === "script") && sameFeatures && (saved.key === key || sameLines)) {
       // Timing rules may have changed since the plan was saved: keep the picks, re-time them.
       // A plan saved before looks existed keeps its glass cards, so an old reel renders as it did.
       const transcript = groups.map((g) => g.text).join(" ");
@@ -611,7 +629,8 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude, houseLooks, modes: settings.modes }), persistent: settings.persistent === true, ladder: settings.ladder === true }), { timeoutMs: 240000 }));
     const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude, houseLooks, modes: settings.modes });
     lookPicked = picked;
-    const raw = (reply.scenes || []).map(normalizeScene).filter(Boolean);
+    // Only the explicit --script path can assign approved-script provenance.
+    const raw = (reply.scenes || []).map((scene) => normalizeScene({ ...scene, source: undefined })).filter(Boolean);
     const pickedCards = raw.filter((s) => s.type !== "progress").map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) }));
     const persistentCards = resolvePersistentScenes(pickedCards, lines, { duration, hook, persistent: settings.persistent === true, ladder: settings.ladder === true });
     const cards = [...(max ? placeScenes(pickedCards.filter((s) => !isPersistentScene(s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines }) : []), ...persistentCards].sort((a, b) => a.start - b.start);

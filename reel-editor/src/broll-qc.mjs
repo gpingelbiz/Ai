@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { firstJSON } from "./claude.mjs";
 import { run, r3 } from "./util.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 const quantile = (values, fraction) => [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * fraction))];
@@ -234,9 +235,33 @@ export function validTimeline(result, duration, inPoint = 0) {
     (result.contact === null || Number.isFinite(result.contact) && result.contact >= result.onset && result.contact <= (result.completion ?? duration));
 }
 
-export function eventInPoint(timeline, duration, clipDuration, fallback = 0) {
+/** Prefer sustained measured subject movement within the located event, never empty lead-in or sky. */
+export function motionWindowInPoint(timeline, duration, clipDuration, motion, { whole = false } = {}) {
+  if (!timeline || !motion?.changes?.length || duration > clipDuration) return null;
+  const fps = motion.fps || 8, end = timeline.completion ?? clipDuration;
+  const from = Math.max(0, timeline.onset - 0.15);
+  const until = Math.min(clipDuration - duration, Math.max(from, end - duration));
+  const starts = [from, until];
+  for (let t = Math.ceil(from * fps) / fps; t <= until; t += 1 / fps) starts.push(t);
+  let best = null, score = 0;
+  for (const start of starts.sort((a, b) => a - b)) {
+    if (start < 0 || start + duration > clipDuration + 0.000001) continue;
+    if (timeline.eventType === "drop-land") {
+      const contact = timeline.contact ?? timeline.completion;
+      if (contact != null && (contact < start || contact > start + duration)) continue;
+      if (whole && (start > timeline.onset || (timeline.completion ?? contact ?? timeline.onset) + 0.2 > start + duration)) continue;
+    }
+    const mean = motion.changes.reduce((sum, change, i) => sum + change * Math.max(0, Math.min((i + 1) / fps, start + duration) - Math.max(i / fps, start)), 0) / duration;
+    if (mean > score + 0.000001) { score = mean; best = start; }
+  }
+  return best === null ? null : r3(best);
+}
+
+export function eventInPoint(timeline, duration, clipDuration, fallback = 0, motion) {
   if (duration > clipDuration) return null;
   if (!timeline) return Math.max(0, Math.min(fallback, clipDuration - duration));
+  const moving = motionWindowInPoint(timeline, duration, clipDuration, motion, { whole: true });
+  if (moving !== null) return moving;
   let start = Math.max(0, timeline.onset - 0.15);
   if (timeline.eventType === "drop-land") {
     const end = timeline.completion ?? timeline.contact;
@@ -252,8 +277,10 @@ export function eventInPoint(timeline, duration, clipDuration, fallback = 0) {
  * contact moment after a short lead-in, or starting at the onset of a continuous event such as a wave or a walk.
  * Generated clips keep eventInPoint, which needs the whole event inside the window.
  */
-export function momentInPoint(timeline, duration, clipDuration) {
+export function momentInPoint(timeline, duration, clipDuration, motion) {
   if (!timeline || duration > clipDuration) return null;
+  const moving = motionWindowInPoint(timeline, duration, clipDuration, motion);
+  if (moving !== null) return moving;
   const key = timeline.contact ?? timeline.onset;
   const lead = timeline.contact == null ? 0.15 : Math.min(0.6, duration * 0.4);
   const start = Math.max(0, Math.min(key - lead, clipDuration - duration));
@@ -286,9 +313,12 @@ export async function phonePreviews(file, shot, groups, { dir, caption = {}, run
 }
 
 /** The evidence-image helper runs both Apple face detection and OCR and reports analysis errors. */
-export async function localClipCheck(frames, { dir, runFn = run, look, pick } = {}) {
-  const source = fileURLToPath(new URL("../scripts/ocr.swift", import.meta.url)), bin = path.join(dir, "ocr");
-  if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(source).mtimeMs) await runFn("swiftc", ["-O", "-o", bin, source], { capture: true });
+export async function localClipCheck(frames, { dir, runFn = run, look, pick, resolveTool = nativeTool } = {}) {
+  const bin = await resolveTool("ocr", { compile: async () => {
+    const source = fileURLToPath(new URL("../scripts/ocr.swift", import.meta.url)), bin = path.join(dir, "ocr");
+    if (!fs.existsSync(bin) || fs.statSync(bin).mtimeMs < fs.statSync(source).mtimeMs) await runFn("swiftc", ["-O", "-o", bin, source], { capture: true });
+    return bin;
+  } });
   const reports = [];
   for (const frame of frames) {
     const response = await runFn(bin, [frame.file], { capture: true });

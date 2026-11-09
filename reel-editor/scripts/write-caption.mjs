@@ -13,7 +13,7 @@
  * Voice: REEL_CAPTION_VOICE (a .md file), else voice/greg.md for the pingel-brand preset, else voice/default.md.
  * Every caption gets plain punctuation (no dashes, semicolons or ellipses); Greg's also loses a "Yo" opener and any
  * line the Publish folder would hold back (the Ghost P&L, his wife).
- * CTA: REEL_WATCH_CTA (empty = no call to action in the caption).
+ * CTA: REEL_WATCH_CTA (Greg uses one recipient-specific send line when empty).
  * Needs the Claude Code CLI signed in and the Sandcastles connector added on claude.ai. Exits 0 with a note when
  * either is missing, so a reel is never held up by its caption. REEL_CAPTION_SANDCASTLES=0 (a client without the
  * connector, set by the Content Studio) writes the caption and hooks from the transcript alone, with no tools.
@@ -23,20 +23,30 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { bannedInCaption } from "../src/publish-folder.mjs";
+import { isClientJob } from "../src/client-mode.mjs";
+import { isMain } from "../src/util.mjs";
+import { addCaptionToFeatures, findAsks } from "../src/features.mjs";
+
+export { findAsks };
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TOOLS = ["mcp__claude_ai_sandcastles__top_hooks", "mcp__claude_ai_sandcastles__top_formats"];
 const DENY = ["Bash", "Edit", "Write", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "NotebookEdit"];
 
 export function voiceFile(plan, env = process.env) {
-  if (env.REEL_CAPTION_VOICE && fs.existsSync(env.REEL_CAPTION_VOICE)) return env.REEL_CAPTION_VOICE;
+  const ownVoice = env.REEL_CAPTION_VOICE;
+  if (ownVoice && fs.existsSync(ownVoice) && !(isClientJob(env) && fs.realpathSync(ownVoice) === path.join(ROOT, "voice/greg.md"))) return ownVoice;
   // Greg's voice for every look of his (pingel-brand, pingel-runway); anyone else's comes from REEL_CAPTION_VOICE.
-  return path.join(ROOT, "voice", /^pingel-/.test(plan?.style?.name || "") ? "greg.md" : "default.md");
+  return path.join(ROOT, "voice", !isClientJob(env) && /^pingel-/.test(plan?.style?.name || "") ? "greg.md" : "default.md");
+}
+
+export function captionAccess(env = process.env) {
+  return { sandcastles: !isClientJob(env) && env.REEL_CAPTION_SANDCASTLES !== "0", watchlist: !isClientJob(env) && env.REEL_CAPTION_WATCHLIST !== "0" };
 }
 
 /** The prompt Claude gets. Pure, so it can be tested. */
-export function buildPrompt({ transcript, hook, voice, cta, auto = false, watchlist = true, sandcastles = true }) {
-  if (!sandcastles) return buildPrompt({ transcript, hook, voice, cta, auto, watchlist })
+export function buildPrompt({ transcript, hook, voice, cta, greg = false, auto = false, watchlist = true, sandcastles = true }) {
+  if (!sandcastles) return buildPrompt({ transcript, hook, voice, cta, greg, auto, watchlist })
     .replace(/\n1\. Call the sandcastles[^\n]*\n2\. [^\n]*\n3\. /, "\n")
     .replace(/, each tied to a pattern[^\n]*/g, "")
     .replace(/ Each option models a different winning pattern; never copy another creator's wording\./, " Each option takes a different angle.")
@@ -56,7 +66,11 @@ export function buildPrompt({ transcript, hook, voice, cta, auto = false, watchl
     "- Plain punctuation in the caption: periods, commas and question marks. No dashes of any kind (no em dash, no en dash, no hyphen used as a pause), no semicolons, no ellipses.",
     "- When the speaker quotes someone else or acts out a message, call or line (\"text me: hey, I messed up\"), never present those words as the speaker's own.",
     "- Hashtags: exactly 3, matching what the reel is about, in the reel's language.",
-    cta
+    greg
+      ? cta
+        ? `- End the caption with ONE DM offer built around this call to action: ${cta}. Make clear what the reader gets. This is the only ask. No send line and no save, share, comment, follow or link asks. Never use AI as the ask or keyword.`
+        : '- End the caption with ONE line asking the reader to send this reel to a specific person they can picture, built from what THIS reel says. Example for a reel about discounts: "Send this to the owner who still approves every discount." Do not reuse that recipient for an unrelated reel. No other save, send, share, comment, DM, follow or link asks. Never use AI as the ask or keyword.'
+      : cta
       ? `- End the caption with an offer built around this call to action: ${cta}. Phrase it as something the reader gets ("Want the exact words? ${cta} and I'll send them."), never as a bare instruction on its own: Instagram does not recommend posts that only ask people to comment a word.`
       : "- No call to action of any kind (no comment/DM/follow/share/save asks).",
     auto
@@ -91,6 +105,27 @@ export function parseReply(text) {
   return j;
 }
 
+/** Keep the final single ask line. Never write a recipient or an offer on the speaker's behalf. */
+export function oneAsk(caption, { greg = true, cta = "" } = {}) {
+  if (!greg) return caption;
+  let last = -1;
+  const lines = String(caption || "").split(/\r?\n/);
+  const asks = lines.map(findAsks);
+  for (let i = 0; i < lines.length; i++) {
+    // A stacked line or an AI keyword cannot be kept as the one ask. A CTA replaces the send line.
+    if (asks[i].length === 1 && !/\bAI\b/i.test(lines[i]) && (!cta || asks[i][0] === "dm")) last = i;
+  }
+  const kept = lines.filter((line, i) => !asks[i].length || i === last);
+  // The ask is the caption ending even if the model placed more body copy after it.
+  if (last >= 0) {
+    const at = kept.indexOf(lines[last]);
+    kept.splice(at, 1);
+    const hashtagsAt = kept.findIndex((line) => line.trim().startsWith("#"));
+    kept.splice(hashtagsAt < 0 ? kept.length : hashtagsAt, 0, lines[last]);
+  }
+  return kept.join("\n");
+}
+
 /**
  * Plain punctuation on a caption: dashes used as a pause become commas, semicolons and ellipses become periods, a
  * list dash or bullet at the start of a line goes. Hyphenated words ("9-to-5", "one-on-one") stay. For Greg's own
@@ -123,10 +158,10 @@ export function formatPostText(j) {
 }
 
 /** The work folder's "post notes.txt": the caption again, the hook options with their patterns, the trend. */
-export function formatCaptionFile(j, { title, cta, date = new Date().toISOString().slice(0, 10) }) {
+export function formatCaptionFile(j, { title, cta, date = new Date().toISOString().slice(0, 10), sandcastles = true }) {
   const lines = [
     String(title || "Reel").toUpperCase(),
-    `Post notes (${date}). The caption that posts is caption.txt; the hook options come from what is winning on Sandcastles.`,
+    `Post notes (${date}). The caption that posts is caption.txt; ${sandcastles ? "the hook options come from what is winning on Sandcastles" : "the hook options come from your transcript"}.`,
     "",
     "CAPTION",
     ...String(j.caption).split(/\n+/).map((l) => l.trim()).filter(Boolean),
@@ -172,8 +207,9 @@ async function main() {
   const auto = !!(hook && plan.hook?.auto);
   const out = outArg || path.join(workDir, "caption.txt");
   const voicePath = voiceFile(plan);
-  const sandcastles = process.env.REEL_CAPTION_SANDCASTLES !== "0";
-  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voicePath, "utf8"), cta, auto, watchlist: process.env.REEL_CAPTION_WATCHLIST !== "0", sandcastles });
+  const greg = !isClientJob() && fs.realpathSync(voicePath) === fs.realpathSync(path.join(ROOT, "voice/greg.md"));
+  const { sandcastles, watchlist } = captionAccess();
+  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voicePath, "utf8"), cta, greg, auto, watchlist, sandcastles });
   let reply;
   try {
     reply = await runClaude(prompt, { sandcastles });
@@ -195,12 +231,16 @@ async function main() {
     j.best = j.hooks[0]?.text || "";
     j.bestIsWritten = !!j.best;
   } else if (hook && j.hooks[0]?.text !== hook) j.hooks = [{ text: hook, pattern: "the hook in the reel" }, ...j.hooks.filter((h) => h.text !== hook)].slice(0, 3);
+  j.caption = oneAsk(j.caption, { greg, cta });
   j.caption = cleanCaption(j.caption, { greg: path.basename(voicePath) === "greg.md" });
+  if (greg && !cta && !findAsks(j.caption.split("\n").at(-1)).includes("send")) console.log("caption: no send line");
   fs.writeFileSync(path.join(workDir, "caption.json"), JSON.stringify(j, null, 2) + "\n");
-  fs.writeFileSync(path.join(workDir, "post notes.txt"), formatCaptionFile(j, { title: (auto && j.best) || hook || plan.name, cta }));
+  fs.writeFileSync(path.join(workDir, "post notes.txt"), formatCaptionFile(j, { title: (auto && j.best) || hook || plan.name, cta, sandcastles }));
   if (!j.caption) { console.log("caption: nothing left after the voice rules, skipped (see post notes.txt)"); return; }
-  fs.writeFileSync(out, formatPostText(j));
+  const text = formatPostText(j);
+  fs.writeFileSync(out, text);
+  addCaptionToFeatures(workDir, text);
   console.log(`caption: ${out}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMain(import.meta.url)) main();

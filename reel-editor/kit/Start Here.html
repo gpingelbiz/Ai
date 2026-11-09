@@ -25,56 +25,69 @@
   th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em; }
   a { color: var(--accent); }
   .muted { color: var(--muted); font-size: 14px; }
+  .terminal-picture { margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .terminal-bar { padding: 8px 14px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 14px; }
+  .terminal-screen { padding: 18px 14px; background: #16161a; color: #f6f6f8; font: 14px/1.8 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .drag-file { display: inline-block; border: 1px dashed #e0b44c; border-radius: 6px; padding: 3px 8px; color: #e0b44c; }
+  .terminal-picture figcaption { padding: 10px 14px; font-size: 14px; }
 </style>
 </head>
 <body>
 <main>
   <h1>Reel Editor</h1>
+  <p>First time? Open <a href="Setup Guide.html">Setup Guide.html</a> for the setup walkthrough.</p>
   <p class="lead">Drop a raw talking-head clip in a folder and get back a finished vertical reel: captions, tight cuts, a hook title placed around your face, a check on every word, and a ready-to-post caption.</p>
 
-  <div class="card"><strong>You need:</strong> a Mac with Apple Silicon (M1 or newer), about 4 GB of free space, and internet. The accounts that add the rest are listed right below, with links.</div>
+  <div class="card"><strong>You need:</strong> a Mac with Apple Silicon (M1 or newer) and macOS 14 or newer, about 4 GB of free space, and internet. The accounts that add the rest are listed right below, with links.</div>
 
 <!-- signups -->
 
-  <h2>1. Install (about 10 minutes)</h2>
+  <h2>1. Install (20 to 40 minutes the first time)</h2>
+  <p>The first install downloads about 2 GB.</p>
   <ol>
-    <li>Double-click <b>Install Reel Editor.command</b> in this folder. A Terminal window opens and does the work.</li>
+    <li>Open <b>Terminal</b> (Applications, Utilities).</li>
+    <li>Type <code>bash</code> and a space.</li>
+    <li>Drag <b>Install Reel Editor.command</b> from the kit folder into the Terminal window.</li>
+    <li>Press <b>Return</b>. Keep the whole kit together and leave Terminal open while it works.</li>
+  </ol>
+  <figure class="terminal-picture" aria-label="Drag the Install file into Terminal after bash and a space">
+    <div class="terminal-bar">Terminal</div>
+    <div class="terminal-screen">% bash <span class="drag-file"><b>Install Reel Editor.command</b> &#8592; drag this file here</span></div>
+    <figcaption>Terminal fills in the file location for you. Then press Return.</figcaption>
+  </figure>
+  <p>You can also double click <b>Install Reel Editor.command</b>. If double clicking says it can't be opened, use the Terminal steps above; never change your security settings. If this kit includes an <b>Install Reel Editor.app</b>, you can double click that instead. Keep it in this folder.</p>
+  <ol start="5">
     <li>Answer these questions:
       <table>
         <tr><th>Question</th><th>What to pick</th></tr>
-        <tr><td>Your look</td><td><b>2</b> for plain white captions, or <b>3</b> for your own colors (two hex codes, like <code>#00AAFF</code>). Pick <b>1</b> only if you make content for Greg Pingel.</td></tr>
+        <tr><td>Your look</td><td>This kit carries your own brand, colors, caption voice and word list.</td></tr>
         <tr><td>ElevenLabs key</td><td>Paste it, or press Return to skip. Get one at elevenlabs.io, under Developers, API Keys.</td></tr>
         <tr><td>Drop folder</td><td>Press Return for yes.</td></tr>
-        <tr><td>Codex</td><td>Press Return for yes if you have a ChatGPT account, then sign in in the browser window. It adds b-roll and a carousel to every reel.</td></tr>
+        <tr><td>Codex</td><td>Press Return for yes if you have a ChatGPT account, then sign in in the browser window. It picks matching B-roll moments and adds generated carousel images.</td></tr>
+        <tr><td>Free stock keys</td><td>Optional: use your own Pixabay or Pexels key for free stock video. Links and filming instructions are in the B-roll section below.</td></tr>
         <tr><td>Runway key</td><td>Paste it, or press Return to skip. Make one at dev.runwayml.com (buy credits there first). It turns on Raw - Reel with Runway B-roll.</td></tr>
-        <tr><td>Claude</td><td>Press Return for yes, then sign in with your Claude account (Pro or Max) when it opens and type <code>/exit</code> to come back. It adds graphic cards, captions and hook ideas.<!-- studio --> A Content Studio kit asks this later, in the Content Studio part.<!-- /studio --></td></tr>
+        <tr><td>Claude</td><td>Press Return for yes, then sign in with your Claude account (Pro or Max) when it opens and type <code>/exit</code> to come back. It adds graphic cards, captions and hook ideas.<!-- studio --> A kit with scheduling asks this later, when setting up your posts.<!-- /studio --></td></tr>
       </table>
     </li>
-    <li>It finishes by playing a short test reel. That means it worked.</li>
+    <li>It makes a spoken sample on your Mac, reads it locally and renders a short test reel. Wait for <b>Editing ready (release …)</b>. The result and test reel are in <code>~/Reels/install-test/</code>.</li>
   </ol>
 
-  <div class="card">
-    <p><strong>If your Mac says the file "can't be opened" or "Apple could not verify" it:</strong></p>
-    <ol>
-      <li>Open <b>System Settings</b>, then <b>Privacy &amp; Security</b>.</li>
-      <li>Scroll down to the message about <b>Install Reel Editor.command</b> and click <b>Open Anyway</b>.</li>
-      <li>Confirm, and enter your Mac password if asked.</li>
-    </ol>
-    <p>Or skip the file: open <b>Terminal</b> (in Applications, Utilities), paste this line and press Return:</p>
-    <pre>curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/install.sh | bash</pre>
-  </div>
-  <p class="muted">If a window asks to install Apple's command line tools, click Install, wait for it to finish, then run the installer again. If Homebrew is missing, the installer adds it and asks for your Mac password once.</p>
+  <p class="muted">No Homebrew, Apple command line tools or administrator account is needed. If you see a request to install developer tools or Homebrew, stop and use the installer bundled in this kit.</p>
+
+  <h3>Fixes and waiting-reel alerts</h3>
+  <p>Your client kit checks for fixes every week on this Mac. It keeps your settings, voice, brand guide, dictionary and look. It installs packages only when the package files changed, checks the update without contacting a service, and returns to the previous version if the check fails. You get a notification when something changed or needs attention. Updates pause while the code folder has unsaved changes. Re-running the installer keeps one update job.</p>
+  <p>The Reel Editor kit also checks the drop folders three times a day for reels waiting over a day. A Mac notification and <code>~/.reel/maintenance/STATUS.txt</code> tell you what needs attention. Update notes are in <code>~/.reel/maintenance/updates.log</code>.</p>
 
   <h2>2. Make a reel</h2>
   <ol>
-    <li>Drop a clip into one of the three Raw folders in <b>Desktop/Reels</b>. The folder decides what you get.</li>
+    <li>Drop a clip into one of the Raw folders in <b>Desktop/Reels</b>. The folder decides what you get.</li>
     <li>Wait for the notification. A 1-minute clip takes about 3 minutes.</li>
     <li>Open the new folder in <b>Desktop/Reels</b>, named by date and number.</li>
   </ol>
   <table>
     <tr><th>Drop into</th><th>You get</th></tr>
-    <tr><td>Raw - Reel</td><td><code>2026-10-21 Reel 1</code>: the edited reel in the classic look (bold outlined captions), named after its hook</td></tr>
-    <tr><td>Raw - Reel with B-roll</td><td><code>2026-10-21 Reel 2 with B-roll</code>: the full look: graphic cards that show what you say, captions that light up word by word with a hand-drawn marker on the key word, big climax words that stamp in as you say them, the hook running behind your head and shoulders, and generated pictures cut in for a couple of seconds each, plus those pictures. Cards need Claude Code; pictures need Codex (below).</td></tr>
+    <tr><td>Raw - Reel</td><td><code>2026-10-21 Reel 1</code>: the edited reel in your chosen caption style (bold outlined captions when no style was chosen), named after its hook</td></tr>
+    <tr><td>Raw - Reel with B-roll</td><td><code>2026-10-21 Reel 2 with B-roll</code>: the full look: graphic cards that show what you say, captions that light up word by word with a hand-drawn marker on the key word, big climax words that stamp in as you say them, the hook running behind your head and shoulders, and real moving clips that fit what you say. Your own clips come first, then free stock video; otherwise you stay on screen. Cards need Claude Code.</td></tr>
     <tr><td>Raw - Full YouTube Edit</td><td><code>2026-10-22 YouTube 1</code>: the whole long video edited for YouTube: chapters with title cards, re-hooks, sparse cards and pictures, punch-ins, a clean last 20 seconds for the end screen, plus the description with chapters, three titles, the captions file, three thumbnail frames and the end-screen plan. Captions are off by default; put <code>#captions</code> in the file name to burn them in.</td></tr>
     <tr><td>Raw - Reel with Runway B-roll</td><td><code>2026-10-22 Reel 3 with Runway</code>: the full look with short generated video clips as the b-roll instead of pictures. Needs a Runway API key with credits (about 30 cents a clip); the folder gets a note with what the reel cost.</td></tr>
     <tr><td>Raw - Clips from Long Video</td><td><code>2026-10-22 Clips 1</code>: a podcast, a live or a training cut into up to 5 reels, each with the full look. Wide footage follows whoever is talking and splits the screen when two people trade lines. Each clip comes with its cover, caption and the words to check; <code>clips.txt</code> lists the moments.</td></tr>
@@ -85,9 +98,9 @@
     <tr><th>File</th><th>What it is</th></tr>
     <tr><td>check these words.txt</td><td>Only when the two transcription engines disagreed on a word, with its time in the reel. Check those spots before posting. Brand terms and names from your dictionary are corrected and re-timed before this list is made.</td></tr>
     <tr><td>check this reel.txt</td><td>Only when the editor's own check on the finished file found something: sound level off, a black or still first second, a long silence, captions over your chin, text where Instagram puts its caption and buttons. The reel is still there; the note says what to look at. It also lists what Claude noticed when it watched the finished reel frame by frame, with times, and whether a cold viewer would keep watching after 3 seconds. Check each one yourself; Claude can be wrong. Every reel is also run through a studio-sound pass (room noise and hiss out, every phrase at the same level) before this check.</td></tr>
-    <tr><td>caption.txt</td><td>A caption, 3 hashtags and 3 hook ideas based on what is working for that topic right now. Needs Claude Code and the Sandcastles connector; otherwise it is skipped.</td></tr>
+    <tr><td>caption.txt</td><td>A caption, 3 hashtags and 3 hook ideas based on your transcript. Needs Claude Code; it uses your own transcript and caption voice.</td></tr>
     <tr><td>Cover 1-3.png</td><td>Three cover images to pick from when you post: your best frame with a short bold title (outlined, on a dark bar, or with one word boxed), placed so the profile grid does not crop it.</td></tr>
-    <tr><td>The hook</td><td>If you did not write one in the file name, the editor writes three (strongest first, from what wins on Sandcastles) and puts the first on the finished reel; all three are in caption.txt. To use another, drop the clip again named <code>clip__Your hook here.mov</code>.</td></tr>
+    <tr><td>The hook</td><td>If you did not write one in the file name, the editor writes three (strongest first, from your own transcript) and puts the first on the finished reel; all three are in caption.txt. To use another, drop the clip again named <code>clip__Your hook here.mov</code>.</td></tr>
   </table>
 
   <p>The filename is the brief:</p>
@@ -102,33 +115,39 @@
     <tr><td><code>clip #music:calm.mov</code> / <code>clip #nomusic.mov</code></td><td>Use the Music track whose name has "calm", or no music</td></tr>
     <tr><td><code>clip #fast.mov</code></td><td>Faster pacing: a new shot every second or so, the first cut within a second, one or two words of caption at a time</td></tr>
   </table>
-  <p class="muted">B-roll and carousels use Codex: say yes when the installer offers it, and sign in with your ChatGPT account. Without it, Raw - Reel still works. Codex has usage limits; when it hits one, b-roll reels come without b-roll for 20 minutes and a carousel leaves a note to drop it again.</p>
+  <p class="muted">Generated carousels use Codex: say yes when the installer offers it, and sign in with your ChatGPT account. Codex has usage limits; when it hits one, a carousel leaves a note to drop it again. Free B-roll uses Codex to pick matching moments and Claude Code to check the clips; sign in to both.</p>
+
+  <h3>B-roll: use your own clips and free video</h3>
+  <p><b>Raw - Reel with B-roll</b> tries your own approved clips first, then free stock video. If no real moving clip fits what you say, you stay on screen. It never fills the gap with a still picture.</p>
+  <p>To add your own clips, film <b>6 to 10 seconds</b>, with the action in the middle and <b>no faces</b>. Name each file <code>subject - action.mov</code>, such as <code>coffee - pours into a mug.mov</code>, and drop it in <b>Desktop/Reels/Raw - My B-roll clips</b>. A short result note appears beside it: approved, or rejected with the reason. Your original is kept there.</p>
+  <p>Open <b>Desktop/Reels/B-roll shot list.html</b> for ideas. Print it from your browser and check off each shot as you film.</p>
+  <p>For more free stock, add your own optional <a href="https://pixabay.com/api/docs/">Pixabay key</a> (free account; your key appears on that page when logged in) or <a href="https://www.pexels.com/api/">Pexels key</a> (new sign-ups may be paused) when installing. Everyone uses their own key. Re-running the installer keeps keys you already saved.</p>
 
   <h2>3. Make it yours</h2>
   <ul>
     <li><b>Your words:</b> open <code>~/.reel/dictionary.json</code> and add your program and framework names under <code>terms</code>. They get highlighted and spelled right. People and company names go under <code>names</code>: spelled right, not highlighted.</li>
     <li><b>Your caption voice:</b> edit <code>~/.reel/voice.md</code> with who you talk to, words you use, and words you never use.</li>
     <li><b>A call-to-action:</b> add <code>export REEL_WATCH_CTA="Comment YOURWORD"</code> inside the reel-editor block in <code>~/.zshrc</code>.</li>
-    <li><b>Change your look:</b> double-click the installer again and pick another option.</li>
+    <li><b>Change your look:</b> double click the installer again and pick another option.</li>
   </ul>
 
 <!-- studio -->
-  <h2 id="content-studio">Content Studio: your posts, made and scheduled for you</h2>
-  <p>Your kit also sets up the <b>Content Studio</b>: one folder that makes your carousels, statics and reels and schedules them into <b>your own Metricool</b>, every day, by itself. Nobody has to check the carousels or statics. All you do is keep dropping photos and clips.</p>
+  <h2 id="content-studio">Your reels and posts</h2>
+  <p>Your kit makes and schedules your reels and posts through <b>your own Metricool</b>. Nobody has to check the carousels or statics. Use Desktop/Reels for everything. Add photos to Photos. Film, drop a clip in a Raw folder, watch the finished reel, then drag it to Publish. Carousels and statics are made and scheduled by the Claude app at 6 AM and noon. Keep your Mac on and the Claude app open.</p>
 
-  <div class="card"><strong>You need, on top of the above:</strong> your own Claude account (Pro or Max), your own Metricool account with your Instagram connected, and the Mac switched on. The daily run goes at about 6:07; if the Mac is asleep then, it runs when the Mac wakes.</div>
+  <div class="card"><strong>You need, on top of the above:</strong> your own Claude account (Pro or Max), your own Metricool account with your Instagram connected, and the Mac switched on. The Claude app makes and schedules carousels and statics at 6 AM and noon (once your brand guide is finished). The Mac must be on and the Claude app open.</div>
 
   <h3>Install</h3>
   <ol>
-    <li>Double-click <b>Install Content Studio.command</b> (not the Reel Editor one). It installs the reel editor in your brand first, then asks six things:
+    <li>Double click <b>Install Reels.command</b> (not the Reel Editor one). It installs the reel editor in your brand first, then asks six things:
       <table>
         <tr><th>Question</th><th>What to do</th></tr>
-        <tr><td>Your photos</td><td>Drag the folder with your photos into the Terminal window and press Return, or press Return to use <b>Content Studio/Photos</b>. A folder on the Desktop, in Documents or in Downloads can't be read by a background job on a Mac, so the installer offers to copy those photos in. Photos from the Photos app: select them, File, Export, into this folder.</td></tr>
+        <tr><td>Your photos</td><td>Drag the folder with your photos into the Terminal window and press Return, or press Return to use <b>Desktop/Reels/Photos</b>. A folder on the Desktop, in Documents or in Downloads can't be read by a background job on a Mac, so the installer offers to copy those photos in. Photos from the Photos app: select them, File, Export, into this folder.</td></tr>
         <tr><td>Claude</td><td>If Claude isn't signed in, it opens here: sign in with <b>your</b> Claude account, then type <code>/exit</code> and press Return. Claude writes your posts in your voice and talks to Metricool for you.</td></tr>
         <tr><td>Metricool</td><td>On claude.ai open <b>Settings, Connectors</b>, find <b>Metricool</b>, click Connect and sign in with your Metricool account (the installer opens the page). Then pick your brand from the list.</td></tr>
         <tr><td>How images reach Metricool</td><td>See the three ways below. Press Return for the first one if you're not sure.</td></tr>
         <tr><td>Posting times</td><td>Return keeps a carousel at 10:00 and a static at 18:00 every day in your time zone, or type your own.</td></tr>
-        <tr><td>First post</td><td>Return makes one post right away so you can see it work (it lands in <b>Made</b> and in Metricool).</td></tr>
+        <tr><td>First posts</td><td>Photo posts start after you finish your brand guide, at the next 6 AM run. For an earlier start, press Run now on daily-posts in the Claude app.</td></tr>
       </table>
     </li>
   </ol>
@@ -138,42 +157,51 @@
   <table>
     <tr><th>Way</th><th>How it works</th><th>You need</th></tr>
     <tr><td><b>1. Straight from this Mac</b> (recommended)</td><td>While a post is being scheduled, the Mac shares only that post's files at a private, random address for about a minute. Metricool copies them and the address closes. Nothing is left online except your post in Metricool.</td><td>Nothing extra.</td></tr>
-    <tr><td><b>2. Google Drive</b></td><td>Each post's images are copied into a folder in your Google Drive (<b>Content Studio uploads</b>) that you share once as <i>Anyone with the link: Viewer</i>. Metricool takes them from there, and they stay in your Drive.</td><td>The Google Drive app on this Mac, signed in; Google Drive linked in Metricool (Settings).</td></tr>
-    <tr><td><b>3. Dropbox</b></td><td>The same with a <b>Content Studio uploads</b> folder in your Dropbox; Claude makes the share link for each file.</td><td>The Dropbox app on this Mac; the Dropbox connector in Claude (claude.ai, Settings, Connectors).</td></tr>
+    <tr><td><b>2. Google Drive</b></td><td>Each post's images are copied into a folder in your Google Drive (<b>Reels uploads</b>) that you share once as <i>Anyone with the link: Viewer</i>. Metricool takes them from there, and they stay in your Drive.</td><td>The Google Drive app on this Mac, signed in; Google Drive linked in Metricool (Settings).</td></tr>
+    <tr><td><b>3. Dropbox</b></td><td>The same with a <b>Reels uploads</b> folder in your Dropbox; Claude makes the share link for each file.</td><td>The Dropbox app on this Mac; the Dropbox connector in Claude (claude.ai, Settings, Connectors).</td></tr>
   </table>
-  <p class="muted">The Content Studio itself runs on a Mac (it uses the Mac's face finder and background jobs). Without a Mac, the posts can't be made; the image route only decides where the finished files go.</p>
+  <p class="muted">Your reels and posts are made on your Mac. Without a Mac, the posts can't be made; the image route only decides where the finished files go.</p>
+
+  <p>After your test reel, a setup page opens in your browser. It connects Claude and Metricool, sets your posting times and turns on the two Claude routines, reel-publish and daily-posts: it copies one prompt, you paste it in the Code tab of the Claude app and press Return, then press Run now on each routine once for a check that posts nothing. The page saves as you go; type <code>reel setup</code> in Terminal to open it again. Read each permission Claude asks for and allow only the reel commands it names. Carousels and statics stay off until you finish your brand guide; after that they are made and scheduled at 6 AM and noon. Keep your Mac on and the Claude app open.</p>
+<h3>Your daily safety net</h3>
+  <p>Three times a day the studio checks whether the daily run finished, Claude and Metricool are connected, a Metricool post failed, or a reel has waited over three hours in Publish. A Mac notification and <b>STATUS.txt</b> at the top of your studio tell you what to do. The installer offers an optional health ping URL: use your own healthchecks.io HTTPS address, or press Return to skip. It sends only a check in (with <code>/fail</code> on problems), never your content. Nothing goes to an address you did not choose.</p>
+  <h3>Normal reels plus Trial Reels</h3>
+  <p>New studios use <code>reels.trial: "both"</code>: a normal reel plus a separate Instagram Trial Reel copy. The trial never uses up a normal reel day. Both keep at least two hours from other posts. Existing settings stay as they are; <code>true</code> means trial only, <code>false</code> means normal only. Other connected networks keep the normal copy.</p>
+  <h3>Optional daily story games</h3>
+  <p>Stories start OFF. Write your own <b>Desktop/Reels/Brand/brand-guide.md</b>, then set <code>stories.enabled</code> to <code>true</code> in studio.json. The default <code>stories.slots</code> are <code>["08:00", "11:00", "17:00"]</code>. Your colors, fonts and voice become vertical story frames: spot what's wrong, pick A/B, or keep/kill a note. Viewers reply with their pick; these are not poll stickers. They schedule through your Metricool as Instagram stories and never take a feed slot. They refuse to run while the guide says <b>NOT FILLED IN YET</b>.</p>
+  <h3>Sunday filming pack</h3>
+  <p>Each Sunday's daily run writes <b>Filming packs/&lt;Monday&gt; filming pack.md</b>: six prompts from your guide, each with a short opening, three beats and a last line for 25 to 45 seconds, plus three B-roll ideas for 5 to 10 seconds. Recent angles are avoided. Story prompts ask questions so you supply your real experience. The same filming box reminds you: phone at eye level phone, window light, one take, drop into a Raw folder in Desktop/Reels, watch the finished reel, then drag it into Publish. An unfinished guide skips the pack and leaves a note in STATUS.txt. We never invent your brand or your results.</p>
 
   <h3>Your folder</h3>
   <table>
-    <tr><th>In Content Studio</th><th>What it is</th></tr>
-    <tr><td>Photos</td><td>(or the folder you picked) Where posts take photos from. Each photo is used once and never again. Blurry, dark, washed-out, tiny shots, screenshots and photos with a cut-off face are skipped by themselves.</td></tr>
-    <tr><td>Raw Reels</td><td>Drop a talking clip here. It's edited in your look, gets a caption in your voice, and is scheduled for the next day without a reel, at your best hour, two hours from your other posts. The clip moves to <b>Raw Reels/Done</b>.</td></tr>
-    <tr><td>Publish</td><td>Drop a finished reel (its folder from Desktop/Reels, or a video with a <code>.txt</code> caption of the same name). It is scheduled as it is, on the next day without a reel at your best hour; nothing is edited again. <b>Desktop/Reels/Publish</b> is a shortcut to it.</td></tr>
+    <tr><th>In Desktop/Reels</th><th>What it is</th></tr>
+    <tr><td>Photos</td><td>(or the folder you picked) Where posts take photos from. Each photo is used once and never again. Blurry, dark, washed-out, tiny shots, screenshots and photos with a cut off face are skipped by themselves.</td></tr>
+        <tr><td>Publish</td><td>Drop a finished reel (its folder from Desktop/Reels, or a video with a <code>.txt</code> caption of the same name). It is scheduled as it is, on the next day without a reel at your best hour; nothing is edited again. <b>Desktop/Reels/Publish</b> is a shortcut to it.</td></tr>
     <tr><td>Made</td><td>A copy of every post: the slides or the reel, the caption, and <b>Scheduled.txt</b> with the time and the Metricool link. Reference only: nothing here needs you.</td></tr>
-    <tr><td>brand</td><td>Your brand: <code>brand-guide.md</code> (your Brand &amp; Messaging Guide: the pillars, the mix, your never-do list), <code>voice.md</code>, <code>brand.json</code> (colors, fonts) and your fonts.</td></tr>
+    <tr><td>Brand</td><td>Your brand: <code>brand-guide.md</code> (your Brand &amp; Messaging Guide: the pillars, the mix, your never-do list), <code>voice.md</code>, <code>brand.json</code> (colors, fonts) and your fonts.</td></tr>
     <tr><td>studio.json</td><td>Your settings: photo folder, posting times, Metricool brand, image route, AI label. Edit it in TextEdit and save; the next run uses it.</td></tr>
   </table>
 
-  <h3>What happens every morning</h3>
+  <h3>What the Claude app does at 6 AM and noon</h3>
   <ol>
-    <li>At about 6:07 the studio looks at the next three days and finds every posting time that has no post yet (one you scheduled yourself in Metricool counts).</li>
+    <li>At 6 AM and noon the Claude app looks at the next three days and finds every posting time that has no post yet (one you scheduled yourself in Metricool counts).</li>
     <li>For each, it picks the job by your brand guide's pillar mix, writes the post in your voice from your guide, picks photos you haven't used (matching each photo to its slide), and sets the slides in your colors and fonts.</li>
     <li>It puts a copy in <b>Made</b> and schedules it in your Metricool. A post that breaks one of your rules (a word from your never-say list) goes in as a <b>draft</b> with the reason instead of posting.</li>
-    <li>When something fails you get a Mac notification; the post waits in Made with <b>Not posted.txt</b>, and the next run tries again.</li>
+    <li>When something fails you get a Mac notification; the post waits in Made with <b>Not posted.txt</b>, and an uncertain result waits for a schedule check before it can be marked done.</li>
   </ol>
   <p><b>AI label:</b> any post with a picture made by AI carries Instagram's "made with AI" label, always. Your real photos are never labelled. Set <code>"ai": {"label": "always"}</code> in studio.json to label every post.</p>
-  <p class="muted">Pictures made by AI (for slides with no photo left) need Codex, and hooks that follow what is winning need the Sandcastles connector in Claude. Both are optional: without them the studio uses only your photos and your guide.</p>
+  <p class="muted">Pictures made by AI (for slides with no photo left) need Codex, and use your own accounts. Without generated pictures, the studio uses only your photos and your guide.</p>
 
   <h3>Change something</h3>
   <table>
     <tr><th>To</th><th>Do</th></tr>
     <tr><td>Change the posting times or days ahead</td><td>Edit <code>slots</code> or <code>daysAhead</code> in studio.json.</td></tr>
     <tr><td>Approve posts yourself in Metricool first</td><td>Set <code>"publish": {"mode": "draft"}</code>: posts land as drafts.</td></tr>
-    <tr><td>Change the mix</td><td>Edit the Pillars table in <code>brand/brand-guide.md</code> (or add <code>"mix"</code> to studio.json).</td></tr>
+    <tr><td>Change the mix</td><td>Edit the Pillars table in <code>Desktop/Reels/Brand/brand-guide.md</code> (or add <code>"mix"</code> to studio.json).</td></tr>
     <tr><td>Ban a word</td><td>Add it to <code>neverSay</code> in studio.json.</td></tr>
     <tr><td>Slides in other colors than your reels</td><td>Add <code>"slideColors": {"bg": "#FFF3EE", "text": "#111111", "accent": "#FFB27D"}</code> to studio.json (also <code>lines</code> and <code>cards</code>). Your reels keep your brand colors.</td></tr>
     <tr><td>See what it did</td><td>Open <b>Made</b>, or run <code>reel studio status</code> in Terminal.</td></tr>
-    <tr><td>Change Metricool, the image route or the photo folder</td><td>Double-click Install Content Studio.command again.</td></tr>
+    <tr><td>Change Metricool, the image route or the photo folder</td><td>Double click Install Reels.command again.</td></tr>
     <tr><td>Turn it off</td><td>In Terminal: <code>reel studio agents --uninstall</code></td></tr>
   </table>
 <!-- /studio -->
@@ -185,10 +213,10 @@
     <tr><td>A word in the captions is wrong</td><td>Check <b>check these words.txt</b>. To fix it for good, add the word under <code>corrections</code> in <code>~/.reel/dictionary.json</code>.</td></tr>
     <tr><td>The hook covers your face</td><td>Add <code>#top</code> or <code>#low</code> to the clip's name and drop it again.</td></tr>
 <!-- studio -->
-    <tr><td>A post was not made or not scheduled</td><td>Read the notification, then <b>Not posted.txt</b> in its Made folder, or run <code>reel studio status</code>. Most often: Claude signed out (open Terminal, type <code>claude</code>, sign in), Metricool disconnected (claude.ai, Settings, Connectors), or the Mac was off at 6:07 (the next run catches up).</td></tr>
+    <tr><td>A post was not made or not scheduled</td><td>Read the notification, then <b>Not posted.txt</b> in its Made folder, or run <code>reel studio status</code>. Most often: Claude signed out (open Terminal, type <code>claude</code>, sign in), Metricool disconnected (claude.ai, Settings, Connectors), or the Mac was off or the Claude app was closed at 6 AM or noon. Open the Claude app and press Run now on daily-posts.</td></tr>
     <tr><td>"No unused photos"</td><td>Every photo has been used once. Drop new photos into your photo folder; <code>reel photos</code> shows how many are ready and why any were skipped.</td></tr>
 <!-- /studio -->
-    <tr><td>Anything else, or to update</td><td>Double-click the installer again. It updates and repairs, and keeps your settings.</td></tr>
+    <tr><td>Anything else, or to update</td><td>Double click the installer again. It updates and repairs, and keeps your settings.</td></tr>
   </table>
 
   <h2>Remove it</h2>

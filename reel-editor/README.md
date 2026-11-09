@@ -24,6 +24,36 @@ curl -fsSL https://raw.githubusercontent.com/gpingelbiz/Ai/main/reel-editor/inst
 
 **Sending it to someone?** `scripts/package-kit.sh ~/Desktop` builds `Reel Editor Kit.zip`: a double-click installer plus a one-page Start Here guide. It holds no code or keys; the installer pulls the latest version from GitHub when it runs.
 
+## Tested releases and client kits
+
+For client kits, use the release commands in this section. Older kit examples elsewhere in this guide need `--release <release.json>` or `--dev` added. Released kits use their bundled installer.
+
+Save every repository change in git before building. From `reel-editor/`:
+
+```bash
+npm run release -- build --id 2026.11.08.1
+node scripts/brand-kit.mjs their-brand.json --release dist/release/2026.11.08.1/release.json
+node scripts/brand-kit.mjs their-brand.json --studio their-guide.md --release dist/release/2026.11.08.1/release.json
+node scripts/release.mjs kits 2026.11.08.1 --clients /path/to/private/kits.json
+```
+
+The build refuses any changed or untracked repository files, runs `npm test`, requires all six golden frames to match, and builds the Apple Silicon helpers with `scripts/build-helpers.sh`. Missing golden baselines fail; `npm run test:golden:update` is only for an intended, reviewed change. The builder copies the app into a temporary folder and runs full `npm ci` there. It keeps dev dependencies because `pngjs` is used by runtime slide and grid checks. Building needs the normal maintainer tools and access to the package cache or registry; tests use local fakes and never download packages.
+
+Outputs are `dist/release/<id>/reel-editor-<id>.tar.gz` and `release.json`. The manifest records the saved git commit, the entire pinned runtime, every shipped file's SHA-256 and the passing test counts. The archive contains one `reel-editor/` folder. It excludes local settings, keys, personal brands, Greg's presets and voice, music, personal example footage and dependency caches. A fresh dependency install goes into the archive. The embedded `release.json` describes the app files; the sidecar also has the finished archive's SHA-256 and size. Neither manifest hashes itself, since an archive cannot contain its own final hash.
+
+Kit builds require `--release`; they verify and open the saved archive and use its own kit builder and templates. Each zip gets `release.json`, that release's `install.sh`, its launcher and guides, and the person's Brand folder. Zips strip extended attributes and resource forks. For a local preview, use `--dev` instead; the console and adjacent send-out message warn against sending it to a client. Existing Greg installs without `--release` keep their development workflow.
+
+The private registry defaults to `~/Reels/client-brands/kits.json`. Paths can be absolute, start with `~/`, or be relative to the registry file:
+
+```json
+[
+  { "brand": "jane.json", "studio": null, "out": "kits/jane" },
+  { "brand": "sam.json", "studio": "sam-guide.md", "out": "kits/sam" }
+]
+```
+
+After reviewing the artifact and getting Greg's go-ahead, `node scripts/release.mjs publish 2026.11.08.1` prints the destination, commit, both upload paths, hash and size. Add `--yes` to create GitHub release `reel-2026.11.08.1` and upload both files. There is no automatic retry. `reel doctor` shows the release, runtime and changed or missing files; a client's `STATUS.txt` starts with its release number.
+
 ## Install (Mac Mini)
 
 ```bash
@@ -82,6 +112,18 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 ### Presets
 
 `presets/pingel-brand.json` is the default and carries the brand look. `presets/clean.json` is plain subtitles. Any key in `presets/_defaults.json` can be overridden in a preset or passed as a path: `--preset my-look.json`.
+
+## VSL sales videos
+
+Drop a recording into `~/Desktop/Reels/Raw - VSL` (shortcut to `~/Reels/raw-vsl`). Each client's `~/Desktop/Reels/Clients/<Name>/Raw - VSL` points to that client's `raw-vsl`. Re-run the installer to add Greg's shortcut and watcher path; re-run `node scripts/client.mjs add their-brand.json` for an existing client's shortcut and launchd path. The scanner also creates `raw-vsl` in existing client roots.
+
+VSL always uses `--preset vsl --canvas landscape`: clean sentence-case lower-band captions, gentle silence cuts with at least 0.35 s of breath between phrases, false-start/retake removal, closing words preserved (`cuts.signOff: false`), and a 2 s final hold from the source when available. Leave at least 2 s of footage after the final word when recording. Client colors and fonts come from the active client `REEL_PRESET`; hooks, music, zooms, reel CTAs and the Instagram hook/post-copy pass are off. Short-form filename tags are ignored in this folder.
+
+Name the recording with its VSL Builder project id, for example `2026-sample-offer.mov` or `take-1 #vsl-2026-sample-offer.mov`. Lookup searches `${REEL_VSL_PROJECTS:-~/Clients}/*/vsl/projects/<project-id>/04-script/`, uses the newest `final_script` line in `approvals.jsonl`, and otherwise selects the highest `script.vNNN.md`. Duplicate project ids across clients are treated as ambiguous. Without a match, the edit has no cards and the delivered folder includes `No script found.txt` with naming instructions.
+
+Finished videos land in a new `<date> VSL <n>/` under the usual delivery root (Desktop/Reels after install, or the client's Desktop root). Script sections supply `chapters.txt` beside the video, in `mm:ss S1 Title` format, from the planner's `vsl-sections.json` on the finished timeline. Work files stay in `~/Reels/videos/<name>-vsl/` (or the client's `videos/`). `REEL_WATCH_RAW_VSL` overrides Greg's input folder. Originals stay in the drop folder; rename to retry.
+
+By hand: `reel edit recording.mov --preset vsl --canvas landscape [--script script.md]`. Script parsing, alignment and SCREEN cards are supplied by the VSL script planner; `graphics.scriptOnly` prevents automatic card planning, and cards leave the first 2 s and last 2.5 s clear.
 
 ### One long recording into several reels
 

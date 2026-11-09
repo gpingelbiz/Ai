@@ -17,6 +17,36 @@ test("watcher scripts parse under /bin/bash", () => {
   }
 });
 
+test("own B-roll drops run broll-add once, keep originals and record failed starts", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "own-drops-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const bin = path.join(home, ".local", "bin"), raw = path.join(home, "my clips");
+  fs.mkdirSync(bin, { recursive: true }); fs.mkdirSync(raw);
+  fs.writeFileSync(path.join(bin, "reel"), `#!/bin/bash
+printf '%s\\n' "$@" >> "$HOME/calls"
+[ "$1" = broll-add ] && [ "$3" = --note ] || exit 2
+case "$2" in *rejected*) printf 'Rejected: the action is not visible.\\n' > "$2.result.txt"; exit 1;; *broken*) exit 1;; esac
+printf 'Approved: added to your B-roll library.\\n' > "$2.result.txt"
+`);
+  fs.chmodSync(path.join(bin, "reel"), 0o755);
+  const names = ["coffee - pours.MOV", "rejected - hidden.mp4", "broken - unreadable.mov"];
+  for (const name of names) fs.writeFileSync(path.join(raw, name), "original bytes");
+  const env = { HOME: home, PATH: process.env.PATH, REEL_WATCH_RAW_OWN_BROLL: raw, REEL_WATCH_FAST: "1", REEL_CACHE: path.join(home, "cache"), REEL_BROLL_RECENT: path.join(home, "recent.json") };
+  const run = () => spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], { env, encoding: "utf8" });
+  assert.equal(run().status, 0);
+  const calls = fs.readFileSync(path.join(home, "calls"), "utf8");
+  assert.equal(calls.split("\n").filter((s) => s === "broll-add").length, 3);
+  assert.match(fs.readFileSync(path.join(raw, `${names[0]}.result.txt`), "utf8"), /^Approved:/);
+  assert.match(fs.readFileSync(path.join(raw, `${names[1]}.result.txt`), "utf8"), /^Rejected: the action/);
+  assert.match(fs.readFileSync(path.join(raw, `${names[2]}.result.txt`), "utf8"), /^Rejected: the clip could not be checked/);
+  for (const name of names) assert.equal(fs.readFileSync(path.join(raw, name), "utf8"), "original bytes");
+  const seen = fs.readdirSync(path.join(home, "Reels", "videos", ".seen"));
+  assert.equal(seen.filter((s) => s.endsWith(".done")).length, 1);
+  assert.equal(seen.filter((s) => s.endsWith(".failed")).length, 2);
+  assert.equal(run().status, 0);
+  assert.equal(fs.readFileSync(path.join(home, "calls"), "utf8"), calls);
+});
+
 test("evidence images use the same two-pass stable-size gate before they become CLI inputs", () => {
   assert.match(script, /wait_image\(\)/);
   assert.match(script, /size=\$\(filesize "\$image"\).*age=/s);
@@ -76,7 +106,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null } = {}) {
+function fakeDrops({ brollShots = 2, brollNote = null, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -100,6 +130,7 @@ case "$*" in *--no-render*) ;; *) echo "$name" > "$work/renders/$name.mp4";; esa
 case "$*" in *--music-dir*) all="$*"; d="\${all#*--music-dir }"; d="\${d%% *}"; w=""; case "$*" in *--music-want*) w="\${all#*--music-want }"; w="\${w%% *}";; esac; t="$(ls "$d"/*.mp3 "$d"/*.wav 2>/dev/null | { if [ -n "$w" ]; then grep -i -- "$w" | head -1; else head -1; fi; })"; [ -n "$t" ] && echo "Music: $(basename "$t")" > "$work/music.txt";; esac
 files=""
 case "$*" in *--broll*)
+  ${brollNote ? `printf '%s\\n' '${brollNote}' > "$work/No b-roll this time.txt"` : ""}
   i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
 esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"style\\":{\\"name\\":\\"pingel-brand\\"},\\"captions\\":[{\\"text\\":\\"Own it first. Nobody is coming.\\"}],\\"cover\\":{\\"frameTimeMs\\":1733},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
@@ -239,4 +270,13 @@ test("a finished reel folder holds the reel and a paste-ready caption.txt; the h
   const notes = fs.readFileSync(path.join(r.home, "Reels", "videos", "clip", "post notes.txt"), "utf8");
   assert.match(notes, /2\. Nobody is coming to save you/, "the hook options wait in the work folder");
   assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 1`, ".reel.json")), "the hidden publish metadata stays");
+});
+
+
+test("the watcher preserves the editor's per-moment no-broll reasons", () => {
+  const brollNote = "No b-roll this time: The highway search found no matching clips. The dog clip was frozen.";
+  const r = fakeDrops({ brollShots: 0, brollNote });
+  try {
+    assert.equal(fs.readFileSync(path.join(r.home, "Reels", "videos", "clip-broll", "No b-roll this time.txt"), "utf8").trim(), brollNote);
+  } finally { fs.rmSync(r.home, { recursive: true, force: true }); }
 });

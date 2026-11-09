@@ -46,7 +46,7 @@ export async function forcedAlignmentRaw(input, text, { env = process.env } = {}
  * their timing. Returns {words, matched, moved, maxShift, medianShift} or null when the alignment is not trusted
  * (under 80% matched, or the typical shift is over a second: the audio and text did not line up).
  */
-export function alignWords(ours, theirs, { minMatched = 0.8, maxMedianShift = 1.0, movedAt = 0.06 } = {}) {
+export function alignWords(ours, theirs, { minMatched = 0.8, maxMedianShift = 1.0, movedAt = 0.06, maxWordShift = 3.0 } = {}) {
   if (!ours.length || !theirs.length) return null;
   const A = ours.map((w) => norm(w.text));
   const B = theirs.map((w) => norm(w.text));
@@ -65,11 +65,14 @@ export function alignWords(ours, theirs, { minMatched = 0.8, maxMedianShift = 1.
   const median = shifts[Math.floor(shifts.length / 2)];
   if (median > maxMedianShift) return null;
   const words = ours.map((w) => ({ ...w }));
-  let moved = 0, maxShift = 0;
+  let moved = 0, maxShift = 0, kept = 0;
   for (const [a, b] of pairs) {
     const t = theirs[b];
     if (!(t.end > t.start)) continue;
     const d = Math.abs(t.start - words[a].start);
+    // A typical median can hide one word thrown seconds away (a repeated word matched to the wrong take).
+    // That word keeps its own timing.
+    if (d > maxWordShift) { kept++; continue; }
     if (d >= movedAt) moved++;
     maxShift = Math.max(maxShift, d);
     words[a].start = r3(t.start);
@@ -84,7 +87,18 @@ export function alignWords(ours, theirs, { minMatched = 0.8, maxMedianShift = 1.
       if (words[k].end < words[k].start + 0.04) words[k].end = r3(words[k].start + 0.04);
     }
   }
-  return { words, matched: pairs.length, moved, maxShift: r3(maxShift), medianShift: r3(median) };
+  return { words, matched: pairs.length, moved, kept, maxShift: r3(maxShift), medianShift: r3(median) };
+}
+
+/**
+ * A saved alignment (words-aligned.json) is reused for the same audio and the same word text, whatever the times:
+ * the aligned times themselves are saved into words.json. Older saves carry no source; they count only when
+ * words.json was reused, which already proved the clip is the same one.
+ */
+export function savedAlignmentFits(saved, words, { source = null, reusedWords = false } = {}) {
+  const prior = saved?.result?.words;
+  if (!Array.isArray(prior) || prior.length !== words.length || prior.some((w, i) => w.text !== words[i].text)) return false;
+  return saved.source ? JSON.stringify(saved.source) === JSON.stringify(source) : !!reusedWords;
 }
 
 /** Align `words` to `input`'s audio. Returns the alignWords result, or {error}. */
@@ -100,5 +114,5 @@ export async function realignWords(input, words, { env = process.env } = {}) {
 
 export function describeAlignment(res, why = "") {
   if (!res || res.error) return `word timing: ${res?.error || "skipped"}`;
-  return `word timing: ${res.matched} words re-timed against the audio${why ? ` (${why})` : ""}, ${res.moved} moved, biggest shift ${res.maxShift}s`;
+  return `word timing: ${res.matched} words re-timed against the audio${why ? ` (${why})` : ""}, ${res.moved} moved, biggest shift ${res.maxShift}s${res.kept ? `, ${res.kept} kept their own timing (shift over 3 s)` : ""}`;
 }

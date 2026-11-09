@@ -16,6 +16,14 @@ mkdir -p "$DIR"
 URL="https://github.com/Rikorose/DeepFilterNet/releases/download/v${VERSION}/${ASSET}"
 echo "fetching $URL"
 curl -fsSL -o "$DIR/deep-filter.tmp" "$URL"
+# Pinned checksum of the release asset Greg's Mac runs (GitHub publishes no digest for it). Other builds stay unchecked.
+case "$ASSET" in
+  deep-filter-0.5.6-aarch64-apple-darwin) SHA=4601e7f4e4c03e59a4c5b5000216ef3add3e808799cfccd95e14e83ea4611081;;
+  *) SHA="";;
+esac
+if [ -n "$SHA" ] && [ "$(shasum -a 256 "$DIR/deep-filter.tmp" | cut -d' ' -f1)" != "$SHA" ]; then
+  rm -f "$DIR/deep-filter.tmp"; echo "the DeepFilterNet download did not match its checksum" >&2; exit 1
+fi
 chmod +x "$DIR/deep-filter.tmp"
 mv "$DIR/deep-filter.tmp" "$DIR/deep-filter"
 "$DIR/deep-filter" --help >/dev/null 2>&1 && echo "installed $DIR/deep-filter" || { echo "the binary did not run; remove $DIR/deep-filter and set REEL_DEEPFILTER" >&2; exit 1; }

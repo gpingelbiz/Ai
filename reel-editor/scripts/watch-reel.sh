@@ -1,8 +1,10 @@
 #!/bin/bash
 # One drop-folder job: wait for the file to finish copying, make what its folder asks for, deliver it.
-# Usage: watch-reel.sh /path/to/clip.mov [reel|broll|carousel]
+# Usage: watch-reel.sh /path/to/clip.mov [reel|broll|carousel|long|youtube|vsl|runway|own-broll]
+#   vsl       calm 16:9 sales video; optional VSL Builder script cards and chapters -> "<date> VSL <n>/"
 #   reel      the edited reel, classic look (Anton pop captions, no cards)        -> "<date> Reel <n>/"
 #   broll     the full look: graphic cards, reveal captions, the configured b-roll engine -> "<date> Reel <n> with B-roll/"
+#   own-broll import an own clip into the library; leave the original and a result note in its drop folder
 #   carousel  an IG carousel from the video     -> "<date> Carousel <n>/"
 #   long      a long recording (a podcast, a live, a training) cut into several reels with the full look, the
 #             crop following whoever is talking, split screen when two people trade lines -> "<date> Clips <n>/"
@@ -30,15 +32,19 @@
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
 set -euo pipefail
 
+[ ! -f "$HOME/.reel/env.sh" ] || . "$HOME/.reel/env.sh"
+# A hosted client job overrides the shared environment after it is loaded.
+[ -z "${REEL_WATCH_CLIENT_ENV:-}" ] || { set -a; . "$REEL_WATCH_CLIENT_ENV"; set +a; }
+
 FILE="${1:-}"
 MODE="${2:-reel}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
-case "$MODE" in reel|broll|carousel|long|youtube|runway) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube or runway"}'; exit 1;; esac
+case "$MODE" in reel|broll|carousel|long|youtube|vsl|runway|own-broll) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube, vsl, runway or own-broll"}'; exit 1;; esac
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+[ -f "$HOME/.reel/env.sh" ] || export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
-if [ -f "$HOME/.zshrc" ]; then
+if [ ! -f "$HOME/.reel/env.sh" ] && [ -f "$HOME/.zshrc" ]; then
   while IFS= read -r line; do
     var="${line#export }"; var="${var%%=*}"
     [ "$var" != "PATH" ] && [ -n "${!var+x}" ] && continue
@@ -78,21 +84,42 @@ wait_image() {
   done
   return 1
 }
-if [ "${REEL_WATCH_FAST:-0}" != 1 ]; then
-  last=-1; good=0
+if [ "${REEL_WATCH_FAST:-0}" != 1 ] && [ "${REEL_WATCH_READY:-}" != "$(filesize "$FILE")-$(filemtime "$FILE")" ]; then
+  last=-1; lastmtime=-1; good=0
   for _ in $(seq 1 150); do
     size=$(filesize "$FILE")
-    age=$(( $(date +%s) - $(filemtime "$FILE") ))
-    if [ "$size" = "$last" ] && [ "$size" -gt 0 ] && [ "$age" -ge 5 ] && probe_ok "$FILE"; then good=$((good + 1)); else good=0; fi
+    mtime=$(filemtime "$FILE")
+    age=$(( $(date +%s) - mtime ))
+    if [ "$mtime" = "$lastmtime" ] && [ "$size" = "$last" ] && [ "$size" -gt 0 ] && [ "$age" -ge 5 ] && probe_ok "$FILE"; then good=$((good + 1)); else good=0; fi
     [ "$good" -ge 2 ] && break
-    last=$size
+    last=$size; lastmtime=$mtime
     sleep 2
   done
   if [ "$good" -lt 2 ]; then
-    echo "$(date '+%F %T') FAIL  $(basename "$FILE"): still copying or not a readable video after 5 minutes" >> "${REEL_WATCH_ROOT:-$HOME/Reels}/watch.log"
-    printf '{"ok":false,"input":"%s","error":"file never finished copying"}\n' "$FILE"
-    exit 1
+    printf 'Still copying %s. Editing will start when copying finishes.\n' "$(basename "$FILE")"
+    exit 75
   fi
+fi
+
+# Check the work volume before any edit or paid request. A pause stays unmarked for a later scan.
+free_kb=$(LC_ALL=C df -Pk "$REELS" 2>/dev/null | awk 'NR == 2 { print $4 }') || free_kb=""
+case "$free_kb" in
+  ''|*[!0-9]*)
+    printf 'Editing is paused because free space could not be checked. Your original is safe. Check storage in System Settings.\n' > "$FILE - why it failed.txt"
+    exit 75;;
+esac
+if [ "$free_kb" -lt 7812500 ]; then
+  printf 'Editing is paused because this Mac is nearly full. Your original is safe.\n' > "$FILE - why it failed.txt"
+  exit 75
+fi
+
+# Own footage is imported in place; the command leaves its result note beside the original.
+if [ "$MODE" = own-broll ]; then
+  rm -f "$FILE.result.txt"
+  if reel broll-add "$FILE" --note >> "$REELS/watch.log" 2>&1; then exit 0; fi
+  # A startup failure may happen before broll-add can write its own explanation.
+  [ -s "$FILE.result.txt" ] || printf 'Rejected: the clip could not be checked. See ~/Reels/watch.log, then rename it to try again.\n' > "$FILE.result.txt"
+  exit 1
 fi
 
 # Mac notification (shows on the Mini; harmless when there is no GUI session).
@@ -142,10 +169,10 @@ case "$base" in *"#premise"*) flags+=(--premise-mode auto);; esac
 case "$base" in *"#look:"*) lk="${base#*#look:}"; lk="${lk%%[ .#]*}"; flags+=(--look "$lk");; esac
 # "#v2": Greg's test look from the Oct 28 design teardown (presets/pingel-v2.json). Never on a client's reel (their
 # brand kit wins) or in the Runway folder, which has its own preset.
-case "$base" in *"#v2"*) [ "$MODE" = runway ] || [ -n "${REEL_CLIENT:-}" ] || flags+=(--preset pingel-v2);; esac
+case "$base" in *"#v2"*) [ "$MODE" = runway ] || [ "${REEL_CLIENT_MODE:-0}" = 1 ] || [ -n "${REEL_CLIENT:-}" ] || flags+=(--preset pingel-v2);; esac
 # Music: the editor picks from the music folder by the mood of what is said; "#music:<name>" asks for a track
 # whose file name contains <name>; "#nomusic" skips it. Carousels never get music.
-if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then
+if [ "$MODE" != carousel ] && [ "$MODE" != vsl ] && [ -d "$MUSIC_DIR" ]; then
   case "$base" in
     *"#nomusic"*) ;;
     *)
@@ -155,23 +182,57 @@ if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then
       ;;
   esac
 fi
-# The b-roll folder gets the full look (the preset's cards, reveal captions and b-roll); the plain folder keeps
-# the classic captions with no cards.
+# A chosen brand caption style wins over the drop folder's default.
+brand_captions=""
+if [ -n "${REEL_PRESET:-}" ]; then
+  brand_captions=$(node --input-type=module -e '
+    import fs from "node:fs";
+    import path from "node:path";
+    const file = fs.existsSync(process.argv[1]) ? process.argv[1] : path.join(process.argv[2], "..", "presets", `${process.argv[1]}.json`);
+    try {
+      const p = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (p.brand || /^brand-/.test(p.name || "")) {
+        const look = p.brand?.compat?.reel?.look;
+        const style = look ? look.captions : p.captions?.style;
+        if (style) process.stdout.write(style);
+      }
+    } catch {}
+  ' "$REEL_PRESET" "$HERE" 2>/dev/null || true)
+fi
 case "$MODE" in
-  # Codex draws the first frames unless a client's brand picked another engine (client.env REEL_BROLL_ENGINE).
-  broll) flags+=(--broll-engine "${REEL_BROLL_ENGINE:-codex}" --broll --graphics --caption-style reveal);;
-  long) flags+=(--broll --graphics --caption-style reveal);;
-  # Greg's Runway look is pingel-runway; anyone else keeps their own look with Runway clips as the b-roll.
-  runway) case "${REEL_PRESET:-pingel-brand}" in pingel-*) flags+=(--preset pingel-runway);; *) flags+=(--broll-engine runway);; esac
-    flags+=(--broll --graphics --caption-style reveal);;
-  reel) flags+=(--no-graphics --caption-style pop --no-slams --no-annotate --no-behind);;
+  broll) flags+=(--broll-engine "${REEL_BROLL_ENGINE:-codex}" --broll --graphics)
+    [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+  long) flags+=(--broll --graphics)
+    [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+  runway)
+    if [ "${REEL_CLIENT_MODE:-0}" = 1 ] || [ -n "${REEL_CLIENT:-}" ]; then
+      flags+=(--broll-engine runway)
+    else
+      case "${REEL_PRESET:-pingel-brand}" in pingel-*) flags+=(--preset pingel-runway);; *) flags+=(--broll-engine runway);; esac
+    fi
+    flags+=(--broll --graphics)
+    [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+  vsl)
+    hook=""
+    flags=(--preset vsl --canvas landscape)
+    vsl_script=$(node --input-type=module -e '
+      import { pathToFileURL } from "node:url";
+      import path from "node:path";
+      const { findVslScript } = await import(pathToFileURL(path.resolve(process.argv[2], "../src/vsl-script.mjs")));
+      const script = findVslScript(process.argv[1], process.env);
+      if (script) process.stdout.write(script);
+    ' "$base" "$HERE")
+    [ -z "$vsl_script" ] || flags+=(--script "$vsl_script");;
+  reel) flags+=(--no-graphics)
+    [ -n "$brand_captions" ] || flags+=(--caption-style pop)
+    flags+=(--no-slams --no-annotate --no-behind);;
 esac
 # A carousel needs the transcript and plan, not a render.
 [ "$MODE" = carousel ] && flags+=(--no-render)
 name=$(echo "$stem" | sed -E 's/#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 # Each mode has its own work folder, so the same clip can go through two drop folders.
-case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; runway) name="$name-runway";; esac
+case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; vsl) name="$name-vsl";; runway) name="$name-runway";; esac
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
@@ -191,12 +252,14 @@ for image in "$(dirname "$FILE")/$pair_key proof"*.{png,jpg,jpeg,heic} "$(dirnam
       continue
     fi
   fi
-  flags+=(--evidence "$supplied")
+  [ "$MODE" = vsl ] || flags+=(--evidence "$supplied")
 done
 # Housekeeping: keep the log under 5 MB and drop work folders (intermediates, not the delivered reels) older than
 # REEL_WATCH_PRUNE_DAYS (default 30; 0 turns it off).
 if [ -f "$log" ] && [ "$(filesize "$log")" -gt 5000000 ]; then tail -c 1000000 "$log" > "$log.tmp" && mv -f "$log.tmp" "$log"; fi
-prune="${REEL_WATCH_PRUNE_DAYS:-30}"
+# A kit install never deletes on its own: a 30-day-old work folder can hold a paid Runway journal or an unposted
+# reel. Its health check warns about space instead and `reel studio storage --yes` removes only safe folders.
+if [ "${REEL_CLIENT_MODE:-}" = 1 ]; then prune=0; else prune="${REEL_WATCH_PRUNE_DAYS:-30}"; fi
 if [ "$prune" -gt 0 ] 2>/dev/null; then
   find "$REELS/videos" -mindepth 1 -maxdepth 1 -type d -not -name ".*" -mtime +"$prune" -exec rm -rf {} + 2>/dev/null || true
 fi
@@ -270,7 +333,7 @@ fi
 # the post copy writes three hooks, strongest first, and the finished reel is edited with that one on screen.
 # The opening words are never the hook. Carousels have no on-screen hook.
 written_hook=""
-if [ -z "$hook" ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
+if [ -z "$hook" ] && [ "$MODE" != vsl ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
   # A caption left by an earlier run of this clip must never pass for this run's.
   rm -f "$work/caption.txt" "$work/caption.json"
   # shellcheck disable=SC2086
@@ -284,6 +347,9 @@ if [ -z "$hook" ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 
     fi
   fi
 fi
+rm -f "$work/No b-roll this time.txt"
+# Do not deliver timings from an earlier script/edit of this input.
+[ "$MODE" != vsl ] || rm -f "$work/vsl-sections.json" "$work/chapters.txt"
 run_start=$(( $(wc -l < "$log" 2>/dev/null || echo 0) + 1 ))
 # shellcheck disable=SC2086
 # ${flags[@]+...}: macOS bash 3.2 treats an empty array as unbound under set -u (a plain drop has no flags).
@@ -292,6 +358,22 @@ if ! reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $
   notify "Reel failed" "$base. Rename it to retry; details in ~/Reels/watch.log"
   printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
   exit 1
+fi
+
+if [ "$MODE" = vsl ]; then
+  folder="$(create_reel_folder "$DONE" "$REELS/videos" VSL)"
+  dest="$folder/$name.mp4"
+  cp "$work/renders/$name.mp4" "$dest"
+  if [ -z "$vsl_script" ]; then
+    printf '%s\n' 'No VSL script found. The video was edited without script cards.' '' 'Put the VSL project id in the video filename, for example:' '2026-sample-offer.mov or take-1 #vsl-2026-sample-offer.mov' '' 'Scripts are looked up in ${REEL_VSL_PROJECTS:-~/Clients}/*/vsl/projects/<project-id>/04-script/.' 'The newest final_script approval wins, otherwise the highest script.vNNN.md.' 'If the id exists for more than one client, use a unique project id.' > "$folder/No script found.txt"
+  elif [ -f "$work/vsl-sections.json" ]; then
+    node "$HERE/../src/vsl-chapters.mjs" "$work/vsl-sections.json" "$folder/chapters.txt"
+    cp "$folder/chapters.txt" "$work/chapters.txt"
+  fi
+  echo "$(date '+%F %T') done  $dest" >> "$log"
+  notify "$(basename "$folder") ready" "$name"
+  printf '{"ok":true,"input":"%s","output":"%s","name":"%s"}\n' "$FILE" "$dest" "$name"
+  exit 0
 fi
 
 # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
@@ -331,7 +413,7 @@ else
   [ -s "$work/analytics-features.json" ] && cp -f "$work/analytics-features.json" "$folder/.reel-features.json"
   # The stills, cover, music pick, words to check and preflight note all stay in the work folder ($work: broll/,
   # covers/, music.txt, review.txt, preflight.txt). Only the reason a b-roll reel came out without b-roll is new here.
-  rm -f "$work/No b-roll this time.txt"
+  [ -n "$shots" ] && rm -f "$work/No b-roll this time.txt"
   if [ -z "$shots" ] && [ "$MODE" = runway ]; then
     # Say why from the editor's own lines: a short or wordless clip never asks Runway, so it is not a balance problem.
     if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
@@ -343,7 +425,9 @@ else
     fi
   elif [ -z "$shots" ] && [ "$MODE" = broll ]; then
     # Say why, from the editor's own lines for this run, instead of guessing at Codex.
-    if tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
+    if [ -s "$work/No b-roll this time.txt" ]; then
+      : # The editor recorded each moment's search and inspection reasons.
+    elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: reel too short"; then
       printf 'No b-roll this time: the clip is under 8 seconds, too short for a still.\n' > "$work/No b-roll this time.txt"
     elif tail -n +"$run_start" "$log" 2>/dev/null | grep -q "b-roll: no room after the hook"; then
       printf 'No b-roll this time: no room for a 2-second still between the hook and the end of this clip.\n' > "$work/No b-roll this time.txt"

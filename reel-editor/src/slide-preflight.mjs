@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { ocrBinary, parseOcrJSON } from "./evidence.mjs";
 import { ensureDir, PKG_ROOT, run } from "./util.mjs";
 import { policyProblems, policyApplies } from "./policy.mjs";
+import { nativeTool } from "./native-tool.mjs";
 
 const PHOTO_KINDS = new Set(["photo", "photosplit", "phototop", "splittop", "story", "cover-top", "cover-doc", "cover-card", "cover-compare", "cover-list"]);
 const PHOTO_FIELDS = ["photo", "image"];
@@ -380,12 +381,15 @@ async function hashSource(file, options) {
   if (typeof options.hashPhoto === "function") return options.hashPhoto(file);
   if (path.extname(file).toLowerCase() === ".png") return differenceHash(fs.readFileSync(file));
   if (process.platform !== "darwin") throw new Error("JPEG photo hashing needs the macOS image helper");
-  const source = path.join(PKG_ROOT, "scripts", "dhash.swift");
-  const binary = path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "dhash");
-  if (!fs.existsSync(binary) || fs.statSync(binary).mtimeMs < fs.statSync(source).mtimeMs) {
-    ensureDir(path.dirname(binary));
-    await run("swiftc", ["-O", "-o", binary, source], { capture: true });
-  }
+  const binary = await nativeTool("dhash", { compile: async () => {
+    const source = path.join(PKG_ROOT, "scripts", "dhash.swift");
+    const binary = path.join(process.env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "dhash");
+    if (!fs.existsSync(binary) || fs.statSync(binary).mtimeMs < fs.statSync(source).mtimeMs) {
+      ensureDir(path.dirname(binary));
+      await run("swiftc", ["-O", "-o", binary, source], { capture: true });
+    }
+    return binary;
+  } });
   const result = await run(binary, [file], { capture: true });
   return String(result.out || "").trim();
 }

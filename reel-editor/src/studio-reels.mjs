@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { loadStudio, readPosts, logPost, studioLog, takeLock } from "./content-studio.mjs";
-import { pickSlot, parseCaption, postText, coverMilliseconds, trialReel } from "./publish-folder.mjs";
+import { loadStudio, readPosts, logPost, studioLog, takeLock, parseTime } from "./content-studio.mjs";
+import { pickSlot, parseCaption, postText, coverMilliseconds, trialReel, reelDraftWhy } from "./publish-folder.mjs";
 import { scheduledPosts, postInput, createPost, metricoolCall } from "./studio-metricool.mjs";
 import { hostFiles } from "./studio-host.mjs";
 import { hasCodex } from "./codex.mjs";
@@ -120,13 +120,20 @@ export function normalizeBestTimes(r, tz) {
 
 /** The reel's day and hour: the first day without a reel, the best clear hour inside the studio's reel hours. */
 export function reelSlot({ now, tz, scheduled = [], posts = [], best = {}, reels = {} }) {
-  const taken = [...new Set([...scheduled.filter((p) => /REEL/.test(p.type)).map((p) => p.day), ...posts.filter((p) => p.format === "reel" && p.status !== "failed").map((p) => p.day)])];
+  const taken = [...new Set([...scheduled.filter((p) => p.type === "REEL" || (reels.trial === true && p.type === "TRIAL_REEL")).map((p) => p.day), ...posts.filter((p) => p.format === "reel" && (reels.trial === true || !p.trial) && p.status !== "failed").map((p) => p.day)])];
   const busy = {};
-  for (const p of scheduled.filter((x) => !/REEL/.test(x.type))) (busy[p.day] ||= []).push(p.hour + p.minute / 60);
-  for (const p of posts.filter((x) => x.format !== "reel" && x.status !== "failed")) (busy[p.day] ||= []).push(Number(p.time.slice(0, 2)) + Number(p.time.slice(3, 5)) / 60);
+  for (const p of scheduled.filter((x) => x.type !== "STORY")) (busy[p.day] ||= []).push(p.hour + p.minute / 60);
+  for (const p of posts.filter((x) => x.format !== "story" && x.status !== "failed")) (busy[p.day] ||= []).push(Number(p.time.slice(0, 2)) + Number(p.time.slice(3, 5)) / 60);
+  // Include adjacent days: a late trial still needs a gap before an early next-day reel.
+  for (const [day, hours] of Object.entries(structuredClone(busy))) {
+    (busy[addDays(day, -1)] ||= []).push(...hours.map((h) => h + 24));
+    (busy[addDays(day, 1)] ||= []).push(...hours.map((h) => h - 24));
+  }
+  const { day: today, minutes } = zonedNow(tz, now);
+  (busy[today] ||= []).push(minutes / 60);
   const lo = Number(reels.earliest ?? 8), hi = Number(reels.latest ?? 20);
   const bestByDay = Object.fromEntries(Object.entries(best).map(([d, hs]) => [d, hs.filter((h) => h >= lo && h <= hi)]).filter(([, hs]) => hs.length));
-  return pickSlot({ now, taken, bestByDay, busy, tz, minLead: 2, minGap: Number(reels.gapHours ?? 2), fallbackHour: Number(reels.fallbackHour ?? 12), dayHours: [lo, hi] });
+  return pickSlot({ now, taken, bestByDay, busy, tz, minLead: 2, minGap: Math.max(2, Number(reels.gapHours ?? 2)), fallbackHour: Math.max(lo, Math.min(hi, Number(reels.fallbackHour ?? 12))), dayHours: [lo, hi] });
 }
 
 const notify = (title, msg) => { try { spawnSync("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title ${JSON.stringify(title)}`]); } catch {} };
@@ -137,7 +144,7 @@ function uniqueDir(p) {
 }
 
 /** The Made/ folder for a reel: "2026-11-02 12.00 Reel - <hook>". */
-const reelMadeName = (slot, hook) => `${slot.day} ${String(slot.hour).padStart(2, "0")}.00 Reel${hook ? ` - ${String(hook).replace(/\*/g, "").replace(/[/:\\*?"<>|]+/g, " ").trim().slice(0, 48)}` : ""}`;
+export const reelMadeName = (slot, hook) => `${slot.day} ${String(slot.hour).padStart(2, "0")}.00 Reel${hook ? ` - ${String(hook).replace(/\*/g, "").replace(/[/:\\*?"<>|]+/g, " ").trim().slice(0, 48)}` : ""}`;
 
 /**
  * Every waiting clip: edit it, then file and schedule every edited reel still in the delivered folder (a reel whose
@@ -146,11 +153,11 @@ const reelMadeName = (slot, hook) => `${slot.day} ${String(slot.hour).padStart(2
 export async function runReels(dir, { now = new Date(), deps = {} } = {}) {
   const studio = loadStudio(dir);
   const c = studio.config;
-  if (c.reels?.enabled === false) return [];
+  if (c.reels?.enabled === false || c.reels?.publisher === "claude") return [];
   const seenFile = path.join(studio.paths.reels, "seen.json");
   let seen = {};
   try { seen = readJSON(seenFile); } catch {}
-  const clips = waitingClips(studio.paths.rawReels, seen, { now: now.getTime() });
+  const clips = c.reels.rawIntake === false ? [] : waitingClips(studio.paths.rawReels, seen, { now: now.getTime() });
   const delivered = path.join(studio.paths.reels, "delivered");
   // Only folders with a video are reels: the editor also keeps its cover history (covers/history.json) here.
   const hasVideo = (d) => { try { return fs.statSync(d).isDirectory() && fs.readdirSync(d).some((f) => VIDEO.test(f)); } catch { return false; } };
@@ -209,12 +216,10 @@ export async function scheduleReel(studio, edited, { now = new Date(), deps = {}
   try { meta = readJSON(path.join(folder, ".reel.json")); } catch {}
   const prefix = String(c.publish?.captionPrefix || "").trim();
   const text = [prefix, postText(caption)].filter(Boolean).join("\n\n");
-  const textcheck = meta.textcheck;
-  const textHold = (typeof textcheck === "string" ? textcheck : textcheck?.verdict) === "hold";
-  const why = !postText(caption) ? "there is no caption" : textHold ? `its text check is on hold: ${textcheck?.notes?.[0] || "text check reported a hold"}` : meta.preflight === "fail" ? "its check failed" : "";
+  const why = reelDraftWhy({ text: postText(caption), textcheck: meta.textcheck, preflight: meta.preflight });
   const ai = c.ai?.label === "always" || !!meta.isAiGenerated;
   // reels.trial: every reel goes out as a Trial Reel (a client who allows Trial Reels only); otherwise #trial or trial: true.
-  const trial = c.reels?.trial === true || trialReel({ entry: path.basename(folder), dir: folder, video, captionRaw, meta, root: path.dirname(folder) });
+  const trial = c.reels?.trial !== "both" && (c.reels?.trial === true || trialReel({ entry: path.basename(folder), dir: folder, video, captionRaw, meta, root: path.dirname(folder) }));
   const posts = readPosts(studio.paths);
   const { day: today } = zonedNow(c.timezone, now);
   let scheduled = [], best = {};
@@ -225,35 +230,93 @@ export async function scheduleReel(studio, edited, { now = new Date(), deps = {}
       best = normalizeBestTimes(r, c.timezone);
     } catch {}
   }
-  const slot = reelSlot({ now, tz: c.timezone, scheduled, posts, best, reels: c.reels }) || { day: addDays(today, 1), hour: Number(c.reels?.fallbackHour ?? 12) };
+  const feedSlots = [];
+  for (let k = 0; k <= 14; k++) for (const s of c.slots || []) {
+    const t = parseTime(s.time);
+    feedSlots.push({ day: addDays(today, k), hour: t.h, minute: t.m, type: "POST" });
+  }
+  const slot = reelSlot({ now, tz: c.timezone, scheduled: [...scheduled, ...feedSlots], posts, best, reels: c.reels });
+  if (!slot) throw new Error("No reel hour is clear of other posts by two hours in the next two weeks.");
   const time = `${String(slot.hour).padStart(2, "0")}:00`;
+  const trialSlot = c.reels?.trial === "both" ? trialSlotFor({ now, tz: c.timezone, scheduled: [...scheduled, ...feedSlots], posts: [...posts, { day: slot.day, time, format: "reel" }], reels: c.reels, from: slot.day }) : null;
+  if (c.reels?.trial === "both" && !trialSlot) throw new Error("No two-hour gap for the Trial Reel copy. The reel is kept in delivered for the next run.");
   const made = uniqueDir(path.join(studio.paths.made, reelMadeName(slot, hook)));
   fs.renameSync(folder, made);
   const madeVideo = path.join(made, path.basename(video));
   const id = `${slot.day}-${time.replace(":", "")}-reel`;
   const record = { id, day: slot.day, time, format: "reel", hook, made, files: [madeVideo], text, ai, trial, coverMs: coverMilliseconds(meta), draftWhy: why, status: "made" };
   logPost(studio.paths, record);
-  if (c.publish.mode === "off") return record;
-  const draft = c.publish.mode === "draft" || !!why;
+  let copy = null;
+  if (c.reels?.trial === "both") {
+    const trialTime = `${String(trialSlot.hour).padStart(2, "0")}:00`;
+    copy = { ...record, id: `${record.id}-trial`, day: trialSlot.day, time: trialTime, format: "trial", trial: true };
+    logPost(studio.paths, copy);
+  }
+  if (c.publish.mode === "off") return { ...record, ...(copy ? { trialCopy: copy } : {}) };
+  const normal = await publishReel(studio, record, { deps });
+  if (copy) normal.trialCopy = await publishReel(studio, copy, { deps });
+  return normal;
+}
+
+/** Trial copies occupy time, but never reserve the normal reel's day. */
+export function trialSlotFor({ now, tz, scheduled = [], posts = [], reels = {}, from }) {
+  const { day: today, minutes } = zonedNow(tz, now);
+  const scalar = (day, hour) => Date.parse(`${day}T00:00:00Z`) / 3600000 + hour;
+  const busy = [
+    ...scheduled.filter((p) => p.type !== "STORY").map((p) => scalar(p.day, p.hour + p.minute / 60)),
+    ...posts.filter((p) => p.format !== "story" && p.status !== "failed").map((p) => scalar(p.day, Number(p.time.slice(0, 2)) + Number(p.time.slice(3, 5)) / 60)),
+  ];
+  for (let k = 0; k <= 14; k++) {
+    const day = addDays(from || today, k);
+    for (let hour = Number(reels.earliest ?? 8); hour <= Number(reels.latest ?? 20); hour++) {
+      if (day < today || (day === today && hour < minutes / 60 + 2)) continue;
+      if (busy.every((at) => Math.abs(at - scalar(day, hour)) >= Math.max(2, Number(reels.gapHours ?? 2)))) return { day, hour };
+    }
+  }
+  return null;
+}
+
+/** Independent records let a failed trial retry without duplicating its already-scheduled normal reel. */
+export async function publishReel(studio, record, { deps = {} } = {}) {
+  const c = studio.config;
+  const draft = c.publish.mode === "draft" || !!record.draftWhy;
   let host;
+  const note = record.format === "trial" ? "Trial " : "";
   try {
-    host = await (deps.hostFiles || hostFiles)([madeVideo], { hosting: c.hosting, postId: id });
-    const input = postInput({ blogId: c.metricool.blogId, day: slot.day, time, tz: c.timezone, text, media: host.urls, kind: "reel", ai, draft, trial, networks: c.metricool.networks, coverMs: record.coverMs });
+    host = await (deps.hostFiles || hostFiles)(record.files, { hosting: c.hosting, postId: record.id });
+    const input = postInput({ blogId: c.metricool.blogId, day: record.day, time: record.time, tz: c.timezone, text: record.text, media: host.urls, kind: "reel", ai: record.ai, draft, trial: record.trial, networks: record.format === "trial" ? ["instagram"] : c.metricool.networks, coverMs: record.coverMs });
     const r = await (deps.createPost || createPost)(c.metricool.connector, input);
-    const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: why || (draft ? "the studio is set to drafts" : "") };
-    fs.writeFileSync(path.join(made, "Scheduled.txt"), `${draft ? `Saved as a DRAFT in Metricool (${next.why}).` : `Scheduled to post ${slot.day} at ${time} (${c.timezone}).`}\n${trial ? "Trial Reel: yes, manual graduation.\n" : ""}Metricool: ${r.plannerUrl || "(no link returned)"}\n${ai ? "Marked as made with AI (Instagram's AI label).\n" : ""}`);
-    logPost(studio.paths, next);
-    studioLog(studio.paths, `reel ${next.status} ${id} ${r.plannerUrl || ""}`);
-    notify(`${c.client}: reel ${draft ? "saved as a draft" : "scheduled"}`, `${hook}: ${slot.day} ${time}`);
-    return next;
+    return recordReelSuccess(studio, record, r, deps);
   } catch (e) {
     const next = { ...record, status: "not-posted", why: String(e.message).split("\n")[0] };
-    fs.writeFileSync(path.join(made, "Not posted.txt"), `Not in Metricool yet: ${next.why}\nThe next run tries again.\n`);
+    fs.writeFileSync(path.join(record.made, `${note}Not posted.txt`), `Not in Metricool yet: ${next.why}\nThe next daily run tries again.\n`);
     logPost(studio.paths, next);
-    studioLog(studio.paths, `REEL NOT POSTED ${id}: ${next.why}`);
-    notify(`${c.client}: reel not scheduled`, next.why);
+    studioLog(studio.paths, `REEL NOT POSTED ${record.id}: ${next.why}`);
+    (deps.notify || notify)(`${c.client}: reel not scheduled`, next.why);
     return next;
-  } finally {
-    await host?.close();
-  }
+  } finally { await host?.close(); }
+}
+
+/** Desktop routine values; its caption safety gate is shared with legacy scheduling. */
+export function reelDetails(studio, item) {
+  const c = studio.config;
+  const prefix = String(c.publish.captionPrefix || "").trim();
+  const trial = c.reels.trial !== "both" && (c.reels.trial === true || item.trial);
+  const draftWhy = item.why || (c.publish.mode === "draft" ? "the studio is set to drafts" : "");
+  return { text: [prefix, item.text].filter(Boolean).join("\n\n"), ai: c.ai.label === "always" || item.isAiGenerated,
+    trial, coverMs: item.coverMs, draftWhy, draft: !!draftWhy, trialCopy: c.reels.trial === "both" };
+}
+
+/** Save the connector receipt and update the same post log for either publishing runner. */
+export function recordReelSuccess(studio, record, r, deps = {}) {
+  const c = studio.config;
+  const draft = c.publish.mode === "draft" || !!record.draftWhy;
+  const note = record.format === "trial" ? "Trial " : "";
+  const next = { ...record, status: draft ? "draft" : "scheduled", plannerUrl: r.plannerUrl, metricoolId: r.id, why: record.draftWhy || (draft ? "the studio is set to drafts" : "") };
+  fs.writeFileSync(path.join(record.made, `${note}Scheduled.txt`), `${draft ? `Saved as a DRAFT in Metricool (${next.why}).` : `Scheduled to post ${record.day} at ${record.time} (${c.timezone}).`}\n${record.trial ? "Trial Reel: yes, manual graduation.\n" : ""}Metricool: ${r.plannerUrl || "(no link returned)"}\n${record.ai ? "Marked as made with AI (Instagram's AI label).\n" : ""}`);
+  fs.rmSync(path.join(record.made, `${note}Not posted.txt`), { force: true });
+  logPost(studio.paths, next);
+  studioLog(studio.paths, `reel ${next.status} ${record.id} ${r.plannerUrl || ""}`);
+  (deps.notify || notify)(`${c.client}: reel ${draft ? "saved as a draft" : "scheduled"}`, `${record.hook}: ${record.day} ${record.time}`);
+  return next;
 }

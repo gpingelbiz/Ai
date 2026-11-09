@@ -17,6 +17,7 @@ def main():
     p.add_argument("input")
     p.add_argument("-o", "--out", required=True)
     p.add_argument("--model", default="small")
+    p.add_argument("--revision", default=None)
     p.add_argument("--lang", default="en")
     p.add_argument("--prompt", default="")
     p.add_argument("--device", default=os.environ.get("REEL_WHISPER_DEVICE", "cpu"))
@@ -34,7 +35,16 @@ def main():
             ["ffmpeg", "-y", "-loglevel", "error", "-i", a.input, "-vn", "-ac", "1", "-ar", "16000", wav],
             check=True,
         )
-        model = WhisperModel(a.model, device=a.device, compute_type=a.compute)
+        model_path = a.model
+        if a.revision:
+            # Open the exact cached snapshot; a newer model on the server cannot change this release.
+            from huggingface_hub import snapshot_download
+            model_path = snapshot_download(
+                repo_id=a.model,
+                revision=a.revision,
+                allow_patterns=["config.json", "preprocessor_config.json", "model.bin", "tokenizer.json", "vocabulary.*"],
+            )
+        model = WhisperModel(model_path, device=a.device, compute_type=a.compute)
         segments, info = model.transcribe(
             wav,
             language=a.lang or None,
@@ -60,6 +70,7 @@ def main():
     out = {
         "engine": "faster-whisper",
         "model": a.model,
+        **({"revision": a.revision} if a.revision else {}),
         "language": info.language,
         "duration": round(info.duration, 3),
         "words": words,

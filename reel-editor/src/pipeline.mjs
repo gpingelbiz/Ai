@@ -3,9 +3,10 @@ import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
 import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking } from "./cuts.mjs";
+import { resolveEndingOverride, endingMetadata } from "./ending.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
-import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
+import { realignWords, describeAlignment, hasAlignment, savedAlignmentFits } from "./align.mjs";
 import { makeCutout, describeCutout } from "./behind.mjs";
 import { runPreflight, writePreflight, describePreflight } from "./preflight.mjs";
 import { writeFeatures } from "./features.mjs";
@@ -31,6 +32,7 @@ import { makeBroll, holdForSplit, planBrollOpen } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { planBrollLayouts, planPersistentLayout } from "./layouts.mjs";
 import { isPersistentScene, makeGraphics, persistentDuckSchedule } from "./graphics.mjs";
+import { makeVslGraphics, parseVslScript, scriptTerms } from "./vsl-script.mjs";
 import { makeEvidence } from "./evidence.mjs";
 import { planSlams } from "./slams.mjs";
 import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
@@ -73,7 +75,13 @@ export async function runEdit(input, opts = {}) {
   const workDir = path.resolve(opts.out || path.join("videos", name));
   ensureDir(workDir);
   const preset = mergeOverrides(loadPreset(opts.preset), opts);
-  const dict = loadDictionary(opts.dictionary);
+  const scriptPath = opts.script ? path.resolve(opts.script) : null;
+  if (scriptPath && !fs.existsSync(scriptPath)) throw new Error(`no such VSL script: ${scriptPath}`);
+  if (scriptPath) preset.graphics = { ...preset.graphics, enabled: true };
+  const baseDict = loadDictionary(opts.dictionary);
+  // A VSL script names the speaker and the offers; the transcript prompt and the caption fix spell them its way.
+  const spoken = scriptPath ? scriptTerms(parseVslScript(fs.readFileSync(scriptPath, "utf8"))) : [];
+  const dict = spoken.length ? { ...baseDict, terms: [...spoken, ...(baseDict.terms || [])], names: [...spoken, ...(baseDict.names || [])] } : baseDict;
   let requestedCredits = [];
   try {
     const supplied = parseCredits(opts.credit, opts.creditAt);
@@ -128,7 +136,10 @@ export async function runEdit(input, opts = {}) {
     primaryEngine = readJSON(wordsPath).engine || resolveEngine(preset.transcribe.engine);
     log(`${words.length} words`);
   }
+  const heard = words;
   words = applyCorrections(words, dict.corrections);
+  // A dictionary fix changes words, so its timing (split evenly across what it replaced) needs the aligner too.
+  const dictChanged = words.length !== heard.length || words.some((w, i) => w.text !== heard[i].text);
   let sourceStat = null;
   try { const st = fs.statSync(input); sourceStat = { size: st.size, mtimeMs: Math.round(st.mtimeMs) }; } catch {}
   writeJSON(wordsPath, { source: input, sourceStat, engine: primaryEngine, words });
@@ -164,7 +175,7 @@ export async function runEdit(input, opts = {}) {
   // 1c. Caption word fix (Claude, text only, against the dictionary) and forced alignment (ElevenLabs), so a fixed
   // word and a faster-whisper word both land on the syllable. Both are cached in the work folder.
   if (words.length && !opts.transcript) {
-    let changed = false;
+    let changed = dictChanged;
     if (preset.transcribe.fix !== false) {
       const before = words;
       const fix = await fixWords({ words, dict, review, workDir, force: !!opts.force, minProb: preset.transcribe.minProb ?? 0.5 });
@@ -185,13 +196,15 @@ export async function runEdit(input, opts = {}) {
       if (!hasAlignment()) log("word timing: ELEVENLABS_API_KEY not set, keeping the engine's timings");
       else {
         const alignedPath = path.join(workDir, "words-aligned.json");
-        const key = sha1(JSON.stringify(words.map((w) => [w.text, w.start])));
+        // Keyed on the audio and the words' text, never their times: the aligned times are saved into words.json,
+        // so a key on times changed after every paid alignment and the next edit of the same clip paid again.
+        const key = sha1(JSON.stringify(words.map((w) => w.text)));
         const saved = !opts.force && fs.existsSync(alignedPath) ? readJSONSafe(alignedPath) : null;
         let res;
-        if (saved?.key === key) res = { ...saved.result, cached: true };
+        if (savedAlignmentFits(saved, words, { source: sourceStat, reusedWords })) res = { ...saved.result, cached: true };
         else {
           res = await realignWords(input, words);
-          if (!res.error) writeJSON(alignedPath, { key, result: res });
+          if (!res.error) writeJSON(alignedPath, { key, source: sourceStat, result: res });
         }
         (res.error ? warn : log)(describeAlignment(res, changed ? "after the fix" : softTimings ? "faster-whisper timings" : "requested") + (res.cached ? " (saved)" : ""));
         if (!res.error) { words = res.words; changed = true; }
@@ -203,11 +216,12 @@ export async function runEdit(input, opts = {}) {
   // 2. Cut plan
   // A clip that is mostly not talking (a walk-up, a vlog shot, a room) has nothing to cut around: cutting the
   // "silence" would leave only its few words ("Greg? Yeah" out of a 20 s walk-up came back as a 1 s reel).
+  const endingOverride = resolveEndingOverride(opts, words, readJSONSafe(path.join(workDir, "cuts.json")));
   const quiet = mostlyNotTalking(words, meta.duration);
-  if (quiet && !opts.noCuts) log(`cuts: only ${words.length} word${words.length === 1 ? "" : "s"} spoken in ${r3(meta.duration)} s, keeping every frame (no talking to cut around)`);
-  const cutsOn = !opts.noCuts && !quiet && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers);
+  if (quiet && !opts.noCuts && endingOverride == null) log(`cuts: only ${words.length} word${words.length === 1 ? "" : "s"} spoken in ${r3(meta.duration)} s, keeping every frame (no talking to cut around)`);
+  const cutsOn = endingOverride != null || (!opts.noCuts && !quiet && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers));
   let cuts = cutsOn
-    ? planCuts(words, meta.duration, preset.cuts)
+    ? planCuts(words, meta.duration, { ...preset.cuts, endAt: endingOverride })
     : { segments: [{ start: 0, end: r3(meta.duration) }], removed: [], originalDuration: r3(meta.duration), keptDuration: r3(meta.duration), words };
   if (cutsOn && meta.hasAudio && preset.cuts.audioGuard !== false) {
     const guarded = guardSilenceCuts(cuts, await early.envelope, meta.duration);
@@ -436,7 +450,7 @@ export async function runEdit(input, opts = {}) {
   const tail = Math.max(1.5, endSafe);
   let structure = null;
   let structureCards = [];
-  if (preset.youtube?.chapters && shownGroups.length) {
+  if (!scriptPath && preset.youtube?.chapters && shownGroups.length) {
     structure = await makeStructure({ workDir, groups: shownGroups, duration, handle: preset.carousel?.handle || "", voice: readVoice({ style: preset }), force: !!opts.newGraphics, endSafe });
     if (structure) {
       if (hook && structure.promise && hook.auto) { Object.assign(hook, { text: structure.promise.replace(/\*/g, ""), auto: false }, hookWords(structure.promise, dict)); log(`hook: "${hook.text}" (the promise, from the structure)`); }
@@ -446,7 +460,8 @@ export async function runEdit(input, opts = {}) {
       ].filter((c) => c.start > (hook ? hook.start + hook.duration + 0.5 : 3) && c.start + c.duration < duration - tail).sort((a, b) => a.start - b.start);
     }
   }
-  let graphics = preset.graphics?.enabled && shownGroups.length
+  const vslPlan = scriptPath ? makeVslGraphics({ scriptPath, workDir, words: cleanWords, groups: shownGroups, duration, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [] } }) : null;
+  let graphics = vslPlan ? vslPlan.scenes : preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [], modes: preset.brand?.modes || preset.brand?.contentModes || {} }, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
   const graphicsSchema = graphics.schema || 1;
@@ -502,7 +517,7 @@ export async function runEdit(input, opts = {}) {
     const hk = new Set(toks(hook.text));
     const repeats = (g) => { const t = toks(g.text || g.title); return t.length && t.filter((x) => hk.has(x)).length / t.length >= 0.8; };
     const before = graphics.length;
-    graphics = graphics.filter((g) => !(["headline", "quote"].includes(g.type) && repeats(g)));
+    graphics = graphics.filter((g) => g.source === "script" || !(["headline", "quote"].includes(g.type) && repeats(g)));
     graphics.schema = graphicsSchema;
     if (graphics.length < before) log(`graphics: dropped ${before - graphics.length} card${before - graphics.length === 1 ? "" : "s"} that only repeated the hook`);
   }
@@ -808,12 +823,14 @@ export async function runEdit(input, opts = {}) {
     coldOpen,
     lowerThird,
     structure,
+    ...(vslPlan ? { vslSections: vslPlan.sections, vslScript: scriptPath } : {}),
     framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right", ...(signatureHead ? { headBox: signatureHead } : {}) },
     reframe,
     behind: behindPlan,
     head: (() => { const h = zoomedHead(detection, 1); return h ? { top: r3(h.top), bottom: r3(h.bottom) } : null; })(),
     audio,
     words: cleanWords,
+    ending: endingMetadata(words, meta.duration, cuts, preset.cuts, endingOverride),
   };
   writeJSON(path.join(workDir, "plan.json"), plan);
   writeFeatures(workDir, plan, { sceneSchema });

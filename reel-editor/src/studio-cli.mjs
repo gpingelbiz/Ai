@@ -9,7 +9,7 @@ import { readJSON, PKG_ROOT, ensureDir } from "./util.mjs";
 
 /** `reel photos`, `reel daily` and `reel studio`: the Content Studio commands. */
 
-export const STUDIO_USAGE = `Content Studio (a client's folder that makes and schedules their posts; never Greg's own setup)
+export const STUDIO_USAGE = `Your reels and posts (your folders and posting settings)
   reel photos [status|check|sheet|pick <n>|use <file>...] [--studio <dir>] [--limit 36]
                                     the photo folder: what is usable, what was skipped and why, a contact sheet,
                                     the next picks; "use" marks photos as spent (they are never offered again)
@@ -18,7 +18,15 @@ export const STUDIO_USAGE = `Content Studio (a client's folder that makes and sc
                                     copy in the client's voice (Claude), unused photos, slides in their brand,
                                     a copy in Made/, scheduled into their Metricool
   reel studio init <dir> [--brand <Brand folder>] [--client "<name>"]   make a studio folder
+  reel studio health [--studio <dir>]                                    check daily run, logins, failed posts and waiting reels
   reel studio status [--studio <dir>]                                    settings check, last posts, photo pool
+  reel studio posts scan|make|wait|ready|serve|stop|done|fail|finish [--studio <dir>]
+  reel studio publish scan|slot|claim|serve|stop|done|fail|release [--studio <dir>]        commands for the Claude desktop publishing routine
+  reel studio routine-receipt --nonce <n> --tasks '<json>' [--studio <dir>]  save the checked routine details
+  reel studio verify-routines [--studio <dir>]                          check both routines are set up and have run
+  reel studio verify-routines [--studio <dir>]                           check the saved routine details
+  reel studio heartbeat start|discover|done|fail <task> [reason] | check   record or check a routine run
+  reel studio storage [--yes] [--studio <dir>]                          show storage use; --yes removes old finished work
   reel studio reels [--studio <dir>]                                     edit and schedule the clips in Raw Reels
   reel studio agents [--studio <dir>] [--uninstall]                      the daily job and the Raw Reels watcher (launchd)
   The studio is --studio, else $REEL_STUDIO, else ~/Content Studio.`;
@@ -72,7 +80,7 @@ export async function dailyCommand(args) {
   if (values.day && !/^\d{4}-\d{2}-\d{2}$/.test(values.day)) throw new Error("--day is a date like 2026-11-02");
   const { runDaily, dailySummary } = await import("./daily.mjs");
   const r = await runDaily(values.studio, { dryRun: values["dry-run"], noPublish: values["no-publish"], only: values.only || null, limit: values.limit ? Number(values.limit) : null, day: values.day || null });
-  console.log(dailySummary(r));
+  if (!r.skipped?.startsWith("The Claude routine")) console.log(dailySummary(r));
   if (r.made?.some((x) => x.status === "failed" || x.status === "not-posted")) process.exitCode = 1;
 }
 
@@ -117,42 +125,79 @@ ${extra}
 </dict>
 </plist>
 `;
+  const config = fs.existsSync(studioPaths(root).config) ? withDefaults(readJSON(studioPaths(root).config)) : withDefaults({});
   return [
     { label: `com.pingel.content-studio.daily.${slugged}`, plist: plist({ label: `com.pingel.content-studio.daily.${slugged}`, args: [node, bin, "daily", "--studio", root], extra: `  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>${hour}</integer><key>Minute</key><integer>${minute}</integer></dict>\n  <key>RunAtLoad</key><false/>` }) },
     { label: `com.pingel.content-studio.reels.${slugged}`, plist: plist({ label: `com.pingel.content-studio.reels.${slugged}`, args: [node, bin, "studio", "reels", "--studio", root], extra: `  <key>WatchPaths</key><array><string>${xml(path.join(root, "Raw Reels"))}</string><string>${xml(path.join(root, "Publish"))}</string></array>\n  <key>StartInterval</key><integer>3600</integer>\n  <key>ThrottleInterval</key><integer>60</integer>\n  <key>RunAtLoad</key><false/>` }) },
-  ];
+    { label: `com.pingel.content-studio.health.${slugged}`, plist: plist({ label: `com.pingel.content-studio.health.${slugged}`, args: [node, bin, "studio", "health", "--studio", root], extra: `  <key>StartCalendarInterval</key><array>${[9, 13, 18].map((h) => `<dict><key>Hour</key><integer>${h}</integer><key>Minute</key><integer>23</integer></dict>`).join("")}</array>` }) },
+  ].filter((a) => config.daily.publisher !== "claude" || !a.label.includes(".daily.")).filter((a) => config.reels.publisher !== "claude" || !a.label.includes(".reels."));
 }
 
-export function installAgents(root, { uninstall = false } = {}) {
-  const dir = path.join(os.homedir(), "Library", "LaunchAgents");
+export function installAgents(root, { uninstall = false, home = os.homedir(), run = spawnSync } = {}) {
+  const dir = path.join(home, "Library", "LaunchAgents");
   const uid = process.getuid();
   const out = [];
   // Agents installed before agentSlug under the generic "content-studio" name for THIS studio: removed, so the
   // folder never has two watchers.
-  for (const kind of ["daily", "reels"]) {
+  for (const kind of ["daily", "reels", "health"]) {
     const label = `com.pingel.content-studio.${kind}.content-studio`;
     const file = path.join(dir, `${label}.plist`);
-    if (studioAgents(root)[0].label.endsWith(".content-studio") || !fs.existsSync(file)) continue;
+    if (studioAgents(root, { home })[0].label.endsWith(".content-studio") || !fs.existsSync(file)) continue;
     if (!fs.readFileSync(file, "utf8").includes(`<string>${xml(root)}</string>`)) continue;
-    spawnSync("launchctl", ["bootout", `gui/${uid}/${label}`], { stdio: "ignore" });
+    run("launchctl", ["bootout", `gui/${uid}/${label}`], { stdio: "ignore" });
     fs.rmSync(file, { force: true });
     out.push(`removed the old ${label}`);
   }
-  for (const a of studioAgents(root)) {
+  for (const kind of ["reels", "daily"]) {
+    const obsolete = `com.pingel.content-studio.${kind}.${agentSlug(root, home)}`;
+    if (!studioAgents(root, { home }).some((a) => a.label === obsolete)) {
+      run("launchctl", ["bootout", `gui/${uid}/${obsolete}`], { stdio: "ignore" });
+      fs.rmSync(path.join(dir, `${obsolete}.plist`), { force: true });
+      out.push(`removed ${obsolete}`);
+    }
+  }
+  for (const a of studioAgents(root, { home })) {
     const file = path.join(dir, `${a.label}.plist`);
-    spawnSync("launchctl", ["bootout", `gui/${uid}/${a.label}`], { stdio: "ignore" });
+    run("launchctl", ["bootout", `gui/${uid}/${a.label}`], { stdio: "ignore" });
     if (uninstall) { fs.rmSync(file, { force: true }); out.push(`removed ${a.label}`); continue; }
     ensureDir(dir);
     fs.writeFileSync(file, a.plist);
-    const r = spawnSync("launchctl", ["bootstrap", `gui/${uid}`, file], { encoding: "utf8" });
+    const r = run("launchctl", ["bootstrap", `gui/${uid}`, file], { encoding: "utf8" });
     out.push(r.status === 0 ? `on: ${a.label}` : `could not start ${a.label}: ${(r.stderr || "").trim()}`);
   }
   return out;
 }
 
+/**
+ * The routine, heartbeat and storage commands. Their owning modules parse their own arguments; this only adds the
+ * studio folder when the caller did not name one.
+ */
+export async function studioSupportCommand(cmd, rest, { loadModule = (file) => import(file) } = {}) {
+  const named = rest.indexOf("--studio");
+  const studio = loadStudio(named >= 0 ? rest[named + 1] : undefined);
+  const args = named >= 0 ? rest : [...rest, "--studio", studio.paths.root];
+  if (cmd === "routine-receipt") return (await loadModule("./studio-routine.mjs")).routineReceiptCommand(args);
+  if (cmd === "verify-routines") return (await loadModule("./studio-routine.mjs")).verifyRoutines(studio.paths.root);
+  if (cmd === "heartbeat") return (await loadModule("./heartbeat.mjs")).heartbeatCommand(args);
+  const { cleanupStorage, storageSummary } = await loadModule("./storage.mjs");
+  const report = cleanupStorage({ yes: rest.includes("--yes"), studio: studio.paths.root });
+  return { summary: storageSummary(report), ...report };
+}
+
 export async function studioCommand(args) {
   const [cmd, ...rest] = args;
   if (!cmd || cmd === "help" || cmd === "--help") return console.log(STUDIO_USAGE);
+  if (["routine-receipt", "verify-routines", "heartbeat", "storage"].includes(cmd)) {
+    const result = await studioSupportCommand(cmd, rest);
+    // routine-receipt and heartbeat print their own line; the others print their result.
+    if (cmd === "verify-routines" || cmd === "storage") console.log(cmd === "storage" ? result.summary : JSON.stringify(result, null, 2));
+    return;
+  }
+  if (cmd === "posts") return (await import("./studio-posts.mjs")).postsCommand(rest);
+  if (cmd === "publish") {
+    const { publishCommand } = await import("./studio-publish.mjs");
+    return publishCommand(rest);
+  }
   if (cmd === "init") {
     const { values, positionals } = opt(rest, { brand: { type: "string" }, client: { type: "string" } });
     const dir = studioDir(positionals[0] || values.studio);
@@ -163,11 +208,22 @@ export async function studioCommand(args) {
     const { values } = opt(rest, {});
     const paths = studioPaths(values.studio);
     if (!fs.existsSync(paths.config)) return console.log(`no studio at ${paths.root}`);
+    const { publishHolds } = await import("./studio-publish.mjs");
+    const held = publishHolds({ paths });
+    for (const hold of held) console.log(`${hold.entry || hold.id}: ${hold.message}`);
     const problems = checkStudio(readJSON(paths.config));
     console.log(problems.length ? `studio.json needs fixing:\n- ${problems.join("\n- ")}` : `studio.json: OK (${paths.root})`);
     const posts = readPosts(paths).sort((a, b) => `${a.day} ${a.time}`.localeCompare(`${b.day} ${b.time}`)).slice(-10);
     for (const p of posts) console.log(`  ${p.day} ${p.time} ${p.format.padEnd(8)} ${p.status.padEnd(10)} ${p.hook || ""}${p.why ? ` (${p.why})` : ""}`);
     await photosCommand(["status", "--studio", paths.root]);
+    return;
+  }
+  if (cmd === "health") {
+    const { values } = opt(rest, {});
+    const { studioHealth } = await import("./studio-health.mjs");
+    const r = await studioHealth(values.studio);
+    console.log(r.message);
+    if (r.issues.length) process.exitCode = 1;
     return;
   }
   if (cmd === "reels") {

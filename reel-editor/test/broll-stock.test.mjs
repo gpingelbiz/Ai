@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createStockSearch, stockRelevance, normaliseStock, stockContactSheet, conformStockClip, makeStockClip, stockCacheDir, previewStockCandidates, wikimediaLicence } from "../src/broll-stock.mjs";
 import { libraryDir, readLibrary, saveLibraryClip, findLibraryClip, reviewMovingClip, writeBrollCredits } from "../src/broll-library.mjs";
-import { makeBroll, picksPrompt, recentFile, rememberScenes, readRecent, PICKS_SCHEMA, normaliseStockPicks } from "../src/broll.mjs";
+import { makeBroll, picksPrompt, recentFile, rememberScenes, readRecent, PICKS_SCHEMA, normaliseStockPicks, approvedShotMatch, codexPicks } from "../src/broll.mjs";
 import { makeRunwayBroll, runwayPicksPrompt } from "../src/broll-runway.mjs";
 import { loadPreset, CLIENT_BASE } from "../src/presets.mjs";
 import { brandPreset } from "../src/brandkit.mjs";
@@ -70,12 +70,12 @@ test("stock normalises documented variants, keeps film, filters duration/resolut
   assert.equal(normaliseStock("pixabay", { hits: [pixabay({ videos: { small: { url: "small", width: 640, height: 360 } } })] }).length, 0);
 });
 
-test("search uses portrait then any, film on Pixabay, subject then query, dedupes and stops at twelve", async () => {
+test("search uses portrait then any, film on Pixabay, the meaning query then the subject, dedupes and stops at twelve", async () => {
   const f = fixture(), urls = [];
   const search = createStockSearch({ env: f.env, maxSearches: 6, fetchFn: async (url, init) => { const u = new URL(url); urls.push(u); if (u.hostname === "api.pexels.com") { assert.equal(init.headers.Authorization, "secret"); return json({ videos: u.searchParams.get("orientation") ? [] : [pexel()] }); } assert.equal(u.searchParams.get("key"), "secret-two"); assert.equal(u.searchParams.get("video_type"), "film"); return json({ hits: [pixabay()] }); } });
   assert.equal((await search(pick)).length, 2);
   assert.deepEqual(urls.map((u) => u.searchParams.get("orientation")), ["portrait", null, null, "portrait", null, null]);
-  assert.deepEqual(urls.map((u) => u.searchParams.get("query") || u.searchParams.get("q")), ["coconut", "coconut", "coconut", "coconut falling", "coconut falling", "coconut falling"]);
+  assert.deepEqual(urls.map((u) => u.searchParams.get("query") || u.searchParams.get("q")), ["coconut falling", "coconut falling", "coconut falling", "coconut", "coconut", "coconut"]);
   assert.equal((await search({ stockQuery: "gorilla walking", shows: "gorilla" })).length, 0, "one request budget covers the entire reel");
   const g = fixture(); let requests = 0;
   const enough = createStockSearch({ env: g.env, fetchFn: async () => { requests++; return json({ videos: Array.from({ length: 16 }, (_, i) => pexel(i)) }); } });
@@ -93,7 +93,7 @@ test("search drops clips tagged with another subject, ranks tagged matches first
   const search = createStockSearch({ env: f.env, fetchFn: async (url) => { urls.push(new URL(url).searchParams.get("q")); return json({ hits }); } });
   const found = await search({ stockQuery: "gorilla walking", shows: "gorilla", scene: "A silverback gorilla on a jungle path." }, ["pixabay"]);
   assert.deepEqual(found.map((c) => c.id), [3, 2]);
-  assert.equal(urls[0], "gorilla");
+  assert.equal(urls[0], "gorilla walking", "the meaning-keeping query runs before the bare subject");
 });
 
 test("stock checks the full clip for the event Claude saw in the chosen image", async () => {
@@ -456,18 +456,29 @@ test("Runway folder reuses a library clip before credit checks, even without a R
   assert.equal(accepted.source, "library"); assert.equal(accepted.video, true);
 });
 
-test("house presets enable free footage only on Codex; clients default to neither source", () => {
+test("house and client cheap folders enable free footage; explicit brand choices still win", () => {
   assert.deepEqual(loadPreset("pingel-brand").broll.stock, ["pexels", "pixabay", "wikimedia"]);
   assert.equal(loadPreset("pingel-brand").broll.library, true); assert.equal(loadPreset("pingel-brand").broll.animate, false);
   assert.deepEqual(loadPreset("pingel-runway").broll.stock, []); assert.equal(loadPreset("pingel-runway").broll.library, true);
-  assert.deepEqual(CLIENT_BASE.broll, { animate: false, stock: [], library: false });
+  assert.deepEqual(CLIENT_BASE.broll, { animate: false, stock: ["pexels", "pixabay", "wikimedia"], library: true, stillFallback: false });
   const f = fixture(), own = path.join(f.dir, "brand.json");
   fs.writeFileSync(own, JSON.stringify({ name: "brand-example", extends: "pingel-brand" }));
+  assert.deepEqual(loadPreset(own).broll.stock, ["pexels", "pixabay", "wikimedia"]); assert.equal(loadPreset(own).broll.library, true);
+  assert.equal(loadPreset(own).broll.stillFallback, false);
+  fs.writeFileSync(own, JSON.stringify({ name: "brand-example", extends: "pingel-brand", broll: { stock: [], library: false, stillFallback: true } }));
   assert.deepEqual(loadPreset(own).broll.stock, []); assert.equal(loadPreset(own).broll.library, false);
-  fs.writeFileSync(own, JSON.stringify({ name: "brand-example", extends: "pingel-brand", broll: { stock: ["pexels"], library: true } }));
-  assert.deepEqual(loadPreset(own).broll.stock, ["pexels"]); assert.equal(loadPreset(own).broll.library, true);
+  assert.equal(loadPreset(own).broll.stillFallback, true);
   const client = brandPreset({ name: "Client", handle: "@client", brollEngine: "runway" });
   assert.deepEqual(client.broll.stock, []); assert.equal(client.broll.library, false);
+  const free = brandPreset({ name: "Client", handle: "@client" });
+  fs.writeFileSync(own, JSON.stringify(free));
+  assert.deepEqual(loadPreset(own).broll.stock, CLIENT_BASE.broll.stock);
+  assert.equal(loadPreset(own).broll.library, true);
+  assert.equal(loadPreset(own).broll.stillFallback, false);
+  const brand = { ...free.brand, compat: { reel: { stock: [], library: false, stillFallback: true } } };
+  const explicit = brandPreset(brand);
+  assert.deepEqual(explicit.broll.stock, []); assert.equal(explicit.broll.library, false);
+  assert.equal(explicit.broll.stillFallback, true);
 });
 
 test("Codex adds a literal stock query while retaining shared subject, weapon and daylight rules", () => {
@@ -592,7 +603,7 @@ test("normalisation retains the tiny preview even below render resolution", () =
   assert.equal(q.preview, "https://preview.test/1.mp4"); assert.equal(q.files[0].width, 720);
 });
 
-test("the action query and then synonyms follow the subject, filter tags by that query, and rank matching actions first", async () => {
+test("the meaning query runs first, then the subject and synonyms, filter tags by that query, and rank matching actions first", async () => {
   const f = fixture(), queries = [];
   const hits = {
     gorilla: [pixabay({ id: 1, tags: "gorilla, eating", editors_choice: true }), pixabay({ id: 2, tags: "gorilla, angry, charging" }), pixabay({ id: 3, tags: "gorilla, resting" }), pixabay({ id: 4, tags: "" }), pixabay({ id: 5, tags: "ape" })],
@@ -604,7 +615,7 @@ test("the action query and then synonyms follow the subject, filter tags by that
     assert.equal(u.searchParams.get("per_page"), "40"); return json({ hits: hits[query] || [] });
   } });
   const found = await search({ shows: "gorilla", scene: "A gorilla in daylight.", action: "The gorilla walks forward.", stockSynonyms: ["ape", "silverback"], stockQuery: "gorilla angry charging" }, ["pixabay"]);
-  assert.deepEqual(queries, ["gorilla", "gorilla angry charging", "ape", "silverback"]);
+  assert.deepEqual(queries, ["gorilla angry charging", "gorilla", "ape", "silverback"]);
   assert.deepEqual(found.map((c) => c.id), [2, 6, 9, 1, 3, 7, 4]);
 });
 
@@ -623,6 +634,43 @@ test("Codex synonym schema is required and bounded, absent synonyms default empt
   assert.doesNotMatch(runwayPicksPrompt({ candidates: [], count: 1 }), /stockSynonyms/);
   assert.deepEqual(normaliseStockPicks([{ ...pick, stockSynonyms: null }])[0].stockSynonyms, []);
   assert.deepEqual(normaliseStockPicks([pick])[0].stockSynonyms, []);
+});
+
+test("a real driving pick reaches stock inspection and a footage veto still keeps the speaker", async () => {
+  const f = fixture();
+  const { groups, pick } = JSON.parse(fs.readFileSync(new URL("./fixtures/broll/img-6056-timing.json", import.meta.url))).cases.find((c) => c.name === "greg line 16: driving");
+  let searches = 0;
+  const shots = await makeBroll({ workDir: f.dir, groups, duration: 60, settings: { max: 1, stock: ["pexels"] }, deps: {
+    ...f.deps,
+    codexExec: async () => JSON.stringify({ picks: [pick] }),
+    stockSearch: async () => { searches++; return normaliseStock("pexels", { videos: [pexel()] }); },
+    claudeLook: async (prompt) => prompt.includes('"seen":"..."') ? '{"seen":"a car travelling on a desert highway"}' : choose(),
+    checkRunwayVideo: async (args) => { f.calls.checks.push(args); return { ...verdict, shows: false, ok: false, look: "fail", why: "the actual footage does not show driving" }; },
+  } });
+  assert.equal(searches, 1);
+  assert.ok(f.calls.checks.length > 0, "the scene description must not block the actual clip check");
+  assert.deepEqual(shots, []);
+  assert.ok(f.calls.logs.some((s) => /actual footage does not show driving/.test(s)));
+});
+
+test("library precheck accepts a synonym description and still inspects its footage", async () => {
+  const f = fixture(), p = { ...pick, scene: "A round tropical fruit drops onto sand.", stockSynonyms: ["fruit"] };
+  seed(f); ageLibrary(f);
+  const found = await findLibraryClip({ ...f.args, pick: p });
+  assert.ok(found, "library footage matching the spoken subject remains eligible");
+  assert.ok(f.calls.checks.length > 0);
+});
+
+test("a stock synonym does not authorize a generated fallback without the named subject", async () => {
+  const f = fixture(); let draws = 0;
+  const p = { ...pick, scene: "A round tropical fruit on sand.", stockSynonyms: ["fruit"] };
+  const shots = await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { max: 1, stock: ["pexels"], stillFallback: true }, deps: {
+    ...f.deps, codexExec: async (prompt) => { if (prompt.includes("Draw every approved scene below")) draws++; return JSON.stringify({ picks: [p] }); },
+    stockSearch: async () => [],
+  } });
+  assert.deepEqual(shots, []);
+  assert.equal(draws, 0);
+  assert.match(JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json"))).picks[0].reason, /generated still: scene does not contain coconut/);
 });
 
 // Exercise the real verdict rules using generated pixel buffers and stubbed frame extraction.
@@ -839,7 +887,7 @@ test("Commons normalisation filters size, duration, short-side resolution and me
   assert.equal(c.creator, "Camera & Crew"); assert.equal(c.duration, 28);
 });
 
-test("Commons requests File videos in subject, action, synonym order with tags from title, description and categories", async () => {
+test("Commons requests File videos in meaning, subject, synonym order with tags from title, description and categories", async () => {
   const f = fixture(), queries = [];
   const search = createStockSearch({ env: { REEL_CACHE: f.dir }, warnFn: fail, fetchFn: async (url, init) => {
     const u = new URL(url), q = u.searchParams.get("gsrsearch"); queries.push(q.replace(/ filetype:video$/, ""));
@@ -858,7 +906,7 @@ test("Commons requests File videos in subject, action, synonym order with tags f
     return json(commonsBody(...pages));
   } });
   const found = await search({ shows: "gorilla", stockQuery: "gorilla walking", stockSynonyms: ["ape"] }, ["wikimedia"]);
-  assert.deepEqual(queries, ["gorilla", "gorilla walking", "ape"]);
+  assert.deepEqual(queries, ["gorilla walking", "gorilla", "ape"]);
   assert.deepEqual(found.map((c) => c.id).sort(), [1, 2, 3, 5]);
   assert.doesNotMatch(found.find((c) => c.id === 2).tags, /<p>/);
   assert.equal(f.calls.downloads.length, 0);
@@ -1002,4 +1050,143 @@ test("Commons selected originals are conformed once, retain long and two-second 
     assert.match(credit, /Page: https:\/\/commons.wikimedia.org\/wiki\/File:Coconut_1.webm/);
     assert.match(credit, /Changes: cropped, trimmed, muted and conformed/);
   }
+});
+
+
+test("a written hook regroups captions but retains the same approved reel clip before picking", async () => {
+  const f = fixture();
+  f.deps.fetchFn = async (url) => url.includes("api.pexels.com") ? json({ videos: [pexel()] }) : json({});
+  f.deps.codexExec = async () => JSON.stringify({ picks: [pick] });
+  const args = { workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps };
+  const [first] = await makeBroll(args);
+  assert.ok(first);
+  const regrouped = [groups[0], { ...groups[1], text: "a", words: groups[1].words.slice(0, 1) },
+    { start: 6.4, text: "coconut drops onto sand", words: groups[1].words.slice(1) }, groups[2]];
+  f.deps.codexExec = fail; f.deps.fetchFn = fail; f.deps.checkRunwayVideo = fail;
+  const [kept] = await makeBroll({ ...args, groups: regrouped, hook: { start: 0, duration: 3, text: "A new written hook" } });
+  assert.equal(kept.file, first.file);
+  assert.equal(kept.line, 2);
+  assert.equal(kept.licence.id, first.licence.id);
+  const plan = JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json")));
+  assert.equal(plan.picks[0].outcome, "reused");
+  assert.match(plan.picks[0].reason, /same spoken words and time/);
+  assert.equal(fs.existsSync(path.join(f.dir, "No b-roll this time.txt")), false);
+  assert.equal(approvedShotMatch(first, groups, groups.map((g) => ({ ...g, words: g.words.map((w) => ({ ...w, start: w.start + 10, end: w.end + 10 })) }))), null, "a different occurrence is not the same approved moment");
+  assert.equal(approvedShotMatch(first, groups, groups.map((g) => ({ ...g, words: g.words.map((w) => ({ ...w, text: w.text === "coconut" ? "dog" : w.text })) }))), null);
+});
+
+test("legacy approved shots match words and times from their old plan key and recut compressed timing", async () => {
+  const f = fixture(), dir = path.join(f.dir, "broll"); fs.mkdirSync(dir);
+  const file = path.join(dir, "approved.mp4"), full = path.join(dir, "approved.full.mp4");
+  fs.writeFileSync(file, "old checked interval"); fs.writeFileSync(full, "full moving source");
+  const approved = { ...shot, file, full, sourceDuration: 6, video: true, moves: verdict, source: "pixabay" };
+  writeJSON(path.join(dir, "broll.json"), { promptVersion: "literal-codex-v6", key: `literal-codex-v6|${JSON.stringify({ groups })}`, shots: [approved] });
+  const compressed = groups.map((g, i) => i !== 1 ? g : ({ ...g, words: g.words.map((w) => ({ ...w, start: 6 + (w.start - 6) * 0.9, end: 6 + (w.end - 6) * 0.9 })) }));
+  f.deps.codexExec = fail; f.deps.fetchFn = fail;
+  const [kept] = await makeBroll({ workDir: f.dir, groups: compressed, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps });
+  assert.ok(kept); assert.ok(kept.duration < approved.duration);
+  assert.equal(f.calls.trims.length, 1);
+  assert.equal(f.calls.trims[0].duration, kept.duration);
+  assert.equal(f.calls.checks.length, 2, "the full source and the new exact cut are checked");
+  assert.equal(fs.readFileSync(file, "utf8"), "old checked interval", "recutting preserves the previously approved file");
+});
+
+test("rebuild keeps approved footage and asks only for the remaining moments", async () => {
+  const f = fixture();
+  f.deps.codexExec = async () => JSON.stringify({ picks: [pick] });
+  f.deps.fetchFn = async (url) => url.includes("api.pexels.com") ? json({ videos: [pexel()] }) : json({});
+  const args = { workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps };
+  await makeBroll(args);
+  const source = [...groups, { start: 22, text: "mountains moving below clouds", words: ["mountains", "moving", "below", "clouds"].map((text, i) => ({ text, start: 22 + i * 0.5, end: 22.5 + i * 0.5 })) }];
+  let calls = 0;
+  f.deps.codexExec = async (prompt) => { calls++; assert.match(prompt, /Return 1 useful candidates/); assert.doesNotMatch(prompt.split("Available caption lines and times:")[1], /1: 6\.0s/); return '{"picks":[]}'; };
+  const shots = await makeBroll({ ...args, groups: source, duration: 32 });
+  assert.equal(shots.length, 1); assert.equal(calls, 2, "one bounded missing-picks retry");
+  assert.equal((await makeBroll({ ...args, groups: source, duration: 32 })).length, 1);
+  assert.equal(calls, 4, "an identical partial rebuild also picks only the remaining slots");
+});
+
+test("every pick records search counts and inspection or room reasons, also in the no-footage note", async () => {
+  const f = fixture();
+  const invalid = { ...pick, line: 2, shows: "walking", scene: "walking along a path" };
+  f.deps.codexExec = async () => JSON.stringify({ picks: [pick, invalid] });
+  f.deps.fetchFn = async () => json({ videos: [pexel()] });
+  f.deps.checkRunwayVideo = async () => ({ ...verdict, action: false, ok: false, why: "the dog sits still; no visible movement" });
+  f.deps.claudeLook = async (prompt) => prompt.includes('"seen":"..."') ? '{"seen":"a coconut on sand"}' : choose(1);
+  await makeBroll({ workDir: f.dir, groups, duration: 20, settings: { stock: ["pexels"] }, deps: f.deps });
+  const plan = JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json")));
+  assert.equal(plan.picks.length, 2);
+  const [searched, dropped] = plan.picks;
+  for (const field of ["line", "words", "shows", "scene", "action", "kind", "stockQuery", "synonyms", "queries", "outcome", "reason"]) assert.ok(Object.hasOwn(searched, field), field);
+  assert.ok(searched.queries.length > 0);
+  assert.ok(searched.queries.every((q) => typeof q.query === "string" && Number.isInteger(q.candidateCount)));
+  assert.equal(searched.outcome, "no-clip");
+  assert.equal(dropped.outcome, "rejected");
+  assert.match(dropped.reason, /invalid endsAt word reference/);
+  const note = fs.readFileSync(path.join(f.dir, "No b-roll this time.txt"), "utf8");
+  assert.match(note, /coconut drops onto sand/); assert.match(note, /no visible movement/); assert.match(note, /invalid endsAt word reference/);
+  assert.ok(f.calls.logs.some((s) => /dropped: invalid endsAt word reference/.test(s)));
+});
+
+test("place-name stock fallback searches the real setting with matching tags and records each query", async () => {
+  const f = fixture(), queries = [];
+  const search = createStockSearch({ env: f.env, fetchFn: async () => json({ hits: [pixabay({ id: 1, tags: "desert highway driving" }), pixabay({ id: 2, tags: "people in office" }), pixabay({ id: 3, tags: "" })] }) });
+  const found = await search({ shows: "Albuquerque", scene: "Desert highway driving", action: "Highway driving", stockQuery: "desert highway driving" }, ["pixabay"], { onQuery: (q) => queries.push(q) });
+  // Untagged clips remain eligible in the subject pass, so exclude them to exercise a true zero-eligible fallback.
+  const onlyTagged = await search({ shows: "Arizona", scene: "Desert highway driving", action: "Highway driving", stockQuery: "desert highway driving" }, ["pixabay"], { eligible: (c) => !!c.tags, onQuery: (q) => queries.push(q) });
+  assert.ok(found.length > 0);
+  assert.deepEqual(onlyTagged.map((c) => c.id), [1]);
+  assert.ok(queries.some((q) => q.mode === "subject" && q.query === "arizona" && q.candidateCount === 0));
+  assert.ok(queries.some((q) => q.mode === "setting" && q.query === "desert highway driving" && q.candidateCount === 1));
+  const text = picksPrompt({ candidates: [], count: 5 });
+  assert.match(text, /Never use a bare place or person name as shows/); assert.match(text, /at least one kind="ambient"/); assert.match(text, /desert highway driving/);
+});
+
+test("missing-picks retry adds distinct moments once and preserves the original picks on retry failure", async () => {
+  const candidates = Array.from({ length: 5 }, (_, i) => ({ i, start: 6 + i * 10, text: "a real moving scene" }));
+  const request = { candidates, count: 5, sourcesFirst: true };
+  const prompts = [];
+  const picks = await codexPicks(request, { dir: folder(), exec: async (prompt) => {
+    prompts.push(prompt);
+    return JSON.stringify({ picks: (prompts.length === 1 ? [0, 1] : [1, 2, 3, 4]).map((line) => ({ ...pick, line })) });
+  } });
+  assert.deepEqual(picks.map((p) => p.line), [0, 1, 2, 3, 4]); assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /Return 3 additional filmable moments/);
+  let calls = 0;
+  assert.equal((await codexPicks(request, { dir: folder(), exec: async () => { if (++calls === 2) throw new Error("unavailable"); return JSON.stringify({ picks: [pick] }); } })).length, 1);
+  assert.equal(calls, 2);
+});
+
+
+test("retry duplicates and unavailable lines are recorded with their drop reasons", async () => {
+  const f = fixture(); let calls = 0;
+  f.deps.fetchFn = async () => json({ videos: [] });
+  f.deps.codexExec = async () => JSON.stringify({ picks: ++calls === 1 ? [pick] : [pick, { ...pick, line: 99 }] });
+  await makeBroll({ workDir: f.dir, groups, duration: 32, settings: { stock: ["pexels"] }, deps: f.deps });
+  const plan = JSON.parse(fs.readFileSync(path.join(f.dir, "broll", "broll.json")));
+  assert.equal(plan.picks.length, 3);
+  assert.match(plan.picks[1].reason, /repeated an already picked line/);
+  assert.match(plan.picks[2].reason, /line not offered/);
+  assert.ok(plan.picks.every((p) => p.outcome !== "pending"));
+});
+
+test("scene and action queries recover settings only after subject matches and recent exclusions leave nothing", async () => {
+  const f = fixture(), queries = [];
+  const search = createStockSearch({ env: f.env, fetchFn: async (url) => {
+    const q = new URL(url).searchParams.get("q");
+    return json({ hits: [pixabay({ id: 1, tags: "mountains" }), ...(q === "clouds drifting mountains" ? [pixabay({ id: 2, tags: "clouds drifting mountains" }), pixabay({ id: 3, tags: "drifting smoke" }), pixabay({ id: 4, tags: "" })] : [])] });
+  } });
+  const found = await search({ shows: "mountains", stockQuery: "mountain weather", scene: "Clouds drifting mountains", action: "Clouds drifting mountains" }, ["pixabay"], { eligible: (c) => c.id !== 1 && !!c.tags, onQuery: (q) => queries.push(q) });
+  assert.deepEqual(found.map((c) => c.id), [2]);
+  assert.ok(queries.some((q) => q.mode === "setting" && q.query === "clouds drifting mountains" && q.candidateCount === 1));
+});
+
+test("a setting keeps its activity word first; a used-up search allowance says so once", async () => {
+  const f = fixture(), queries = [], warnings = [];
+  const search = createStockSearch({ env: f.env, maxSearches: 2, warnFn: (w) => warnings.push(w), fetchFn: async (url) => { queries.push(new URL(url).searchParams.get("q")); return json({ hits: [] }); } });
+  await search({ shows: "driving", kind: "ambient", stockQuery: "desert highway driving", scene: "A car driving along a desert highway." }, ["pixabay"]);
+  assert.deepEqual(queries.slice(0, 2), ["driving", "desert highway driving"]);
+  await search({ shows: "dog", kind: "action", stockQuery: "dog walking into house" }, ["pixabay"]);
+  await search({ shows: "cat", kind: "action", stockQuery: "cat jumping" }, ["pixabay"]);
+  assert.equal(warnings.filter((w) => /stock searches are used up/.test(w)).length, 1);
 });

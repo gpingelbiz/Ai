@@ -7,9 +7,9 @@ import { norm } from "./text.mjs";
 import { makeRunwayBroll, runwayPicksPrompt, runwayTiming, validateBrollPicks, placePlannedBroll, STILL_STYLE, PICKS_REPLY } from "./broll-runway.mjs";
 import { conformStill, hasRunway } from "./runway.mjs";
 import { createStockSearch, makeStockClip } from "./broll-stock.mjs";
-import { findLibraryClip, writeBrollCredits } from "./broll-library.mjs";
+import { findLibraryClip, reviewMovingClip, writeBrollCredits } from "./broll-library.mjs";
 
-export const PROMPT_VERSION = "literal-codex-v6";
+export const PROMPT_VERSION = "literal-codex-v9";
 
 let testCache;
 /** Tests get one disposable scene history and clip bank per worker, unless they supply explicit paths. */
@@ -29,7 +29,9 @@ export function brollStep(pick, message, deps = {}) {
       for (const secret of new Set([value, encodeURIComponent(value)])) safe = safe.replaceAll(secret, "[redacted]");
     }
   }
-  (deps.logFn || log)(`b-roll: line ${pick.line}: ${safe.replace(/\s+/g, " ").trim()}`);
+  safe = safe.replace(/\s+/g, " ").trim();
+  (deps.logFn || log)(`b-roll: line ${pick.line}: ${safe}`);
+  deps.onBrollStep?.(pick, safe);
 }
 
 /** Scenes drawn for recent reels, so the next reel does not get the same empty conference room again. */
@@ -99,6 +101,24 @@ export function spokenInShot(candidate, groups, { len = 2.4 } = {}) {
 // Words that never name the thing a picture shows ("a", "the", "coming", "just").
 const SUBJECT_STOP = new Set("a an the some my your his her their our this that these those in on at to of into onto with i i'm me you it it's is are was going coming just".split(" "));
 
+/** Whole-word inflections only; a snakeskin boot still cannot stand in for a snake. */
+export function subjectStem(word) {
+  const w = norm(word);
+  if (["drive", "drives", "driving", "driven", "drove"].includes(w)) return "drive";
+  if (["fly", "flies", "flying", "flight", "flights", "flew", "flown"].includes(w)) return "fly";
+  if (w.length > 4 && w.endsWith("ies")) return `${w.slice(0, -3)}y`;
+  const singular = /(?:ches|shes|xes|zes|sses)$/.test(w) ? w.slice(0, -2) : w.length > 3 && !/(?:ss|us|is)$/.test(w) ? w.replace(/s$/, "") : w;
+  const stem = singular.length > 4 && /(?:ing|ed)$/.test(singular) ? singular.replace(/(?:ing|ed)$/, "").replace(/([b-df-hj-np-tv-z])\1$/, "$1") : singular;
+  return stem.length > 3 ? stem.replace(/e$/, "") : stem;
+}
+
+const SETTING_WORDS = [
+  ["drive", "car", "highway", "road", "desert", "traffic"],
+  ["fly", "airplane", "plane", "jet", "airport", "runway", "sky"],
+  ["middle nowhere", "remote", "lonely", "desert", "backcountry", "wilderness"],
+  ["mountain", "hill", "slope", "ridge", "peak", "valley"],
+];
+
 /**
  * The subject a pick names. Claude often writes `shows` as a phrase ("a snake coming down", "going to the jungle",
  * "a two by four"); the subject is the run of those words its own scene also names, without leading articles or
@@ -114,13 +134,17 @@ export function subjectWords(shows, scene = "") {
     if (!kept) return;
     if (runs.at(-1)?.end === i - 1) runs.at(-1).end = i; else runs.push({ start: i, end: i });
   });
-  if (!runs.length) return words.filter((w) => !SUBJECT_STOP.has(w)).slice(0, 3);
+  if (!runs.length) {
+    const first = words.findIndex((w) => !SUBJECT_STOP.has(w));
+    const last = words.findLastIndex((w) => !SUBJECT_STOP.has(w));
+    return first < 0 ? [] : words.slice(first, last + 1).slice(0, 3);
+  }
   const longest = (r) => Math.max(...words.slice(r.start, r.end + 1).map((w) => w.length));
   const best = runs.reduce((a, b) => (longest(b) > longest(a) ? b : a));
   return words.slice(best.start, best.end + 1).slice(0, 3);
 }
 
-export function checkPick(pick, candidate, groups, { len = 2.4 } = {}) {
+export function checkPick(pick, candidate, groups, { len = 2.4, stock = false } = {}) {
   const words = (s) => String(s || "").split(/\s+/).map(norm).filter(Boolean);
   const shows = subjectWords(pick.shows, pick.scene);
   if (!shows.length) return "shows missing";
@@ -131,7 +155,15 @@ export function checkPick(pick, candidate, groups, { len = 2.4 } = {}) {
   const noun = shows.reduce((a, b) => b.length > a.length ? b : a);
   // Split the scene on any non-letter so "a wooden two-by-four" names "four".
   const sceneWords = String(pick.scene || "").split(/[^\p{L}\p{N}']+/u).map(norm).filter(Boolean);
-  if (!sceneWords.includes(noun)) return `scene does not contain ${noun}`;
+  const sceneStems = new Set(sceneWords.map(subjectStem));
+  const contains = (phrase) => {
+    const stems = words(phrase).map(subjectStem);
+    return stems.length && sceneWords.some((_, i) => stems.every((w, k) => subjectStem(sceneWords[i + k] || "") === w));
+  };
+  const synonyms = stock && Array.isArray(pick.stockSynonyms) ? pick.stockSynonyms.filter((s) => typeof s === "string").slice(0, 3) : [];
+  const setting = stock && pick.kind === "ambient" && SETTING_WORDS.some(([anchor, ...settingWords]) =>
+    anchor.split(" ").every((w) => shows.map(subjectStem).includes(subjectStem(w))) && settingWords.some((w) => sceneStems.has(subjectStem(w))));
+  if (!sceneStems.has(subjectStem(noun)) && !synonyms.some(contains) && !setting) return `scene does not contain ${noun}`;
   const description = [pick.scene, pick.action, pick.motion, pick.endScene].filter(Boolean).join(" ");
   const dark = description.match(/\b(rope|cord|strap|noose|lasso|cable|chain)s?\b/i);
   if (dark) return `dark-read word: ${dark[0]}`;
@@ -189,10 +221,10 @@ export const PICKS_SCHEMA = {
           duration: { type: "number" }, kind: { type: "string", enum: ["action", "ambient"] },
           action: { type: "string" }, motion: { type: "string" }, endScene: { type: "string" },
           sound: { type: "string" }, soundRole: { type: "string", enum: ["impact", "movement", "none"] },
-          sequenceGroup: { type: "string" }, endsAt: WORD_REF_SCHEMA, endsBefore: WORD_REF_SCHEMA,
+          sequenceGroup: { type: "string" }, endsAt: WORD_REF_SCHEMA, endsBefore: WORD_REF_SCHEMA, need: { type: "string" },
         },
         // Optional fields stay optional here; codexExec's strictSchema makes them nullable for OpenAI.
-        required: ["stockSynonyms", "stockQuery", "line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
+        required: ["stockSynonyms", "stockQuery", "need", "line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
         additionalProperties: false,
       },
     },
@@ -215,7 +247,61 @@ export function codexStillInstructions({ aspect = "9:16", style = "", file, assi
 export function picksPrompt(options) {
   const file = options.sourcesFirst ? "" : "broll-1.png";
   const instructions = options.sourcesFirst ? "Plan only. Do not draw images or use tools. Set file to an empty string; a still is drawn later only if footage is unavailable." : codexStillInstructions(options);
-  return runwayPicksPrompt({ ...options, instructions: `${instructions}\nstockQuery: 2-4 plain search words naming the same subject and its harmless action, such as snake on branch, coconut falling or gorilla walking.\nstockSynonyms: 0 to 3 plain single words or short nouns naming the SAME subject, for example gorilla -> ape, silverback. Use [] when none apply.`, reply: PICKS_REPLY.replace('"line":N,"shows"', `"file":${JSON.stringify(file)},"stockQuery":"snake on branch","stockSynonyms":["serpent"],"line":N,"shows"`) });
+  return runwayPicksPrompt({ ...options, instructions: `${instructions}\nstockQuery: 2-4 plain search words that keep the spoken MEANING, subject plus its action or setting, such as skin cream applying (never bare cream), coconut falling, dog walking into house, desert highway driving or snake on branch. Never use a bare place or person name as shows. For Arizona or Albuquerque, anchor shows to exact spoken setting words such as driving or mountains and describe the implied real setting in scene and stockQuery (desert highway driving). For an ambient setting pick, action describes sustained visible setting movement, without a discrete event.\nstockSynonyms: 0 to 3 plain single words or short nouns naming the SAME subject in the SAME sense, for example gorilla -> ape, silverback. Never a broader category (dog -> pet, canine) or another sense (skin cream -> dessert). Use [] when none apply.`, reply: PICKS_REPLY.replace('"line":N,"shows"', `"file":${JSON.stringify(file)},"stockQuery":"snake on branch","stockSynonyms":["serpent"],"need":"a snake sliding along a branch","line":N,"shows"`) });
+}
+
+/** One planning retry fills missing moments; repeated lines cannot pretend to fill the request. */
+export async function codexPicks(request, { dir, exec = codexExec, retryMissing = true, onDiscard } = {}) {
+  const options = { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 };
+  const picks = normaliseStockPicks(JSON.parse(await exec(picksPrompt(request), options)).picks || []);
+  const used = new Set(picks.map((p) => p.line));
+  const remaining = request.candidates.filter((c) => !used.has(c.i));
+  const missing = Math.min(request.count - used.size, remaining.length);
+  if (retryMissing && missing > 0) {
+    try {
+      const reply = await exec(`${picksPrompt({ ...request, candidates: remaining, count: missing })}
+The previous reply supplied only ${used.size} distinct moments for a request of ${request.count}.
+Keep those picks. Return ${missing} additional filmable moments from the remaining lines, including a real moving setting when established by the story. Do not repeat these lines: ${[...used].join(", ")}.
+Return fewer only if no other literal moving subject or real setting fits the remaining words.`, options);
+      for (const p of normaliseStockPicks(JSON.parse(reply).picks || [])) {
+        if (remaining.some((c) => c.i === p.line) && !used.has(p.line)) { picks.push(p); used.add(p.line); }
+        else onDiscard?.(p, used.has(p.line) ? "the retry repeated an already picked line" : "the retry used a line not offered for additional moments");
+      }
+    } catch (e) { warn(`b-roll: missing-picks retry failed: ${String(e.message).split("\n")[0]}; keeping the first picks`); }
+  }
+  return picks;
+}
+
+const timedWords = (groups) => groups.flatMap((g, line) => (g.words || []).map((w, wordIndex) => ({ ...w, line, wordIndex })));
+const refFor = (w) => w && ({ line: w.line, wordIndex: w.wordIndex, text: w.text });
+const wordsForShot = (shot, groups) => timedWords(groups).filter((w) => w.start >= shot.start - 0.05 && w.start < shot.start + shot.duration);
+
+/** Match the same spoken occurrence across caption regrouping, allowing at most two seconds of edit drift. */
+export function approvedShotMatch(shot, oldGroups, groups) {
+  const old = shot.spokenWords?.length ? shot.spokenWords : wordsForShot(shot, oldGroups);
+  if (!old.length) return null;
+  const words = timedWords(groups);
+  const matches = words.map((w, i) => ({ w, i })).filter(({ w, i }) => Math.abs(w.start - old[0].start) <= 2 && old.every((o, k) => words[i + k] && norm(o.text) === norm(words[i + k].text)));
+  matches.sort((a, b) => Math.abs(a.w.start - old[0].start) - Math.abs(b.w.start - old[0].start));
+  const match = matches[0];
+  if (!match) return null;
+  const remap = (ref) => {
+    const before = oldGroups[ref?.line]?.words?.[ref?.wordIndex];
+    if (!before) return null;
+    return words.filter((w) => norm(w.text) === norm(before.text) && Math.abs(w.start - before.start) <= 2).sort((a, b) => Math.abs(a.start - before.start) - Math.abs(b.start - before.start))[0];
+  };
+  const end = shot.pick?.endsAt ? remap(shot.pick.endsAt) : words[match.i + old.length - 1];
+  const next = shot.pick?.endsBefore ? remap(shot.pick.endsBefore) : words[match.i + old.length];
+  if (!end || !next) return null;
+  return { ...shot.pick, line: match.w.line, shows: shot.shows, scene: shot.scene, kind: shot.kind || "action", action: shot.action || shot.pick?.action || "", stockQuery: shot.stockQuery || shot.pick?.stockQuery || "", duration: shot.duration, endsAt: refFor(end), endsBefore: refFor(next) };
+}
+
+/** Keep the failure note useful even when a watcher reads it after the editor exits. */
+export function writeNoBrollNote(workDir, shots, picks, reason = "No literal moving footage passed inspection.") {
+  const file = path.join(workDir, "No b-roll this time.txt");
+  if (shots.length) { fs.rmSync(file, { force: true }); return; }
+  const lines = picks.map((p) => `“${p.words || p.shows}”: ${[p.reason, ...(p.steps || []).filter((s) => /reject|failed|none|still clip|no room/i.test(s))].filter(Boolean).join("; ")}`);
+  fs.writeFileSync(file, `No b-roll this time: ${reason} The speaker stays on screen.\n${lines.join("\n")}\n`);
 }
 
 /** Codex supplies first frames; the shared engine owns checks, spending, animation, recovery and sound. */
@@ -272,63 +358,122 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   if (!max) { log("b-roll: reel too short, skipped"); return []; }
   const candidates = brollCandidates(groups, duration, { hook, cta, len: settings.rapidLists === false ? 1.2 : 0.8, busy, tail, clearStart: settings.clearStart ?? 0 });
   if (!candidates.length) { log("b-roll: no room after the hook, skipped"); return []; }
-  const timing = (p, c) => runwayTiming(p, c, groups, { len, until: Math.min(duration - tail, cta?.start ?? Infinity), busy });
+  const timing = (p, c, onReject) => runwayTiming(p, c, groups, { len, until: Math.min(duration - tail, cta?.start ?? Infinity), busy, onReject });
   const key = `${PROMPT_VERSION}|${JSON.stringify({ candidates, groups, settings, hook, cta, duration, busy, tail })}`;
 
-  if (!force && fs.existsSync(planPath)) {
-    const saved = readJSON(planPath);
+  let saved;
+  try { saved = readJSON(planPath); } catch {}
+  if (!force && saved) {
     const stillThere = (s) => candidates.some((c) => Math.abs(c.start - s.start) < 0.05 && c.text === s.text);
-    if (saved.promptVersion === PROMPT_VERSION && (saved.key === key || !sourcesFirst && saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && (!/\.mp4$/i.test(s.file) || sourcesFirst && s.moves?.ok && s.moves.look === "pass") && fs.existsSync(s.file))) {
+    if (saved.promptVersion === PROMPT_VERSION && (!sourcesFirst || saved.shots?.length >= max) && (saved.key === key || !sourcesFirst && saved.shots?.every(stillThere)) && saved.shots?.length && saved.shots.every((s) => s.file && (!/\.mp4$/i.test(s.file) || sourcesFirst && s.moves?.ok && s.moves.look === "pass") && fs.existsSync(s.file))) {
       log(`b-roll: reusing ${saved.shots.length} shots from ${dir}`);
       writeBrollCredits(workDir, saved.shots);
+      writeNoBrollNote(workDir, saved.shots, saved.picks || []);
       return saved.shots;
     }
   }
+  const shots = [], records = [], fallbacks = [], t0 = Date.now();
+  const finish = (reason) => {
+    shots.sort((a, b) => a.start - b.start);
+    writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, stillSource: "codex", groups, picks: records, shots });
+    writeBrollCredits(workDir, shots);
+    writeNoBrollNote(workDir, shots, records, reason);
+    if (shots.length) rememberScenes(shots.map((s) => s.scene), recentFile(deps.env));
+    log(`b-roll: ${shots.length} shots ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
+    return shots;
+  };
+  const recordPick = (p, rank, outcome = "pending") => {
+    const c = candidates.find((c) => c.i === p.line), t = c && timing(p, c);
+    const record = { line: p.line, rank, words: t ? spokenInShot({ start: t.start }, groups, { len: Math.max(0, t.duration - 0.5) }) : c?.text || p.shows || "", shows: p.shows, scene: p.scene, action: p.action || "", kind: p.kind || "action", stockQuery: p.stockQuery || "", ...(p.need ? { need: p.need } : {}), synonyms: p.stockSynonyms || [], queries: [], outcome, reason: "", steps: [] };
+    records.push(record);
+    return record;
+  };
+  const recordFor = (p) => records.find((r) => r.rank === p.rank && r.outcome !== "reused");
+  const pickDeps = (p) => ({ ...deps, onBrollStep: (pick, message) => { recordFor(p)?.steps.push(message); deps.onBrollStep?.(pick, message); }, onStockQuery: (query) => { recordFor(p)?.queries.push(query); deps.onStockQuery?.(query); } });
+
+  // Approved footage belongs to this reel even if a written hook regrouped all the caption lines.
+  let oldGroups = saved?.groups;
+  if (!oldGroups && saved?.key) { try { oldGroups = JSON.parse(saved.key.slice(saved.key.indexOf("|") + 1)).groups; } catch {} }
+  if (sourcesFirst) for (const approved of saved?.shots || []) {
+    if (shots.length >= max) break;
+    if (!approved.moves?.ok || approved.moves.look !== "pass" || !/\.mp4$/i.test(approved.file || "") || !fs.existsSync(approved.file)) continue;
+    const pick = approvedShotMatch(approved, oldGroups || [], groups);
+    const c = pick && candidates.find((c) => c.i === pick.line), t = c && timing(pick, c);
+    if (!t || checkPick(pick, { ...c, start: t.start }, groups, { len: t.duration, stock: true }) || shots.some((s) => t.start < s.start + s.duration + gap && t.start + t.duration + gap > s.start)) continue;
+    const record = recordPick(pick, -records.length - 1, "reused");
+    let reused = { ...approved, line: pick.line, start: r3(t.start), duration: r3(t.duration), text: c.text };
+    if (Math.abs(t.duration - approved.duration) > 0.001) {
+      const source = approved.full && fs.existsSync(approved.full) ? approved.full : approved.file;
+      const file = path.join(fs.mkdtempSync(path.join(dir, "reuse-")), "clip.mp4");
+      fs.copyFileSync(source, file);
+      try {
+        const checked = await (deps.reviewMovingClip || reviewMovingClip)({ file, duration: source === approved.full ? approved.sourceDuration : approved.duration, pick, shot: reused, groups, dir: path.dirname(file), deps });
+        if (!checked) throw new Error("the new cut did not pass inspection");
+        reused = { ...reused, ...checked };
+      } catch (e) { record.outcome = "rejected"; record.reason = `Previously approved footage could not fit the new words: ${String(e.message).split("\n")[0]}`; continue; }
+    }
+    shots.push({ ...reused, pick, spokenWords: wordsForShot(reused, groups) });
+    record.reason = "Kept the approved moving clip for the same spoken words and time.";
+    brollStep(pick, `reused approved ${approved.source || "moving"} clip at ${reused.start}s for ${reused.duration}s`, deps);
+  }
+  const remaining = candidates.filter((c) => !shots.some((s) => c.start < s.start + s.duration + gap && c.start + len + gap > s.start));
+  if (shots.length >= max || !remaining.length) return finish();
   const has = deps.hasCodex || hasCodex, paused = deps.codexPausedUntil || codexPausedUntil, exec = deps.codexExec || codexExec;
-  if (!has()) { warn("b-roll needs the Codex CLI (codex) signed in; skipped"); return []; }
+  if (!has()) { warn("b-roll needs the Codex CLI (codex) signed in; skipped"); return finish("Codex is not signed in to pick more footage."); }
   const until = paused();
-  if (until) { warn(`b-roll: Codex is paused after a rate limit until ${new Date(until).toLocaleTimeString()}; rendering without it`); return []; }
+  if (until) { warn(`b-roll: Codex is paused after a rate limit until ${new Date(until).toLocaleTimeString()}; rendering without it`); return finish("Codex is paused after a rate limit."); }
 
   for (const f of fs.readdirSync(dir)) if (/^broll-\d+\.(png|jpe?g|webp)$/i.test(f)) fs.rmSync(path.join(dir, f), { force: true });
-  const t0 = Date.now();
   let picks;
+  const discarded = [];
   try {
-    log(`b-roll: Codex is picking ${max} moment${max === 1 ? "" : "s"}${sourcesFirst ? " for library and stock" : " and drawing the stills"}…`);
+    const count = max - shots.length;
+    log(`b-roll: Codex is picking ${count} moment${count === 1 ? "" : "s"}${sourcesFirst ? " for library and stock" : " and drawing the stills"}…`);
     const transcript = groups.map((g) => g.text).join(" ");
-    const reply = await exec(picksPrompt({ candidates, transcript, hook: hook?.text, count: max, spacing: gap, duration: len, style: settings.style || "", recent: readRecent(recentFile(deps.env)), sourcesFirst, aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }), { cwd: dir, schema: PICKS_SCHEMA, timeoutMs: 600000 });
-    picks = normaliseStockPicks(JSON.parse(reply).picks || []);
+    picks = await codexPicks({ candidates: remaining, transcript, hook: hook?.text, count, spacing: gap, duration: len, style: settings.style || "", recent: readRecent(recentFile(deps.env)), sourcesFirst, aspect: settings.aspect || "9:16", world: settings.worldInPrompt ? settings.world || "" : "" }, { dir, exec, retryMissing: sourcesFirst, onDiscard: (pick, reason) => discarded.push({ pick, reason }) });
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);
-    return [];
+    return finish("Footage planning failed; see the reel log.");
   }
-  const valid = validateBrollPicks(picks, candidates, groups, timing, settings);
-  const shots = [], fallbacks = [];
+  picks.forEach((p, i) => recordPick(p, i + 1));
+  const reject = (p, why) => { const r = recordFor(p); if (r) { r.outcome = "rejected"; r.reason = why; } brollStep(p, `dropped: ${why}`, pickDeps(p)); };
+  for (const [i, { pick, reason }] of discarded.entries()) {
+    const rank = picks.length + i + 1;
+    recordPick(pick, rank);
+    reject({ ...pick, rank }, reason);
+  }
+  const valid = validateBrollPicks(picks, remaining, groups, timing, settings, { onReject: reject, stock: sourcesFirst });
   const imageFor = (p) => p.file ? savedImage(dir, path.basename(String(p.file))) : null;
   const planned = sourcesFirst ? valid : valid.filter(imageFor);
-  for (const p of valid) if (!planned.includes(p)) brollStep(p, "dropped: Codex saved no opening image", deps);
-  const search = createStockSearch({ env: deps.env, fetchFn: deps.fetchFn, now: deps.now, maxSearches: settings.stockMaxSearches ?? 20, stockCandidates: settings.stockCandidates ?? 12 });
-  const placed = placePlannedBroll(planned, candidates, { gap, max, timing });
-  for (const p of planned) if (!placed.some((s) => s.rank === p.rank)) brollStep(p, `dropped: no room within ${gap}s spacing and ${max}-shot limit before the next subject`, deps);
+  for (const p of valid) if (!planned.includes(p)) reject(p, "Codex saved no opening image");
+  const search = deps.stockSearch || createStockSearch({ env: deps.env, fetchFn: deps.fetchFn, now: deps.now, maxSearches: settings.stockMaxSearches ?? 20, stockCandidates: settings.stockCandidates ?? 12 });
+  const placed = placePlannedBroll(planned, remaining, { gap, max: max - shots.length, timing });
+  for (const p of planned) if (!placed.some((s) => s.rank === p.rank)) reject(p, `no room within ${gap}s spacing and ${max}-shot limit before the next subject`);
   const placeStill = ({ pick, shot, k }, file) => {
-    shots.push({ ...shot, ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}), motion: ["in", "left", "out", "right"][k % 4], file, stillSource: "codex" });
-    brollStep(pick, `placed Codex still at ${shot.start}s for ${shot.duration}s`, deps);
+    shots.push({ ...shot, pick, spokenWords: wordsForShot(shot, groups), ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}), motion: ["in", "left", "out", "right"][k % 4], file, stillSource: "codex" });
+    recordFor(pick).outcome = "placed"; recordFor(pick).reason = "Placed the requested still.";
+    brollStep(pick, `placed Codex still at ${shot.start}s for ${shot.duration}s`, pickDeps(pick));
   };
   for (const [k, shot] of placed.entries()) {
     const pick = valid.find((p) => p.rank === shot.rank);
+    const routeDeps = pickDeps(pick);
     let moving;
     if (settings.library) {
-      moving = await findLibraryClip({ pick, shot, groups, workDir, dir, deps });
-      brollStep(pick, moving ? `library hit ${moving.libraryId}` : "library miss: no eligible clip passed inspection", deps);
+      moving = await findLibraryClip({ pick, shot, groups, workDir, dir, deps: routeDeps });
+      brollStep(pick, moving ? `library hit ${moving.libraryId}` : "library miss: no eligible clip passed inspection", routeDeps);
     }
-    if (!moving && settings.stock?.length) moving = await makeStockClip({ pick, shot, groups, workDir, dir, settings, search, deps });
+    if (!moving && settings.stock?.length) moving = await makeStockClip({ pick, shot, groups, workDir, dir, settings, search, deps: routeDeps });
     if (moving) {
-      shots.push({ ...moving, ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}) });
-      brollStep(pick, `placed ${moving.source} clip at ${moving.start}s for ${moving.duration}s`, deps);
+      recordFor(pick).outcome = "placed"; recordFor(pick).reason = "Placed real moving footage after inspection.";
+      shots.push({ ...moving, pick, spokenWords: wordsForShot(moving, groups), ...(pick.stockQuery ? { stockQuery: pick.stockQuery } : {}) });
+      brollStep(pick, `placed ${moving.source} clip at ${moving.start}s for ${moving.duration}s`, routeDeps);
       continue;
     }
     // Greg's rule: real moving B-roll or none. With footage sources on, a miss keeps the speaker on screen unless
     // the preset opts back into drawn stills (broll.stillFallback).
-    if (sourcesFirst && settings.stillFallback !== true) { brollStep(pick, "kept the speaker on screen: no real moving clip passed", deps); continue; }
+    if (sourcesFirst && settings.stillFallback !== true) { recordFor(pick).outcome = "no-clip"; recordFor(pick).reason = "No real moving clip passed the searches and inspection."; brollStep(pick, "kept the speaker on screen: no real moving clip passed", routeDeps); continue; }
+    const stillWhy = checkPick(pick, shot, groups, { len: shot.duration });
+    if (stillWhy) { reject(pick, `generated still: ${stillWhy}`); continue; }
     const file = imageFor(pick);
     if (file) { brollStep(pick, "still drawn: opening image saved", deps); placeStill({ pick, shot, k }, file); }
     else fallbacks.push({ pick, shot, k, name: `broll-${k + 1}.png` });
@@ -349,15 +494,10 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
       if (file) { brollStep(item.pick, `still drawn: ${item.name}`, deps); placeStill(item, file); }
       else {
         brollStep(item.pick, `still failed: ${failure || `Codex did not save a usable ${item.name}`}`, deps);
-        brollStep(item.pick, "dropped: no usable image after footage miss", deps);
+        brollStep(item.pick, "dropped: no usable image after footage miss", pickDeps(item.pick));
+        recordFor(item.pick).outcome = "no-clip"; recordFor(item.pick).reason = "No usable image after footage miss.";
       }
     }
   }
-  shots.sort((a, b) => a.start - b.start);
-  writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, stillSource: "codex", shots });
-  writeBrollCredits(workDir, shots);
-  if (shots.length) rememberScenes(shots.map((s) => s.scene), recentFile(deps.env));
-  if (shots.length < picks.length) warn(`b-roll: ${picks.length - shots.length} of ${picks.length} picks had no ${sourcesFirst && settings.stillFallback !== true ? "real moving clip" : "image"} or no room`);
-  log(`b-roll: ${shots.length} shots ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
-  return shots;
+  return finish(picks.length ? undefined : "No literal filmable moments were returned after planning.");
 }

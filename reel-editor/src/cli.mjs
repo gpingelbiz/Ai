@@ -5,7 +5,7 @@ import { runEdit, buildProject, renderProject, batchEdit } from "./pipeline.mjs"
 import { transcribe, applyCorrections } from "./transcribe.mjs";
 import { listPresets, loadPreset, loadDictionary } from "./presets.mjs";
 import { hyperframesBin } from "./render.mjs";
-import { doctor } from "./doctor.mjs";
+import { doctor, releaseOnly } from "./doctor.mjs";
 import { makeCarousel } from "./carousel.mjs";
 import { makeClips } from "./clips.mjs";
 import { makeCover } from "./cover.mjs";
@@ -29,6 +29,7 @@ Usage
   reel speaker deliver <folder> --version v                  copy the approved files
   reel speaker status <folder>                              show progress and next step
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
+  reel ending <workdir> [--json]    check the opening and ending without rendering
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
@@ -38,7 +39,8 @@ Usage
                                     (description with chapters, titles, captions.srt, thumbnails, endscreen.json,
                                     edit.v3.json). Captions off by default (--captions burns them in)
   reel broll-fill [--subjects <file>] [--max-new 20] [--dry-run]  fill the free stock library
-  reel broll-generate --prompts <file> [--dry-run]  generate local candidates and inspect them for the library
+  reel broll-generate --prompts <file> [--generate-only] [--dry-run]  generate local library candidates
+  reel broll-generate --admit <batch folder>  inspect an existing batch for the local library
   reel broll-add <file|folder>... [--shows <subject>] [--action <action>] [--scene <scene>] [--dry-run]
                                     bank your own footage (keeps an original copy; never moves your file)
   reel broll-shotlist [--missing]   filmable starter actions; --missing skips approved own actions
@@ -80,6 +82,8 @@ Options (edit / batch)
   --transcript <file>      skip ASR and use this words json / srt
   --engine <e>             auto (default: ElevenLabs Scribe when ELEVENLABS_API_KEY is set, else Whisper) | faster-whisper | elevenlabs | hyperframes
   --model <m>              whisper model: large-v3-turbo (default), small (fast, mis-hears more), large-v3
+  --end-at <seconds>      trim at a finished timeline time using saved cuts.json
+  --end-after "<phrase>"  trim after the last matching spoken phrase
   --no-verify              skip the second-opinion transcript and review.txt
   --language <code>        default en
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
@@ -128,6 +132,7 @@ Options (edit / batch)
                            quote, the key line, a step diagram. Claude writes them from the transcript, the
                            editor sets them in the brand colors (needs the Claude Code CLI). --no-graphics off,
                            --new-graphics replans them. With cards on, --broll adds at most 2 photos in the gaps
+  --script <path>          use a VSL script's approved SCREEN lines instead of automatic cards; replan each edit
   --persistent-graphics    allow one spoken 3-7 item checklist to stay beside the head   --no-persistent-graphics off
   --ladder                 allow a persistent ladder of spoken numeric levels            --no-ladder off
   --premise-icons          allow validated Lucide section icons in the premise strip      --no-premise-icons off
@@ -182,6 +187,7 @@ const EDIT_OPTIONS = {
   out: { type: "string" },
   preset: { type: "string" }, // no default here: loadPreset falls back to REEL_PRESET, then pingel-brand
   transcript: { type: "string" },
+  script: { type: "string" },
   engine: { type: "string" },
   "no-verify": { type: "boolean" },
   model: { type: "string" },
@@ -210,6 +216,8 @@ const EDIT_OPTIONS = {
   "cta-duration": { type: "string" },
   "cta-style": { type: "string" },
   "cta-position": { type: "string" },
+  "end-at": { type: "string" },
+  "end-after": { type: "string" },
   silence: { type: "string" },
   "no-bad-takes": { type: "boolean" },
   "no-fillers": { type: "boolean" },
@@ -323,19 +331,21 @@ export async function main(argv) {
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return console.log(USAGE);
   switch (cmd) {
     case "broll-generate": {
-      const { opts } = parse(rest, { prompts: { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts } = parse(rest, { prompts: { type: "string" }, admit: { type: "string" }, "generate-only": { type: "boolean" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
       const { generateBrollLibrary, BROLL_GENERATE_HELP } = await import("./broll-localgen.mjs");
       if (opts.help) return console.log(BROLL_GENERATE_HELP);
-      return generateBrollLibrary({ promptsFile: opts.prompts, dryRun: opts.dryRun });
+      return generateBrollLibrary({ promptsFile: opts.prompts, admit: opts.admit, generateOnly: opts.generateOnly, dryRun: opts.dryRun });
     }
     case "broll-add": {
-      const { opts, positionals } = parse(rest, { shows: { type: "string" }, action: { type: "string" }, scene: { type: "string" }, "dry-run": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts, positionals } = parse(rest, { shows: { type: "string" }, action: { type: "string" }, scene: { type: "string" }, "dry-run": { type: "boolean" }, note: { type: "boolean" }, help: { type: "boolean", short: "h" } });
       const { addOwnBroll, BROLL_ADD_HELP } = await import("./broll-own.mjs");
       if (opts.help) return console.log(BROLL_ADD_HELP);
-      return addOwnBroll({ inputs: positionals, ...opts });
+      const result = await addOwnBroll({ inputs: positionals, ...opts });
+      if (opts.note && result.results.some((r) => r.status === "rejected")) process.exitCode = 1;
+      return result;
     }
     case "broll-shotlist": {
-      const { opts } = parse(rest, { missing: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts } = parse(rest, { missing: { type: "boolean" }, client: { type: "boolean" }, html: { type: "string" }, help: { type: "boolean", short: "h" } });
       const { brollShotlist, BROLL_SHOTLIST_HELP } = await import("./broll-own.mjs");
       if (opts.help) return console.log(BROLL_SHOTLIST_HELP);
       return brollShotlist(opts);
@@ -357,6 +367,25 @@ export async function main(argv) {
       const r = await runEdit(positionals[0], opts);
       if (r.output) console.log(r.output);
       return;
+    }
+    case "ending": {
+      const { opts, positionals } = parse(rest, { json: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const wd = path.resolve(positionals[0]);
+      const plan = readJSON(path.join(wd, "plan.json"));
+      const { openingEndingChecks } = await import("./ending.mjs");
+      const { remapWords } = await import("./cuts.mjs");
+      const cuts = fs.existsSync(path.join(wd, "cuts.json")) ? readJSON(path.join(wd, "cuts.json")) : null;
+      const words = plan.words || (cuts ? remapWords(cuts.words || readJSON(path.join(wd, "words.json")).words, cuts.segments) : []);
+      const result = openingEndingChecks(words, plan);
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        console.log(`First spoken word: ${result.opening.firstWordStart == null ? "unavailable" : `${result.opening.firstWordStart.toFixed(2)} s`}`);
+        console.log(`First caption: ${result.opening.firstCaptionText || "unavailable"}`);
+        console.log(result.ending ? `Last point ends at ${result.ending.lastPointEnd.toFixed(2)} s. ${result.ending.reason}.` : "Ending looks clean.");
+        for (const item of result.items) console.log(`${item.level}  ${item.message}`);
+      }
+      return result;
     }
     case "batch": {
       const { opts, positionals } = parse(rest);
@@ -571,6 +600,7 @@ export async function main(argv) {
       return studioCommand(rest);
     }
     case "doctor":
+      if (rest.includes("--release-only")) { if (!releaseOnly()) process.exitCode = 1; return; }
       return doctor();
     default:
       console.log(USAGE);

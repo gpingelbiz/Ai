@@ -1,4 +1,100 @@
 import { r3 } from "./util.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+
+export const KEY_NAMES = Object.freeze({
+  elevenlabs: "ELEVENLABS_API_KEY", runway: "RUNWAY_API_KEY",
+  pixabay: "PIXABAY_API_KEY", pexels: "PEXELS_API_KEY",
+});
+
+function keyName(service) {
+  const name = KEY_NAMES[service] || service;
+  if (!Object.values(KEY_NAMES).includes(name)) throw new Error("Choose a listed service.");
+  return name;
+}
+
+/** Only reads. A failed connection says nothing about whether a key is valid. */
+export async function validateCredential(service, value, { fetchFn = globalThis.fetch } = {}) {
+  keyName(service);
+  service = Object.keys(KEY_NAMES).find((s) => KEY_NAMES[s] === keyName(service));
+  if (!String(value || "").trim() || /[\r\n\0]/.test(value)) return { status: "invalid" };
+  const endpoints = {
+    elevenlabs: ["https://api.elevenlabs.io/v1/user", { "xi-api-key": value }],
+    runway: ["https://api.dev.runwayml.com/v1/organization", { Authorization: `Bearer ${value}`, "X-Runway-Version": "2024-11-06" }],
+    pixabay: [`https://pixabay.com/api/videos/?${new URLSearchParams({ key: value, q: "test", per_page: "3" })}`, {}],
+    pexels: ["https://api.pexels.com/videos/search?query=test&per_page=1", { Authorization: value }],
+  };
+  try {
+    const [url, headers] = endpoints[service];
+    const response = await fetchFn(url, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(10000) });
+    if (response.status >= 200 && response.status < 300) return { status: "valid" };
+    if (response.status === 401) return { status: "invalid" };
+    if (response.status === 403) return { status: "no-permission" };
+    if (response.status === 408) return { status: "unreachable" };
+    // Pixabay reports a bad key as 400. Other 400 responses need a person to check permissions.
+    if (response.status === 400 && service === "pixabay") {
+      const body = await response.text();
+      if (/invalid.*\bkey\b|\bkey\b.*invalid/i.test(body)) return { status: "invalid" };
+    }
+    return { status: response.status >= 400 && response.status < 429 ? "no-permission" : "unreachable" };
+  } catch { return { status: "unreachable" }; }
+}
+
+function keyFile({ home = os.homedir() } = {}) { return path.join(home, ".reel", "keys.env"); }
+
+// Accept literal assignments only. Never evaluate shell syntax from the file.
+function readKeyData(options) {
+  let source;
+  try { source = fs.readFileSync(keyFile(options), "utf8"); }
+  catch (e) { if (e.code === "ENOENT") return new Map(); throw new Error("Your saved keys could not be read."); }
+  const values = new Map();
+  for (const line of source.split("\n")) {
+    if (!line.trim() || /^\s*#/.test(line)) continue;
+    const match = line.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$/);
+    if (!match) throw new Error("Your keys file needs plain values on separate lines.");
+    const raw = match[2].trim();
+    const single = raw.match(/^'((?:[^']|'\\'')*)'$/);
+    const double = raw.match(/^"((?:[^"\\]|\\.)*)"$/);
+    let value;
+    if (single) value = single[1].replaceAll("'\\''", "'");
+    else if (double && !/(?<!\\)[$`]/.test(double[1])) value = double[1].replace(/\\([$`"\\])/g, "$1");
+    else if (/^[\w./:@+%=-]*$/.test(raw)) value = raw;
+    else throw new Error("Your keys file needs plain values on separate lines.");
+    values.set(match[1], value);
+  }
+  return values;
+}
+
+function writeKeyData(values, options) {
+  const file = keyFile(options), dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.chmodSync(dir, 0o700);
+  const temp = `${file}.${randomUUID()}.tmp`;
+  try {
+    const text = [...values].map(([name, value]) => `${name}='${value.replaceAll("'", "'\\''")}'\n`).join("");
+    fs.writeFileSync(temp, text, { mode: 0o600, flag: "wx" });
+    fs.renameSync(temp, file);
+    fs.chmodSync(file, 0o600);
+  } finally { fs.rmSync(temp, { force: true }); }
+}
+
+export function saveKey(service, value, options = {}) {
+  const name = keyName(service);
+  if (!String(value || "").trim() || /[\r\n\0]/.test(value)) throw new Error("Please paste the key on one line.");
+  const values = readKeyData(options);
+  values.set(name, String(value));
+  writeKeyData(values, options);
+}
+
+export function removeKey(service, options = {}) {
+  const values = readKeyData(options);
+  values.delete(keyName(service));
+  writeKeyData(values, options);
+}
+
+export function hasKey(service, options = {}) { return !!readKeyData(options).get(keyName(service)); }
 
 const clean = (value) => String(value ?? "").trim();
 const verifiedWord = (value) => /^(?:verified|true|yes|check|checked|✓)$/i.test(clean(value));

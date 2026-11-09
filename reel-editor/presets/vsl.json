@@ -1,0 +1,123 @@
+{
+  "name": "vsl",
+  "canvas": "landscape",
+  "colors": {
+    "text": "#FFFFFF",
+    "accent": "#FFFFFF",
+    "stroke": "#000000",
+    "bg": "#0B0B0D"
+  },
+  "captions": {
+    "enabled": true,
+    "style": "pop",
+    "quiet": true,
+    "animation": "cut",
+    "uppercase": false,
+    "wordsPerLine": 7,
+    "maxChars": 48,
+    "position": 0.8,
+    "autoPlace": false,
+    "sideMarginFrac": 0.15,
+    "rightMarginFrac": 0.15,
+    "fontSizeFrac": 0.034,
+    "strokeWidthFrac": 0,
+    "maxKeywordsPerLine": 0,
+    "autoKeywords": false,
+    "annotate": false,
+    "activeWord": false
+  },
+  "hook": {
+    "enabled": false,
+    "behind": false
+  },
+  "zooms": {
+    "enabled": false,
+    "cadence": {
+      "enabled": false
+    }
+  },
+  "cuts": {
+    "silence": "slow",
+    "badTakes": true,
+    "fillers": false,
+    "signOff": false,
+    "pad": 0.2,
+    "endHold": 2.0
+  },
+  "motion": {
+    "impact": {
+      "enabled": false
+    },
+    "drift": {
+      "enabled": false
+    }
+  },
+  "audio": {
+    "music": null,
+    "musicDir": null,
+    "sfx": false,
+    "sounds": false
+  },
+  "graphics": {
+    "enabled": false,
+    "scriptOnly": true,
+    "mode": "band",
+    "clearStart": 2,
+    "tail": 2.5
+  },
+  "broll": {
+    "enabled": false
+  },
+  "slams": {
+    "enabled": false,
+    "popout": {
+      "enabled": false
+    }
+  },
+  "icons": {
+    "enabled": false
+  },
+  "coldOpen": {
+    "enabled": false
+  },
+  "lowerThird": {
+    "enabled": false,
+    "credential": false
+  },
+  "cta": {
+    "enabled": false
+  },
+  "cover": {
+    "enabled": false,
+    "style": "frame"
+  },
+  "evidence": {
+    "enabled": false
+  },
+  "signature": {
+    "enabled": false
+  },
+  "houseLooks": {
+    "enabled": false
+  },
+  "preflight": {
+    "enabled": true,
+    "openMotion": false,
+    "hookCheck": false,
+    "cards": {
+      "maxHold": 8,
+      "left": 60,
+      "right": 1860,
+      "top": 40
+    }
+  },
+  "framing": {
+    "enabled": true,
+    "max": 1,
+    "faceHeight": 0.27,
+    "eyeLine": 0.42
+  },
+  "review": {
+    "format": "vsl"
+  }
+}
