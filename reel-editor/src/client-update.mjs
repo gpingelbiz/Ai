@@ -241,10 +241,14 @@ export async function updateRelease({ app, state, home = os.homedir(), env = pro
       const e = releaseEnvironment(manifest, { home, env });
       if (!exists(path.join(e.REEL_RUNTIME, ".complete"))) {
         const bootstrapEnv = { ...e }; delete bootstrapEnv.HF_HUB_OFFLINE; delete bootstrapEnv.TRANSFORMERS_OFFLINE;
-        run("/bin/bash", [path.join(dest, "scripts/bootstrap-runtime.sh"), "--app", dest, "--home", home], dest, bootstrapEnv);
+        // The same two steps the kit installer runs: the pinned tools, then Python, Whisper and the speech model.
+        const releaseFile = path.join(dest, "release.json");
+        run("/bin/bash", [path.join(dest, "scripts/bootstrap-runtime.sh"), releaseFile], dest, bootstrapEnv);
+        run(path.join(e.REEL_RUNTIME, "bin/node"), [path.join(dest, "scripts/runtime.mjs"), "speech", releaseFile], dest, bootstrapEnv);
       }
       smoke(dest, manifest);
-      fs.writeFileSync(path.join(dest, ".complete"), `${manifest.id}\n`);
+      // Same marker the kit installer writes (scripts/runtime.mjs installApp), so a later installer run can repair it.
+      writeJSON(path.join(dest, ".complete"), { manifest: createHash("sha256").update(JSON.stringify(manifest)).digest("hex"), artifact: manifest.artifact.sha256 });
       fs.rmSync(stage, { recursive: true, force: true }); save("ready");
     }
     candidate = folder(tx.to);

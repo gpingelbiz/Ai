@@ -193,13 +193,13 @@ if [ -x "$VENV/bin/python" ] && ! py_ok "$VENV/bin/python"; then rm -rf "$VENV";
 ok "Whisper (faster-whisper) installed"
 ( cd "$APP" && npx --yes hyperframes browser ensure ) || die "The render browser did not install. Read the message above."
 ok "render browser ready"
-# Studio sound: the DeepFilterNet denoiser is one binary from its official GitHub release (no Python). Optional:
-# without it the spectral denoiser runs and the log says so.
+
+fi # legacy tools and code
+# Studio sound, for release kits and the legacy path alike: the DeepFilterNet denoiser is one checksummed binary
+# from its official GitHub release (no Python). Optional: without it the spectral denoiser runs and the log says so.
 if [ -x "$HOME/.cache/reel-editor/bin/deep-filter" ]; then ok "studio sound denoiser present"
 elif bash "$APP/scripts/install-deepfilter.sh" >/dev/null 2>&1; then ok "studio sound denoiser installed (DeepFilterNet)"
 else note "DeepFilterNet could not be fetched; reels use the built-in denoiser. Later: $APP/scripts/install-deepfilter.sh"; fi
-
-fi # legacy tools and code
 RUNTIME_HELPER="${RUNTIME_HELPER:-$APP/scripts/runtime.mjs}"
 
 # ---------------------------------------------------------------- 5. Your look and words

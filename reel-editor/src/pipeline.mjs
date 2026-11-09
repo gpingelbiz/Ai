@@ -6,7 +6,7 @@ import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapS
 import { resolveEndingOverride, endingMetadata } from "./ending.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
-import { realignWords, describeAlignment, hasAlignment } from "./align.mjs";
+import { realignWords, describeAlignment, hasAlignment, savedAlignmentFits } from "./align.mjs";
 import { makeCutout, describeCutout } from "./behind.mjs";
 import { runPreflight, writePreflight, describePreflight } from "./preflight.mjs";
 import { writeFeatures } from "./features.mjs";
@@ -129,7 +129,10 @@ export async function runEdit(input, opts = {}) {
     primaryEngine = readJSON(wordsPath).engine || resolveEngine(preset.transcribe.engine);
     log(`${words.length} words`);
   }
+  const heard = words;
   words = applyCorrections(words, dict.corrections);
+  // A dictionary fix changes words, so its timing (split evenly across what it replaced) needs the aligner too.
+  const dictChanged = words.length !== heard.length || words.some((w, i) => w.text !== heard[i].text);
   let sourceStat = null;
   try { const st = fs.statSync(input); sourceStat = { size: st.size, mtimeMs: Math.round(st.mtimeMs) }; } catch {}
   writeJSON(wordsPath, { source: input, sourceStat, engine: primaryEngine, words });
@@ -165,7 +168,7 @@ export async function runEdit(input, opts = {}) {
   // 1c. Caption word fix (Claude, text only, against the dictionary) and forced alignment (ElevenLabs), so a fixed
   // word and a faster-whisper word both land on the syllable. Both are cached in the work folder.
   if (words.length && !opts.transcript) {
-    let changed = false;
+    let changed = dictChanged;
     if (preset.transcribe.fix !== false) {
       const before = words;
       const fix = await fixWords({ words, dict, review, workDir, force: !!opts.force, minProb: preset.transcribe.minProb ?? 0.5 });
@@ -186,13 +189,15 @@ export async function runEdit(input, opts = {}) {
       if (!hasAlignment()) log("word timing: ELEVENLABS_API_KEY not set, keeping the engine's timings");
       else {
         const alignedPath = path.join(workDir, "words-aligned.json");
-        const key = sha1(JSON.stringify(words.map((w) => [w.text, w.start])));
+        // Keyed on the audio and the words' text, never their times: the aligned times are saved into words.json,
+        // so a key on times changed after every paid alignment and the next edit of the same clip paid again.
+        const key = sha1(JSON.stringify(words.map((w) => w.text)));
         const saved = !opts.force && fs.existsSync(alignedPath) ? readJSONSafe(alignedPath) : null;
         let res;
-        if (saved?.key === key) res = { ...saved.result, cached: true };
+        if (savedAlignmentFits(saved, words, { source: sourceStat, reusedWords })) res = { ...saved.result, cached: true };
         else {
           res = await realignWords(input, words);
-          if (!res.error) writeJSON(alignedPath, { key, result: res });
+          if (!res.error) writeJSON(alignedPath, { key, source: sourceStat, result: res });
         }
         (res.error ? warn : log)(describeAlignment(res, changed ? "after the fix" : softTimings ? "faster-whisper timings" : "requested") + (res.cached ? " (saved)" : ""));
         if (!res.error) { words = res.words; changed = true; }

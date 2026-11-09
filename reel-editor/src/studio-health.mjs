@@ -55,12 +55,17 @@ export function watcherDrops(folders, { root, now = Date.now(), maxAge = 8640000
 }
 
 /** A completed check, even with an empty queue, proves that a routine actually ran. */
-export function routineIssues(heartbeat, { now = new Date(), tz = "UTC", expected = Object.keys(heartbeat || {}) } = {}) {
+/** Reads heartbeat.json as src/heartbeat.mjs writes it ({ tasks: { id: { status, at, lastDone, lastFail } } }) and the older { id: { done, fail } }. */
+export function routineIssues(heartbeat, { now = new Date(), tz = "UTC", expected } = {}) {
+  const tasks = heartbeat?.tasks && typeof heartbeat.tasks === "object" ? heartbeat.tasks : heartbeat || {};
+  expected ??= Object.keys(tasks);
   const { day, minutes } = zonedNow(tz, now), since = minutes >= 9 * 60 ? day : addDays(day, -1);
   const out = [];
   const time = (value) => Number.isFinite(Date.parse(value)) ? Date.parse(value) : 0;
   for (const task of expected) {
-    const beat = heartbeat?.[task] || {}, done = time(beat.done), failed = time(beat.fail);
+    const beat = tasks[task] || {};
+    const done = Math.max(time(beat.done), time(beat.lastDone), beat.status === "done" ? time(beat.at) : 0);
+    const failed = Math.max(time(beat.fail), time(beat.lastFail), beat.status === "fail" ? time(beat.at) : 0);
     const label = task === "reel-publish" ? "reel posting" : task === "daily-posts" ? "daily posts" : task;
     if (failed > done) out.push(`The ${label} routine needs attention. ${beat.reason || "Open the Claude app and check its tasks."}`);
     else if (!done || zonedNow(tz, new Date(done)).day < since) {
