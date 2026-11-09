@@ -175,6 +175,14 @@ test("the hook plaque uses brand tokens and the footage keyword guard removes co
   assert.match(html, /background: #121314; background-image: none; border: 0; border-left: 6px solid #A1B2C3/);
   assert.match(html, /\.cap \.w\.k \{ color: inherit; background: none; padding: 0; border-radius: 0; font-weight: 950; font-size: 1\.06em;/);
   assert.doesNotMatch(html, /<svg class="an /);
+  assert.match(html, /#hook\.hook-plaque #hook-block \{ left: 7%; right: 7%; text-align: center; \}/, "centred unless the plan puts it beside the head");
+  const wide = renderHTML({ name: "plaque", canvas: { width: 1920, height: 1080 }, style: { ...style, hook: { ...style.hook, side: { left: 0.601, right: 0.05 } } }, video: { duration: 4, hasAudio: false }, hook, captions, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
+  assert.match(wide, /#hook\.hook-plaque #hook-block \{ left: 60\.1%; right: 5%; text-align: left; \}/);
+  const guarded = (st) => renderHTML({ name: "plaque", canvas: { width: 1920, height: 1080 }, style: st, video: { duration: 4, hasAudio: false }, hook: { ...hook, headTop: 0.085, headBottom: 0.534 }, captions, zooms: [], audio: { tracks: [] } }, "assets/footage.mp4");
+  assert.match(guarded(style), /"headTop":0\.085/, "a centred plaque keeps the runtime guard that lifts it off the head");
+  assert.doesNotMatch(guarded({ ...style, hook: { ...style.hook, side: { left: 0.601, right: 0.05 } } }), /"headTop"/, "beside the head, the guard would only push it up and shrink it");
+  assert.match(guarded({ ...style, hook: { ...style.hook, side: { left: 0.601, right: 0.05 } } }), /"side":true/, "the box is shrunk to its longest line at render time");
+  assert.doesNotMatch(guarded(style), /"side":true/);
 });
 
 test("caption lines keep phrases whole: no line made of glue words, none ending on one", async () => {

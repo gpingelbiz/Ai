@@ -139,3 +139,26 @@ test("plaqueLayout moves a squeezed hook between the chin and the captions at fu
   const roomy = plaqueLayout(copy.slice(0, 5), { headTop: 0.4, headBottom: 0.7, captionTop: 0.75, fontSizeFrac: 0.041, W: 1080, H: 1920 });
   assert.equal(roomy.zone, "above");
 });
+
+test("sidePlaqueLayout: a wide frame puts the plaque on the wall beside the head, bigger, on two or three lines", async () => {
+  const { sidePlaqueLayout } = await import("../src/hook.mjs");
+  const { headSpanX } = await import("../src/placement.mjs");
+  // Greg's 16:9 VSL (2026-11-04): Vision's box at the hook, head 8-53% down, the band above it 8% tall.
+  const vsl = { frames: [{ faces: [{ x: 0.388, y: 0.214, w: 0.148, h: 0.263 }] }, { faces: [{ x: 0.401, y: 0.249, w: 0.144, h: 0.256 }] }] };
+  const span = headSpanX(vsl, { zoom: 1.06 });
+  assert.ok(span.left > 0.35 && span.left < 0.38 && span.right > 0.55 && span.right < 0.58, "the face plus hair and ears, pushed out by the zoom");
+  const copy = "I had money but no time to live".split(" ").map((text) => ({ text }));
+  const fit = sidePlaqueLayout(copy, { headLeft: span.left, headRight: span.right, headTop: 0.085, headBottom: 0.534, fontSizeFrac: 0.041, W: 1920, H: 1080 });
+  assert.equal(fit.side, "right", "the roomier side");
+  assert.equal(fit.fontSizeFrac, 0.057, "1.4 times the preset size, not the quarter-size squeeze above the head");
+  assert.equal(fit.lines, 2);
+  assert.ok(fit.left > span.right && fit.right === 0.05, "clear of the head, inside the edge margin");
+  assert.ok(fit.position >= 0.06 && fit.position + fit.lines * 0.057 * 1.05 < 0.534, "beside the face, ending above the chin");
+  const leftRoom = sidePlaqueLayout(copy, { headLeft: 0.6, headRight: 0.75, headTop: 0.1, headBottom: 0.5, fontSizeFrac: 0.041, W: 1920, H: 1080 });
+  assert.deepEqual([leftRoom.side, leftRoom.left], ["left", 0.05]);
+  assert.equal(sidePlaqueLayout(copy, { headLeft: 0.36, headRight: 0.57, headTop: 0.085, headBottom: 0.534, fontSizeFrac: 0.041, W: 1080, H: 1920 }), null, "portrait keeps the plaque above the head");
+  assert.equal(sidePlaqueLayout(copy, { headLeft: 0.2, headRight: 0.8, headTop: 0.1, headBottom: 0.5, fontSizeFrac: 0.041, W: 1920, H: 1080 }), null, "a close-up has no room beside it");
+  const long = "Nobody tells you the money makes it harder to walk away from a job that is costing you everything".split(" ").map((text) => ({ text }));
+  const tall = sidePlaqueLayout(long, { headLeft: 0.36, headRight: 0.57, headTop: 0.03, headBottom: 0.15, fontSizeFrac: 0.041, W: 1920, H: 1080 });
+  assert.equal(tall, null, "a long hook with no height above the chin keeps the old placement");
+});

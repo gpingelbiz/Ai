@@ -62,6 +62,7 @@ test("preflight layout: captions over the chin, the hook on the face, the Instag
   assert.deepEqual(codes(base), ["captions-face", "hook-face"]);
   assert.deepEqual(codes({ ...base, behind: { src: "cutout.webm" }, style: { ...base.style, captions: { ...base.style.captions, position: 0.7 } } }), []);
   assert.deepEqual(codes({ ...base, head: null, style: { ...base.style, captions: { ...base.style.captions, position: 0.85 } } }), ["captions-safe-zone"]);
+  assert.deepEqual(codes({ ...base, canvas: { width: 1920, height: 1080 }, style: { ...base.style, hook: { ...base.style.hook, side: { left: 0.6, right: 0.05 } } } }), ["captions-face"], "a plaque beside the head is clear of the face");
   assert.ok(SAFE.bottom > 0.15 && SAFE.bottom < 0.2);
   const res = { status: "warn", items: [{ level: "warn", code: "x", message: "something" }], measures: { lufs: -14.1, truePeak: -1.2, lra: 3, duration: 30.5, width: 1080, height: 1920, openMotion: 5 } };
   assert.match(preflightText(res), /check these[\s\S]*warn {2}something[\s\S]*-14.1 LUFS, peak -1.2 dBTP/);
