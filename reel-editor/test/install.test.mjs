@@ -51,7 +51,7 @@ ${folders}`], { env: { HOME: home, PATH: `${bin}:${process.env.PATH}`, TEST_APP:
   const shortcut = path.join(home, "Desktop", "Reels", "Raw - My B-roll clips");
   assert.equal(fs.readlinkSync(shortcut), path.join(home, "Reels", "raw-own-broll"));
   assert.ok(fs.statSync(shortcut).isDirectory());
-  const vsl = path.join(home, "Desktop", "Reels", "Raw - VSL");
+  const vsl = path.join(home, "Desktop", "Reels", "Raw - VSL Editor");
   assert.equal(fs.readlinkSync(vsl), path.join(home, "Reels", "raw-vsl"));
   assert.ok(fs.statSync(vsl).isDirectory());
   const page = fs.readFileSync(path.join(home, "Desktop", "Reels", "B-roll shot list.html"), "utf8");

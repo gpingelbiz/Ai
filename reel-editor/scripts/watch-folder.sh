@@ -6,7 +6,7 @@
 #   REEL_WATCH_RAW_CAROUSEL  Raw - Carousel: an IG carousel from the video (default ~/Reels/raw-carousel)
 #   REEL_WATCH_RAW_LONG      Raw - Clips from Long Video: a long recording cut into several reels (default ~/Reels/raw-long)
 #   REEL_WATCH_RAW_YOUTUBE   Raw - Full YouTube Edit: the whole long video edited for YouTube (default ~/Reels/raw-youtube)
-#   REEL_WATCH_RAW_VSL       Raw - VSL: landscape sales video with optional script cards (default ~/Reels/raw-vsl)
+#   REEL_WATCH_RAW_VSL       Raw - VSL Editor: landscape sales video with optional script cards (default ~/Reels/raw-vsl)
 #   REEL_WATCH_RAW_RUNWAY    Raw - Reel with Runway B-roll: the full look with generated video clips (default ~/Reels/raw-runway)
 #   REEL_WATCH_RAW_OWN_BROLL Raw - My B-roll clips: import footage in place (default ~/Reels/raw-own-broll)
 #   REEL_WATCH_ROOT          work folder (default ~/Reels); markers live in videos/.seen

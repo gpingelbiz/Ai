@@ -115,7 +115,7 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 ## VSL sales videos
 
-Drop a recording into `~/Desktop/Reels/Raw - VSL` (shortcut to `~/Reels/raw-vsl`). Each client's `~/Desktop/Reels/Clients/<Name>/Raw - VSL` points to that client's `raw-vsl`. Re-run the installer to add Greg's shortcut and watcher path; re-run `node scripts/client.mjs add their-brand.json` for an existing client's shortcut and launchd path. The scanner also creates `raw-vsl` in existing client roots.
+Drop a recording into `~/Desktop/Reels/Raw - VSL Editor` (shortcut to `~/Reels/raw-vsl`). Each client's `~/Desktop/Reels/Clients/<Name>/Raw - VSL Editor` points to that client's `raw-vsl`. Re-run the installer to add Greg's shortcut and watcher path; re-run `node scripts/client.mjs add their-brand.json` for an existing client's shortcut and launchd path. The scanner also creates `raw-vsl` in existing client roots.
 
 VSL always uses `--preset vsl --canvas landscape`: clean sentence-case lower-band captions, gentle silence cuts with at least 0.35 s of breath between phrases, false-start/retake removal, closing words preserved (`cuts.signOff: false`), and a 2 s final hold from the source when available. Leave at least 2 s of footage after the final word when recording. Client colors and fonts come from the active client `REEL_PRESET`; hooks, music, zooms, reel CTAs and the Instagram hook/post-copy pass are off. Short-form filename tags are ignored in this folder.
 
