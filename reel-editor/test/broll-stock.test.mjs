@@ -1180,3 +1180,13 @@ test("scene and action queries recover settings only after subject matches and r
   assert.deepEqual(found.map((c) => c.id), [2]);
   assert.ok(queries.some((q) => q.mode === "setting" && q.query === "clouds drifting mountains" && q.candidateCount === 1));
 });
+
+test("a setting keeps its activity word first; a used-up search allowance says so once", async () => {
+  const f = fixture(), queries = [], warnings = [];
+  const search = createStockSearch({ env: f.env, maxSearches: 2, warnFn: (w) => warnings.push(w), fetchFn: async (url) => { queries.push(new URL(url).searchParams.get("q")); return json({ hits: [] }); } });
+  await search({ shows: "driving", kind: "ambient", stockQuery: "desert highway driving", scene: "A car driving along a desert highway." }, ["pixabay"]);
+  assert.deepEqual(queries.slice(0, 2), ["driving", "desert highway driving"]);
+  await search({ shows: "dog", kind: "action", stockQuery: "dog walking into house" }, ["pixabay"]);
+  await search({ shows: "cat", kind: "action", stockQuery: "cat jumping" }, ["pixabay"]);
+  assert.equal(warnings.filter((w) => /stock searches are used up/.test(w)).length, 1);
+});

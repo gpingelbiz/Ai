@@ -384,7 +384,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   };
   const recordPick = (p, rank, outcome = "pending") => {
     const c = candidates.find((c) => c.i === p.line), t = c && timing(p, c);
-    const record = { line: p.line, rank, words: t ? spokenInShot({ start: t.start }, groups, { len: Math.max(0, t.duration - 0.5) }) : c?.text || p.shows || "", shows: p.shows, scene: p.scene, action: p.action || "", kind: p.kind || "action", stockQuery: p.stockQuery || "", synonyms: p.stockSynonyms || [], queries: [], outcome, reason: "", steps: [] };
+    const record = { line: p.line, rank, words: t ? spokenInShot({ start: t.start }, groups, { len: Math.max(0, t.duration - 0.5) }) : c?.text || p.shows || "", shows: p.shows, scene: p.scene, action: p.action || "", kind: p.kind || "action", stockQuery: p.stockQuery || "", ...(p.need ? { need: p.need } : {}), synonyms: p.stockSynonyms || [], queries: [], outcome, reason: "", steps: [] };
     records.push(record);
     return record;
   };

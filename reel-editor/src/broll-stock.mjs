@@ -105,7 +105,7 @@ export function stockFallbackQueries({ stockQuery, scene, action }) {
 /** A reel has one small search allowance; cache hits do not consume API requests. 429s defer future work. */
 export function createStockSearch({ env = process.env, fetchFn = fetch, now = Date.now, warnFn = warn, maxSearches = 20, stockCandidates = 12 } = {}) {
   const missing = new Set();
-  let searches = 0;
+  let searches = 0, spent = false;
   const search = (provider, query, orientation) => provider === "wikimedia" ? wikimediaSlot(() => searchProvider(provider, query, orientation)) : searchProvider(provider, query, orientation);
   async function searchProvider(provider, query, orientation) {
     const key = env[provider === "pexels" ? "PEXELS_API_KEY" : "PIXABAY_API_KEY"];
@@ -115,7 +115,11 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
     try { saved = readJSON(file); } catch {}
     if (saved && now() - saved.at < DAY) return normaliseStock(provider, saved.body);
     try { rate = readJSON(rateFile); } catch {}
-    if (rate?.blockedUntil > now() || searches >= maxSearches) return [];
+    if (rate?.blockedUntil > now()) return [];
+    if (searches >= maxSearches) {
+      if (!spent) { spent = true; warnFn(`b-roll: the reel's ${maxSearches} stock searches are used up; later shots search the cache only (stockMaxSearches raises it)`); }
+      return [];
+    }
     const url = new URL(provider === "wikimedia" ? "https://commons.wikimedia.org/w/api.php" : provider === "pexels" ? "https://api.pexels.com/videos/search" : "https://pixabay.com/api/videos/");
     if (provider === "wikimedia") {
       const params = { action: "query", format: "json", formatversion: "2", generator: "search", gsrnamespace: "6", gsrlimit: "20",
@@ -148,10 +152,10 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
       return normaliseStock(provider, body);
     } catch { warnFn(`b-roll: ${provider} search unavailable; skipped`); return []; }
   }
-  // The bare subject goes first: a longer query such as "gorilla walking" matches crowds walking before gorillas.
-  // Clips whose tags name a different subject are dropped; tagged matches rank ahead of untagged clips. No query may
-  // fill more than two thirds of the pool, so the action query ("gorilla running") always gets places of its own.
-  return async ({ stockQuery, stockSynonyms = [], shows, scene, action }, providers = ["pexels", "pixabay"], { eligible = () => true, onQuery } = {}) => {
+  // Clips whose tags name a different subject are dropped (so "gorilla walking" cannot fill up on crowds walking);
+  // tagged matches rank ahead of untagged clips. No query may fill more than two thirds of the pool, so the second
+  // query always gets places of its own.
+  return async ({ stockQuery, stockSynonyms = [], shows, scene, action, kind }, providers = ["pexels", "pixabay"], { eligible = () => true, onQuery } = {}) => {
     const subject = subjectWords(shows, scene || shows), clips = [], seen = new Map();
     const actionWords = String(`${action || ""} ${stockQuery || ""}`).toLowerCase().split(/[^\p{L}\p{N}]+/u)
       .filter((w) => w.length >= 4 && !subject.some((s) => s.startsWith(w) || w.startsWith(s)));
@@ -161,8 +165,9 @@ export function createStockSearch({ env = process.env, fetchFn = fetch, now = Da
       Number(actionMatch(b)) - Number(actionMatch(a)) || Number(!!b.editorsChoice) - Number(!!a.editorsChoice) ||
       Number(b.files[0].height > b.files[0].width) - Number(a.files[0].height > a.files[0].width));
     const synonyms = Array.isArray(stockSynonyms) ? stockSynonyms.filter((s) => typeof s === "string" && s.trim()).slice(0, 3) : [];
-    // The meaning-keeping query first: a bare "cream" or "dog" fills the pool with the wrong sense before it runs.
-    const queries = [stockQuery, subject.join(" "), ...synonyms], perQuery = Math.ceil(stockCandidates * 2 / 3);
+    // A named thing searches its meaning first: a bare "cream" or "dog" fills the pool with the wrong sense.
+    // A setting keeps its activity word first: "driving" finds moving road footage, "desert highway driving" stills.
+    const queries = kind === "ambient" ? [subject.join(" "), stockQuery, ...synonyms] : [stockQuery, subject.join(" "), ...synonyms], perQuery = Math.ceil(stockCandidates * 2 / 3);
     async function collect(sources, fallback = false, setting = false) {
       const list = setting ? stockFallbackQueries({ stockQuery, scene, action }) : queries;
       for (const query of [...new Set(list.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean))]) {
