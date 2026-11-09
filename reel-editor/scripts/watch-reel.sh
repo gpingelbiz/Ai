@@ -1,6 +1,7 @@
 #!/bin/bash
 # One drop-folder job: wait for the file to finish copying, make what its folder asks for, deliver it.
-# Usage: watch-reel.sh /path/to/clip.mov [reel|broll|carousel]
+# Usage: watch-reel.sh /path/to/clip.mov [reel|broll|carousel|long|youtube|vsl|runway|own-broll]
+#   vsl       calm 16:9 sales video; optional VSL Builder script cards and chapters -> "<date> VSL <n>/"
 #   reel      the edited reel, classic look (Anton pop captions, no cards)        -> "<date> Reel <n>/"
 #   broll     the full look: graphic cards, reveal captions, the configured b-roll engine -> "<date> Reel <n> with B-roll/"
 #   own-broll import an own clip into the library; leave the original and a result note in its drop folder
@@ -39,7 +40,7 @@ FILE="${1:-}"
 MODE="${2:-reel}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
-case "$MODE" in reel|broll|carousel|long|youtube|runway|own-broll) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube, runway or own-broll"}'; exit 1;; esac
+case "$MODE" in reel|broll|carousel|long|youtube|vsl|runway|own-broll) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube, vsl, runway or own-broll"}'; exit 1;; esac
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
 [ -f "$HOME/.reel/env.sh" ] || export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
@@ -171,7 +172,7 @@ case "$base" in *"#look:"*) lk="${base#*#look:}"; lk="${lk%%[ .#]*}"; flags+=(--
 case "$base" in *"#v2"*) [ "$MODE" = runway ] || [ "${REEL_CLIENT_MODE:-0}" = 1 ] || [ -n "${REEL_CLIENT:-}" ] || flags+=(--preset pingel-v2);; esac
 # Music: the editor picks from the music folder by the mood of what is said; "#music:<name>" asks for a track
 # whose file name contains <name>; "#nomusic" skips it. Carousels never get music.
-if [ "$MODE" != carousel ] && [ -d "$MUSIC_DIR" ]; then
+if [ "$MODE" != carousel ] && [ "$MODE" != vsl ] && [ -d "$MUSIC_DIR" ]; then
   case "$base" in
     *"#nomusic"*) ;;
     *)
@@ -211,6 +212,17 @@ case "$MODE" in
     fi
     flags+=(--broll --graphics)
     [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+  vsl)
+    hook=""
+    flags=(--preset vsl --canvas landscape)
+    vsl_script=$(node --input-type=module -e '
+      import { pathToFileURL } from "node:url";
+      import path from "node:path";
+      const { findVslScript } = await import(pathToFileURL(path.resolve(process.argv[2], "../src/vsl-script.mjs")));
+      const script = findVslScript(process.argv[1], process.env);
+      if (script) process.stdout.write(script);
+    ' "$base" "$HERE")
+    [ -z "$vsl_script" ] || flags+=(--script "$vsl_script");;
   reel) flags+=(--no-graphics)
     [ -n "$brand_captions" ] || flags+=(--caption-style pop)
     flags+=(--no-slams --no-annotate --no-behind);;
@@ -220,7 +232,7 @@ esac
 name=$(echo "$stem" | sed -E 's/#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 # Each mode has its own work folder, so the same clip can go through two drop folders.
-case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; runway) name="$name-runway";; esac
+case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; vsl) name="$name-vsl";; runway) name="$name-runway";; esac
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
@@ -240,7 +252,7 @@ for image in "$(dirname "$FILE")/$pair_key proof"*.{png,jpg,jpeg,heic} "$(dirnam
       continue
     fi
   fi
-  flags+=(--evidence "$supplied")
+  [ "$MODE" = vsl ] || flags+=(--evidence "$supplied")
 done
 # Housekeeping: keep the log under 5 MB and drop work folders (intermediates, not the delivered reels) older than
 # REEL_WATCH_PRUNE_DAYS (default 30; 0 turns it off).
@@ -321,7 +333,7 @@ fi
 # the post copy writes three hooks, strongest first, and the finished reel is edited with that one on screen.
 # The opening words are never the hook. Carousels have no on-screen hook.
 written_hook=""
-if [ -z "$hook" ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
+if [ -z "$hook" ] && [ "$MODE" != vsl ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
   # A caption left by an earlier run of this clip must never pass for this run's.
   rm -f "$work/caption.txt" "$work/caption.json"
   # shellcheck disable=SC2086
@@ -336,6 +348,8 @@ if [ -z "$hook" ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 
   fi
 fi
 rm -f "$work/No b-roll this time.txt"
+# Do not deliver timings from an earlier script/edit of this input.
+[ "$MODE" != vsl ] || rm -f "$work/vsl-sections.json" "$work/chapters.txt"
 run_start=$(( $(wc -l < "$log" 2>/dev/null || echo 0) + 1 ))
 # shellcheck disable=SC2086
 # ${flags[@]+...}: macOS bash 3.2 treats an empty array as unbound under set -u (a plain drop has no flags).
@@ -344,6 +358,22 @@ if ! reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $
   notify "Reel failed" "$base. Rename it to retry; details in ~/Reels/watch.log"
   printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
   exit 1
+fi
+
+if [ "$MODE" = vsl ]; then
+  folder="$(create_reel_folder "$DONE" "$REELS/videos" VSL)"
+  dest="$folder/$name.mp4"
+  cp "$work/renders/$name.mp4" "$dest"
+  if [ -z "$vsl_script" ]; then
+    printf '%s\n' 'No VSL script found. The video was edited without script cards.' '' 'Put the VSL project id in the video filename, for example:' '2026-sample-offer.mov or take-1 #vsl-2026-sample-offer.mov' '' 'Scripts are looked up in ${REEL_VSL_PROJECTS:-~/Clients}/*/vsl/projects/<project-id>/04-script/.' 'The newest final_script approval wins, otherwise the highest script.vNNN.md.' 'If the id exists for more than one client, use a unique project id.' > "$folder/No script found.txt"
+  elif [ -f "$work/vsl-sections.json" ]; then
+    node "$HERE/../src/vsl-chapters.mjs" "$work/vsl-sections.json" "$folder/chapters.txt"
+    cp "$folder/chapters.txt" "$work/chapters.txt"
+  fi
+  echo "$(date '+%F %T') done  $dest" >> "$log"
+  notify "$(basename "$folder") ready" "$name"
+  printf '{"ok":true,"input":"%s","output":"%s","name":"%s"}\n' "$FILE" "$dest" "$name"
+  exit 0
 fi
 
 # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.

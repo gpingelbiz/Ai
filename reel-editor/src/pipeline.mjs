@@ -32,6 +32,7 @@ import { makeBroll, holdForSplit, planBrollOpen } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { planBrollLayouts, planPersistentLayout } from "./layouts.mjs";
 import { isPersistentScene, makeGraphics, persistentDuckSchedule } from "./graphics.mjs";
+import { makeVslGraphics } from "./vsl-script.mjs";
 import { makeEvidence } from "./evidence.mjs";
 import { planSlams } from "./slams.mjs";
 import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
@@ -74,6 +75,9 @@ export async function runEdit(input, opts = {}) {
   const workDir = path.resolve(opts.out || path.join("videos", name));
   ensureDir(workDir);
   const preset = mergeOverrides(loadPreset(opts.preset), opts);
+  const scriptPath = opts.script ? path.resolve(opts.script) : null;
+  if (scriptPath && !fs.existsSync(scriptPath)) throw new Error(`no such VSL script: ${scriptPath}`);
+  if (scriptPath) preset.graphics = { ...preset.graphics, enabled: true };
   const dict = loadDictionary(opts.dictionary);
   let requestedCredits = [];
   try {
@@ -443,7 +447,7 @@ export async function runEdit(input, opts = {}) {
   const tail = Math.max(1.5, endSafe);
   let structure = null;
   let structureCards = [];
-  if (preset.youtube?.chapters && shownGroups.length) {
+  if (!scriptPath && preset.youtube?.chapters && shownGroups.length) {
     structure = await makeStructure({ workDir, groups: shownGroups, duration, handle: preset.carousel?.handle || "", voice: readVoice({ style: preset }), force: !!opts.newGraphics, endSafe });
     if (structure) {
       if (hook && structure.promise && hook.auto) { Object.assign(hook, { text: structure.promise.replace(/\*/g, ""), auto: false }, hookWords(structure.promise, dict)); log(`hook: "${hook.text}" (the promise, from the structure)`); }
@@ -453,7 +457,8 @@ export async function runEdit(input, opts = {}) {
       ].filter((c) => c.start > (hook ? hook.start + hook.duration + 0.5 : 3) && c.start + c.duration < duration - tail).sort((a, b) => a.start - b.start);
     }
   }
-  let graphics = preset.graphics?.enabled && shownGroups.length
+  const vslPlan = scriptPath ? makeVslGraphics({ scriptPath, workDir, words: cleanWords, groups: shownGroups, duration, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [] } }) : null;
+  let graphics = vslPlan ? vslPlan.scenes : preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [], modes: preset.brand?.modes || preset.brand?.contentModes || {} }, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
   const graphicsSchema = graphics.schema || 1;
@@ -509,7 +514,7 @@ export async function runEdit(input, opts = {}) {
     const hk = new Set(toks(hook.text));
     const repeats = (g) => { const t = toks(g.text || g.title); return t.length && t.filter((x) => hk.has(x)).length / t.length >= 0.8; };
     const before = graphics.length;
-    graphics = graphics.filter((g) => !(["headline", "quote"].includes(g.type) && repeats(g)));
+    graphics = graphics.filter((g) => g.source === "script" || !(["headline", "quote"].includes(g.type) && repeats(g)));
     graphics.schema = graphicsSchema;
     if (graphics.length < before) log(`graphics: dropped ${before - graphics.length} card${before - graphics.length === 1 ? "" : "s"} that only repeated the hook`);
   }
@@ -815,6 +820,7 @@ export async function runEdit(input, opts = {}) {
     coldOpen,
     lowerThird,
     structure,
+    ...(vslPlan ? { vslSections: vslPlan.sections, vslScript: scriptPath } : {}),
     framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right", ...(signatureHead ? { headBox: signatureHead } : {}) },
     reframe,
     behind: behindPlan,

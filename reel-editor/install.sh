@@ -376,7 +376,7 @@ SHOTLIST_ARGS=()
 node "$APP/bin/reel.mjs" broll-shotlist --html "$HOME/Desktop/Reels/B-roll shot list.html" ${SHOTLIST_ARGS[@]+"${SHOTLIST_ARGS[@]}"}
 
 if [ "$WATCH" = y ]; then
-  mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-own-broll" "$HOME/Reels/raw-carousel" "$HOME/Reels/raw-long" "$HOME/Reels/raw-youtube" "$HOME/Reels/raw-runway" "$HOME/Reels/music" "$HOME/Desktop/Reels"
+  mkdir -p "$HOME/Reels/raw" "$HOME/Reels/raw-broll" "$HOME/Reels/raw-own-broll" "$HOME/Reels/raw-carousel" "$HOME/Reels/raw-long" "$HOME/Reels/raw-youtube" "$HOME/Reels/raw-vsl" "$HOME/Reels/raw-runway" "$HOME/Reels/music" "$HOME/Desktop/Reels"
   # macOS blocks background jobs from reading the Desktop, so the real drop folders live in ~/Reels and the
   # Desktop gets shortcuts. An older single "Raw" shortcut becomes "Raw - Reel".
   D="$HOME/Desktop/Reels"
@@ -387,6 +387,7 @@ if [ "$WATCH" = y ]; then
   [ -e "$D/Raw - Carousel" ] || ln -s "$HOME/Reels/raw-carousel" "$D/Raw - Carousel"
   [ -e "$D/Raw - Clips from Long Video" ] || ln -s "$HOME/Reels/raw-long" "$D/Raw - Clips from Long Video"
   [ -e "$D/Raw - Full YouTube Edit" ] || ln -s "$HOME/Reels/raw-youtube" "$D/Raw - Full YouTube Edit"
+  [ -e "$D/Raw - VSL" ] || ln -s "$HOME/Reels/raw-vsl" "$D/Raw - VSL"
   [ -e "$D/Raw - Reel with Runway B-roll" ] || ln -s "$HOME/Reels/raw-runway" "$D/Raw - Reel with Runway B-roll"
   [ -e "$D/Music" ] || ln -s "$HOME/Reels/music" "$D/Music"
   # Their music is their own: the folder gets a note and clickable links to where Greg's comes from (src/music-source.mjs).
@@ -398,7 +399,7 @@ if [ "$WATCH" = y ]; then
     node --input-type=module -e 'const [mod, dir] = process.argv.slice(1); import(mod).then((m) => m.setUpMusicFolder(dir))' "$APP/src/music-source.mjs" "$HOME/Reels/music" >/dev/null 2>&1 || true
   fi
   REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh"
-  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - My B-roll clips, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit, Raw - Reel with Runway B-roll (music from Desktop/Reels/Music: links to Epidemic Sound inside)"
+  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - My B-roll clips, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit, Raw - VSL, Raw - Reel with Runway B-roll (music from Desktop/Reels/Music: links to Epidemic Sound inside)"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it

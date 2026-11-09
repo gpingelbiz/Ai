@@ -123,10 +123,11 @@ export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5,
  *   no dead air over about 0.2 s between phrases)
  * - beats: a pause after a comma, colon or list marker up to this long is a natural beat and stays (0 = off)
  * - endAt: optional SOURCE seconds. Preserve a word crossing the boundary and its audio pad.
+ * - endHold: optional source seconds to keep after the last word (clamped to available footage)
  * - badTakes / fillers: drop those words and force a cut around them
  * Returns { segments:[{start,end}], removed:[{start,end,reason}], words:[...with drop], originalDuration, keptDuration }.
  */
-export function planCuts(words, duration, { silence = "fast", badTakes = true, fillers = true, signOff = true, pad = 0.12, minGapCut = 0.15, minSegment = 0.3, beats = 0, endAt = null } = {}) {
+export function planCuts(words, duration, { silence = "fast", badTakes = true, fillers = true, signOff = true, pad = 0.12, minGapCut = 0.15, minSegment = 0.3, beats = 0, endAt = null, endHold = 0 } = {}) {
   if (endAt != null && (!Number.isFinite(endAt) || endAt <= 0 || endAt > duration)) throw new Error("Ending time must be within the source video.");
   if (endAt != null && !words.some((w) => w.start < endAt)) throw new Error("Ending time falls before the first word.");
   const thr = PACE[silence] ?? PACE.fast;
@@ -227,6 +228,13 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
     const stop = Math.min(duration, Math.max(endAt, lastWord?.end || 0) + pad, words.find((_, i) => drop[i] === "ending")?.start ?? duration);
     out[out.length - 1].end = r3(Math.min(out.at(-1).end, stop));
     if (out.at(-1).end < duration) removed.push({ start: out.at(-1).end, end: duration, reason: "ending" });
+  }
+
+  // Optional VSL hold: retain source footage after the final kept word, without restoring a dropped take.
+  if (endAt == null && Number.isFinite(endHold) && endHold > 0) {
+    const lastWord = words.filter((_, i) => !drop[i]).at(-1);
+    const nextDropped = words.find((w, i) => drop[i] && w.start >= (lastWord?.end ?? duration));
+    if (lastWord) out.at(-1).end = r3(Math.min(duration, nextDropped?.start ?? duration, Math.max(out.at(-1).end, lastWord.end + endHold)));
   }
 
   const silences = [];

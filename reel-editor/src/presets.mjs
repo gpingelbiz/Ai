@@ -61,6 +61,14 @@ export function loadPreset(nameOrPath = process.env.REEL_PRESET || (isClientJob(
       catch (error) { warn(`brand tokens: ${error.message}; using preset colors and fonts`); }
     } else warn(`brand tokens: file not found: ${p.brandFile}; using preset colors and fonts`);
   }
+  if (own.name === "vsl" && process.env.REEL_PRESET && !personal(process.env.REEL_PRESET) && path.resolve(process.env.REEL_PRESET) !== path.resolve(file) && process.env.REEL_PRESET !== "vsl") {
+    const active = loadPreset(process.env.REEL_PRESET);
+    if (client || process.env.REEL_CLIENT || active.name.startsWith("brand-")) {
+      p.colors = structuredClone(active.colors);
+      if (active.fonts) p.fonts = structuredClone(active.fonts);
+      brand = structuredClone(active.brand);
+    }
+  }
   p.brand = resolveBrandTokens({ preset: p, brand });
   // Privacy is the preset-safe default. Only the explicit CLI escape hatch may turn it off for one edit.
   p.evidence = { ...(p.evidence || {}), redact: true };
