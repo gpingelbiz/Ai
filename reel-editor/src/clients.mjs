@@ -16,7 +16,7 @@ export const DROP_FOLDERS = [
   ["raw-carousel", "Raw - Carousel"],
   ["raw-long", "Raw - Clips from Long Video"],
   ["raw-youtube", "Raw - Full YouTube Edit"],
-  ["raw-vsl", "Raw - VSL"],
+  ["raw-vsl", "Raw - VSL Editor"],
   ["raw-runway", "Raw - Reel with Runway B-roll"],
 ];
 

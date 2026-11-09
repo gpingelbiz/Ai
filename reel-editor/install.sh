@@ -387,7 +387,9 @@ if [ "$WATCH" = y ]; then
   [ -e "$D/Raw - Carousel" ] || ln -s "$HOME/Reels/raw-carousel" "$D/Raw - Carousel"
   [ -e "$D/Raw - Clips from Long Video" ] || ln -s "$HOME/Reels/raw-long" "$D/Raw - Clips from Long Video"
   [ -e "$D/Raw - Full YouTube Edit" ] || ln -s "$HOME/Reels/raw-youtube" "$D/Raw - Full YouTube Edit"
-  [ -e "$D/Raw - VSL" ] || ln -s "$HOME/Reels/raw-vsl" "$D/Raw - VSL"
+  # The first VSL shortcut was "Raw - VSL"; it is now "Raw - VSL Editor".
+  [ -L "$D/Raw - VSL" ] && [ ! -e "$D/Raw - VSL Editor" ] && mv "$D/Raw - VSL" "$D/Raw - VSL Editor"
+  [ -e "$D/Raw - VSL Editor" ] || ln -s "$HOME/Reels/raw-vsl" "$D/Raw - VSL Editor"
   [ -e "$D/Raw - Reel with Runway B-roll" ] || ln -s "$HOME/Reels/raw-runway" "$D/Raw - Reel with Runway B-roll"
   [ -e "$D/Music" ] || ln -s "$HOME/Reels/music" "$D/Music"
   # Their music is their own: the folder gets a note and clickable links to where Greg's comes from (src/music-source.mjs).
@@ -399,7 +401,7 @@ if [ "$WATCH" = y ]; then
     node --input-type=module -e 'const [mod, dir] = process.argv.slice(1); import(mod).then((m) => m.setUpMusicFolder(dir))' "$APP/src/music-source.mjs" "$HOME/Reels/music" >/dev/null 2>&1 || true
   fi
   REEL_WATCH_RAW="$HOME/Reels/raw" REEL_WATCH_DONE="$D" "$APP/scripts/install-watcher.sh"
-  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - My B-roll clips, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit, Raw - VSL, Raw - Reel with Runway B-roll (music from Desktop/Reels/Music: links to Epidemic Sound inside)"
+  ok "drop folders on in Desktop/Reels: Raw - Reel, Raw - Reel with B-roll, Raw - My B-roll clips, Raw - Carousel, Raw - Clips from Long Video, Raw - Full YouTube Edit, Raw - VSL Editor, Raw - Reel with Runway B-roll (music from Desktop/Reels/Music: links to Epidemic Sound inside)"
 fi
 
 # ---------------------------------------------------------------- 7. Prove it
