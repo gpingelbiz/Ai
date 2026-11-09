@@ -98,7 +98,7 @@ for (const studio of [false, true]) {
     assert.match(html, new RegExp(`<h1>Jane &amp; Jo's ${studio ? "reels and posts" : "Reel Editor"}: Setup Guide</h1>`));
     assert.ok(html.includes(studio ? "Install Reels.command" : "Install Reel Editor.command"));
     assert.equal(html.includes("Connect Metricool to Claude before installing"), studio);
-    assert.equal(html.includes("press Run now on daily-posts"), studio);
+    assert.equal(html.includes("press Run now on each routine"), studio);
     assert.equal(html.includes("Add Claude for graphic cards"), !studio);
     assert.doesNotMatch(html, /<!-- \/?studio -->|Your look/);
     if (!studio) assert.doesNotMatch(html, /Metricool|Content Studio/);
