@@ -10,7 +10,7 @@ import { recordUsage, reelUsageNote } from "./usage.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3 } from "./util.mjs";
 import { findLibraryClip, saveLibraryClip, writeBrollCredits } from "./broll-library.mjs";
 
-export const PROMPT_VERSION = "literal-video-v7";
+export const PROMPT_VERSION = "literal-video-v8";
 
 /** Stable across retries; a new prompt version intentionally starts a new comparison. */
 export function shotSeed(workDir, line) {
@@ -72,6 +72,11 @@ sound: Optional short positive description of a real physical sound,
 such as "a coconut thuds onto soft sand". Include only for an impact or
 clear physical sound. Ambient shots usually omit this field.
 
+need: One short sentence: the minimum thing a viewer must SEE to understand these words, with the
+action or relationship they describe ("a dog arriving at a house door", not "a dog";
+"skin cream squeezed onto a fingertip", not "cream"). Sharing the noun is never enough.
+Every later step (stock search, the generated clip and its check) must show this.
+
 line: An available caption-line number containing the first anchor word.
 
 shows: One to three exact spoken words naming the visible subject: the noun itself, no article or verb ("snake", "coconut", "two by four") for an action pick.
@@ -93,18 +98,29 @@ useful focus and portrait composition.
 The named subject is recognizable in the opening frame and big: it fills at least a third of the frame height.
 Write the shows word literally in scene, including activities: "a car driving along a desert highway",
 "an airplane flight taking off". A setting description alone does not name the generated subject.
-Stage it ready for the event.
+Stage it ready for the event: the opening frame already contains the exact named subject,
+what it rests on or touches, and the room its movement needs, all in the same view.
+For material coming out of a container, a small amount is already visible at the opening
+(a bead of cream at the nozzle). For a drop, the subject, its short fall and the landing
+surface are all in frame (a coconut on a low rock edge above sand), never against open sky.
+Keep travel short so the subject stays big and readable for the whole shot.
 For this daylight reel, use natural daylight, believable colour,
 readable shadows and ordinary phone-camera perspective.
 Keep the complete action area visible and important details above captions.
 
 action: For an ambient setting, describe real sustained setting movement with no discrete event required.
-For an action pick, one concrete, harmless physical event involving the named subject.
+For an action pick, one concrete, harmless physical beat involving the named subject that fits
+inside the shot's duration: "the dog trots through the open doorway", never a chain such as
+"hops out of the car, crosses the driveway and settles on the porch".
+A continuous action (walking, pouring, a road passing) keeps moving through the cut.
+An event (a drop, a landing) shows its result in the same view.
 It begins immediately and visibly happens within the first second.
 Describe direction and a readable result.
 For action picks, camera movement, changing light and drifting atmosphere alone do not count.
 
-motion: One simple camera instruction. Default: "Locked camera."
+motion: One simple camera instruction that names what the camera is fixed to.
+Default for a watched subject: "Locked camera on a tripod; the background stays still."
+For travel, the camera rides with the vehicle: "Camera mounted inside the car, facing forward; the road passes."
 Use a camera move only for a place reveal or travel.
 
 Write scene, action and motion entirely as positive descriptions.
@@ -125,7 +141,7 @@ Otherwise leave Greg visible. Never substitute an unrelated object.
 Use one physical event, one location and one camera instruction.
 Keep the assembled Runway prompts under 1,000 JavaScript string units.`;
 
-export const PICKS_REPLY = '{"picks":[{"endsAt":{"line":N,"wordIndex":I,"text":"..."},"endsBefore":{"line":N,"wordIndex":I,"text":"..."},"line":N,"shows":"...","duration":S,"kind":"action","scene":"...","endScene":"...","action":"...","motion":"...","soundRole":"impact","sound":"..."}]}';
+export const PICKS_REPLY = '{"picks":[{"endsAt":{"line":N,"wordIndex":I,"text":"..."},"endsBefore":{"line":N,"wordIndex":I,"text":"..."},"need":"...","line":N,"shows":"...","duration":S,"kind":"action","scene":"...","endScene":"...","action":"...","motion":"...","soundRole":"impact","sound":"..."}]}';
 
 export function runwayPicksPrompt({ candidates, transcript, hook, count, spacing = 8, style = "", recent = [], duration = 2.4, world = "", instructions = "Reply with JSON only. Use no tools.", reply = PICKS_REPLY }) {
   return `You are choosing short moving cutaways for Greg's talking-head reel.
@@ -236,13 +252,42 @@ export function stillPrompt(pick) {
 }
 
 /** The still supplies appearance; the video supplies one immediate physical event. */
-export function videoMotion(pick, { retry = false, correction = "", soften = false } = {}) {
+export function videoMotion(pick, { retry = false, correction = "", repair = "", soften = false } = {}) {
   const action = positiveDescription(pick.action, `${positiveDescription(pick.shows, "The subject.").replace(/\.$/, "")} moves.`);
   const brief = `${pick.scene || ""} ${action} ${positiveDescription(pick.motion)}`;
   const placeReveal = /\breveal(?:s|ing)?\b/i.test(positiveDescription(pick.motion)) && /\b(place|jungle|clearing|forest|path|road|street|destination|city|valley|room|beach|landscape)\b/i.test(brief);
   const moving = placeReveal || /\btravel(?:s|ling|ing)?\b/i.test(brief);
   const camera = !retry && moving ? positiveDescription(pick.motion, "Locked camera.") : "Locked camera.";
-  return fitPrompt(`${soften ? "A gentle, harmless movement. " : ""}${action} Real-time movement beginning immediately. ${camera}${correction ? ` Correction: ${motionCorrection(pick, correction)}` : ""}`);
+  return fitPrompt(`${soften ? "A gentle, harmless movement. " : ""}${action} Real-time movement beginning immediately. ${camera}${repair ? ` ${repair}` : correction ? ` Correction: ${motionCorrection(pick, correction)}` : ""}`);
+}
+
+const APPROVAL = /^\s*(none( needed)?|no (correction|change|defects?)( needed)?|n\/?a|nothing( to correct)?|looks (good|fine|correct)|approved?|ok(ay)?)\s*\.?\s*$/i;
+
+/**
+ * The repair a paid video retry must carry, or null when there is none: a retry is bought only to fix a named
+ * failure. Measured failures come first, because the reviewer can approve a clip the measurements reject
+ * (Julee's dog run sent "Correction: None needed." twice and spent 72 credits on two identical rejections).
+ */
+export function retryRepair(pick, moves = {}) {
+  const subject = positiveDescription(pick.shows, "the subject").replace(/\.$/, "");
+  const defects = (moves.defects || []).map(String);
+  const has = (re) => defects.some((d) => re.test(d));
+  const travel = pick.kind === "ambient" && /\b(driv\w*|road|highway|flight|fly\w*|train|boat|travel\w*)\b/i.test(`${pick.shows} ${pick.scene} ${pick.action}`);
+  const fixes = [];
+  if (has(/sustained camera movement/)) fixes.push(travel ? "The camera is mounted rigidly inside the vehicle, facing forward, and holds a steady view while the scenery passes." : `The camera stays fixed on a tripod; the background never moves. The ${subject} moves across the still background in a clear side view.`);
+  if (has(/frozen clip|continuous action motion|after the first second/)) fixes.push(`The ${subject} begins the movement in the first frame and keeps moving clearly through the shot.`);
+  if (has(/rapid subject size growth/)) fixes.push(`The ${subject} moves across the frame at a steady distance from the camera.`);
+  const reviewer = [moves.correction, ...defects.filter((d) => !/sustained camera movement|frozen clip|continuous action motion|after the first second|rapid subject size growth/.test(d))]
+    .map((s) => String(s || "").trim()).filter((s) => s && !APPROVAL.test(s));
+  if (reviewer.length && !fixes.length) fixes.push(motionCorrection(pick, reviewer[0]));
+  if (!fixes.length && moves.shows === false) fixes.push(`The ${subject} stays large, clearly visible and recognizable for the whole shot.`);
+  if (!fixes.length && moves.action === false) {
+    const action = positiveDescription(pick.action).replace(/\.$/, "");
+    if (pick.need) fixes.push(`The clip clearly shows ${positiveDescription(pick.need).replace(/\.$/, "")}.`);
+    else if (action) fixes.push(`The ${subject} visibly performs this from the first frame: ${action}.`);
+    else fixes.push(`The ${subject} begins the movement in the first frame and keeps moving clearly through the shot.`);
+  }
+  return fixes.length ? fitPrompt(fixes.join(" ")) : null;
 }
 
 /** Mean absolute pixel change between quarter-second samples, on an 8-bit grey 64 x 64 picture. */
@@ -374,6 +419,8 @@ Decoded pixel measurements (independent of the action hint): ${JSON.stringify(me
 Camera speed and subject size growth are measured over sustained half-second windows after background registration. A measured outward surface spray is physical displacement, even when the first impact frame looks bright and symmetric. Do not label that spray a generated collar based on its brightness or fluffy texture.
 Required subject: ${JSON.stringify(pick.shows)}.
 Action hint only, NOT a script or acceptance requirement: ${JSON.stringify(pick.action)}.
+${pick.need ? `What the viewer must see to understand the words (required): ${JSON.stringify(pick.need)}. Set action=false when the clip only shares the subject without showing this, for example a dog in a studio for "dropping my dog off at her house".
+` : ""}
 Shot kind: ${pick.kind || "action"}. Ambient shots need sustained setting motion.
 Overlapping words and captions: ${JSON.stringify(spokenInShot(shot, groups, { len: shot.duration }))}.
 Neighbouring words: ${JSON.stringify(neighbouringWords(shot, groups))}.
@@ -394,7 +441,7 @@ ${selecting ? "This is the full source for choosing an in-point. Late onset alon
 Answer EACH defect question independently with yes/no. For every yes give the exact printed SOURCE frame time and a specific observation. For no use time=null and explain what you compared across the timeline. Any yes rejects the clip, even when the subject/action otherwise fits. Do not infer safety or clean physics from the hint.
 ${Object.entries(DEFECT_QUESTIONS).map(([key, question]) => `${key}: ${question}`).join("\n")}
 Reject uncertain subject identity or action. Do not invent defects from normal blur, physical sand displacement or natural occlusion.
-Name specific defects and give a positive corrective instruction in correction.
+Name specific defects and give a positive corrective instruction in correction. When nothing needs correcting, set correction to "".
 Reply JSON only:
 {"shows":true|false,"action":true|false,"dark":true|false,"physicsPlausible":true|false,"identityStable":true|false,"artifacts":true|false,"directionPlausible":true|false,"humanFaces":true|false,"readableText":true|false,"eventType":"continuous"|"drop-land","onset":S,"contact":S|null,"completion":S|null,"checks":{${Object.keys(DEFECT_QUESTIONS).map((key) => `${JSON.stringify(key)}:{"yes":true|false,"time":S|null,"why":"..."}`).join(",")}},"defects":["..."],"correction":"...","why":"..."}`;
 }
@@ -768,7 +815,10 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
         if (policy.remedy === "soften" && state.safetyOutputRetries) break;
         if (policy.remedy === "soften") state.safetyOutputRetries = 1;
         if (policy.delayMs) await (deps.sleepFn || ((ms) => new Promise((r) => setTimeout(r, ms))))(policy.delayMs);
-        state.motion = videoMotion(p, { retry: true, correction: moves.correction || (moves.defects || []).join("; ") || moves.why, soften: policy.remedy === "soften" });
+        // A generation that failed with no video retries as planned; an inspected clip retries only with a named repair.
+        const repair = clip.mp4 ? retryRepair(p, moves) : "";
+        if (repair === null) { warn(`b-roll: ${p.shows} not retried: the check named no failure a new prompt could repair (${String(moves.why || "").slice(0, 160)})`); break; }
+        state.motion = videoMotion(p, { retry: true, repair, soften: policy.remedy === "soften" });
         // Each retry has its own file and seed. Never overwrite a rejected original.
         state.videoAttempt = retryIndex;
         save();

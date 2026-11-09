@@ -70,12 +70,12 @@ test("stock normalises documented variants, keeps film, filters duration/resolut
   assert.equal(normaliseStock("pixabay", { hits: [pixabay({ videos: { small: { url: "small", width: 640, height: 360 } } })] }).length, 0);
 });
 
-test("search uses portrait then any, film on Pixabay, subject then query, dedupes and stops at twelve", async () => {
+test("search uses portrait then any, film on Pixabay, the meaning query then the subject, dedupes and stops at twelve", async () => {
   const f = fixture(), urls = [];
   const search = createStockSearch({ env: f.env, maxSearches: 6, fetchFn: async (url, init) => { const u = new URL(url); urls.push(u); if (u.hostname === "api.pexels.com") { assert.equal(init.headers.Authorization, "secret"); return json({ videos: u.searchParams.get("orientation") ? [] : [pexel()] }); } assert.equal(u.searchParams.get("key"), "secret-two"); assert.equal(u.searchParams.get("video_type"), "film"); return json({ hits: [pixabay()] }); } });
   assert.equal((await search(pick)).length, 2);
   assert.deepEqual(urls.map((u) => u.searchParams.get("orientation")), ["portrait", null, null, "portrait", null, null]);
-  assert.deepEqual(urls.map((u) => u.searchParams.get("query") || u.searchParams.get("q")), ["coconut", "coconut", "coconut", "coconut falling", "coconut falling", "coconut falling"]);
+  assert.deepEqual(urls.map((u) => u.searchParams.get("query") || u.searchParams.get("q")), ["coconut falling", "coconut falling", "coconut falling", "coconut", "coconut", "coconut"]);
   assert.equal((await search({ stockQuery: "gorilla walking", shows: "gorilla" })).length, 0, "one request budget covers the entire reel");
   const g = fixture(); let requests = 0;
   const enough = createStockSearch({ env: g.env, fetchFn: async () => { requests++; return json({ videos: Array.from({ length: 16 }, (_, i) => pexel(i)) }); } });
@@ -93,7 +93,7 @@ test("search drops clips tagged with another subject, ranks tagged matches first
   const search = createStockSearch({ env: f.env, fetchFn: async (url) => { urls.push(new URL(url).searchParams.get("q")); return json({ hits }); } });
   const found = await search({ stockQuery: "gorilla walking", shows: "gorilla", scene: "A silverback gorilla on a jungle path." }, ["pixabay"]);
   assert.deepEqual(found.map((c) => c.id), [3, 2]);
-  assert.equal(urls[0], "gorilla");
+  assert.equal(urls[0], "gorilla walking", "the meaning-keeping query runs before the bare subject");
 });
 
 test("stock checks the full clip for the event Claude saw in the chosen image", async () => {
@@ -603,7 +603,7 @@ test("normalisation retains the tiny preview even below render resolution", () =
   assert.equal(q.preview, "https://preview.test/1.mp4"); assert.equal(q.files[0].width, 720);
 });
 
-test("the action query and then synonyms follow the subject, filter tags by that query, and rank matching actions first", async () => {
+test("the meaning query runs first, then the subject and synonyms, filter tags by that query, and rank matching actions first", async () => {
   const f = fixture(), queries = [];
   const hits = {
     gorilla: [pixabay({ id: 1, tags: "gorilla, eating", editors_choice: true }), pixabay({ id: 2, tags: "gorilla, angry, charging" }), pixabay({ id: 3, tags: "gorilla, resting" }), pixabay({ id: 4, tags: "" }), pixabay({ id: 5, tags: "ape" })],
@@ -615,7 +615,7 @@ test("the action query and then synonyms follow the subject, filter tags by that
     assert.equal(u.searchParams.get("per_page"), "40"); return json({ hits: hits[query] || [] });
   } });
   const found = await search({ shows: "gorilla", scene: "A gorilla in daylight.", action: "The gorilla walks forward.", stockSynonyms: ["ape", "silverback"], stockQuery: "gorilla angry charging" }, ["pixabay"]);
-  assert.deepEqual(queries, ["gorilla", "gorilla angry charging", "ape", "silverback"]);
+  assert.deepEqual(queries, ["gorilla angry charging", "gorilla", "ape", "silverback"]);
   assert.deepEqual(found.map((c) => c.id), [2, 6, 9, 1, 3, 7, 4]);
 });
 
@@ -887,7 +887,7 @@ test("Commons normalisation filters size, duration, short-side resolution and me
   assert.equal(c.creator, "Camera & Crew"); assert.equal(c.duration, 28);
 });
 
-test("Commons requests File videos in subject, action, synonym order with tags from title, description and categories", async () => {
+test("Commons requests File videos in meaning, subject, synonym order with tags from title, description and categories", async () => {
   const f = fixture(), queries = [];
   const search = createStockSearch({ env: { REEL_CACHE: f.dir }, warnFn: fail, fetchFn: async (url, init) => {
     const u = new URL(url), q = u.searchParams.get("gsrsearch"); queries.push(q.replace(/ filetype:video$/, ""));
@@ -906,7 +906,7 @@ test("Commons requests File videos in subject, action, synonym order with tags f
     return json(commonsBody(...pages));
   } });
   const found = await search({ shows: "gorilla", stockQuery: "gorilla walking", stockSynonyms: ["ape"] }, ["wikimedia"]);
-  assert.deepEqual(queries, ["gorilla", "gorilla walking", "ape"]);
+  assert.deepEqual(queries, ["gorilla walking", "gorilla", "ape"]);
   assert.deepEqual(found.map((c) => c.id).sort(), [1, 2, 3, 5]);
   assert.doesNotMatch(found.find((c) => c.id === 2).tags, /<p>/);
   assert.equal(f.calls.downloads.length, 0);

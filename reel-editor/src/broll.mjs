@@ -9,7 +9,7 @@ import { conformStill, hasRunway } from "./runway.mjs";
 import { createStockSearch, makeStockClip } from "./broll-stock.mjs";
 import { findLibraryClip, reviewMovingClip, writeBrollCredits } from "./broll-library.mjs";
 
-export const PROMPT_VERSION = "literal-codex-v8";
+export const PROMPT_VERSION = "literal-codex-v9";
 
 let testCache;
 /** Tests get one disposable scene history and clip bank per worker, unless they supply explicit paths. */
@@ -221,10 +221,10 @@ export const PICKS_SCHEMA = {
           duration: { type: "number" }, kind: { type: "string", enum: ["action", "ambient"] },
           action: { type: "string" }, motion: { type: "string" }, endScene: { type: "string" },
           sound: { type: "string" }, soundRole: { type: "string", enum: ["impact", "movement", "none"] },
-          sequenceGroup: { type: "string" }, endsAt: WORD_REF_SCHEMA, endsBefore: WORD_REF_SCHEMA,
+          sequenceGroup: { type: "string" }, endsAt: WORD_REF_SCHEMA, endsBefore: WORD_REF_SCHEMA, need: { type: "string" },
         },
         // Optional fields stay optional here; codexExec's strictSchema makes them nullable for OpenAI.
-        required: ["stockSynonyms", "stockQuery", "line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
+        required: ["stockSynonyms", "stockQuery", "need", "line", "scene", "shows", "file", "duration", "kind", "action", "motion", "endsAt", "endsBefore"],
         additionalProperties: false,
       },
     },
@@ -247,7 +247,7 @@ export function codexStillInstructions({ aspect = "9:16", style = "", file, assi
 export function picksPrompt(options) {
   const file = options.sourcesFirst ? "" : "broll-1.png";
   const instructions = options.sourcesFirst ? "Plan only. Do not draw images or use tools. Set file to an empty string; a still is drawn later only if footage is unavailable." : codexStillInstructions(options);
-  return runwayPicksPrompt({ ...options, instructions: `${instructions}\nstockQuery: 2-4 plain search words naming a filmable subject or the story's real moving setting, such as snake on branch, coconut falling, highway driving or desert road. Never use a bare place or person name as shows. For Arizona or Albuquerque, anchor shows to exact spoken setting words such as driving or mountains and describe the implied real setting in scene and stockQuery (desert highway driving). For an ambient setting pick, action describes sustained visible setting movement, without a discrete event.\nstockSynonyms: 0 to 3 plain single words or short nouns naming the SAME subject, for example gorilla -> ape, silverback. Use [] when none apply.`, reply: PICKS_REPLY.replace('"line":N,"shows"', `"file":${JSON.stringify(file)},"stockQuery":"snake on branch","stockSynonyms":["serpent"],"line":N,"shows"`) });
+  return runwayPicksPrompt({ ...options, instructions: `${instructions}\nstockQuery: 2-4 plain search words that keep the spoken MEANING, subject plus its action or setting, such as skin cream applying (never bare cream), coconut falling, dog walking into house, desert highway driving or snake on branch. Never use a bare place or person name as shows. For Arizona or Albuquerque, anchor shows to exact spoken setting words such as driving or mountains and describe the implied real setting in scene and stockQuery (desert highway driving). For an ambient setting pick, action describes sustained visible setting movement, without a discrete event.\nstockSynonyms: 0 to 3 plain single words or short nouns naming the SAME subject in the SAME sense, for example gorilla -> ape, silverback. Never a broader category (dog -> pet, canine) or another sense (skin cream -> dessert). Use [] when none apply.`, reply: PICKS_REPLY.replace('"line":N,"shows"', `"file":${JSON.stringify(file)},"stockQuery":"snake on branch","stockSynonyms":["serpent"],"need":"a snake sliding along a branch","line":N,"shows"`) });
 }
 
 /** One planning retry fills missing moments; repeated lines cannot pretend to fill the request. */

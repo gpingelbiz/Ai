@@ -106,7 +106,7 @@ test("Runway planner uses the synthesis with ranked alternatives, literal subjec
   assert.match(p, /Preserve Greg's reactions, conviction, personal admissions and final/);
   assert.match(p, /across following caption lines/);
   assert.match(p, /1.2 and 2.5 seconds/);
-  assert.match(p, /Default: "Locked camera/);
+  assert.match(p, /Default for a watched subject: "Locked camera on a tripod/);
   assert.match(p, /"soundRole":"impact"/, "the JSON example must include the role that makes physical sound eligible");
   assert.match(p, /camera move only for a place reveal or travel/);
   assert.match(p, /positive descriptions/);
