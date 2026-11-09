@@ -30,6 +30,7 @@ export function checkBrand(b) {
   for (const k of ["stroke", "bg"]) if (b.colors?.[k] && !HEX.test(b.colors[k])) out.push(`colors.${k} must be a hex color like #000000`);
   if (b.look?.hook && !["headline", "gold", "box"].includes(b.look.hook)) out.push('look.hook is "headline", "gold" or "box"');
   if (b.look?.captions && !["reveal", "pop", "quiet", "serif"].includes(b.look.captions)) out.push('look.captions is "reveal", "pop", "quiet" or "serif"');
+  if (b.look?.captionShadow && !["soft", "strong"].includes(b.look.captionShadow)) out.push('look.captionShadow is "soft" or "strong"');
   for (const k of ["hookCase", "captionCase"]) if (b.look?.[k] && !["upper", "sentence"].includes(b.look[k])) out.push(`look.${k} is "upper" or "sentence"`);
   const hs = b.look?.hookSeconds;
   if (hs != null && hs !== "reel" && !(Number(hs) >= 1 && Number(hs) <= 60)) out.push('look.hookSeconds is a number of seconds (1-60) or "reel"');
@@ -105,7 +106,7 @@ export function brandPreset(b, { fonts = {} } = {}) {
     // quiet: the reveal timing in the body font at 600, smaller, no outline, the keyword in an accent box.
     // serif: the same in their display serif (BossBabe's and Jasmine Star's podcast captions), a touch larger.
     // Both turn the keyword colour back on: the accent box is the point.
-    captions: { ...CLIENT_CAPTIONS, ...(b.captionKeywords === "auto" ? { autoKeywords: true } : {}), style: quietCaps ? "reveal" : look.captions || "reveal", ...(look.annotate != null ? { annotate: look.annotate !== false } : {}), ...(quietCaps ? { quiet: true, keywordColorOnFootage: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
+    captions: { ...CLIENT_CAPTIONS, ...(b.captionKeywords === "auto" ? { autoKeywords: true } : {}), style: quietCaps ? "reveal" : look.captions || "reveal", ...(look.annotate != null ? { annotate: look.annotate !== false } : {}), ...(quietCaps ? { quiet: true, keywordColorOnFootage: true, fontSizeFrac: look.captions === "serif" ? 0.033 : 0.029 } : {}), ...(look.captions === "serif" ? { serif: true } : {}), ...(quietCaps && look.captionShadow === "strong" ? { quietShadow: "strong" } : {}), ...(look.captionCase ? { uppercase: look.captionCase !== "sentence" } : {}) },
     hook: {
       style: look.hook || "headline", behind: look.behind !== false,
       // looks.lockHook false lets each reel's look draw the hook; Greg's plaque would cover every one of them.
