@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { run, r3 } from "./util.mjs";
+import { openingEndingChecks } from "./ending.mjs";
 import { probe } from "./probe.mjs";
 import { hookBlockHeight } from "./placement.mjs";
 import { isPersistentScene, numberMotion, sceneDuration } from "./graphics.mjs";
@@ -462,8 +463,10 @@ export async function runPreflight(file, { plan = null, loudnessTarget = -14, lo
   const pace = pacingChecks(plan);
   items.push(...pace.items);
   if (pace.stats) measures.pacing = pace.stats;
+  const reports = openingEndingChecks(plan?.words || [], plan, meta.duration);
+  items.push(...reports.items);
   const status = items.some((i) => i.level === "fail") ? "fail" : items.length ? "warn" : "ok";
-  return { status, items, measures };
+  return { status, items, measures, opening: reports.opening, ending: reports.ending };
 }
 
 const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -472,7 +475,7 @@ export function preflightText(res) {
   const m = res.measures || {};
   const head = res.status === "ok" ? "Preflight: OK" : res.status === "warn" ? "Preflight: check these" : "Preflight: FAILED";
   const lines = [head, ""];
-  for (const i of res.items) lines.push(`${i.level === "fail" ? "FAIL" : "warn"}  ${i.message}`);
+  for (const i of res.items) lines.push(`${i.level === "fail" ? "FAIL" : i.level === "check" ? "check" : "warn"}  ${i.message}`);
   if (res.items.length) lines.push("");
   const facts = [];
   if (m.lufs != null) facts.push(`${m.lufs} LUFS`);
