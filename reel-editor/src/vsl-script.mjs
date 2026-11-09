@@ -21,6 +21,34 @@ function withoutCues(text) {
   return tidy(out);
 }
 
+/**
+ * Names and product words the speaker will say, for the caption spelling fix: capitalised words that do not start a
+ * sentence ("it's Julee", "the Highly Confident podcast"), runs of them kept as one phrase. "I" and its contractions
+ * are not names.
+ */
+export function scriptTerms(script) {
+  const found = [];
+  for (const section of script?.sections || []) {
+    for (const { text } of section.say || []) {
+      for (const sentence of String(text).split(/(?<=[.!?])\s+/)) {
+        const words = sentence.split(/\s+/).filter(Boolean);
+        const clean = words.map((raw) => raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""));
+        const named = (i) => i > 0 && /^\p{Lu}/u.test(clean[i] || "") && clean[i].length > 1 && !/^I(?:['’].*)?$/.test(clean[i]);
+        let run = [];
+        const flush = () => { if (run.length) found.push(run.join(" ")); run = []; };
+        clean.forEach((word, i) => {
+          // "Confidence on Camera Academy", "The Women in Business Retreat": a short joining word inside a name.
+          const joiner = run.length && /^(?:on|in|of|the|and|for)$/.test(word) && named(i + 1) && !/[,.;:!?]$/.test(words[i - 1]);
+          if (named(i) || joiner) run.push(word); else flush();
+          if (/[,.;:!?]$/.test(words[i])) flush();
+        });
+        flush();
+      }
+    }
+  }
+  return [...new Set(found)];
+}
+
 /** Parse CONTRACT.md's line-start labels; no client-specific vocabulary or YAML dependency. */
 export function parseVslScript(markdown) {
   const lines = String(markdown).replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n");

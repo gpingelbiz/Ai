@@ -22,7 +22,9 @@ test("VSL is calm, landscape, captioned, script-only and keeps all closing words
   assert.equal(p.captions.annotate, false);
   assert.equal(p.captions.maxKeywordsPerLine, 0);
   assert.equal(p.cuts.signOff, false);
-  assert.equal(p.graphics.mode, "overlay");
+  assert.equal(p.graphics.mode, "band"); // side panel beside the speaker, as in the YouTube long form
+  assert.equal(p.framing.enabled, true);
+  assert.equal(p.framing.max, 1); // finds the face side, never crops the shot
   assert.equal(p.graphics.scriptOnly, true);
   assert.equal(p.graphics.enabled, false);
   assert.equal(p.graphics.clearStart, 2);
@@ -149,4 +151,40 @@ test("a matched script without section timings delivers the video without stale 
   const r = f.run(); assert.equal(r.status, 0, r.stderr);
   const dest = path.join(f.delivered, fs.readdirSync(f.delivered)[0]);
   assert.deepEqual(fs.readdirSync(dest), ["take-1-2026-sample-offer-2-vsl.mp4"]);
+});
+
+test("VSL preflight skips reel-only rules but keeps them for reels", async () => {
+  const { graphicChecks } = await import("../src/preflight.mjs");
+  const { openingEndingChecks } = await import("../src/ending.mjs");
+  const vsl = loadPreset("vsl");
+  const card = { type: "headline", text: "Confidence is a skill", start: 10, duration: 7 };
+  const plan = (style, canvas) => ({ style, canvas, video: { duration: 120 }, graphics: [card], captions: [] });
+  const vslCodes = graphicChecks(plan(vsl, { width: 1920, height: 1080 })).map((i) => i.code);
+  assert.ok(!vslCodes.includes("frame-zero-hook"));
+  assert.ok(!vslCodes.includes("card-hold"), "a 7 s card is within the VSL's 8 s hold");
+  assert.ok(!vslCodes.includes("card-right-rail"));
+  const reelCodes = graphicChecks(plan(loadPreset(), { width: 1080, height: 1920 })).map((i) => i.code);
+  assert.ok(reelCodes.includes("frame-zero-hook"));
+  assert.ok(reelCodes.includes("card-hold"));
+  // The planned 2 s hold after the last word is not a loose ending; a longer silent tail still is.
+  const said = words("click the button below", 100);
+  const end = said.at(-1).end;
+  assert.ok(!openingEndingChecks(said, { style: vsl }, end + 2.2).items.some((i) => i.code === "ending-tail"));
+  assert.ok(openingEndingChecks(said, { style: vsl }, end + 4).items.some((i) => i.code === "ending-tail"));
+});
+
+test("VSL frame review asks about an offer page, not Instagram", async () => {
+  const { watchPrompt } = await import("../src/watch.mjs");
+  const exp = { plan: [], said: [] };
+  const vsl = watchPrompt({ sheets: [], exp, name: "x", format: "vsl" });
+  assert.match(vsl, /offer page/);
+  assert.doesNotMatch(vsl, /Instagram/);
+  assert.match(watchPrompt({ sheets: [], exp, name: "x" }), /Instagram/);
+  assert.equal(loadPreset("vsl").review.format, "vsl");
+});
+
+test("script names feed the caption spelling fix", async () => {
+  const { parseVslScript, scriptTerms } = await import("../src/vsl-script.mjs");
+  const md = "## S1 Open\nSAY: Hey, it's Sam.\nSAY: I made the Confidence on Camera Academy for you.\nSAY: Okay, I'm here. Join the Highly Confident podcast.\n";
+  assert.deepEqual(scriptTerms(parseVslScript(md)), ["Sam", "Confidence on Camera Academy", "Highly Confident"]);
 });

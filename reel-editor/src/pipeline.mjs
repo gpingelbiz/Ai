@@ -32,7 +32,7 @@ import { makeBroll, holdForSplit, planBrollOpen } from "./broll.mjs";
 import { makeRunwayBroll } from "./broll-runway.mjs";
 import { planBrollLayouts, planPersistentLayout } from "./layouts.mjs";
 import { isPersistentScene, makeGraphics, persistentDuckSchedule } from "./graphics.mjs";
-import { makeVslGraphics } from "./vsl-script.mjs";
+import { makeVslGraphics, parseVslScript, scriptTerms } from "./vsl-script.mjs";
 import { makeEvidence } from "./evidence.mjs";
 import { planSlams } from "./slams.mjs";
 import { makePopoutSlams, makeCutoutBroll, brollLayout } from "./cutouts.mjs";
@@ -78,7 +78,10 @@ export async function runEdit(input, opts = {}) {
   const scriptPath = opts.script ? path.resolve(opts.script) : null;
   if (scriptPath && !fs.existsSync(scriptPath)) throw new Error(`no such VSL script: ${scriptPath}`);
   if (scriptPath) preset.graphics = { ...preset.graphics, enabled: true };
-  const dict = loadDictionary(opts.dictionary);
+  const baseDict = loadDictionary(opts.dictionary);
+  // A VSL script names the speaker and the offers; the transcript prompt and the caption fix spell them its way.
+  const spoken = scriptPath ? scriptTerms(parseVslScript(fs.readFileSync(scriptPath, "utf8"))) : [];
+  const dict = spoken.length ? { ...baseDict, terms: [...spoken, ...(baseDict.terms || [])], names: [...spoken, ...(baseDict.names || [])] } : baseDict;
   let requestedCredits = [];
   try {
     const supplied = parseCredits(opts.credit, opts.creditAt);

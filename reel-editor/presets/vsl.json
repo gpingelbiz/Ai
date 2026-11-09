@@ -61,7 +61,7 @@
   "graphics": {
     "enabled": false,
     "scriptOnly": true,
-    "mode": "overlay",
+    "mode": "band",
     "clearStart": 2,
     "tail": 2.5
   },
@@ -101,6 +101,23 @@
     "enabled": false
   },
   "preflight": {
-    "enabled": true
+    "enabled": true,
+    "openMotion": false,
+    "hookCheck": false,
+    "cards": {
+      "maxHold": 8,
+      "left": 60,
+      "right": 1860,
+      "top": 40
+    }
+  },
+  "framing": {
+    "enabled": true,
+    "max": 1,
+    "faceHeight": 0.27,
+    "eyeLine": 0.42
+  },
+  "review": {
+    "format": "vsl"
   }
 }

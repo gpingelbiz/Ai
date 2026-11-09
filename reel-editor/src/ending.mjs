@@ -93,7 +93,9 @@ export function openingEndingChecks(words, plan, duration = plan?.video?.duratio
   const opening = openingReport(words, plan);
   const ending = endingReport(words, duration);
   const items = [...opening.findings];
-  if (ending) {
+  // A planned end hold (cuts.endHold, the VSL's 2 s on camera after the last word) is not a loose tail.
+  const hold = Math.max(0, +plan?.style?.cuts?.endHold || 0);
+  if (ending && !(hold && !ending.tailText && ending.tailSeconds <= hold + 0.5)) {
     const excerpt = ending.tailText.length > 100 ? `${ending.tailText.slice(0, 97)}...` : ending.tailText;
     items.push({ level: ending.tailSeconds > 4 ? "check" : "warn", code: "ending-tail", message: `ending runs ${ending.tailSeconds.toFixed(1)} s past the last point${excerpt ? ` ("${excerpt}")` : " with silence or room tone"}; trim with reel edit --end-at ${ending.lastPointEnd.toFixed(2)}` });
   }
