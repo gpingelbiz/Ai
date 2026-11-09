@@ -10,23 +10,62 @@ const FILLERS = new Set(["um", "uh", "uhm", "umm", "uhh", "erm", "hmm", "mm", "a
 const STUTTER_WORDS = new Set(["i", "the", "a", "an", "to", "and", "so", "but", "we", "you", "it", "is", "in", "of", "for", "if", "what", "when", "they", "he", "she", "my", "our", "this", "that's", "it's", "how", "why", "where", "who", "there", "that", "i'm", "we're", "you're", "they're", "just", "like"]);
 import { norm } from "./text.mjs";
 // Sign-offs: a reel ends on its last point, so a closing "thanks for watching" inside the last seconds is dropped.
-const SIGN_OFFS = ["thanks for watching", "thank you for watching", "see you in the next", "see you next time", "see you on the next", "catch you in the next", "like and subscribe", "like comment subscribe", "hit the follow", "follow for more", "link in bio", "link in my bio", "peace out", "catch you later", "that's it for today", "that's all for today", "until next time"];
+export const SIGN_OFFS = ["thanks for watching", "thank you for watching", "see you in the next", "see you next time", "see you on the next", "catch you in the next", "like and subscribe", "like comment subscribe", "hit the follow", "follow for more", "link in bio", "link in my bio", "peace out", "catch you later", "that's it for today", "that's all for today", "until next time"];
+// These conversational closers need a sentence boundary so quoted advice stays intact.
+const CONVERSATIONAL_TAILS = ["have a great day", "have a good day", "i just wanted you to have", "talk soon", "see you", "anyway", "that's it", "what's next on my plate", "hey guys", "hey everyone", "hey folks", "hi everyone", "hello everyone", "good morning", "good evening", "goodbye", "bye everyone", "what am i doing next", "what should i do next", "what was i saying", "what do i need to do next", "where was i"];
+const sentenceEnd = (text) => /[.!?][\"”’']*$/.test(String(text).trim());
+const token = (text) => norm(String(text).replace(/’/g, "'"));
+const isCta = (words) => /^(?:please )?(?:dm me|message me|send (?:me|this|it)|share (?:this|it)|comment\b|tell me\b|follow me\b)/.test(words.map((w) => token(w.text)).join(" "));
 
 /** Index of the first word of a sign-off phrase that starts inside the last `tail` seconds, else -1. */
-export function findSignOff(words, duration, { tail = 10 } = {}) {
-  const toks = words.map((w) => norm(w.text));
+export function findSignOff(words, duration, { tail = 10, conversational = true } = {}) {
+  const toks = words.map((w) => token(w.text));
+  let finalLine = words.length - 1;
+  while (finalLine > 0 && !sentenceEnd(words[finalLine - 1].text)) finalLine--;
+  // A final intentional ask is itself the point, even if small talk preceded it.
+  if (isCta(words.slice(Math.max(0, finalLine)))) return -1;
   for (let i = 0; i < toks.length; i++) {
     if (words[i].start < duration - tail) continue;
-    for (const phrase of SIGN_OFFS) {
-      const p = phrase.split(" ").map(norm);
+    for (const phrase of [...SIGN_OFFS, ...(conversational ? CONVERSATIONAL_TAILS : [])]) {
+      if (CONVERSATIONAL_TAILS.includes(phrase) && i > 0 && !sentenceEnd(words[i - 1].text) && words[i].start - words[i - 1].end < 0.8) continue;
+      // A single deliberate ask is an ending, even when it contains a closer phrase.
+      let line = i;
+      while (line > 0 && !sentenceEnd(words[line - 1].text)) line--;
+      if (isCta(words.slice(line))) continue;
+      const p = phrase.split(" ").map(token);
       if (i + p.length > toks.length) continue;
       let ok = true;
       for (let k = 0; k < p.length; k++) if (toks[i + k] !== p[k]) { ok = false; break; }
+      if (ok && CONVERSATIONAL_TAILS.includes(phrase)) {
+        // Do not mistake a quoted closer followed by more advice for the ending.
+        for (let j = i; j + 1 < words.length; j++) {
+          if (!sentenceEnd(words[j].text)) continue;
+          const rest = toks.slice(j + 1).join(" ");
+          if (![...SIGN_OFFS, ...CONVERSATIONAL_TAILS].some((p) => rest === p || rest.startsWith(`${p} `))) { ok = false; break; }
+        }
+      }
       if (ok) return i;
     }
   }
   return -1;
 }
+/** Diagnose the final ten seconds. Times use the same clock as the supplied words. */
+export function endingReport(words, duration, { tail = 10, minTail = 1.5 } = {}) {
+  const spoken = (words || []).filter((w) => !w.drop && Number.isFinite(w.start) && Number.isFinite(w.end));
+  if (!spoken.length || !Number.isFinite(duration)) return null;
+  const last = spoken.at(-1);
+  const i = findSignOff(spoken, duration, { tail });
+  if (i > 0) {
+    const point = spoken[i - 1];
+    const end = duration - last.end > minTail ? duration : last.end;
+    return { lastPointEnd: point.end, tailStart: spoken[i].start, tailSeconds: r3(end - point.end), tailText: spoken.slice(i).map((w) => w.text).join(" "), reason: "conversational tail" };
+  }
+  if (duration - last.end > minTail && last.end >= duration - tail) {
+    return { lastPointEnd: last.end, tailStart: last.end, tailSeconds: r3(duration - last.end), tailText: "", reason: "silence or room tone after the last word" };
+  }
+  return null;
+}
+
 const endsClause = (t) => /[.,!?;:]$/.test(String(t).trim());
 
 /**
@@ -83,15 +122,24 @@ export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5,
  * - silence: off | slow | medium | fast | tight (gap threshold between words; tight is the measured pacing preset:
  *   no dead air over about 0.2 s between phrases)
  * - beats: a pause after a comma, colon or list marker up to this long is a natural beat and stays (0 = off)
+ * - endAt: optional SOURCE seconds. Preserve a word crossing the boundary and its audio pad.
  * - badTakes / fillers: drop those words and force a cut around them
  * Returns { segments:[{start,end}], removed:[{start,end,reason}], words:[...with drop], originalDuration, keptDuration }.
  */
-export function planCuts(words, duration, { silence = "fast", badTakes = true, fillers = true, signOff = true, pad = 0.12, minGapCut = 0.15, minSegment = 0.3, beats = 0 } = {}) {
+export function planCuts(words, duration, { silence = "fast", badTakes = true, fillers = true, signOff = true, pad = 0.12, minGapCut = 0.15, minSegment = 0.3, beats = 0, endAt = null } = {}) {
+  if (endAt != null && (!Number.isFinite(endAt) || endAt <= 0 || endAt > duration)) throw new Error("Ending time must be within the source video.");
+  if (endAt != null && !words.some((w) => w.start < endAt)) throw new Error("Ending time falls before the first word.");
   const thr = PACE[silence] ?? PACE.fast;
   const beatAfter = (w) => /[,;:]$|^(first|second|third|so|now|look)[,]?$/i.test(String(w?.text || "").trim());
   const drop = badTakes ? findBadTakes(words) : new Array(words.length).fill(null);
+  const tailReport = signOff ? endingReport(words, duration) : null;
   if (signOff) {
-    const i = findSignOff(words, duration);
+    // Keep existing brief verbal punctuation ("That's it."). Longer tails and other
+    // recognized farewells are removed, as are the legacy canned sign-offs.
+    const legacy = findSignOff(words, duration, { conversational: false });
+    const briefPunctuation = tailReport && tailReport.tailText.split(/\s+/).map(token).join(" ") === "that's it" && words.at(-1).end - tailReport.lastPointEnd <= 1.5;
+    const i = tailReport?.reason === "conversational tail" && !briefPunctuation
+      ? words.findIndex((w) => w.start >= tailReport.tailStart) : legacy;
     if (i >= 0) for (let k = i; k < words.length; k++) drop[k] = "sign-off";
     // A recording that stops mid-word ("so go set-") ends on its last finished sentence when one is close by.
     const last = words.length - 1;
@@ -110,6 +158,12 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
       if (prevGap < 0.12 && nextGap < 0.12) return;
       drop[i] = "filler";
     });
+  }
+
+  // An explicit end wins over automatic closers, including an intentional CTA the caller selected.
+  if (endAt != null) for (let i = 0; i < words.length; i++) {
+    if (words[i].start >= endAt && words[i].end > endAt) drop[i] = "ending";
+    else if (drop[i] === "sign-off" || drop[i] === "cut-off") drop[i] = null;
   }
 
   const removed = [];
@@ -162,7 +216,18 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
     if (prev && (b - a < minSegment || (!s.forced && a - prev.end < minGapCut))) prev.end = r3(Math.max(prev.end, b));
     else out.push({ start: r3(a), end: r3(b) });
   }
-  if (!out.length) out.push({ start: 0, end: r3(duration) });
+  if (!out.length) {
+    if (endAt != null) throw new Error("Ending time leaves no spoken words.");
+    out.push({ start: 0, end: r3(duration) });
+  }
+  // Preserve the complete selected word and the existing 120 ms consonant/audio pad.
+  // Mark the entire excluded tail intentional so the audio guard cannot restore it as room noise.
+  if (endAt != null) {
+    const lastWord = words.filter((_, i) => !drop[i]).at(-1);
+    const stop = Math.min(duration, Math.max(endAt, lastWord?.end || 0) + pad, words.find((_, i) => drop[i] === "ending")?.start ?? duration);
+    out[out.length - 1].end = r3(Math.min(out.at(-1).end, stop));
+    if (out.at(-1).end < duration) removed.push({ start: out.at(-1).end, end: duration, reason: "ending" });
+  }
 
   const silences = [];
   let t = 0;
@@ -172,6 +237,9 @@ export function planCuts(words, duration, { silence = "fast", badTakes = true, f
   }
   if (duration - t > 0.001) silences.push({ start: r3(t), end: r3(duration), reason: "silence" });
 
+  if (signOff && tailReport?.reason === "silence or room tone after the last word" && out.at(-1).end < duration) {
+    removed.push({ start: out.at(-1).end, end: duration, reason: "sign-off" });
+  }
   const kept = out.reduce((acc, s) => acc + (s.end - s.start), 0);
   return {
     segments: out,

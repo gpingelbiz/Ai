@@ -29,6 +29,7 @@ Usage
   reel speaker deliver <folder> --version v                  copy the approved files
   reel speaker status <folder>                              show progress and next step
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
+  reel ending <workdir> [--json]    check the opening and ending without rendering
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
@@ -81,6 +82,8 @@ Options (edit / batch)
   --transcript <file>      skip ASR and use this words json / srt
   --engine <e>             auto (default: ElevenLabs Scribe when ELEVENLABS_API_KEY is set, else Whisper) | faster-whisper | elevenlabs | hyperframes
   --model <m>              whisper model: large-v3-turbo (default), small (fast, mis-hears more), large-v3
+  --end-at <seconds>      trim at a finished timeline time using saved cuts.json
+  --end-after "<phrase>"  trim after the last matching spoken phrase
   --no-verify              skip the second-opinion transcript and review.txt
   --language <code>        default en
   --hook "<text>"          hook title for the first 3s (default: the opening phrase)   --no-hook
@@ -211,6 +214,8 @@ const EDIT_OPTIONS = {
   "cta-duration": { type: "string" },
   "cta-style": { type: "string" },
   "cta-position": { type: "string" },
+  "end-at": { type: "string" },
+  "end-after": { type: "string" },
   silence: { type: "string" },
   "no-bad-takes": { type: "boolean" },
   "no-fillers": { type: "boolean" },
@@ -360,6 +365,25 @@ export async function main(argv) {
       const r = await runEdit(positionals[0], opts);
       if (r.output) console.log(r.output);
       return;
+    }
+    case "ending": {
+      const { opts, positionals } = parse(rest, { json: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const wd = path.resolve(positionals[0]);
+      const plan = readJSON(path.join(wd, "plan.json"));
+      const { openingEndingChecks } = await import("./ending.mjs");
+      const { remapWords } = await import("./cuts.mjs");
+      const cuts = fs.existsSync(path.join(wd, "cuts.json")) ? readJSON(path.join(wd, "cuts.json")) : null;
+      const words = plan.words || (cuts ? remapWords(cuts.words || readJSON(path.join(wd, "words.json")).words, cuts.segments) : []);
+      const result = openingEndingChecks(words, plan);
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        console.log(`First spoken word: ${result.opening.firstWordStart == null ? "unavailable" : `${result.opening.firstWordStart.toFixed(2)} s`}`);
+        console.log(`First caption: ${result.opening.firstCaptionText || "unavailable"}`);
+        console.log(result.ending ? `Last point ends at ${result.ending.lastPointEnd.toFixed(2)} s. ${result.ending.reason}.` : "Ending looks clean.");
+        for (const item of result.items) console.log(`${item.level}  ${item.message}`);
+      }
+      return result;
     }
     case "batch": {
       const { opts, positionals } = parse(rest);
