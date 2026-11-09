@@ -64,7 +64,15 @@ function setup(t, { changedRuntime = false, fail = "" } = {}) {
     }
     if (args[0]?.endsWith("bootstrap-runtime.sh")) {
       if (fail === "bootstrap") throw new Error("bootstrap interrupted");
-      assert.deepEqual(args.slice(1), ["--app", cwd, "--home", home]);
+      // bootstrap-runtime.sh reads the release.json as its only argument and writes only .tools-complete.
+      assert.deepEqual(args.slice(1), [path.join(cwd, "release.json")]);
+      assert.ok(fs.existsSync(args[1]), "the release.json is in place before the tools step");
+      put(path.join(e.REEL_RUNTIME, ".tools-complete"), "");
+    }
+    if (args[0]?.endsWith("scripts/runtime.mjs")) {
+      assert.deepEqual(args.slice(1), ["speech", path.join(cwd, "release.json")]);
+      assert.ok(fs.existsSync(path.join(e.REEL_RUNTIME, ".tools-complete")), "speech runs after the tools step");
+      assert.equal(e.HF_HUB_OFFLINE, undefined, "the speech model download is not forced offline");
       put(path.join(e.REEL_RUNTIME, ".complete"), "ready");
     }
     if (args.includes("doctor") && fail === "activation") throw new Error("activation failed");
@@ -90,7 +98,12 @@ test("release update verifies and stages offline, swaps links, preserves every c
   assert.ok(!fs.existsSync(txFile(u)));
   assert.ok(!fs.existsSync(path.join(u.state, "update.lock")));
   assert.equal(u.calls.filter((c) => c.args.includes("doctor")).length, 1);
-  assert.ok(u.calls.filter((c) => c.cmd.endsWith("/bin/node")).every((c) => c.env.REEL_RELEASE === NEXT && c.env.HF_HUB_OFFLINE === "1"));
+  assert.ok(u.calls.filter((c) => c.cmd.endsWith("/bin/node") && !c.args[0].endsWith("scripts/runtime.mjs")).every((c) => c.env.REEL_RELEASE === NEXT && c.env.HF_HUB_OFFLINE === "1"));
+  // The kit installer's repair path (scripts/runtime.mjs installApp) reads this marker as JSON.
+  const marker = readJSON(path.join(u.dir(NEXT), ".complete"));
+  const manifest = readJSON(path.join(u.dir(NEXT), "release.json"));
+  assert.equal(marker.manifest, sha(JSON.stringify(manifest)));
+  assert.equal(marker.artifact, manifest.artifact.sha256);
   for (const p of protectedFiles) assert.equal(fs.readFileSync(path.join(u.home, p), "utf8"), `private ${p}`);
 });
 
@@ -106,6 +119,19 @@ test("a changed runtime is bootstrapped in its own folder before any smoke check
   const index = u.calls.findIndex((c) => c.args[0]?.endsWith("bootstrap-runtime.sh"));
   assert.ok(index >= 0); assert.ok(u.calls.slice(0, index).every((c) => !c.args[0]?.endsWith("client-smoke.mjs")));
   assert.ok(fs.existsSync(path.join(u.base, "runtime", pinned.id, ".complete")));
+  const speech = u.calls.findIndex((c) => c.args[0]?.endsWith("scripts/runtime.mjs") && c.args[1] === "speech");
+  assert.ok(speech > index, "Python, Whisper and the speech model are prepared after the tools");
+  assert.ok(fs.existsSync(path.join(u.base, "runtime", "rt-next", ".complete")));
+});
+
+test("the updater calls the real tools and speech steps the way they read their arguments", () => {
+  // The fake run above only checks what the updater sends; these pin what the real scripts expect.
+  const boot = fs.readFileSync(path.join(PKG_ROOT, "scripts/bootstrap-runtime.sh"), "utf8");
+  assert.match(boot, /^MANIFEST="\$\{1:\?/m);
+  assert.doesNotMatch(boot, /--app|--home/);
+  const rt = fs.readFileSync(path.join(PKG_ROOT, "scripts/runtime.mjs"), "utf8");
+  assert.match(rt, /const \[action, file, \.\.\.args\] = process\.argv\.slice\(2\)/);
+  assert.match(rt, /if \(action === "speech"\) return prepareSpeech\(home, m\)/);
 });
 
 for (const fail of ["smoke", "activation", "bootstrap"]) test(`failed ${fail} keeps the old editor and suppresses the failed id`, async (t) => {

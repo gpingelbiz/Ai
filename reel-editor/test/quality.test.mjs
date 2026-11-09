@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alignWords } from "../src/align.mjs";
+import { alignWords, savedAlignmentFits } from "../src/align.mjs";
 import { fixPrompt, validateEdits, applyEdits, fixHints } from "../src/correct.mjs";
 import { graphicChecks, layoutChecks, preflightText, describePreflight, SAFE } from "../src/preflight.mjs";
 
@@ -174,4 +174,31 @@ test("a plan with no cards receives no new graphics warnings", () => {
 test("card preflight: the progress rail is not a card (no long-hold or coverage warning for its lifetime)", () => {
   const rail = { type: "progress", start: 0, duration: 14.268, placement: { x: 86, y: 200, w: 814, h: 140, at: "top" }, items: [{ line: 1, label: "AT A JAIL" }, { line: 2, label: "SALES" }], pulses: [{ at: 8.1 }, { at: 12.9 }] };
   assert.deepEqual(graphicChecks(cardPlan([rail], { video: { duration: 25.5 } })), []);
+});
+
+test("forced alignment: one word thrown seconds away keeps its own timing instead of passing on a good median", () => {
+  const ours = [W("so", 0, 0.2), W("the", 0.2, 0.4), W("team", 0.4, 0.7), W("said", 0.7, 1.0), W("no", 1.0, 1.3)];
+  const theirs = ours.map((w) => ({ text: w.text, start: w.start + 0.02, end: w.end + 0.02 }));
+  theirs[2] = { text: "team", start: 20.4, end: 20.7 };
+  const r = alignWords(ours, theirs);
+  assert.ok(r);
+  assert.equal(r.kept, 1);
+  assert.ok(r.words[2].start < 1, "the outlier stays near its own place");
+  assert.ok(r.maxShift < 1);
+});
+
+test("a saved alignment is reused for the same audio and text, even after its own times were saved into words.json", () => {
+  const source = { size: 10, mtimeMs: 5 };
+  const before = [W("so", 0, 0.2), W("team", 0.2, 0.5)];
+  const aligned = [W("so", 0.05, 0.2), W("team", 0.25, 0.5)];
+  const saved = { key: "x", source, result: { words: aligned } };
+  // The next edit reads words.json, which now holds the aligned times: same text, same audio, no new paid call.
+  assert.equal(savedAlignmentFits(saved, aligned, { source }), true);
+  assert.equal(savedAlignmentFits(saved, before, { source }), true);
+  assert.equal(savedAlignmentFits(saved, [W("so", 0, 0.2), W("teams", 0.2, 0.5)], { source }), false, "changed text aligns again");
+  assert.equal(savedAlignmentFits(saved, aligned, { source: { size: 11, mtimeMs: 5 } }), false, "a different clip aligns again");
+  // Older saves have no source: trusted only when words.json itself was reused for the same clip.
+  assert.equal(savedAlignmentFits({ key: "old", result: { words: aligned } }, aligned, { reusedWords: true }), true);
+  assert.equal(savedAlignmentFits({ key: "old", result: { words: aligned } }, aligned, { reusedWords: false }), false);
+  assert.equal(savedAlignmentFits(null, aligned, { source }), false);
 });

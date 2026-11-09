@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { initStudio, loadStudio } from "../src/content-studio.mjs";
 import { PKG_ROOT } from "../src/util.mjs";
 import { writeRoutine, routinePrompt, dailyPostsPrompt, writeRoutineReceipt, routineReceiptCommand, verifyRoutines, openRoutineSetup, allowHeartbeatCommands } from "../src/studio-routine.mjs";
+import { routineIssues } from "../src/studio-health.mjs";
 import { ROUTINE_TASKS, routineSetupFile, heartbeat, heartbeatCommand, checkHeartbeats, discoverHeartbeat } from "../src/heartbeat.mjs";
 
 const now = new Date("2026-11-08T12:00:00Z");
@@ -240,4 +241,26 @@ test("Claude download uses no package manager and checks the person's Applicatio
   const file = path.join(s.home, ".claude", "settings.json"); fs.writeFileSync(file, "{broken");
   assert.equal(allowHeartbeatCommands({ home: s.home }), false);
   assert.equal(fs.readFileSync(file, "utf8"), "{broken");
+});
+
+test("health reads the heartbeat file the routine writer saves, through start, done, start and fail", (t) => {
+  const s = fixture(t), file = path.join(s.paths.root, "heartbeat.json");
+  fs.rmSync(path.join(s.paths.root, ".check-run"), { force: true }); // ordinary daily runs, after setup
+  const issues = (at) => routineIssues(read(file), { now: at, tz: "UTC", expected: ["daily-posts"] });
+  heartbeat(s.paths.root, "start", "daily-posts", { now });
+  assert.match(issues(now)[0], /daily posts routine has not finished/);
+  heartbeat(s.paths.root, "done", "daily-posts", { now });
+  assert.deepEqual(issues(now), []);
+  // The next run has started but not finished: the earlier finish still counts.
+  const later = new Date("2026-11-08T18:00:00Z");
+  heartbeat(s.paths.root, "start", "daily-posts", { now: later });
+  assert.deepEqual(issues(later), []);
+  heartbeat(s.paths.root, "fail", "daily-posts", { now: later, reason: "Metricool did not answer." });
+  assert.match(issues(later)[0], /needs attention\. Metricool did not answer\./);
+  // A failure stays visible while the following run is still going.
+  heartbeat(s.paths.root, "start", "daily-posts", { now: new Date("2026-11-08T19:00:00Z") });
+  assert.match(issues(new Date("2026-11-08T19:05:00Z"))[0], /Metricool did not answer/);
+  // Only a finish newer than the failure clears it.
+  heartbeat(s.paths.root, "done", "daily-posts", { now: new Date("2026-11-08T19:10:00Z") });
+  assert.deepEqual(issues(new Date("2026-11-08T19:15:00Z")), []);
 });

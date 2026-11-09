@@ -354,3 +354,22 @@ test("legacy client studios keep raw intake and the legacy publisher by default"
   assert.match(source, /publish: \{ mode: "off" \}/);
   assert.doesNotMatch(source, /publisher: "claude"|rawIntake: false/);
 });
+
+// Release kits used to skip the denoiser: the step sat inside the legacy branch of install.sh.
+test("release installs get the DeepFilterNet denoiser step, outside the legacy branch", () => {
+  const sh = fs.readFileSync(path.join(PKG_ROOT, "install.sh"), "utf8");
+  const legacyEnd = sh.indexOf("fi # legacy tools and code"), step = sh.indexOf('bash "$APP/scripts/install-deepfilter.sh"');
+  assert.ok(legacyEnd > 0 && step > legacyEnd, "the denoiser step runs after the release and legacy branches join");
+  assert.equal(sh.split('scripts/install-deepfilter.sh" >/dev/null').length, 2, "one denoiser step");
+});
+
+test("the DeepFilterNet download is refused when its bytes do not match the pinned checksum", { skip: process.platform !== "darwin" || process.arch !== "arm64" }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dfn-")); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // A fake curl writes the wrong bytes to the -o file; nothing reaches the network.
+  fs.mkdirSync(path.join(dir, "bin"));
+  fs.writeFileSync(path.join(dir, "bin/curl"), '#!/bin/bash\nwhile [ $# -gt 0 ]; do [ "$1" = -o ] && { printf "#!/bin/sh\\nexit 0\\n" > "$2"; }; shift; done\n', { mode: 0o755 });
+  const r = spawnSync("/bin/bash", [path.join(PKG_ROOT, "scripts/install-deepfilter.sh")], { encoding: "utf8", env: { PATH: `${dir}/bin:/usr/bin:/bin`, HOME: dir, REEL_CACHE: path.join(dir, "cache") } });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /did not match its checksum/);
+  assert.ok(!fs.existsSync(path.join(dir, "cache/bin/deep-filter")));
+});

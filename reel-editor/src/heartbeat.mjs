@@ -18,6 +18,11 @@ const read = (file, fallback) => {
   }
   catch (e) { if (e.code === "ENOENT") return fallback; throw new Error("The routine record could not be read. Open Reels setup and try again."); }
 };
+/** Health reads lastDone and lastFail; they survive the next start so a running routine still shows its last finish. */
+const lastRuns = (r = {}) => ({
+  ...(r.lastDone || r.status === "done" ? { lastDone: r.lastDone || r.at } : {}),
+  ...(r.lastFail || r.status === "fail" ? { lastFail: r.lastFail || r.at, ...(r.reason ? { reason: r.reason } : {}) } : {}),
+});
 const readHeartbeat = (file) => {
   const state = read(file, { tasks: {} });
   if (!state.tasks || typeof state.tasks !== "object" || Array.isArray(state.tasks)) throw new Error("The routine record could not be read. Open Reels setup and try again.");
@@ -48,7 +53,7 @@ export function checkHeartbeats(studioRoot, { now = new Date() } = {}) {
     const state = readHeartbeat(file);
     for (const id of check.tasks) {
       // Invalidate in flight work and earlier proof when the person asks for a fresh check.
-      state.tasks[id] = { status: "pending", nonce: setup.nonce, at: check.at };
+      state.tasks[id] = { ...lastRuns(state.tasks[id]), status: "pending", nonce: setup.nonce, at: check.at };
     }
     // Arm first so an interrupted save still leaves the next run in discovery.
     writeJSON(path.join(paths.root, ".check-run"), check);
@@ -73,13 +78,13 @@ export function heartbeat(studioRoot, action, task, { reason = "", now = new Dat
     const at = now.toISOString();
     let record;
     if (action === "start") {
-      record = { nonce, status: "started", at, startedAt: at, checkRun: !!check, checkId: check?.id || null };
+      record = { ...lastRuns(previous), nonce, status: "started", at, startedAt: at, checkRun: !!check, checkId: check?.id || null };
       if (previous.checkDone?.nonce === nonce) record.checkDone = previous.checkDone;
     } else {
       if (previous.status !== "started" || previous.nonce !== nonce) throw new Error("Start the routine check before finishing it.");
       if (previous.checkRun && (!check || previous.checkId !== check.id)) throw new Error("Open Reels setup and start the routine check again.");
       if (action === "done" && previous.checkRun && !previous.discoveredAt) throw new Error("Finish discovery before marking the routine check done.");
-      record = { ...previous, status: action, at };
+      record = { ...previous, status: action, at, [action === "done" ? "lastDone" : "lastFail"]: at };
       if (action === "fail") record.reason = reason.trim();
       if (action === "done" && previous.checkRun) record.checkDone = { nonce, id: check.id, at };
     }
