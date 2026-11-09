@@ -17,6 +17,7 @@ RAW_BROLL="${REEL_WATCH_RAW_BROLL:-$HOME/Reels/raw-broll}"
 RAW_CAROUSEL="${REEL_WATCH_RAW_CAROUSEL:-$HOME/Reels/raw-carousel}"
 RAW_LONG="${REEL_WATCH_RAW_LONG:-$HOME/Reels/raw-long}"
 RAW_YOUTUBE="${REEL_WATCH_RAW_YOUTUBE:-$HOME/Reels/raw-youtube}"
+RAW_VSL="${REEL_WATCH_RAW_VSL:-$HOME/Reels/raw-vsl}"
 RAW_RUNWAY="${REEL_WATCH_RAW_RUNWAY:-$HOME/Reels/raw-runway}"
 RAW_OWN_BROLL="${REEL_WATCH_RAW_OWN_BROLL:-$HOME/Reels/raw-own-broll}"
 MUSIC="${REEL_WATCH_MUSIC:-$HOME/Reels/music}"
@@ -58,13 +59,14 @@ render() {
     <key>REEL_WATCH_RAW_CAROUSEL</key><string>$(xml "$RAW_CAROUSEL")</string>
     <key>REEL_WATCH_RAW_LONG</key><string>$(xml "$RAW_LONG")</string>
     <key>REEL_WATCH_RAW_YOUTUBE</key><string>$(xml "$RAW_YOUTUBE")</string>
+    <key>REEL_WATCH_RAW_VSL</key><string>$(xml "$RAW_VSL")</string>
     <key>REEL_WATCH_RAW_RUNWAY</key><string>$(xml "$RAW_RUNWAY")</string>
     <key>REEL_WATCH_RAW_OWN_BROLL</key><string>$(xml "$RAW_OWN_BROLL")</string>
     <key>REEL_WATCH_MUSIC</key><string>$(xml "$MUSIC")</string>
     <key>REEL_WATCH_DONE</key><string>$(xml "$DONE")</string>
   </dict>
   <key>WatchPaths</key>
-  <array><string>$(xml "$RAW")</string><string>$(xml "$RAW_BROLL")</string><string>$(xml "$RAW_CAROUSEL")</string><string>$(xml "$RAW_LONG")</string><string>$(xml "$RAW_YOUTUBE")</string><string>$(xml "$RAW_RUNWAY")</string><string>$(xml "$RAW_OWN_BROLL")</string></array>
+  <array><string>$(xml "$RAW")</string><string>$(xml "$RAW_BROLL")</string><string>$(xml "$RAW_CAROUSEL")</string><string>$(xml "$RAW_LONG")</string><string>$(xml "$RAW_YOUTUBE")</string><string>$(xml "$RAW_VSL")</string><string>$(xml "$RAW_RUNWAY")</string><string>$(xml "$RAW_OWN_BROLL")</string></array>
   <key>RunAtLoad</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>$(xml "$LOG")</string>
@@ -84,8 +86,8 @@ if [ "${1:-}" = "--dry-run" ]; then
   exit 0
 fi
 
-mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$RAW_LONG" "$RAW_YOUTUBE" "$RAW_RUNWAY" "$RAW_OWN_BROLL" "$MUSIC" "$(dirname "$PLIST")"
+mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$RAW_LONG" "$RAW_YOUTUBE" "$RAW_VSL" "$RAW_RUNWAY" "$RAW_OWN_BROLL" "$MUSIC" "$(dirname "$PLIST")"
 mv "$tmp" "$PLIST"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
-echo "installed $LABEL: drop clips in $RAW (reel), $RAW_BROLL (reel with b-roll), $RAW_CAROUSEL (carousel) , $RAW_LONG (long form) or $RAW_YOUTUBE (whole video for YouTube); results go to $DONE"
+echo "installed $LABEL: drop clips in $RAW (reel), $RAW_BROLL (reel with b-roll), $RAW_CAROUSEL (carousel) , $RAW_LONG (long form), $RAW_YOUTUBE (whole video for YouTube) or $RAW_VSL (VSL); results go to $DONE"

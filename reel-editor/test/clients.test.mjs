@@ -15,7 +15,7 @@ test("client paths: a root of its own under the clients folder, finished reels i
   const p = clientPaths(brand, { REEL_CLIENTS: "/x/clients", REEL_CLIENTS_DESKTOP: "/d/Clients" });
   assert.equal(p.root, "/x/clients/jane-doe");
   assert.equal(p.desktop, "/d/Clients/Jane Doe");
-  assert.equal(p.drops.length, 6);
+  assert.equal(p.drops.length, 7);
   assert.equal(p.label, "com.pingel.reel-watch.client.jane-doe");
 });
 
@@ -68,7 +68,7 @@ test("the watcher edits Greg's drops as Greg and a client's drops with the clien
   const greg = path.join(T, "greg");
   const env = { ...process.env, HOME: T, REEL_WATCH_FAST: "1", REEL_WATCH_ROOT: greg, REEL_CLIENTS: path.join(T, "clients"), REEL_WATCH_DONE: "/greg/Desktop/Reels" };
   delete env.REEL_PRESET; delete env.REEL_CLIENT; delete env.REEL_BROLL_ENGINE;
-  for (const [dir] of DROP_FOLDERS) env[{ raw: "REEL_WATCH_RAW", "raw-broll": "REEL_WATCH_RAW_BROLL", "raw-carousel": "REEL_WATCH_RAW_CAROUSEL", "raw-long": "REEL_WATCH_RAW_LONG", "raw-youtube": "REEL_WATCH_RAW_YOUTUBE", "raw-runway": "REEL_WATCH_RAW_RUNWAY" }[dir]] = path.join(greg, dir);
+  for (const [dir] of DROP_FOLDERS) env[{ raw: "REEL_WATCH_RAW", "raw-broll": "REEL_WATCH_RAW_BROLL", "raw-carousel": "REEL_WATCH_RAW_CAROUSEL", "raw-long": "REEL_WATCH_RAW_LONG", "raw-youtube": "REEL_WATCH_RAW_YOUTUBE", "raw-vsl": "REEL_WATCH_RAW_VSL", "raw-runway": "REEL_WATCH_RAW_RUNWAY" }[dir]] = path.join(greg, dir);
   const p = clientPaths(brand, { REEL_CLIENTS: env.REEL_CLIENTS, REEL_CLIENTS_DESKTOP: path.join(T, "Desktop") });
   for (const d of p.drops) fs.mkdirSync(d.dir, { recursive: true });
   fs.writeFileSync(p.env, clientEnv({ ...brand, brollEngine: "runway" }, p));

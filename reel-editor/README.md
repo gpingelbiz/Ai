@@ -113,6 +113,18 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 `presets/pingel-brand.json` is the default and carries the brand look. `presets/clean.json` is plain subtitles. Any key in `presets/_defaults.json` can be overridden in a preset or passed as a path: `--preset my-look.json`.
 
+## VSL sales videos
+
+Drop a recording into `~/Desktop/Reels/Raw - VSL` (shortcut to `~/Reels/raw-vsl`). Each client's `~/Desktop/Reels/Clients/<Name>/Raw - VSL` points to that client's `raw-vsl`. Re-run the installer to add Greg's shortcut and watcher path; re-run `node scripts/client.mjs add their-brand.json` for an existing client's shortcut and launchd path. The scanner also creates `raw-vsl` in existing client roots.
+
+VSL always uses `--preset vsl --canvas landscape`: clean sentence-case lower-band captions, gentle silence cuts with at least 0.35 s of breath between phrases, false-start/retake removal, closing words preserved (`cuts.signOff: false`), and a 2 s final hold from the source when available. Leave at least 2 s of footage after the final word when recording. Client colors and fonts come from the active client `REEL_PRESET`; hooks, music, zooms, reel CTAs and the Instagram hook/post-copy pass are off. Short-form filename tags are ignored in this folder.
+
+Name the recording with its VSL Builder project id, for example `2026-sample-offer.mov` or `take-1 #vsl-2026-sample-offer.mov`. Lookup searches `${REEL_VSL_PROJECTS:-~/Clients}/*/vsl/projects/<project-id>/04-script/`, uses the newest `final_script` line in `approvals.jsonl`, and otherwise selects the highest `script.vNNN.md`. Duplicate project ids across clients are treated as ambiguous. Without a match, the edit has no cards and the delivered folder includes `No script found.txt` with naming instructions.
+
+Finished videos land in a new `<date> VSL <n>/` under the usual delivery root (Desktop/Reels after install, or the client's Desktop root). Script sections supply `chapters.txt` beside the video, in `mm:ss S1 Title` format, from the planner's `vsl-sections.json` on the finished timeline. Work files stay in `~/Reels/videos/<name>-vsl/` (or the client's `videos/`). `REEL_WATCH_RAW_VSL` overrides Greg's input folder. Originals stay in the drop folder; rename to retry.
+
+By hand: `reel edit recording.mov --preset vsl --canvas landscape [--script script.md]`. Script parsing, alignment and SCREEN cards are supplied by the VSL script planner; `graphics.scriptOnly` prevents automatic card planning, and cards leave the first 2 s and last 2.5 s clear.
+
 ### One long recording into several reels
 
 `reel clips <long video> [--count 5] [--plan-only] [--replan]` transcribes the whole recording once, has headless Claude pick up to `count` windows of 30-90 s (each starting where a thought begins and ending on its payoff, scored 0-100 for how well it would hold a cold viewer, with a hook written for each), cuts each window out of the source with the hardware encoder and runs the normal edit on it with its slice of the transcript. `clips.json` in the work dir lists the windows, scores and outputs; `--plan-only` stops after the pick, `--replan` picks again, `--auto-hook` uses the opening line instead of Claude's hook. Every edit option applies to each clip.

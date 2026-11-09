@@ -51,10 +51,15 @@ ${folders}`], { env: { HOME: home, PATH: `${bin}:${process.env.PATH}`, TEST_APP:
   const shortcut = path.join(home, "Desktop", "Reels", "Raw - My B-roll clips");
   assert.equal(fs.readlinkSync(shortcut), path.join(home, "Reels", "raw-own-broll"));
   assert.ok(fs.statSync(shortcut).isDirectory());
+  const vsl = path.join(home, "Desktop", "Reels", "Raw - VSL");
+  assert.equal(fs.readlinkSync(vsl), path.join(home, "Reels", "raw-vsl"));
+  assert.ok(fs.statSync(vsl).isDirectory());
   const page = fs.readFileSync(path.join(home, "Desktop", "Reels", "B-roll shot list.html"), "utf8");
   assert.match(page, /coffee/); assert.doesNotMatch(page, /jungle-reel|gorilla|coconut/);
   const plist = fs.readFileSync(path.join(home, "Library", "LaunchAgents", "com.pingel.reel-watch.plist"), "utf8");
   assert.match(plist, /<key>REEL_WATCH_RAW_OWN_BROLL<\/key>/);
+  assert.match(plist, /<key>REEL_WATCH_RAW_VSL<\/key>/);
+  assert.ok(plist.slice(plist.indexOf("<key>WatchPaths</key>")).includes(path.join(home, "Reels", "raw-vsl")));
   assert.ok(plist.slice(plist.indexOf("<key>WatchPaths</key>")).includes(path.join(home, "Reels", "raw-own-broll")));
 });
 
