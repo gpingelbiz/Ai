@@ -289,7 +289,7 @@ export function kitSendOutMessage(b, { studio = false, release, dev = false } = 
     `3. Before you install, have your Claude Pro or Max account ready${studio ? ", plus a Metricool account with your Instagram connected" : ""}. The Sign up here folder has every link.`,
     "4. After the install, fill in your own brand guide with Claude Code. The guide has the exact words to paste.",
     "",
-    ...(studio ? ["Use only Desktop/Reels: film, drop in a Raw folder, watch the finished reel, then drag it to Publish. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open.", "At setup, open the Code tab in Claude, paste the copied prompt and press Return. Claude turns on reel-publish and daily-posts. Carousels and statics are made and scheduled at 6 AM and noon. You can press Run now on daily-posts. Choose Always allow on each question.", ""] : []),
+    ...(studio ? ["Use only Desktop/Reels: film, drop in a Raw folder, watch the finished reel, then drag it to Publish. The Claude app schedules it within the hour during posting hours. Keep your Mac on and the Claude app open.", "After your test reel, a setup page opens in your browser. It connects Claude and Metricool, sets your posting times and turns on the two Claude routines. It saves as you go; type reel setup in Terminal to open it again. Carousels and statics start once your brand guide is finished, then they are made and scheduled at 6 AM and noon.", ""] : []),
     "Text me if you get stuck.",
     "Greg",
     "",
