@@ -57,6 +57,8 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "You have a kit of display elements. Pick the right one for each moment from what is being said, so the reel keeps changing and every graphic matches its words. Reply with JSON only.",
     "",
     "A. features: punchy phrases shown as big glowing capitals under the speaker's chin, built word by word. 2 to 7 consecutive words that read well alone. Fields: from, to (word indexes, inclusive), key (the index shown in gold), br (index that starts line two, or null). Each line holds at most 16 characters including spaces.",
+    "   hero: use variant \"hero\" when one word carries the phrase. Add hero (its word index inside from..to, at most 9 characters). It stands alone in gold at twice the size; the exact spoken words before and after each form one small support line, at most 16 characters each. Up to three lines, e.g. YOUR MOST / EXPENSIVE / HABIT. No br or extra key needed.",
+    "   swap: use variant \"swap\" only when Greg literally contrasts a wrong idea with a right one (e.g. IT'S NOT LUCK / IT'S WORK). Add wrong and right (distinct word indexes inside from..to, wrong before right). Both words must be spoken in the phrase; do not invent a contrast. The wrong word strikes and dims when the right word is said; right lands in gold. Keep one or two lines of at most 16 characters using br.",
     "B. icons: a 3D icon beside the speaker on a spoken word. Fields: word (index), icon (name). The icon must show what that word literally means here. Never the same icon twice in a row.",
     "C. overlays, over the speaker in the band under the chin:",
     "   notify: a message card, for a short line someone says or texts (a lead, client, prospect). Fields: type \"notify\", from, to (the quoted spoken words, at most 9), who (\"Lead\", \"Client\", \"Prospect\", at most 12 characters), icon (optional name, e.g. text-message, phone-alert).",
@@ -145,9 +147,22 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
     if (o.type === "stamp") { const w = o.word ?? o.from; if (inRange(w) && afterHook(w) && punchWord(words[w].text) && claim(w, w)) overlays.push({ type: "stamp", from: w, to: w }); continue; }
     if (span(o, 9) && claim(o.from, o.to)) overlays.push({ type: "notify", from: o.from, to: o.to, who: short(o.who, 12) || "Lead", icon: icon(o.icon) || (names.has("text-message") ? "text-message" : null) });
   }
-  const features = (picks.features || []).filter((f) => span(f, 8) && claim(f.from, f.to))
-    .map((f) => ({ from: f.from, to: f.to, key: within(f, f.key) ? f.key : null, br: inRange(f.br) && f.br > f.from && f.br <= f.to ? f.br : null }))
-    .filter((f) => fitsTwoLines(words, f));
+  const features = [];
+  for (const f of picks.features || []) {
+    if (!span(f, 8)) continue;
+    const variant = f.variant ?? (f.hero != null ? "hero" : f.wrong != null || f.right != null ? "swap" : null);
+    const out = { from: f.from, to: f.to, key: within(f, f.key) ? f.key : null, br: within(f, f.br) && f.br > f.from ? f.br : null };
+    if (variant && (f.to <= f.from || f.to - f.from >= 7)) continue;
+    if (variant === "hero") {
+      if (!within(f, f.hero) || !norm(words[f.hero].text) || featWord(words[f.hero].text).length > 9 || lineChars(words, f.from, f.hero - 1) > 16 || lineChars(words, f.hero + 1, f.to) > 16) continue;
+      Object.assign(out, { variant, hero: f.hero, key: f.hero, br: null });
+    } else if (variant === "swap") {
+      if (!within(f, f.wrong) || !within(f, f.right) || f.wrong >= f.right || !norm(words[f.wrong].text) || !norm(words[f.right].text) || norm(words[f.wrong].text) === norm(words[f.right].text)) continue;
+      Object.assign(out, { variant, wrong: f.wrong, right: f.right, key: f.right });
+      if (!fitsTwoLines(words, out)) continue;
+    } else if (variant || !fitsTwoLines(words, out)) continue;
+    if (claim(f.from, f.to)) features.push(out);
+  }
   const busy = (i) => [...scenes, ...overlays].some((x) => i >= x.from && i <= x.to);
   let last = "";
   const icons = (picks.icons || []).filter((p) => inRange(p.word) && names.has(p.icon) && afterHook(p.word) && !busy(p.word))
@@ -160,6 +175,21 @@ const lineChars = (words, from, to) => words.slice(from, to + 1).map((w) => feat
 export function fitsTwoLines(words, f, max = 16) {
   if (f.br == null) return lineChars(words, f.from, f.to) <= max;
   return lineChars(words, f.from, f.br - 1) <= max && lineChars(words, f.br, f.to) <= max;
+}
+
+/**
+ * Size variant rows (0.72 em per character: Inter 760 capitals plus tracking, the same measure that fits a 16-character
+ * line at the feature size) and reserve their line height plus the 8px entrance.
+ */
+function featureLayout(words, f, size, w, H) {
+  if (!f.variant) return { size, h: 0.07 * H };
+  const hero = f.variant === "hero";
+  const lengths = hero
+    ? [lineChars(words, f.from, f.hero - 1), lineChars(words, f.hero, f.hero) * 2, lineChars(words, f.hero + 1, f.to)].filter(Boolean)
+    : f.br == null ? [lineChars(words, f.from, f.to)] : [lineChars(words, f.from, f.br - 1), lineChars(words, f.br, f.to)];
+  size = Math.max(1, Math.min(size, Math.floor(w / (Math.max(...lengths) * 0.72))));
+  const h = Math.ceil(size * ((lengths.length + (hero ? 1 : 0)) * 1.08 + (lengths.length - 1) * 0.04) + 8);
+  return { size, ...(hero ? { heroSize: size * 2 } : {}), h };
 }
 
 /** The largest face in each detected frame across [t0, t1]. */
@@ -222,7 +252,8 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
     let f = featAt.get(i), o = overAt.get(i);
     const s = sceneAt.get(i);
     // No room under the chin (a close zoom): a feature line becomes subtitles, an overlay is left out.
-    if (f && !roomy(words[f.from].start - 0.05, words[f.to].end + 0.35, 0.07)) f = null;
+    const featureBox = f ? featureLayout(words, f, featSize, Math.round(0.58 * W), H) : null;
+    if (f && !roomy(words[f.from].start - 0.05, words[f.to].end + 0.35, featureBox.h / H)) f = null;
     if (o && !roomy(words[o.from].start - 0.1, words[o.to].end + 0.7, o.type === "stamp" ? 0.08 : 0.075)) o = null;
     if (o) {
       flush();
@@ -238,8 +269,17 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
       const ix = Array.from({ length: g.to - g.from + 1 }, (_, k) => g.from + k);
       const start = r3(words[g.from].start - 0.05);
       const end = r3(Math.min(D - 0.05, words[g.to].end + (f ? 0.35 : 0.5)));
-      const ws = ix.map((j) => ({ text: featWord(words[j].text), start: words[j].start, end: words[j].end, ...(j === g.key ? { key: true } : {}), ...(f && j === f.br ? { br: true } : {}) }));
-      if (f) captions.push({ kind: "feat", start, end, text: ix.map((j) => words[j].text).join(" "), words: ws, place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.58 * W), size: featSize } });
+      const hero = f?.variant === "hero", swap = f?.variant === "swap";
+      const key = hero ? f.hero : swap ? f.right : g.key;
+      const ws = ix.map((j) => ({
+        text: featWord(words[j].text), start: words[j].start, end: words[j].end,
+        ...(j === key ? { key: true } : {}),
+        ...(f && (hero ? j > f.from && (j === f.hero || j === f.hero + 1) : j === f.br) ? { br: true } : {}),
+        ...(hero && j === f.hero ? { hero: true } : {}),
+        ...(swap && j === f.wrong ? { wrong: true } : {}),
+        ...(swap && j === f.right ? { right: true } : {}),
+      }));
+      if (f) captions.push({ kind: "feat", ...(f.variant ? { variant: f.variant } : {}), start, end, text: ix.map((j) => words[j].text).join(" "), words: ws, place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.58 * W), ...featureBox } });
       else {
         const scene = sceneFrom(s, ws);
         const lastAt = Math.max(0, ...(scene.items || []).map((it) => it.at), scene.right?.at || 0);
