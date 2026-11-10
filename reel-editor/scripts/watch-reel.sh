@@ -6,8 +6,9 @@
 #   broll     the full look: graphic cards, reveal captions, the configured b-roll engine -> "<date> Reel <n> with B-roll/"
 #   own-broll import an own clip into the library; leave the original and a result note in its drop folder
 #   carousel  an IG carousel from the video     -> "<date> Carousel <n>/"
-#   long      a long recording (a podcast, a live, a training) cut into several reels with the full look, the
-#             crop following whoever is talking, split screen when two people trade lines -> "<date> Clips <n>/"
+#   long      a long recording (a podcast, a live, a training) cut into several reels with the full look but the
+#             outlined pop captions, the crop following whoever is talking, split screen when two people trade
+#             lines -> "<date> Clips <n>/"
 #   runway    the full look with Runway video clips as the b-roll (RUNWAY_API_KEY; ~30 credits a clip, usage in
 #             the reel folder's "runway usage.txt" and `reel usage`) -> "<date> Reel <n> with Runway/"
 #   youtube   the whole long video for YouTube: chapters with title cards, re-hooks, sparse cards and b-roll,
@@ -202,8 +203,11 @@ fi
 case "$MODE" in
   broll) flags+=(--broll-engine "${REEL_BROLL_ENGINE:-codex}" --broll --graphics)
     [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+  # Clips from a long recording get the outlined captions: the reveal style (no outline, dimmed upcoming words) was
+  # unreadable over a printed hoodie (IMG_4766, 2026-11-09), and no caption height cleared the print inside the safe
+  # zone. Greg 2026-11-09: "Yes, make it default". The glow look still replaces this on Greg's own vertical clips.
   long) flags+=(--broll --graphics)
-    [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
+    [ -n "$brand_captions" ] || flags+=(--caption-style pop);;
   runway)
     if [ "${REEL_CLIENT_MODE:-0}" = 1 ] || [ -n "${REEL_CLIENT:-}" ]; then
       flags+=(--broll-engine runway)
