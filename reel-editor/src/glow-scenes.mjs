@@ -7,6 +7,21 @@
  */
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
+export const GLOW_BRIDGE_DURATION = 0.44;
+
+export function firstGlowIcon(scene) {
+  if (scene.type === "steps") return null;
+  if (scene.type === "list") return scene.items?.[0]?.icon;
+  if (scene.type === "versus") return scene.left?.icon;
+  return scene.icon || scene.icons?.[0];
+}
+
+const WIPE_DIRECTIONS = ["left", "up", "right"];
+const WIPE_CLIPS = {
+  left: ["inset(0 0 0 100%)", "inset(0 100% 0 0)"],
+  up: ["inset(100% 0 0 0)", "inset(0 0 100% 0)"],
+  right: ["inset(0 100% 0 0)", "inset(0 0 0 100%)"],
+};
 
 function hexA(hex, a) {
   const h = String(hex || "#000000").replace("#", "");
@@ -27,16 +42,17 @@ const wordsHTML = (words, i, esc, prefix = "gs") => (words || []).map((w, j) => 
 
 function sceneInner(scene, i, { W, H, esc }) {
   const id = (s) => `gs-${i}-${s}`;
+  const image = (icon, part, size, cls = "") => img(icon, id(part), size, esc, [cls, Number.isInteger(scene.bridge) && scene.bridge >= 0 && (part === "i0" || part === "p0") ? "gs-bridge-target" : ""].filter(Boolean).join(" "));
   switch (scene.type) {
     case "number": {
-      return `${scene.icon ? `<div class="gs-top">${img(scene.icon, id("i0"), Math.round(W * 0.3), esc)}</div>` : ""}<div class="gs-num" id="${id("num")}">${esc(scene.value)}</div><div class="gs-label">${wordsHTML(scene.labelWords, i, esc)}</div>`;
+      return `${scene.icon ? `<div class="gs-top">${image(scene.icon, "i0", Math.round(W * 0.3))}</div>` : ""}<div class="gs-num" id="${id("num")}">${esc(scene.value)}</div><div class="gs-label">${wordsHTML(scene.labelWords, i, esc)}</div>`;
     }
     case "meter": {
       return `<div class="gs-num gs-num-meter" id="${id("num")}">${esc(scene.value)}</div><div class="gs-bar"><div class="gs-fill" id="${id("fill")}" style="width:${Math.max(0, Math.min(100, scene.percent))}%"></div></div><div class="gs-label gs-label-meter">${wordsHTML(scene.labelWords, i, esc)}</div>`;
     }
     case "list": {
       const size = Math.round(W * (scene.items.length > 3 ? 0.17 : 0.21));
-      return `<div class="gs-list">${scene.items.map((it, k) => `<div class="gs-row" id="${id(`r${k}`)}">${img(it.icon, "", size, esc)}<span class="gs-row-label">${esc(it.label)}</span></div>`).join("")}</div>`;
+      return `<div class="gs-list">${scene.items.map((it, k) => `<div class="gs-row" id="${id(`r${k}`)}">${image(it.icon, `i${k}`, size)}<span class="gs-row-label">${esc(it.label)}</span></div>`).join("")}</div>`;
     }
     case "steps": {
       return `<div class="gs-steps"><div class="gs-line" id="${id("line")}"></div>${scene.items.map((it, k) => `<div class="gs-step" id="${id(`r${k}`)}"><span class="gs-node">${k + 1}</span><span class="gs-row-label">${esc(it.label)}</span></div>`).join("")}</div>`;
@@ -45,7 +61,7 @@ function sceneInner(scene, i, { W, H, esc }) {
       const size = Math.round(W * 0.34);
       // A label's longest word must fit its column (42% of the width): long single words get a smaller size.
       const fit = (label) => Math.round(Math.min(0.04 * H, (0.42 * W * 0.92) / (Math.max(...String(label).split(/\s+/).map((w) => w.length), 1) * 0.68)));
-      const side = (s, k, badge) => `<div class="gs-vs-side gs-vs-${k}" id="${id(k)}">${img(s.icon, "", size, esc)}<span class="gs-vs-label" style="font-size:${fit(s.label)}px">${esc(s.label)}</span>${badge ? `<div class="gs-badge" id="${id(`${k}b`)}">${img(badge, "", Math.round(W * 0.11), esc)}</div>` : ""}</div>`;
+      const side = (s, k, badge) => `<div class="gs-vs-side gs-vs-${k}" id="${id(k)}">${image(s.icon, k === "l" ? "i0" : "i1", size)}<span class="gs-vs-label" style="font-size:${fit(s.label)}px">${esc(s.label)}</span>${badge ? `<div class="gs-badge" id="${id(`${k}b`)}">${img(badge, "", Math.round(W * 0.11), esc)}</div>` : ""}</div>`;
       return `<div class="gs-vs">${side(scene.left, "l", scene.cross)}<div class="gs-vs-mid">VS</div>${side(scene.right, "r", scene.check)}</div>`;
     }
     case "quote": {
@@ -54,12 +70,12 @@ function sceneInner(scene, i, { W, H, esc }) {
     case "people": {
       const per = Math.min(5, scene.count);
       const size = Math.round((W * 0.84) / per * 0.86);
-      return `<div class="gs-people">${Array.from({ length: scene.count }, (_, k) => img(scene.icon, id(`p${k}`), size, esc, "gs-person")).join("")}</div><div class="gs-label gs-label-people">${wordsHTML(scene.labelWords, i, esc)}</div>`;
+      return `<div class="gs-people">${Array.from({ length: scene.count }, (_, k) => image(scene.icon, `p${k}`, size, "gs-person")).join("")}</div><div class="gs-label gs-label-people">${wordsHTML(scene.labelWords, i, esc)}</div>`;
     }
     default: {
       const icons = (scene.icons || []).filter((icon) => icon.image);
       const size = Math.round(W * (icons.length === 1 ? 0.5 : icons.length === 2 ? 0.38 : 0.29));
-      return `<div class="gs-icons">${icons.map((icon, k) => img(icon, id(`i${k}`), size, esc)).join("")}</div><div class="gs-text">${wordsHTML(scene.words, i, esc)}</div>`;
+      return `<div class="gs-icons">${icons.map((icon, k) => image(icon, `i${k}`, size)).join("")}</div><div class="gs-text">${wordsHTML(scene.words, i, esc)}</div>`;
     }
   }
 }
@@ -83,6 +99,7 @@ export function glowScenesCSS({ W, H, c }) {
   const px = (f) => Math.round(f * H);
   return `
       .glow-scene { position: absolute; inset: 0; opacity: 0; pointer-events: none; background: radial-gradient(ellipse 70% 45% at 50% 40%, ${hexA(accent, 0.22)} 0%, ${hexA(accent, 0.06)} 45%, ${hexA(bg, 0)} 75%), radial-gradient(ellipse at 50% 50%, #1a1814 0%, ${bg} 80%); font-family: "Inter", sans-serif; color: ${text}; }
+      .gs-bridge-target { opacity: 0; }
       .gs-img { object-fit: contain; filter: drop-shadow(0 30px 60px rgba(0,0,0,0.6)) drop-shadow(0 0 70px ${hexA(accent, 0.3)}); }
       .gs-icons { position: absolute; left: 6%; right: 6%; top: 24%; height: 30%; display: flex; align-items: center; justify-content: center; gap: 2%; }
       .gs-text, .gs-label { position: absolute; left: 8%; right: 8%; top: 60%; text-align: center; font-weight: 760; font-size: ${px(0.042)}px; line-height: 1.12; letter-spacing: 0.012em; word-spacing: 0.1em; text-transform: uppercase; text-wrap: balance; text-shadow: ${glow}; }
@@ -125,17 +142,23 @@ export function glowScenesCSS({ W, H, c }) {
       .go-stamp span { display: inline-block; font-weight: 840; font-size: ${px(0.075)}px; line-height: 1; text-transform: uppercase; letter-spacing: 0.01em; color: ${accent}; text-shadow: 0 0 0.08em ${hexA(accent, 0.8)}, 0 0 0.35em ${hexA(accent, 0.4)}, 0 0.04em 0.25em rgba(0,0,0,0.7); transform-origin: 0 50%; }`;
 }
 
-/** The runtime plan's view of each scene and overlay: only timing and counts. */
+/** The runtime view carries timing, counts and deterministic scene transitions. */
 export function glowRuntime(scenes, overlays) {
   const nums = (s) => { const n = splitNumber(s.value); return n ? { num: n } : {}; };
   return {
-    glowScenes: scenes.map((s) => ({ type: s.type || "icons", start: s.start, end: s.end, words: (s.words || []).map((w) => w.start), label: (s.labelWords || []).length, icons: (s.icons || []).filter((icon) => icon.image).length, items: (s.items || []).map((it) => it.at), at: s.left ? [s.left.at, s.right.at] : [], count: s.count || 0, ...(s.type === "number" || s.type === "meter" ? nums(s) : {}), hasIcon: !!s.icon?.image })),
+    glowScenes: scenes.map((s, i) => {
+      const direction = WIPE_DIRECTIONS[i % WIPE_DIRECTIONS.length];
+      const [enter, exit] = WIPE_CLIPS[direction];
+      const bridge = Number.isInteger(s.bridge) && s.bridge >= 0 && firstGlowIcon(s)?.image
+        ? { bridge: s.bridge, bridgeDuration: GLOW_BRIDGE_DURATION, bridgeTarget: `#gs-${i}-${s.type === "people" ? "p0" : "i0"}` } : {};
+      return { type: s.type || "icons", start: s.start, end: s.end, words: (s.words || []).map((w) => w.start), label: (s.labelWords || []).length, icons: (s.icons || []).filter((icon) => icon.image).length, items: (s.items || []).map((it) => it.at), at: s.left ? [s.left.at, s.right.at] : [], count: s.count || 0, ...(s.type === "number" || s.type === "meter" ? nums(s) : {}), hasIcon: !!s.icon?.image, wipe: { direction, enter, exit, duration: 0.22 }, ...bridge };
+    }),
     glowOverlays: overlays.map((o) => ({ type: o.type, start: o.start, end: o.end, words: (o.words || []).map((w) => w.start) })),
   };
 }
 
 export const GLOW_SCENES_JS = `
-        // Glow scenes: the ground fades in; each type brings its pieces in on the spoken words; everything fades out.
+        // Glow scenes: the ground wipes in; each type brings its pieces in on the spoken words.
         const gsWords = (i, list, from) => list.forEach((t, j) => tl.fromTo("#gs-" + i + "-w" + j, { opacity: 0, y: 10, filter: "blur(10px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.18, ease: "power2.out", immediateRender: false }, Math.max(from, t - 0.03)));
         const gsLabel = (i, n, at) => { for (let j = 0; j < n; j++) tl.fromTo("#gs-" + i + "-w" + j, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.2, ease: "power2.out", immediateRender: false }, at + j * 0.06); };
         const gsPop = (sel, at, k) => tl.fromTo(sel, { opacity: 0, scale: 0.7, y: 40 }, { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: "back.out(1.6)", immediateRender: false }, at);
@@ -146,12 +169,39 @@ export const GLOW_SCENES_JS = `
           const o = { v: 0 };
           tl.fromTo(o, { v: 0 }, { v: n.value, duration: dur, ease: "power2.out", immediateRender: false, onUpdate: () => { el.textContent = fmt(o.v); } }, at);
         };
+        const gsBridge = (s) => {
+          if (!Number.isInteger(s.bridge) || !PLAN.icons?.[s.bridge]?.action) return false;
+          const source = document.getElementById("icon-" + s.bridge);
+          const target = document.querySelector(s.bridgeTarget);
+          const root = document.getElementById("root");
+          if (!source || !target || !root) return false;
+          const a = source.querySelector(".icon-disc").getBoundingClientRect(), b = target.getBoundingClientRect();
+          const canvas = root.getBoundingClientRect();
+          if (!a.width || !a.height || !b.width || !b.height || !canvas.width || !canvas.height) return false;
+          const x = (b.left + b.width / 2 - a.left - a.width / 2) * PLAN.width / canvas.width;
+          const y = (b.top + b.height / 2 - a.top - a.height / 2) * PLAN.height / canvas.height;
+          const done = s.start + s.bridgeDuration;
+          const covered = s.wipe.duration;
+          tl.set(source, { zIndex: 4 }, s.start);
+          // Travel along the chin band first; only rise and grow once the wipe has covered the face.
+          tl.fromTo(source, { x: 0 }, { x, duration: s.bridgeDuration, ease: "power2.inOut", immediateRender: false }, s.start);
+          tl.fromTo(source, { y: 0, scaleX: 1, scaleY: 1 }, { y, scaleX: b.width / a.width, scaleY: b.height / a.height, duration: s.bridgeDuration - covered, ease: "power2.inOut", immediateRender: false }, s.start + covered);
+          tl.to(source.querySelectorAll(".icon-ghost, .icon-ping, .icon-hit, .icon-shadow"), { opacity: 0, duration: 0.06, immediateRender: false }, s.start);
+          tl.fromTo(target, { opacity: 0 }, { opacity: 1, duration: 0.04, ease: "none", immediateRender: false }, done - 0.04);
+          tl.fromTo(source, { opacity: 1 }, { opacity: 0, duration: 0.04, ease: "none", immediateRender: false }, done - 0.04);
+          tl.set(source, { zIndex: 0 }, done);
+          return true;
+        };
         (PLAN.glowScenes || []).forEach((s, i) => {
           const el = document.getElementById("gscene-" + i);
           const t0 = s.start + 0.08;
+          const bridged = gsBridge(s);
+          const pop = (sel, at, k) => { if (!bridged || sel !== s.bridgeTarget) gsPop(sel, at, k); };
+          if (!bridged && s.bridgeTarget) tl.fromTo(s.bridgeTarget, { opacity: 0 }, { opacity: 1, duration: 0.1, immediateRender: false }, t0);
+          tl.fromTo(el, { clipPath: s.wipe.enter }, { clipPath: "inset(0 0 0 0)", duration: s.wipe.duration, ease: "power2.out", immediateRender: false }, s.start);
           tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.1, ease: "power2.out", immediateRender: false }, s.start);
           if (s.type === "number") {
-            if (s.hasIcon) gsPop("#gs-" + i + "-i0", t0, 0);
+            if (s.hasIcon) pop("#gs-" + i + "-i0", t0, 0);
             tl.fromTo("#gs-" + i + "-num", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(1.7)", immediateRender: false }, t0 + 0.05);
             gsCount("#gs-" + i + "-num", s.num, t0 + 0.05, Math.min(0.9, Math.max(0.4, s.end - t0 - 0.6)));
             gsLabel(i, s.label, t0 + 0.35);
@@ -171,23 +221,25 @@ export const GLOW_SCENES_JS = `
             const rAt = Math.max(t0 + 0.35, s.at[1] - 0.05);
             tl.fromTo("#gs-" + i + "-r", { opacity: 0.3, scale: 1 }, { opacity: 1, scale: 1.06, duration: 0.25, ease: "power2.out", immediateRender: false }, rAt);
             tl.to("#gs-" + i + "-l", { opacity: 0.38, duration: 0.25, immediateRender: false }, rAt + 0.2);
-            gsPop("#gs-" + i + "-lb", rAt + 0.2, 0);
-            gsPop("#gs-" + i + "-rb", rAt + 0.3, 1);
+            pop("#gs-" + i + "-lb", rAt + 0.2, 0);
+            pop("#gs-" + i + "-rb", rAt + 0.3, 1);
           } else if (s.type === "quote") {
             tl.fromTo("#gs-" + i + "-bubble", { opacity: 0, y: 30, scale: 0.92 }, { opacity: 1, y: 0, scale: 1, duration: 0.25, ease: "back.out(1.5)", immediateRender: false }, t0);
             s.words.forEach((t, j) => tl.fromTo("#gs-" + i + "-w" + j, { opacity: 0 }, { opacity: 1, duration: 0.08, ease: "none", immediateRender: false }, Math.max(t0 + 0.1, t - 0.02)));
           } else if (s.type === "people") {
-            for (let k = 0; k < s.count; k++) gsPop("#gs-" + i + "-p" + k, t0 + k * Math.min(0.12, 0.8 / s.count), k);
+            for (let k = 0; k < s.count; k++) pop("#gs-" + i + "-p" + k, t0 + k * Math.min(0.12, 0.8 / s.count), k);
             gsLabel(i, s.label, t0 + 0.3);
           } else {
             for (let k = 0; k < s.icons; k++) {
               const at = t0 + k * Math.min(0.35, (s.end - s.start - 0.6) / Math.max(1, s.icons));
-              gsPop("#gs-" + i + "-i" + k, at, k);
-              tl.to("#gs-" + i + "-i" + k, { y: k % 2 ? 10 : -10, duration: Math.max(0.3, s.end - at - 0.5), ease: "sine.inOut", immediateRender: false }, at + 0.32);
+              pop("#gs-" + i + "-i" + k, at, k);
+              const floatAt = bridged && !k ? s.start + s.bridgeDuration : at + 0.32;
+              tl.to("#gs-" + i + "-i" + k, { y: k % 2 ? 10 : -10, duration: Math.max(0.3, s.end - floatAt - 0.18), ease: "sine.inOut", immediateRender: false }, floatAt);
             }
             gsWords(i, s.words, s.start + 0.1);
           }
-          tl.to(el, { opacity: 0, duration: 0.16, ease: "power2.in" }, s.end - 0.16);
+          tl.fromTo(el, { clipPath: "inset(0 0 0 0)" }, { clipPath: s.wipe.exit, duration: s.wipe.duration, ease: "power2.in", immediateRender: false }, s.end - s.wipe.duration);
+          tl.fromTo(el, { opacity: 1 }, { opacity: 0, duration: 0.16, ease: "power2.in", immediateRender: false }, s.end - 0.16);
         });
         (PLAN.glowOverlays || []).forEach((o, i) => {
           const el = document.getElementById("gover-" + i);

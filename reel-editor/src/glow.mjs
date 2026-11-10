@@ -4,6 +4,8 @@ import { claudeText, firstJSON } from "./claude.mjs";
 import { detectFaces } from "./placement.mjs";
 import { r3 } from "./util.mjs";
 import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
+import { glowIconAction } from "./glow-icons.mjs";
+import { firstGlowIcon, GLOW_BRIDGE_DURATION } from "./glow-scenes.mjs";
 
 /**
  * The glow look (studio style): feature lines float as glowing capitals in the band under the chin, built word by
@@ -56,7 +58,8 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "You have a kit of display elements. Pick the right one for each moment from what is being said, so the reel keeps changing and every graphic matches its words. Reply with JSON only.",
     "",
     "A. features: punchy phrases shown as big glowing capitals under the speaker's chin, built word by word. 2 to 7 consecutive words that read well alone. Fields: from, to (word indexes, inclusive), key (the index shown in gold), br (index that starts line two, or null). Each line holds at most 16 characters including spaces.",
-    "B. icons: a 3D icon beside the speaker on a spoken word. Fields: word (index), icon (name). The icon must show what that word literally means here. Never the same icon twice in a row.",
+    "B. icons: a 3D icon beside the speaker on a spoken word. Fields: word (index), icon (name), action (optional: drop, spin, stack, ping, hit, float; default float). The icon must show what that word literally means here. Never the same icon twice in a row.",
+    "   Pick the action that acts out the sentence: drop falls and settles; spin turns once to reveal the same icon; stack adds two ghost copies for more/stack/pile; ping adds a gold notification dot; hit gives one short impact and a gold ring; float gently bobs. Examples: phone + messages -> ping, coins + adds up -> stack, target + hit -> hit. Keep it restrained; never invent a claim through motion.",
     "C. overlays, over the speaker in the band under the chin:",
     "   notify: a message card, for a short line someone says or texts (a lead, client, prospect). Fields: type \"notify\", from, to (the quoted spoken words, at most 9), who (\"Lead\", \"Client\", \"Prospect\", at most 12 characters), icon (optional name, e.g. text-message, phone-alert).",
     "   stamp: one huge glowing word for a single punch word that carries the point (a noun, verb or number, like EQUATION or PAY), never a filler such as okay, right or so. Fields: type \"stamp\", word (index).",
@@ -151,7 +154,8 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
   let last = "";
   const icons = (picks.icons || []).filter((p) => inRange(p.word) && names.has(p.icon) && afterHook(p.word) && !busy(p.word))
     .sort((a, b) => a.word - b.word)
-    .filter((p) => { const ok = p.icon !== last; if (ok) last = p.icon; return ok; });
+    .filter((p) => { const ok = p.icon !== last; if (ok) last = p.icon; return ok; })
+    .map((p) => ({ word: p.word, icon: p.icon, action: glowIconAction(p.action) }));
   return { features: features.sort((a, b) => a.from - b.from), icons, overlays, scenes };
 }
 
@@ -287,15 +291,29 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
     .filter((g) => g.kind !== "feat" || !overlays.some((o) => g.start < o.end && g.end > o.start));
 
   const size = Math.round(0.2 * W);
-  const icons = picks.icons.map((p) => {
+  let icons = picks.icons.map((p) => {
     const w = words[p.word];
     const t = r3(Math.max(0, w.start - 0.08)), end = r3(Math.min(D - 0.2, w.end + 1.0));
-    return { t, end, icon: "", word: w.text, file: lib.get(p.icon).file, name: p.icon, x: Math.round(0.84 * W - size), y: band(t, end) - Math.round(size * 0.12), size };
-  }).filter((icon) => ![...scenes, ...overlays].some((s) => icon.t < s.end && icon.end > s.start))
+    return { t, end, icon: "", word: w.text, file: lib.get(p.icon).file, name: p.icon, action: glowIconAction(p.action), x: Math.round(0.84 * W - size), y: band(t, end) - Math.round(size * 0.12), size };
+  });
+  // A recent matching band icon holds through the shared move; all other scene overlaps still disappear.
+  const bridges = new Map();
+  scenes.forEach((scene) => {
+    const name = firstGlowIcon(scene)?.name;
+    const icon = icons.findLast((icon) => name && icon.name === name && icon.t < scene.start && scene.start - icon.t <= 1.2);
+    if (icon) {
+      bridges.set(icon, scene);
+      icon.end = r3(scene.start + GLOW_BRIDGE_DURATION);
+      icon.y = band(icon.t, icon.end) - Math.round(size * 0.12);
+    }
+  });
+  icons = icons.filter((icon) => ![...scenes, ...overlays].some((s) => s !== bridges.get(icon) && icon.t < s.end && icon.end > s.start))
     .filter((icon) => icon.y + icon.size <= 0.785 * H)
     .filter((icon) => !faceDuring(detection, icon.t, icon.end).some((f) => icon.x < (f.x + f.w) * W && icon.x + icon.size > f.x * W && icon.y < (f.y + f.h * 0.85) * H && icon.y + icon.size > f.y * H));
   icons.forEach((icon, i) => { const nx = icons[i + 1]; if (nx && icon.end > nx.t - 0.05) icon.end = r3(nx.t - 0.05); });
-  return { captions: visible, icons: icons.filter((icon) => icon.end - icon.t >= 0.6), scenes, overlays, band };
+  icons = icons.filter((icon) => bridges.has(icon) ? icon.end >= bridges.get(icon).start + GLOW_BRIDGE_DURATION - 0.001 : icon.end - icon.t >= 0.6);
+  icons.forEach((icon, i) => { const scene = bridges.get(icon); if (scene) scene.bridge = i; });
+  return { captions: visible, icons, scenes, overlays, band };
 }
 
 /**
