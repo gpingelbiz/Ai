@@ -4,6 +4,9 @@ import { claudeText, firstJSON } from "./claude.mjs";
 import { detectFaces } from "./placement.mjs";
 import { r3 } from "./util.mjs";
 import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
+import { glowWindow, pacingReport } from "./glow-pacing.mjs";
+
+export { pacingReport } from "./glow-pacing.mjs";
 
 /**
  * The glow look (studio style): feature lines float as glowing capitals in the band under the chin, built word by
@@ -71,9 +74,12 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "   people: a row of people icons, for a team, group, cohort or hiring. Extra: count (2 to 10), label (at most 24 characters).",
     "",
     "Direction:",
-    "- Something should be on screen almost all the time: a feature, overlay, scene or icon on nearly every phrase, so the reel never sits on plain subtitles for more than about 2 seconds.",
-    "- Use a full-screen scene every 4 to 7 seconds, but scenes in total may cover at most a third of the reel, never two scenes within 1.5 seconds of each other, and never the same scene type twice in a row.",
-    "- Use at least four different element types in the reel when the content allows, and prefer the specific types (number, meter, list, steps, versus, quote, people, notify) whenever the words fit them. Use the icons scene only when nothing more specific fits.",
+    "- Pace graphics to the argument. For each beat choose a graphic, leave room for a camera move (zooms are planned elsewhere), or choose a clean hold on Greg's face with subtitles only. A beat does not need a graphic.",
+    "- Aim for a visual change roughly every 2 to 4 seconds across graphics, camera moves and clean holds. Do not decorate every phrase; let a claim land before changing the picture.",
+    "- About 25 to 35% of the reel should be clean holds on Greg: subtitles only, with no feature, overlay, icon or scene. Omit picks for these beats; do not add camera or hold objects to the JSON.",
+    "- Full-screen scenes together cover at most a third of the reel. After each scene has fully exited, leave at least 1.2 seconds settled on Greg with subtitles only before the next scene or band element. Never use the same scene type twice in a row.",
+    "- No more than 2 band elements (features, overlays and icons combined) may start inside any rolling 3-second window. Keep the graphic that carries the argument; drop decorative icons first.",
+    "- Prefer a specific type (number, meter, list, steps, versus, quote, people, notify) when the spoken argument earns it. Use the icons scene only when nothing more specific fits; there is no type quota.",
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
     "- Features, overlays and scenes never share words. Nothing on the words in the first 3 seconds, where the title card sits.",
     'Reply as {"features":[],"icons":[],"overlays":[],"scenes":[]}',
@@ -97,7 +103,8 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
     for (let i = from; i <= to; i++) taken.add(i);
     return true;
   };
-  const afterHook = (i) => words[i].start >= hookEnd - 0.05;
+  hookEnd = Math.max(3, hookEnd);
+  const afterHook = (i) => words[i].start >= hookEnd;
   const span = (x, max) => inRange(x.from) && inRange(x.to) && x.to >= x.from && x.to - x.from < max && afterHook(x.from);
   const within = (x, i) => Number.isInteger(i) && i >= x.from && i <= x.to;
   const spoken = (x) => words.slice(x.from, x.to + 1).map((w) => w.text.toLowerCase());
@@ -129,10 +136,9 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
     if (type === "quote") out = { who: short(s.who, 12) || "Lead" };
     if (type === "people") { const c = Math.round(Number(s.count)); if (c >= 2 && c <= 10 && names.has("person")) out = { count: c, label: short(s.label, 24) }; }
     if (!out) continue;
-    const length = Math.max(1.8, words[s.to].end - words[s.from].start + 0.5);
-    const prev = scenes.at(-1);
+    const window = glowWindow("scenes", { type, from: s.from, to: s.to, ...out }, words, duration, hookEnd);
+    const length = window.end - window.start;
     if (sceneTime + length > sceneCap) continue;
-    if (prev && words[s.from].start - words[prev.to].end < 1.5) continue;
     if (!claim(s.from, s.to)) continue;
     scenes.push({ type, from: s.from, to: s.to, ...out });
     sceneTime += length;
@@ -152,7 +158,7 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
   const icons = (picks.icons || []).filter((p) => inRange(p.word) && names.has(p.icon) && afterHook(p.word) && !busy(p.word))
     .sort((a, b) => a.word - b.word)
     .filter((p) => { const ok = p.icon !== last; if (ok) last = p.icon; return ok; });
-  return { features: features.sort((a, b) => a.from - b.from), icons, overlays, scenes };
+  return pacingReport({ features, icons, overlays, scenes }, words, duration, { hookEnd }).picks;
 }
 
 const lineChars = (words, from, to) => words.slice(from, to + 1).map((w) => featWord(w.text)).join(" ").length;
@@ -180,6 +186,7 @@ export function chinDuring(detection, t0, t1, fallback = 0.47) {
 export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920 } = {}) {
   const words = plan.words;
   const D = plan.video.duration;
+  const window = (kind, pick) => glowWindow(kind, pick, words, D, Math.max(3, plan.hook ? plan.hook.start + plan.hook.duration : 0));
   const lib = new Map(library.map((icon) => [icon.name, icon]));
   const featSize = Math.round(0.029 * H);
   // The band starts just under the chin, wherever the chin is; text that would not fit above the subtitles (0.8)
@@ -226,7 +233,7 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
     if (o) {
       flush();
       const ix = Array.from({ length: o.to - o.from + 1 }, (_, k) => o.from + k);
-      const start = r3(Math.max(0, words[o.from].start - (o.type === "stamp" ? 0.03 : 0.1))), end = r3(Math.min(D - 0.05, words[o.to].end + (o.type === "stamp" ? 0.7 : 0.6)));
+      const { start, end } = window("overlays", o);
       overlays.push({ type: o.type, start, end, who: o.who, icon: file(o.icon), text: featWord(words[o.from].text).toUpperCase(), words: ix.map((j) => ({ text: clean(words[j].text), start: words[j].start, end: words[j].end })), place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.62 * W) } });
       i = o.to;
       continue;
@@ -235,14 +242,12 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
       flush();
       const g = f || s;
       const ix = Array.from({ length: g.to - g.from + 1 }, (_, k) => g.from + k);
-      const start = r3(words[g.from].start - 0.05);
-      const end = r3(Math.min(D - 0.05, words[g.to].end + (f ? 0.35 : 0.5)));
+      const { start, end } = window(f ? "features" : "scenes", g);
       const ws = ix.map((j) => ({ text: featWord(words[j].text), start: words[j].start, end: words[j].end, ...(j === g.key ? { key: true } : {}), ...(f && j === f.br ? { br: true } : {}) }));
       if (f) captions.push({ kind: "feat", start, end, text: ix.map((j) => words[j].text).join(" "), words: ws, place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.58 * W), size: featSize } });
       else {
         const scene = sceneFrom(s, ws);
-        const lastAt = Math.max(0, ...(scene.items || []).map((it) => it.at), scene.right?.at || 0);
-        scenes.push({ ...scene, start: r3(Math.max(0, start - 0.1)), end: r3(Math.min(D - 0.05, Math.max(end, start + 1.8, lastAt + 0.9))) });
+        scenes.push({ ...scene, start, end });
       }
       i = g.to;
       continue;
@@ -289,7 +294,7 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
   const size = Math.round(0.2 * W);
   const icons = picks.icons.map((p) => {
     const w = words[p.word];
-    const t = r3(Math.max(0, w.start - 0.08)), end = r3(Math.min(D - 0.2, w.end + 1.0));
+    const { start: t, end } = window("icons", p);
     return { t, end, icon: "", word: w.text, file: lib.get(p.icon).file, name: p.icon, x: Math.round(0.84 * W - size), y: band(t, end) - Math.round(size * 0.12), size };
   }).filter((icon) => ![...scenes, ...overlays].some((s) => icon.t < s.end && icon.end > s.start))
     .filter((icon) => icon.y + icon.size <= 0.785 * H)

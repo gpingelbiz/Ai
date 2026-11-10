@@ -47,7 +47,8 @@ test("Greg's restored gold drives spaced punch-ins, pop, dimmed words and marker
   }));
   markKeywords(groups, {}, { auto: style.captions.autoKeywords, maxPerLine: style.captions.maxKeywordsPerLine });
   const ins = planZooms(groups, 30, style.zooms).filter((k) => k.scale > 1);
-  assert.deepEqual(ins.map((k) => k.t), [4, 10, 16, 22]);
+  assert.deepEqual(ins.map((k) => k.t), [4.18, 10.48, 16.48]);
+  assert.ok(ins.every((k, i) => !i || k.t - ins[i - 1].t >= style.zooms.minSpacing));
   assert.equal(style.zooms.cadence.enabled, false);
   const html = renderHTML({ name: "pop", canvas: { width: 1080, height: 1920 }, style, video: { duration: 30, hasAudio: true }, captions: groups, zooms: [] }, "assets/footage.mp4");
   assert.match(html, /"capCut":false/);

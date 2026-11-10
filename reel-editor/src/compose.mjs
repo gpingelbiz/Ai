@@ -837,7 +837,7 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
             if (z.cut) jump(z);
             else if (z.scale > 1) {
               const dir = n++ % 2 ? 1 : -1;
-              tl.to(WRAP, { scale: z.scale * BASE, xPercent: z.xPercent || 0, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: 0.55, ease: "power3.out" }, z.t);
+              tl.to(WRAP, { scale: z.scale * BASE, xPercent: z.xPercent || 0, yPercent: -1.2, rotationX: 1.8, rotationY: 1.2 * dir, duration: ${(plan.zooms || []).some((z) => z.onKey) ? "z.onKey ? z.snap : 0.55" : "0.55"}, ease: "power3.out" }, z.t);
               tl.to("#defocus", { opacity: 1, duration: 0.3, ease: "power2.out" }, z.t);
               tl.to("#defocus", { opacity: 0, duration: 0.45, ease: "power2.in" }, z.t + 0.3);
             } else {

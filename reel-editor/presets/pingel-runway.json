@@ -1,6 +1,7 @@
 {
   "name": "pingel-runway",
   "extends": "pingel-brand",
+  "zooms": { "onKey": false },
   "looks": {
     "lockBrollGrade": true
   },
