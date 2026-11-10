@@ -53,6 +53,9 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
   // A concrete target for this reel: about 0.6 picks a second after the title, about one scene per 5.5 seconds.
   const spoken = Math.max(0, duration - 3);
   const target = Math.max(6, Math.round(spoken * 0.65)), scenes = Math.max(1, Math.round(spoken / 5.5));
+  // A total alone gets under-picked: say how many of each kind (features and icons carry most of the beats).
+  const per = (rate, min) => Math.max(min, Math.round(spoken * rate));
+  const mix = { features: per(0.22, 3), icons: per(0.2, 3), overlays: per(0.07, 1) };
   const lines = words.map((w, i) => `${i} ${w.start.toFixed(2)} ${w.text}`).join("\n");
   const icons = library.map((icon) => `${icon.name}: ${icon.draw}`).join("\n");
   return [
@@ -90,9 +93,9 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "",
     "Direction:",
     "- This is a graphics-rich reel: something on screen on most beats, a visual change about every 2 seconds, each graphic matched to its words. Aim for about 10 to 14 picks in a 20-second reel (scale with length).",
-    `- For this ${duration.toFixed(0)}-second reel that means about ${target} picks in all (at least ${target - 2}) (features, icons, overlays and scenes together), including about ${scenes} full-screen scene${scenes === 1 ? "" : "s"}. Picks that break the timing rules below are dropped, so space them out rather than stacking them.`,
+    `- For this ${duration.toFixed(0)}-second reel that means about ${target} picks in all (at least ${target - 2}): about ${mix.features} features (mix plain, hero and swap where they fit), about ${mix.icons} icons (each with the action that acts out its sentence), about ${mix.overlays} overlay${mix.overlays === 1 ? "" : "s"} and about ${scenes} full-screen scene${scenes === 1 ? "" : "s"}. Features and icons sit between the scenes; most beats between scenes should carry one. Picks that break the timing rules below are dropped, so space them out rather than stacking them.`,
     "- Keep only short clean holds on Greg's face (subtitles only), about 10 to 15% of the reel, for a personal or emotional line. Omit picks for those beats; do not add hold objects to the JSON.",
-    `- Use a full-screen scene every 4 to 7 seconds. Scenes together cover about a third of the reel (never more than ${Math.round(SCENE_SHARE * 100)}%). A scene stays up about 0.9 seconds after its last word and then needs ${SCENE_SETTLE} seconds on Greg, so start the next scene or band element at least 1.5 seconds after a scene's last word. Never the same scene type twice in a row unless ${SCENE_REPEAT_GAP} seconds or more apart. A scene covers at most 12 words (a quote 15; flow and bars 32; a thread 48).`,
+    `- Use a full-screen scene every 4 to 7 seconds. Scenes together cover about a third of the reel (never more than ${Math.round(SCENE_SHARE * 100)}%). A scene stays up about 0.9 seconds after its last word and then needs ${SCENE_SETTLE} seconds on Greg, so start the next scene or band element at least ${(0.9 + SCENE_SETTLE).toFixed(1)} seconds after a scene's last word. Never the same scene type twice in a row unless ${SCENE_REPEAT_GAP} seconds or more apart. A scene covers at most 12 words (a quote 15; flow and bars 32; a thread 48).`,
     `- No more than ${BAND_MAX} band elements (features, overlays and icons combined) may start inside any rolling 3-second window. An icon never sits on a word a scene covers, and a band element needs about a second before the next scene starts (it would be cut off).`,
     "- Use at least four different element types and at least two different scene types in the reel when the content allows. Reach for the specific types first (number, meter, list, steps, flow, thread, bars, versus, quote, people, notify, hero and swap features, icon actions); a flow for any process or sequence, a thread for any exchange he describes, bars or a number for any figure he says. Use the icons scene only when nothing more specific fits.",
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
@@ -425,6 +428,11 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
   // One thing at a time in the band under the chin: a feature line or overlay leaves before the next one arrives.
   const bandItems = [...captions.filter((g) => g.kind === "feat"), ...overlays].sort((x, y) => x.start - y.start);
   bandItems.forEach((g, k) => { const nx = bandItems[k + 1]; if (nx && g.end > nx.start - 0.05) g.end = r3(Math.max(g.start + 0.3, nx.start - 0.05)); });
+  // Anything that starts well before a scene and runs into it is cut short as the scene arrives instead of dropped.
+  const RUN_IN = 0.8;
+  const cutAtScene = (item, startKey, endKey) => scenes.forEach((s) => { if (item[startKey] <= s.start - RUN_IN && item[endKey] > s.start) item[endKey] = r3(s.start - 0.05); });
+  captions.forEach((g) => cutAtScene(g, "start", "end"));
+  overlays.forEach((o) => cutAtScene(o, "start", "end"));
   const visible = captions.filter((g) => !scenes.some((s) => g.start < s.end && g.end > s.start + 0.15))
     .filter((g) => g.kind !== "feat" || !overlays.some((o) => g.start < o.end && g.end > o.start));
 
@@ -445,6 +453,7 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
       icon.y = band(icon.t, icon.end) - Math.round(size * 0.12);
     }
   });
+  icons.forEach((icon) => { if (!bridges.has(icon)) cutAtScene(icon, "t", "end"); });
   icons = icons.filter((icon) => ![...scenes, ...overlays].some((s) => s !== bridges.get(icon) && icon.t < s.end && icon.end > s.start))
     .filter((icon) => icon.y + icon.size <= 0.785 * H)
     .filter((icon) => !faceDuring(detection, icon.t, icon.end).some((f) => icon.x < (f.x + f.w) * W && icon.x + icon.size > f.x * W && icon.y < (f.y + f.h * 0.85) * H && icon.y + icon.size > f.y * H));
@@ -494,7 +503,7 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
   const detection = render ? await detect(render, times) : null;
   const hookEnd = plan.hook ? plan.hook.start + plan.hook.duration : 0;
   // Saved picks (a re-render after a layout change) skip the Claude call; they are checked again all the same.
-  const reply = saved || firstJSON(await ask(glowPrompt(plan.words, library, { hook: plan.hook?.text || "", duration: D }), { timeoutMs: 600000 }));
+  const reply = saved || firstJSON(await ask(glowPrompt(plan.words, library, { hook: plan.hook?.text || "", duration: D }), { timeoutMs: 900000 }));
   const picks = checkPicks(reply, plan.words, library, { hookEnd: Math.max(3, hookEnd), duration: D });
   const out = layoutGlow(plan, picks, library, detection, { W, H });
   plan.captions = out.captions;

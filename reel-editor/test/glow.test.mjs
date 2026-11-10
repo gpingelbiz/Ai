@@ -98,7 +98,8 @@ test("scene settling is applied by checkPicks before layout", () => {
   const ws = [4, 4.2, 6.2, 7.2, 10].map((start) => ({ text: "point", start, end: start + 0.15 }));
   const picks = checkPicks({ scenes: [{ type: "icons", from: 0, to: 1, icons: ["ear"] }, { type: "quote", from: 2, to: 2 }], overlays: [{ type: "stamp", word: 2 }, { type: "stamp", word: 3 }] }, ws, library, { duration: 30 });
   assert.equal(picks.scenes.length, 1, `a 6.05 entrance is less than ${SCENE_SETTLE} s after the 5.75 exit`);
-  assert.deepEqual(picks.overlays.map((o) => o.from), [3]);
+  // The stamp at 6.2 s is past the 5.75 s exit plus the settle; both stamps stay.
+  assert.deepEqual(picks.overlays.map((o) => o.from), 6.2 >= 5.75 + SCENE_SETTLE ? [2, 3] : [3]);
   const repeats = checkPicks({ scenes: [{ type: "icons", from: 0, to: 1, icons: ["ear"] }, { type: "quote", from: 2, to: 2 }, { type: "icons", from: 4, to: 4, icons: ["ear"] }] }, ws, library, { duration: 30 });
   assert.equal(repeats.scenes.length, 1, "dropping a crowded intervening scene must not leave repeated scene types");
 });

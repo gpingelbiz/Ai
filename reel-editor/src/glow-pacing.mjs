@@ -1,7 +1,7 @@
 import { r3 } from "./util.mjs";
 
 /** Greg wants graphics-rich reels: short clean holds, a quick settle after scenes, up to three band starts per 3 s. */
-export const CLEAN_SHARE = 0.1, SCENE_SETTLE = 0.6, BAND_MAX = 3;
+export const CLEAN_SHARE = 0.1, SCENE_SETTLE = 0.4, BAND_MAX = 3, RUN_IN = 0.8;
 // Scenes cover about a third of the reel; the hard cap leaves room so a scene every 4 to 7 s is not cut for being a
 // few hundredths of a second over a third (the 11-09 fathom re-pick lost a whole 3.7 s scene that way).
 export const SCENE_SHARE = 0.4;
@@ -55,7 +55,8 @@ export function pacingReport(picks, words, duration, { hookEnd = 3 } = {}) {
     // A band icon up to 1.2 s before a scene that opens on the same icon hands over into it (a bridge), so it may run
     // into the scene; anything else waits SCENE_SETTLE after the scene has gone.
     const bridge = (s) => e.kind === "icons" && e.start < s.start && s.start - e.start <= 1.2 && sceneFirstIcon(s.pick) === e.pick.icon;
-    if (kept.some((s) => s.kind === "scenes" && e.start < s.end + SCENE_SETTLE - 1e-9 && e.end > s.start && !bridge(s))) { drop(e, "scene-settle"); continue; }
+    // An element that starts well before a scene is cut short when the scene arrives (layout does it), not dropped.
+    if (kept.some((s) => s.kind === "scenes" && e.start < s.end + SCENE_SETTLE - 1e-9 && e.end > s.start && !bridge(s) && !(e.kind !== "scenes" && e.start <= s.start - RUN_IN))) { drop(e, "scene-settle"); continue; }
     const prev = kept.filter((s) => s.kind === e.kind).at(-1);
     if (prev && ((e.kind === "scenes" && (prev.pick.type || "icons") === (e.pick.type || "icons") && e.start - prev.end < SCENE_REPEAT_GAP - 1e-9) || (e.kind === "icons" && prev.pick.icon === e.pick.icon))) { drop(e, "repeat"); continue; }
     const band = [...kept.filter((s) => s.kind !== "scenes"), e].sort((a, b) => a.start - b.start);
