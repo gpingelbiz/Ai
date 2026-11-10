@@ -637,6 +637,7 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       #hook.hook-glow #hook-lines .hw { margin: 0; }
       #hook.hook-glow #hook-lines .hw.k { color: ${c.accent}; font-size: 1em; text-shadow: 0 0 0.14em ${hexA(c.accent, 0.7)}, 0 0 0.5em ${hexA(c.accent, 0.32)}, 0 0.05em 0.3em rgba(0,0,0,0.7); }
       #hook.hook-glow-depth #hook-lines { font-family: "Anton", sans-serif; font-weight: 400; line-height: 1; white-space: nowrap; }
+      #hook.hook-glow-depth #hook-block { text-align: center; }
 ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
       .icon-3d .icon-disc { background: none; border: 0; border-radius: 0; }
       .icon-3d .icon-disc img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0.6em 1.2em rgba(0,0,0,0.55)) drop-shadow(0 0 1.4em ${hexA(c.accent, 0.25)}); }` : ""}${glow && iconList.some((icon) => icon.image) ? glowIconsCSS(c.accent) : ""}${sceneList.length || overList.length ? glowScenesCSS({ W, H, c }) : ""}

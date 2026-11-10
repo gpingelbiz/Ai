@@ -26,7 +26,9 @@ export function depthHookSpot(hook, detection, { W = 1080, H = 1920 } = {}) {
     // The letters sit on the highest head position, so a head that dips only uncovers them (never swallows a word);
     // a head that travels far (over 4% of the frame) would leave the title floating most of the time.
     if ((Math.max(...tops) - Math.min(...tops)) * H > 0.04 * H) continue;
-    const bottom = Math.round(top + size * 0.18);
+    // The line box runs about a tenth of the size below the capitals' baseline, so 0.3 tucks roughly the lowest fifth
+    // of the letters behind the head (0.18 left a gap: no letter reached the head).
+    const bottom = Math.round(top + size * 0.3);
     const y = Math.round(bottom - lines.length * size);
     if (y < 0.07 * H || bottom > 0.5 * H) continue;
     candidates.push({ x: Math.round(0.07 * W), y, w, size, depth: true, bottom, br: breaks[0] || 0, breaks });
@@ -65,7 +67,7 @@ export const GLOW_DEPTH_JS = `        if (PLAN.glowDepth) {
             wrap.style.fontSize = size + "px";
           }
           const height = block.getBoundingClientRect().height / k;
-          const bottom = PLAN.glowDepth.bottom - (PLAN.glowDepth.size - size) * 0.18;
+          const bottom = PLAN.glowDepth.bottom - (PLAN.glowDepth.size - size) * 0.3;
           wrap.style.top = (bottom - height) + "px";
         }
 `;

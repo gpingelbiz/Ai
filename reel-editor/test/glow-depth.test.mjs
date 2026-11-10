@@ -47,7 +47,7 @@ test("depth title tucks only an edge behind the measured head and stays in the u
     assert.ok(place.x + place.w <= 0.86 * 1080);
     const head = (0.32 - 0.15 * 0.26) * 1920;
     assert.ok(place.bottom > head);
-    assert.ok(place.bottom - head <= place.size * 0.19);
+    assert.ok(place.bottom - head <= place.size * 0.31);
     assert.ok(place.bottom < 0.5 * 1920);
   }
 });
@@ -69,7 +69,7 @@ test("depth measures the actual hook window, including body measurements for hai
   d.frames.forEach((frame) => { frame.bodies = [{ x: 0.2, y: 0.26, w: 0.6, h: 0.7 }]; });
   const place = depthHookSpot(hook, d);
   assert.ok(place.bottom >= 0.26 * 1920);
-  assert.ok(place.bottom - 0.26 * 1920 < place.size * 0.19);
+  assert.ok(place.bottom - 0.26 * 1920 < place.size * 0.31);
 });
 
 test("depth reuses a full hook cutout and puts the person above the title", async (t) => {
@@ -289,7 +289,7 @@ test("depth runtime shrinks an unexpectedly wide font and keeps the overlap shal
     document: { getElementById: (id) => id === "hook-block" ? wrap : id === "hook-lines" ? line : { getBoundingClientRect: () => ({ height: 1920 }) } },
   });
   assert.equal(wrap.style.fontSize, "90px");
-  assert.equal(wrap.style.top, "408.2px");
+  assert.equal(wrap.style.top, "407px");
 });
 
 test("non-glow compositions contain no light or depth runtime, even with stale glow metadata", () => {
@@ -319,5 +319,5 @@ test("a head that bobs a little still gets the depth title, tucked at its highes
   const place = depthHookSpot({ text: "Nobody claps for Tuesday", start: 0, duration: 3 }, d);
   assert.ok(place);
   const head = (0.34 - 0.15 * 0.26) * 1920;
-  assert.ok(place.bottom - head <= place.size * 0.19);
+  assert.ok(place.bottom - head <= place.size * 0.31);
 });

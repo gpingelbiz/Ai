@@ -7,7 +7,7 @@ export const glowLightWord = (text) => `<span class="glow-light" aria-hidden="tr
 export function glowLightCSS() {
   return `
       .hook-glow .hw, .cap-feat .w { position: relative; }
-      .glow-light { position: absolute; inset: 0; pointer-events: none; opacity: 0; color: transparent; -webkit-text-fill-color: transparent; -webkit-text-stroke: 0; text-shadow: none; background-image: linear-gradient(105deg, transparent 38%, rgba(200,162,75,0.22) 44%, rgba(245,241,232,0.8) 50%, rgba(200,162,75,0.3) 56%, transparent 62%); background-repeat: no-repeat; background-clip: text; -webkit-background-clip: text; }
+      .glow-light { position: absolute; inset: 0; pointer-events: none; opacity: 0; color: transparent; -webkit-text-fill-color: transparent; -webkit-text-stroke: 0; text-shadow: none; background-image: linear-gradient(105deg, transparent 41%, rgba(200,162,75,0.85) 46%, rgba(255,246,220,1) 50%, rgba(200,162,75,0.85) 54%, transparent 59%); background-repeat: no-repeat; background-clip: text; -webkit-background-clip: text; }
       #hook.hook-glow #hook-lines .glow-light { color: transparent; text-shadow: none; }
 `;
 }
@@ -52,7 +52,7 @@ export const GLOW_LIGHT_JS = `        // One shared light crosses the entire phr
             if (!light) return;
             light.style.backgroundSize = (width * 3 / scale) + "px 100%";
             const offset = (bounds[i].left - left) / scale;
-            tl.set(light, { opacity: 0.65 }, s.start);
+            tl.set(light, { opacity: 1 }, s.start);
             tl.fromTo(light, { backgroundPositionX: (-width * 2 / scale - offset) + "px" }, { backgroundPositionX: (width / scale - offset) + "px", duration: s.duration, ease: "sine.inOut", immediateRender: false }, s.start);
             tl.set(light, { opacity: 0 }, s.start + s.duration);
           });
