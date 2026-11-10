@@ -31,6 +31,7 @@ Usage
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
   reel ending <workdir> [--json]    check the opening and ending without rendering
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
+  reel restyle <workdir> [--icons <dir>] [--out <dir>] [--repick] [--no-render]  the finished reel again in the glow look, in <workdir>-glow
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
   reel batch <folder> [options]     edit every video in a folder that has no render yet
@@ -392,6 +393,30 @@ export async function main(argv) {
       if (opts.help || !positionals[0]) return console.log(USAGE);
       const rs = await batchEdit(positionals[0], opts);
       log(`batch done: ${rs.length} edited`);
+      return;
+    }
+    case "restyle": {
+      // A finished reel again in the glow look, in a copy of its job folder: same footage, cuts and audio.
+      const { opts, positionals } = parse(rest, { icons: { type: "string" }, out: { type: "string" }, repick: { type: "boolean" }, "no-render": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const { restyleGlow, loadIconLibrary, glowIconDir } = await import("./glow.mjs");
+      const src = path.resolve(positionals[0]);
+      const plan = readJSON(path.join(src, "plan.json"));
+      const render = path.join(src, "renders", `${plan.name}.mp4`);
+      const dest = path.resolve(opts.out || `${src}-glow`);
+      // A restyle run again keeps Claude's picks unless --repick.
+      const pickFile = path.join(dest, "glow-picks.json");
+      const saved = !opts.repick && fs.existsSync(pickFile) ? readJSON(pickFile) : null;
+      fs.rmSync(dest, { recursive: true, force: true });
+      fs.cpSync(src, dest, { recursive: true, filter: (f) => !/[\\/](renders|project|covers)$/.test(f) });
+      const library = loadIconLibrary(opts.icons || glowIconDir());
+      log(`restyle: ${library.length} 3D icons`);
+      const { plan: next, picks } = await restyleGlow(plan, { render: fs.existsSync(render) ? render : null, library, picks: saved });
+      writeJSON(path.join(dest, "plan.json"), next);
+      writeJSON(path.join(dest, "glow-picks.json"), picks);
+      log(`restyle: ${picks.features.length} feature lines, ${next.icons.length} icons, ${next.glowOverlays.length} overlays, ${next.glowScenes.length} scenes (${next.glowScenes.map((sc) => sc.type).join(", ")})`);
+      const r = await buildProject(dest, { noRender: !!opts.noRender });
+      if (r.output) console.log(r.output);
       return;
     }
     case "build": {

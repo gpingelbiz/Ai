@@ -24,6 +24,7 @@ import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
 import { runTextcheck } from "./textcheck.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
+import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
@@ -845,7 +846,23 @@ export async function runEdit(input, opts = {}) {
   composeProject(plan, projectDir);
   log(`project: ${projectDir} (edit ${path.join(workDir, "plan.json")} and run: reel build ${workDir})`);
   if (opts.noRender) return { workDir, plan };
-  const output = await renderProject(workDir, opts);
+  // The glow look (Greg's vertical reels only, never a client job): a quick first render gives the face positions with
+  // every zoom in place, then Claude picks the feature lines, icons and scenes and the final render is checked as usual.
+  const glowOn = glowEnabled(preset, plan);
+  let output = await renderProject(workDir, glowOn ? { ...opts, noPreflight: true, noReview: true } : opts);
+  if (glowOn) {
+    try {
+      const library = loadIconLibrary(glowIconDir(preset.glow));
+      const { picks } = await restyleGlow(plan, { render: output, library });
+      writeJSON(path.join(workDir, "glow-picks.json"), picks);
+      writeJSON(path.join(workDir, "plan.json"), plan);
+      composeProject(plan, projectDir);
+      log(`glow look: ${picks.features.length} feature lines, ${plan.icons.length} icons, ${plan.glowOverlays.length} overlays, ${plan.glowScenes.length} scenes${plan.glowScenes.length ? ` (${plan.glowScenes.map((sc) => sc.type).join(", ")})` : ""}`);
+    } catch (e) {
+      warn(`glow look skipped: ${String(e.message).split("\n")[0]}; keeping the standard look`);
+    }
+    output = await renderProject(workDir, opts);
+  }
   let cover = null;
   if (preset.cover?.enabled !== false && hook) {
     // Pick an open-eyed, sharp frame that survives the grid crop. Archetypes build a separate cover composition;

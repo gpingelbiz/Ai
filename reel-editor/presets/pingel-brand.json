@@ -146,5 +146,8 @@
   },
   "finish": {
     "enabled": true
+  },
+  "glow": {
+    "enabled": true
   }
 }
