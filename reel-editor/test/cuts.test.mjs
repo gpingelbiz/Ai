@@ -91,6 +91,18 @@ test("findBadTakes leaves deliberate repetition after a clause boundary", () => 
   assert.ok(findBadTakes(w).every((d) => d === null));
 });
 
+test("findBadTakes keeps a parallel line joined by when, if or because", () => {
+  // Greg's VSL 2026-11-10 0:11: "I wanted to do when" was cut as a false start.
+  const line = (texts) => texts.map((text, i) => ({ text, start: 10 + i * 0.25, end: 10 + i * 0.25 + 0.2 }));
+  for (const t of [
+    ["what", "I", "wanted", "to", "do", "when", "I", "wanted", "to", "do", "it."],
+    ["you", "show", "up", "for", "them", "because", "you", "show", "up", "for", "yourself."],
+    ["it", "works", "for", "me", "if", "it", "works", "for", "you."],
+  ]) assert.ok(findBadTakes(line(t)).every((d) => d === null), t.join(" "));
+  const restart = line(["I", "wanted", "to", "do", "um", "I", "wanted", "to", "do", "it."]);
+  assert.deepEqual(findBadTakes(restart).slice(0, 5), ["bad-take", "bad-take", "bad-take", "bad-take", "bad-take"], "a real restart is still cut");
+});
+
 test("planCuts removes long silences, fillers and bad takes, never the kept words", () => {
   const plan = planCuts(sample, 24, { silence: "fast", badTakes: true, fillers: true, pad: 0.12 });
   const reasons = plan.removed.map((r) => r.reason);

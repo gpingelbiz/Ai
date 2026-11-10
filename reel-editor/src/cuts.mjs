@@ -67,6 +67,7 @@ export function endingReport(words, duration, { tail = 10, minTail = 1.5 } = {})
 }
 
 const endsClause = (t) => /[.,!?;:]$/.test(String(t).trim());
+const JOINERS = new Set(["when", "whenever", "where", "wherever", "while", "if", "because", "cause", "'cause", "and", "but", "or", "so", "then", "as", "than", "until", "till", "before", "after", "since", "unless"]);
 
 /**
  * Bad-take detection: a phrase of 3..8 words that is repeated shortly after is a restart.
@@ -105,6 +106,11 @@ export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5,
         let clause = false;
         for (let m = i; m < j; m++) if (endsClause(words[m].text)) { clause = true; break; }
         if (clause) continue;
+        // A joining word between a finished phrase and its copy is a parallel line, not a restart:
+        // "what I wanted to do when I wanted to do it" (Greg's VSL, 2026-11-10, lost "I wanted to do when").
+        let joined = false;
+        for (let m = i + k; m < j; m++) if (JOINERS.has(toks[m])) { joined = true; break; }
+        if (joined) continue;
         found = { j, k };
         break;
       }
