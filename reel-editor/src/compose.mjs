@@ -626,7 +626,7 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap-row { display: flex; flex-wrap: nowrap; gap: 0.26em; white-space: nowrap; }
       .cap.cap-hero .w.hero { font-size: var(--hero-size); }
       .cap .w.wrong { position: relative; }
-      .swap-strike { position: absolute; left: 0; right: 0; top: 52%; height: 0.055em; background: ${c.accent}; box-shadow: 0 0 0.12em ${hexA(c.accent, 0.7)}; transform: scaleX(0); transform-origin: 0 50%; }
+      .swap-strike { position: absolute; left: 0; right: 0; top: 50%; height: 0.08em; margin-top: -0.04em; border-radius: 0.04em; background: ${c.accent}; box-shadow: 0 0 0.12em ${hexA(c.accent, 0.7)}; transform: scaleX(0); transform-origin: 0 50%; }
       .cap.cap-sub { top: ${r3((cap.subPosition || 0.79) * 100)}%; }
       .cap.cap-sub .cap-line { font-weight: 560; text-transform: none; letter-spacing: 0; line-height: 1.2; text-shadow: 0 0.04em 0.16em rgba(0,0,0,0.85), 0 0 0.6em rgba(0,0,0,0.45); background: ${hexA(c.bg || "#0B0B0D", 0.5)}; padding: 0.1em 0.5em 0.14em; border-radius: 0.6em; }
       .cap.cap-sub .w.k { color: inherit; text-shadow: inherit; }
@@ -817,7 +817,8 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
               if (swap && swap.wrong >= 0 && swap.right >= 0) {
                 const at = Math.max(g.start, g.words[swap.right][0]);
                 tl.fromTo("#cap-" + i + "-strike", { scaleX: 0 }, { scaleX: 1, duration: 0.22, ease: "power2.out", immediateRender: false }, at);
-                tl.fromTo("#cap-" + i + "-w" + swap.wrong, { opacity: 1 }, { opacity: 0.38, duration: 0.22, ease: "power2.out", immediateRender: false }, at);
+                // The wrong word's letters dim (colour, not opacity, so its gold strike stays at full strength).
+                tl.fromTo("#cap-" + i + "-w" + swap.wrong, { color: "${c.text}" }, { color: "${hexA(c.text, 0.38)}", duration: 0.22, ease: "power2.out", immediateRender: false }, at);
               }
               tl.to(line, { opacity: 0, duration: 0.16, ease: "power2.in" }, Math.max(g.start + 0.2, g.end - 0.16));
             } else tl.fromTo(line, { opacity: 0 }, { opacity: 1, duration: 0.08, ease: "none" }, g.start);

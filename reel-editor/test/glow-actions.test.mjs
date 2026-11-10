@@ -23,14 +23,16 @@ function fixture(glow = true) {
 
 const runtime = (html) => JSON.parse(html.match(/const PLAN = (.*);/)[1]);
 
-function timeline(plan, js = GLOW_SCENES_JS, seek = false) {
+function timeline(plan, js = GLOW_SCENES_JS, seek = false, flatRoot = false) {
   const calls = [], nodes = new Map();
   const node = (id, rect = { left: 0, top: 0, width: 100, height: 100 }) => {
-    const el = { id, opacity: 0, x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, zIndex: 0, clipPath: "inset(0 0 0 0)", filter: "none", offsetWidth: 200, getBoundingClientRect: () => rect, querySelector: (sel) => nodes.get(id + sel), querySelectorAll: () => [] };
+    const el = { id, style: {}, opacity: 0, x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, zIndex: 0, clipPath: "inset(0 0 0 0)", filter: "none", offsetWidth: 200, getBoundingClientRect: () => rect, querySelector: (sel) => nodes.get(id + sel), querySelectorAll: () => [] };
     nodes.set(id, el);
     return el;
   };
-  node("root", { left: 10, top: 20, width: 540, height: 960 });
+  const root = node("root", { left: 10, top: 20, width: 540, height: 960 });
+  // Before the renderer sizes the page the root is 0 px tall; the bridge must measure it at full height.
+  if (flatRoot) root.getBoundingClientRect = () => ({ left: 10, top: 20, width: 540, height: parseFloat(root.style.height) || 0 });
   (plan.icons || []).forEach((icon, i) => {
     node(`icon-${i}`);
     node(`icon-${i}.icon-disc`, { left: 360, top: 520, width: 80, height: 80 });
@@ -283,4 +285,11 @@ test("glow bridges: pacing keeps a band icon that hands into the next scene and 
   assert.equal(picks("coins").icons.length, 0, "an unrelated icon running into a scene is trimmed");
   const out = layoutGlow({ words, video: { duration: 22 } }, picks("phone"), library, null);
   assert.equal(out.scenes[0].bridge, 0);
+});
+
+test("glow bridges: a root not yet sized at timeline build is measured at full height and left as it was", () => {
+  const plan = { width: 1080, height: 1920, icons: [{ t: 4, end: 5 + GLOW_BRIDGE_DURATION, action: "float" }], ...glowRuntime([{ type: "icons", start: 5, end: 7, icons: [picture("phone")], bridge: 0 }], []) };
+  const { calls, nodes } = timeline(plan, GLOW_SCENES_JS, false, true);
+  assert.ok(calls.some((c) => c.target === nodes.get("icon-0") && "x" in c.to), "the band icon still flies");
+  assert.equal(nodes.get("root").style.height, undefined);
 });

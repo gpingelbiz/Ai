@@ -166,8 +166,8 @@ test("composed swap timeline builds each word, then strikes and dims exactly at 
   assert.equal(strike.args[2].scaleX, 1);
   assert.equal(strike.args[2].immediateRender, false);
   assert.equal(strike.args[3], swapWords[4].start);
-  const dim = calls.find((c) => c.args[0] === "#cap-0-w2" && c.args[2]?.opacity === 0.38);
-  assert.equal(dim.args[1].opacity, 1);
+  const dim = calls.find((c) => c.args[0] === "#cap-0-w2" && /^rgba\(.*0\.38\)$/.test(c.args[2]?.color || ""));
+  assert.ok(dim.args[1].color, "dims by colour so the strike keeps full strength");
   assert.equal(dim.args[3], swapWords[4].start);
   const builds = calls.filter((c) => c.method === "fromTo" && c.args[2]?.filter === "blur(0px)");
   assert.equal(builds.length, swapWords.length);

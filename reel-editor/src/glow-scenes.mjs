@@ -67,7 +67,7 @@ function sceneInner(scene, i, { W, H, esc }) {
       const nodes = flowNodes(scene.items.length);
       const path = nodes.map((p, k) => `${k ? "L" : "M"}${p.x} ${p.y}`).join(" ");
       const branchY = (nodes[0].y + nodes[1].y) / 2;
-      return `<div class="gs-flow"><svg class="gs-flow-svg" viewBox="0 0 800 1000" preserveAspectRatio="none"><path class="gs-flow-path" id="${id("path")}" d="${path}"/>${scene.branch ? `<path class="gs-flow-branch-path" id="${id("bpath")}" d="M160 ${branchY} H440"/>` : ""}</svg>${scene.items.map((it, k) => `<div class="gs-flow-row" id="${id(`r${k}`)}" style="top:${nodes[k].y / 10}%"><span class="gs-flow-dot">${img(it.icon, "", Math.round(W * 0.06), esc)}</span><span>${esc(it.label)}</span></div>`).join("")}${scene.branch ? `<div class="gs-flow-branch" id="${id("branch")}" style="top:${branchY / 10}%">${esc(scene.branch.label)}</div>` : ""}<svg class="gs-flow-svg gs-flow-token-layer" viewBox="0 0 800 1000" preserveAspectRatio="none"><circle class="gs-flow-token" id="${id("token")}" cx="160" cy="140" r="12"/></svg></div>`;
+      return `<div class="gs-flow"><svg class="gs-flow-svg" viewBox="0 0 800 1000" preserveAspectRatio="none"><path class="gs-flow-path" id="${id("path")}" d="${path}"/>${scene.branch ? `<path class="gs-flow-branch-path" id="${id("bpath")}" d="M160 ${branchY} H440"/>` : ""}</svg>${scene.items.map((it, k) => `<div class="gs-flow-row" id="${id(`r${k}`)}" style="top:${nodes[k].y / 10}%"><span class="gs-flow-dot">${img(it.icon, "", Math.round(W * 0.085), esc)}</span><span>${esc(it.label)}</span></div>`).join("")}${scene.branch ? `<div class="gs-flow-branch" id="${id("branch")}" style="top:${branchY / 10}%">${esc(scene.branch.label)}</div>` : ""}<svg class="gs-flow-svg gs-flow-token-layer" viewBox="0 0 800 1000" preserveAspectRatio="none"><circle class="gs-flow-token" id="${id("token")}" cx="160" cy="140" r="16"/></svg></div>`;
     }
     case "thread": {
       return `<div class="gs-thread"><div class="gs-thread-head"><span>${esc(scene.who)}</span><span class="gs-illustrative">ILLUSTRATIVE</span></div><div class="gs-thread-window">${scene.bubbles.map((b, k) => `<div class="gs-thread-bubble gs-thread-${b.side}" id="${id(`b${k}`)}">${b.words.map((w) => esc(w.text)).join(" ")}</div><div class="gs-typing gs-thread-${b.side}" id="${id(`typing${k}`)}" aria-label="Typing"><span></span><span></span><span></span></div>`).join("")}</div></div>`;
@@ -156,17 +156,17 @@ export function glowScenesCSS({ W, H, c }) {
       .gs-flow { position: absolute; left: 8%; right: 18%; top: 16%; height: 60%; }
       .gs-flow-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
       .gs-flow-token-layer { pointer-events: none; }
-      .gs-flow-path, .gs-flow-branch-path { fill: none; stroke: ${accent}; stroke-width: 4; }
+      .gs-flow-path, .gs-flow-branch-path { fill: none; stroke: ${accent}; stroke-width: 6; }
       .gs-flow-branch-path { opacity: 0; }
       .gs-flow-token { fill: ${accent}; filter: drop-shadow(0 0 12px ${accent}); }
-      .gs-flow-row { position: absolute; left: 20%; right: 0; display: flex; align-items: center; gap: 0.6em; transform: translate(-${Math.round(W * 0.037)}px, -50%); opacity: 0.2; font-size: ${px(0.03)}px; line-height: 1.05; font-weight: 760; text-transform: uppercase; letter-spacing: 0.012em; text-shadow: ${glow}; }
-      .gs-flow-dot { width: ${Math.round(W * 0.074)}px; height: ${Math.round(W * 0.074)}px; flex: 0 0 ${Math.round(W * 0.074)}px; border: 3px solid ${accent}; border-radius: 50%; background: ${bg}; display: grid; place-items: center; }
-      .gs-flow-branch { position: absolute; left: 55%; right: 0; padding: 0.3em 0.5em; background: ${bg}; color: ${accent}; opacity: 0; font-size: ${px(0.026)}px; font-weight: 700; text-transform: uppercase; transform: translateY(-50%); }
-      .gs-thread { position: absolute; left: 10%; right: 18%; top: 20%; height: 50%; border: 2px solid ${hexA(accent, 0.4)}; border-radius: ${px(0.02)}px; background: ${hexA(bg, 0.85)}; overflow: hidden; }
-      .gs-thread-head { position: absolute; top: 0; left: 0; right: 0; padding: 1em; display: flex; justify-content: space-between; align-items: center; color: ${accent}; font-size: ${px(0.021)}px; border-bottom: 1px solid ${hexA(accent, 0.25)}; }
-      .gs-illustrative { font-size: 0.55em; letter-spacing: 0.13em; }
+      .gs-flow-row { position: absolute; left: 20%; right: 0; display: flex; align-items: center; gap: 0.6em; transform: translate(-${Math.round(W * 0.055)}px, -50%); opacity: 0.2; font-size: ${px(0.04)}px; line-height: 1.05; font-weight: 760; text-transform: uppercase; letter-spacing: 0.012em; text-shadow: ${glow}; }
+      .gs-flow-dot { width: ${Math.round(W * 0.11)}px; height: ${Math.round(W * 0.11)}px; flex: 0 0 ${Math.round(W * 0.11)}px; border: 4px solid ${accent}; box-shadow: 0 0 30px ${hexA(accent, 0.4)}; border-radius: 50%; background: ${bg}; display: grid; place-items: center; }
+      .gs-flow-branch { position: absolute; left: 55%; right: 0; padding: 0.3em 0.5em; background: ${bg}; color: ${accent}; opacity: 0; font-size: ${px(0.03)}px; font-weight: 700; text-transform: uppercase; transform: translateY(-50%); }
+      .gs-thread { position: absolute; left: 7%; right: 15%; top: 17%; height: 56%; border: 2px solid ${hexA(accent, 0.4)}; border-radius: ${px(0.02)}px; background: ${hexA(bg, 0.85)}; overflow: hidden; }
+      .gs-thread-head { position: absolute; top: 0; left: 0; right: 0; padding: 1em; display: flex; justify-content: space-between; align-items: center; color: ${accent}; font-size: ${px(0.026)}px; font-weight: 700; border-bottom: 1px solid ${hexA(accent, 0.25)}; }
+      .gs-illustrative { font-size: 0.62em; letter-spacing: 0.13em; color: ${hexA(text, 0.7)}; }
       .gs-thread-window { position: absolute; left: 5%; right: 5%; top: 15%; bottom: 5%; overflow: hidden; }
-      .gs-thread-bubble, .gs-typing { position: absolute; bottom: 0; max-width: 88%; padding: 0.65em 0.8em; border-radius: 0.65em; font-size: ${px(0.025)}px; line-height: 1.2; font-weight: 600; color: ${bg}; opacity: 0; overflow-wrap: anywhere; }
+      .gs-thread-bubble, .gs-typing { position: absolute; bottom: 0; max-width: 88%; padding: 0.65em 0.8em; border-radius: 0.65em; font-size: ${px(0.031)}px; line-height: 1.2; font-weight: 600; color: ${bg}; opacity: 0; overflow-wrap: anywhere; }
       .gs-thread-them { left: 0; background: ${text}; border-bottom-left-radius: 0.15em; }
       .gs-thread-me { right: 0; background: ${accent}; border-bottom-right-radius: 0.15em; }
       .gs-typing { display: flex; gap: 0.2em; align-items: center; height: 0.7em; }
@@ -224,8 +224,13 @@ export const GLOW_SCENES_JS = `
           const target = document.querySelector(s.bridgeTarget);
           const root = document.getElementById("root");
           if (!source || !target || !root) return false;
+          // The timeline is built before the renderer sizes the page, when the root can still be 0 px tall (the scene's
+          // pieces would then all sit at the top): measure with the root at its full height, then put it back.
+          const height = root.style.height;
+          if (!root.getBoundingClientRect().height) root.style.height = PLAN.height * (root.getBoundingClientRect().width / PLAN.width || 1) + "px";
           const a = source.querySelector(".icon-disc").getBoundingClientRect(), b = target.getBoundingClientRect();
           const canvas = root.getBoundingClientRect();
+          root.style.height = height;
           if (!a.width || !a.height || !b.width || !b.height || !canvas.width || !canvas.height) return false;
           const x = (b.left + b.width / 2 - a.left - a.width / 2) * PLAN.width / canvas.width;
           const y = (b.top + b.height / 2 - a.top - a.height / 2) * PLAN.height / canvas.height;
