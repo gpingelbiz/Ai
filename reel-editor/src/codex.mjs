@@ -175,8 +175,45 @@ export function imageInstructions({ aspect = "9:16", style = "" } = {}) {
   ].filter(Boolean).join("\n");
 }
 
-/** Image files Codex saved in `dir`, by name, that are real images (not empty). */
+/** Image files Codex saved in `dir`, by name, that are real images (not empty), with OpenAI's C2PA stripped. */
 export function savedImage(dir, name) {
   const f = path.join(dir, name);
-  try { return fs.statSync(f).size > 1000 ? f : null; } catch { return null; }
+  try { if (fs.statSync(f).size <= 1000) return null; } catch { return null; }
+  try { stripC2pa(f); } catch (e) { log(`could not strip C2PA from ${f}: ${e.message}`); }
+  return f;
+}
+
+/**
+ * Codex's image tool signs every image with OpenAI's C2PA Content Credentials (Greg 2026-11-02: strip them).
+ * Drops the manifest only (PNG caBX chunk, JPEG APP11 segment); pixels and colour chunks stay byte for byte.
+ * Returns true when the file was rewritten.
+ */
+export function stripC2pa(file) {
+  const data = fs.readFileSync(file), keep = [];
+  let i, dropped = false;
+  if (data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    keep.push(data.subarray(0, 8));
+    for (i = 8; i + 8 <= data.length;) {
+      const n = data.readUInt32BE(i), type = data.toString("latin1", i + 4, i + 8), end = i + 12 + n;
+      if (end > data.length) return false;
+      if (type === "caBX") dropped = true; else keep.push(data.subarray(i, end));
+      i = end;
+      if (type === "IEND") break;
+    }
+    keep.push(data.subarray(i));
+  } else if (data[0] === 0xff && data[1] === 0xd8) {
+    keep.push(data.subarray(0, 2));
+    for (i = 2; i + 4 <= data.length && data[i] === 0xff && data[i + 1] !== 0xda;) {
+      const end = i + 2 + data.readUInt16BE(i + 2);
+      if (end > data.length) return false;
+      if (data[i + 1] === 0xeb) dropped = true; else keep.push(data.subarray(i, end));
+      i = end;
+    }
+    keep.push(data.subarray(i));
+  } else return false;
+  if (!dropped) return false;
+  const tmp = `${file}.strip-${process.pid}`;
+  fs.writeFileSync(tmp, Buffer.concat(keep));
+  fs.renameSync(tmp, file);
+  return true;
 }

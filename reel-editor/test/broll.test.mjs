@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { brollCount, brollCandidates, placeBroll, picksPrompt, holdForSplit, checkPick, PICKS_SCHEMA, readRecent, rememberScenes } from "../src/broll.mjs";
 import { PICKS_RULES } from "../src/broll-runway.mjs";
-import { codexModels, isModelRefusal, imageInstructions, savedImage } from "../src/codex.mjs";
+import { codexModels, isModelRefusal, imageInstructions, savedImage, stripC2pa } from "../src/codex.mjs";
 import { renderHTML } from "../src/compose.mjs";
 import { applyTheme } from "../src/looks.mjs";
 import { loadPreset } from "../src/presets.mjs";
@@ -89,6 +89,32 @@ test("only real, non-empty image files count", async () => {
   assert.equal(savedImage(d, "empty.png"), null);
   assert.equal(savedImage(d, "missing.png"), null);
   assert.equal(savedImage(d, "real.png"), path.join(d, "real.png"));
+  assert.equal(fs.statSync(path.join(d, "real.png")).size, 5000);
+});
+
+test("Codex images come in without OpenAI's C2PA manifest", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "c2pa-"));
+  const chunk = (type, body) => { const b = Buffer.alloc(12 + body.length); b.writeUInt32BE(body.length, 0); b.write(type, 4, "latin1"); body.copy(b, 8); return b; };
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = chunk("IHDR", Buffer.alloc(13, 1)), srgb = chunk("sRGB", Buffer.from([0]));
+  const idat = chunk("IDAT", Buffer.alloc(3000, 7)), iend = chunk("IEND", Buffer.alloc(0));
+  const clean = Buffer.concat([sig, ihdr, srgb, idat, iend]);
+  fs.writeFileSync(path.join(d, "still-1.png"), Buffer.concat([sig, ihdr, srgb, chunk("caBX", Buffer.from("jumb c2pa openai trainedAlgorithmicMedia")), idat, iend]));
+  assert.equal(savedImage(d, "still-1.png"), path.join(d, "still-1.png"));
+  assert.ok(fs.readFileSync(path.join(d, "still-1.png")).equals(clean));
+  assert.equal(stripC2pa(path.join(d, "still-1.png")), false);
+
+  const seg = (m, body) => Buffer.concat([Buffer.from([0xff, m]), Buffer.from([(body.length + 2) >> 8, (body.length + 2) & 0xff]), body]);
+  const soi = Buffer.from([0xff, 0xd8]), app0 = seg(0xe0, Buffer.from("JFIF\0")), app2 = seg(0xe2, Buffer.from("ICC_PROFILE\0"));
+  const scan = Buffer.concat([Buffer.from([0xff, 0xda, 0, 2]), Buffer.alloc(3000, 9), Buffer.from([0xff, 0xd9])]);
+  const f = path.join(d, "slide-1.jpg");
+  fs.writeFileSync(f, Buffer.concat([soi, app0, seg(0xeb, Buffer.from("JPjumb c2pa")), app2, scan]));
+  assert.equal(stripC2pa(f), true);
+  assert.ok(fs.readFileSync(f).equals(Buffer.concat([soi, app0, app2, scan])));
+  assert.equal(stripC2pa(f), false);
 });
 
 test("render: b-roll sits between the footage and the captions", () => {
