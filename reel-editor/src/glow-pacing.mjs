@@ -23,6 +23,15 @@ export function glowWindow(kind, pick, words, duration, hookEnd = 3) {
   return { start: r3(Math.max(hookEnd, start)), end: r3(Math.min(duration - (kind === "icons" ? 0.2 : 0.05), end)) };
 }
 
+/** The library icon a scene opens with (a band icon of the same name can fly into its place), or null. */
+export function sceneFirstIcon(scene) {
+  if (scene.type === "list") return scene.items?.[0]?.icon || null;
+  if (scene.type === "versus") return scene.left?.icon || null;
+  if (scene.type === "people") return "person";
+  if (["icons", "number"].includes(scene.type || "icons")) return scene.icon || scene.icons?.[0] || null;
+  return null;
+}
+
 /** Trim checked picks without inventing beats. A sparse plan may exceed the 35% clean-hold target. */
 export function pacingReport(picks, words, duration, { hookEnd = 3 } = {}) {
   const D = Number.isFinite(duration) ? Math.max(0, duration) : Math.max(hookEnd, ...words.map((w) => w.end)) + 0.5;
@@ -33,7 +42,10 @@ export function pacingReport(picks, words, duration, { hookEnd = 3 } = {}) {
   const drop = (e, reason) => dropped.push({ kind: e.kind, pick: e.pick, reason });
   for (const e of entries) {
     if (words[e.pick.from ?? e.pick.word].start < hookEnd || e.end <= e.start) { drop(e, "title"); continue; }
-    if (kept.some((s) => s.kind === "scenes" && e.start < s.end + 1.2 - 1e-9 && e.end > s.start)) { drop(e, "scene-settle"); continue; }
+    // A band icon up to 1.2 s before a scene that opens on the same icon hands over into it (a bridge), so it may run
+    // into the scene; anything else waits until the scene has settled.
+    const bridge = (s) => e.kind === "icons" && e.start < s.start && s.start - e.start <= 1.2 && sceneFirstIcon(s.pick) === e.pick.icon;
+    if (kept.some((s) => s.kind === "scenes" && e.start < s.end + 1.2 - 1e-9 && e.end > s.start && !bridge(s))) { drop(e, "scene-settle"); continue; }
     const prev = kept.filter((s) => s.kind === e.kind).at(-1);
     if (prev && ((e.kind === "scenes" && (prev.pick.type || "icons") === (e.pick.type || "icons")) || (e.kind === "icons" && prev.pick.icon === e.pick.icon))) { drop(e, "repeat"); continue; }
     const band = [...kept.filter((s) => s.kind !== "scenes"), e].sort((a, b) => a.start - b.start);
