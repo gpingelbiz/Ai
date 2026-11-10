@@ -1,3 +1,4 @@
+import { speakerLoudnessFilter } from "./speaker-normalize.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
@@ -1083,10 +1084,12 @@ export async function normalizeDelivery(file) {
     const m = err.match(/\{[^{}]*"input_i"[^{}]*\}/);
     if (!m) return false;
     const j = JSON.parse(m[0]);
-    const af = `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${j.input_i}:measured_TP=${j.input_tp}:measured_LRA=${j.input_lra}:measured_thresh=${j.input_thresh}:offset=${j.target_offset}:linear=true:print_format=summary`;
+    // The AAC encode puts inter-sample peaks back over a plain loudnorm's line (a glow restyle's sound cues came out
+    // at 0 dBTP on 11-10), so this uses the speaker reels' filter: aim for -2 dBTP and hold samples at -2 dBFS.
+    const af = speakerLoudnessFilter(j);
     await run("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-map", "0:v", "-map", "0:a", "-c:v", "copy", "-af", af, "-ar", "48000", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp]);
     fs.renameSync(tmp, file);
-    log(`loudness: ${Number(j.input_i).toFixed(1)} LUFS → -14 LUFS, peak -1 dBTP`);
+    log(`loudness: ${Number(j.input_i).toFixed(1)} LUFS → -14 LUFS, peak -2 dBTP`);
     return true;
   } catch (e) {
     warn(`loudness pass skipped: ${String(e.message).split("\n")[0]}`);
