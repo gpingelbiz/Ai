@@ -312,6 +312,25 @@ export function hookSpot(detection, duration, sizeFrac, band, H = 1920) {
   return { y: band(0, duration), crowded: true };
 }
 
+/**
+ * A restyle copy leaves the old project folder behind, but a reel's music bed lives only there (the edit trims it into
+ * project/assets). Copy every audio track the plan plays, other than the packaged sound effects, into the new project.
+ */
+export function carryProjectAudio(srcDir, destDir, plan) {
+  const carried = [];
+  for (const track of plan.audio?.tracks || []) {
+    const rel = String(track.src || "");
+    if (!rel.startsWith("assets/") || rel.startsWith("assets/sfx/")) continue;
+    const from = path.join(srcDir, "project", rel);
+    if (!fs.existsSync(from)) continue;
+    const to = path.join(destDir, "project", rel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+    carried.push(rel);
+  }
+  return carried;
+}
+
 /** Restyle a finished job in a new folder: same footage, cuts, audio and timing; glow captions, icons and scenes. */
 export async function restyleGlow(plan, { render, library, ask = claudeText, picks: saved = null } = {}) {
   const W = plan.canvas.width, H = plan.canvas.height, D = plan.video.duration;
