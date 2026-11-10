@@ -238,6 +238,7 @@ test("the extended feature hold still clears the face throughout its sweep", asy
 
 test("gold light markup and runtime target only the hook and feature lines, once for 0.6 seconds", async () => {
   const plan = fixture();
+  plan.style.glow = { ...plan.style.glow, subtitles: true };
   await restyleGlow(plan, { picks: { ...emptyPicks, features: [{ from: 0, to: 1, key: 1 }] } });
   const html = renderHTML(plan, "assets/footage.mp4");
   const rt = runtime(html);

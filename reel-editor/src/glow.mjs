@@ -586,6 +586,9 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
     const y = out.band(g.start, end);
     return (y + (g.place.h || 0.07 * H)) / H <= 0.785 ? { ...g.place, y } : null;
   } });
+  // Greg 11-10: no small subtitles in the glow look. Spoken words show only as feature lines, scenes and overlays,
+  // so nothing doubles up under the title or a held feature line. A preset can bring them back with glow.subtitles.
+  if (plan.style.glow?.subtitles !== true) plan.captions = plan.captions.filter((g) => g.kind !== "sub");
   // Sounds last, from the final plan. The old look's cut cues go; music, narration and a B-roll shot's own generated
   // sound (sfx-broll-*) stay.
   plan.audio = { ...plan.audio, tracks: [...(plan.audio?.tracks || []).filter((t) => !String(t.id || "").startsWith("sfx-") || String(t.id).startsWith("sfx-broll-")), ...glowSoundCues(plan)] };

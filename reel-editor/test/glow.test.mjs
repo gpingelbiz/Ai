@@ -615,3 +615,15 @@ test("bare stretches find spoken runs with nothing on screen, after the title", 
   assert.ok(bare.every((s) => s.to < 5 || s.from > 8));
   assert.deepEqual(bareStretches({ features: [], icons: [], overlays: [], scenes: [] }, ws.slice(0, 3), 10, 3, 2.5), []);
 });
+
+test("the glow look shows no small subtitles unless the preset asks for them", async () => {
+  const ws = "Price feels high or the timing is wrong".split(" ").map((text, i) => ({ text, start: 4 + i * 0.3, end: 4 + i * 0.3 + 0.25 }));
+  const base = () => ({ words: ws, video: { duration: 10 }, canvas: { width: 1080, height: 1920 }, style: { captions: {}, hook: {} }, captions: [], audio: { tracks: [] } });
+  const picks = { features: [{ from: 0, to: 2, key: 0, br: null }], icons: [], scenes: [] };
+  const off = await restyleGlow(base(), { library: [], picks, ask: () => { throw new Error("no call"); } });
+  assert.ok(off.plan.captions.length > 0);
+  assert.ok(off.plan.captions.every((g) => g.kind !== "sub"));
+  const onPlan = base(); onPlan.style.glow = { subtitles: true };
+  const on = await restyleGlow(onPlan, { library: [], picks, ask: () => { throw new Error("no call"); } });
+  assert.ok(on.plan.captions.some((g) => g.kind === "sub"));
+});
