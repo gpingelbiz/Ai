@@ -5,6 +5,8 @@ export const CLEAN_SHARE = 0.1, SCENE_SETTLE = 0.6, BAND_MAX = 3;
 // Scenes cover about a third of the reel; the hard cap leaves room so a scene every 4 to 7 s is not cut for being a
 // few hundredths of a second over a third (the 11-09 fathom re-pick lost a whole 3.7 s scene that way).
 export const SCENE_SHARE = 0.4;
+// The same scene type may come back once the reel has moved on (6 s after the last one left); back to back it may not.
+export const SCENE_REPEAT_GAP = 6;
 // The prompt asks for clean holds of about 10 to 15% of the reel; more than this is a sparse reel.
 const CLEAN_MAX = 0.15;
 
@@ -55,7 +57,7 @@ export function pacingReport(picks, words, duration, { hookEnd = 3 } = {}) {
     const bridge = (s) => e.kind === "icons" && e.start < s.start && s.start - e.start <= 1.2 && sceneFirstIcon(s.pick) === e.pick.icon;
     if (kept.some((s) => s.kind === "scenes" && e.start < s.end + SCENE_SETTLE - 1e-9 && e.end > s.start && !bridge(s))) { drop(e, "scene-settle"); continue; }
     const prev = kept.filter((s) => s.kind === e.kind).at(-1);
-    if (prev && ((e.kind === "scenes" && (prev.pick.type || "icons") === (e.pick.type || "icons")) || (e.kind === "icons" && prev.pick.icon === e.pick.icon))) { drop(e, "repeat"); continue; }
+    if (prev && ((e.kind === "scenes" && (prev.pick.type || "icons") === (e.pick.type || "icons") && e.start - prev.end < SCENE_REPEAT_GAP - 1e-9) || (e.kind === "icons" && prev.pick.icon === e.pick.icon))) { drop(e, "repeat"); continue; }
     const band = [...kept.filter((s) => s.kind !== "scenes"), e].sort((a, b) => a.start - b.start);
     if (e.kind !== "scenes" && band.some((s, i) => band[i + BAND_MAX] && band[i + BAND_MAX].start - s.start < 3 - 1e-9)) { drop(e, "band-window"); continue; }
     kept.push(e);

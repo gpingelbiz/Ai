@@ -5,7 +5,7 @@ import { detectFaces } from "./placement.mjs";
 import { r3 } from "./util.mjs";
 import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 import { glowSoundCues } from "./glow-sound.mjs";
-import { glowWindow, pacingReport, SCENE_SETTLE, BAND_MAX, SCENE_SHARE } from "./glow-pacing.mjs";
+import { glowWindow, pacingReport, SCENE_SETTLE, BAND_MAX, SCENE_SHARE, SCENE_REPEAT_GAP } from "./glow-pacing.mjs";
 import { glowIconAction } from "./glow-icons.mjs";
 import { firstGlowIcon, GLOW_BRIDGE_DURATION } from "./glow-scenes.mjs";
 import { prepareDepthHook } from "./glow-depth.mjs";
@@ -90,9 +90,9 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "",
     "Direction:",
     "- This is a graphics-rich reel: something on screen on most beats, a visual change about every 2 seconds, each graphic matched to its words. Aim for about 10 to 14 picks in a 20-second reel (scale with length).",
-    `- For this ${duration.toFixed(0)}-second reel that means about ${target} picks in all (features, icons, overlays and scenes together), including about ${scenes} full-screen scene${scenes === 1 ? "" : "s"}. Picks that break the timing rules below are dropped, so space them out rather than stacking them.`,
+    `- For this ${duration.toFixed(0)}-second reel that means about ${target} picks in all (at least ${target - 2}) (features, icons, overlays and scenes together), including about ${scenes} full-screen scene${scenes === 1 ? "" : "s"}. Picks that break the timing rules below are dropped, so space them out rather than stacking them.`,
     "- Keep only short clean holds on Greg's face (subtitles only), about 10 to 15% of the reel, for a personal or emotional line. Omit picks for those beats; do not add hold objects to the JSON.",
-    `- Use a full-screen scene every 4 to 7 seconds. Scenes together cover about a third of the reel (never more than ${Math.round(SCENE_SHARE * 100)}%). A scene stays up about 0.9 seconds after its last word and then needs ${SCENE_SETTLE} seconds on Greg, so start the next scene or band element at least 1.5 seconds after a scene's last word. Never use the same scene type twice in a row. A scene covers at most 12 words (a quote 15; flow and bars 32; a thread 48).`,
+    `- Use a full-screen scene every 4 to 7 seconds. Scenes together cover about a third of the reel (never more than ${Math.round(SCENE_SHARE * 100)}%). A scene stays up about 0.9 seconds after its last word and then needs ${SCENE_SETTLE} seconds on Greg, so start the next scene or band element at least 1.5 seconds after a scene's last word. Never the same scene type twice in a row unless ${SCENE_REPEAT_GAP} seconds or more apart. A scene covers at most 12 words (a quote 15; flow and bars 32; a thread 48).`,
     `- No more than ${BAND_MAX} band elements (features, overlays and icons combined) may start inside any rolling 3-second window. An icon never sits on a word a scene covers, and a band element needs about a second before the next scene starts (it would be cut off).`,
     "- Use at least four different element types and at least two different scene types in the reel when the content allows. Reach for the specific types first (number, meter, list, steps, flow, thread, bars, versus, quote, people, notify, hero and swap features, icon actions); a flow for any process or sequence, a thread for any exchange he describes, bars or a number for any figure he says. Use the icons scene only when nothing more specific fits.",
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
@@ -181,7 +181,7 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
   let sceneTime = 0, lastType = "", lastEnd = -Infinity;
   for (const s of [...(picks.scenes || [])].sort((a, b) => a.from - b.from)) {
     const type = SCENE_TYPES.includes(s.type) ? s.type : (s.icons ? "icons" : null);
-    if (!type || !span(s, type === "thread" ? 48 : type === "flow" || type === "bars" ? 32 : type === "quote" ? 15 : 12) || type === lastType) continue;
+    if (!type || !span(s, type === "thread" ? 48 : type === "flow" || type === "bars" ? 32 : type === "quote" ? 15 : 12)) continue;
     let out = null;
     if (type === "icons") { const list = (s.icons || []).filter(icon).slice(0, 3); if (list.length) out = { icons: list, key: within(s, s.key) ? s.key : null }; }
     if (type === "number") { const value = short(s.value, 10); const countFrom = s.countFrom == null ? null : short(s.countFrom, 10); if (value && /\d/.test(value) && saysNumber(s, value) && (s.countFrom == null || countFrom && saysNumber(s, countFrom))) out = { value, ...(countFrom == null ? {} : { countFrom }), label: short(s.label, 24), icon: icon(s.icon) }; }
@@ -228,6 +228,7 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
     // a later scene that would have fit (the 11-09 re-pick lost a versus to a back-to-back list that pacing dropped).
     if (length < 1.8 - 1e-9 || sceneTime + length > sceneCap) continue;
     if (lastEnd > -Infinity && window.start < lastEnd + SCENE_SETTLE - 1e-9) continue;
+    if (type === lastType && window.start - lastEnd < SCENE_REPEAT_GAP - 1e-9) continue;
     if (!claim(s.from, s.to)) continue;
     scenes.push({ type, from: s.from, to: s.to, ...out });
     sceneTime += length;

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkPicks, fitsTwoLines, layoutGlow, chinDuring, glowPrompt, pacingReport, restyleGlow } from "../src/glow.mjs";
-import { CLEAN_SHARE, SCENE_SETTLE, BAND_MAX, SCENE_SHARE } from "../src/glow-pacing.mjs";
+import { CLEAN_SHARE, SCENE_SETTLE, BAND_MAX, SCENE_SHARE, SCENE_REPEAT_GAP } from "../src/glow-pacing.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -35,7 +35,7 @@ test("checked picks drop overlaps, unknown icons, title-card words and repeats",
 
 test("glow direction asks for a graphics-rich reel with short clean holds and the same limits pacing enforces", () => {
   const prompt = glowPrompt(words, library, { duration: 30 });
-  for (const rule of [/graphics-rich/, /about 10 to 14 picks in a 20-second reel/, /about 10 to 15% of the reel/, new RegExp(`needs ${SCENE_SETTLE} seconds on Greg`), /For this 30-second reel that means about 18 picks in all .* about 5 full-screen scenes/, /An icon never sits on a word a scene covers/, new RegExp(`No more than ${BAND_MAX} band elements`), /at least four different element types and at least two different scene types/, /a flow for any process/, /a thread for any exchange/, /bars or a number for any figure/, /first 3 seconds/]) assert.match(prompt, rule);
+  for (const rule of [/graphics-rich/, /about 10 to 14 picks in a 20-second reel/, /about 10 to 15% of the reel/, new RegExp(`needs ${SCENE_SETTLE} seconds on Greg`), /For this 30-second reel that means about 18 picks in all \(at least 16\).* about 5 full-screen scenes/, /An icon never sits on a word a scene covers/, new RegExp(`No more than ${BAND_MAX} band elements`), /at least four different element types and at least two different scene types/, /a flow for any process/, /a thread for any exchange/, /bars or a number for any figure/, /first 3 seconds/]) assert.match(prompt, rule);
   // The sparse pacing brief is gone.
   assert.doesNotMatch(prompt, /25 to 35%|1.2 seconds settled|2 band elements|A beat does not need a graphic/);
 });
@@ -593,4 +593,13 @@ test("a scene too close to the previous one does not use up the budget or type r
   const scenes = [{ type: "icons", from: 0, to: 3, icons: ["ear"] }, { type: "quote", from: 5, to: 8 }, { type: "quote", from: 20, to: 23 }];
   const picks = checkPicks({ scenes }, ws, library, { duration: 40 });
   assert.deepEqual(picks.scenes.map((s) => s.from), [0, 20]);
+});
+
+test("the same scene type may come back once the reel has moved on, never back to back", () => {
+  const ws = Array.from({ length: 50 }, (_, i) => ({ text: "point", start: 3.2 + i * 0.45, end: 3.5 + i * 0.45 }));
+  const list = (from) => ({ type: "icons", from, to: from + 3, icons: ["ear"] });
+  // Ends at about 6.2; one at 8.7 is too soon for the same type, one at 15.4 is far enough.
+  assert.deepEqual(checkPicks({ scenes: [list(0), list(12)] }, ws, library, { duration: 40 }).scenes.map((s) => s.from), [0]);
+  assert.deepEqual(checkPicks({ scenes: [list(0), list(27)] }, ws, library, { duration: 40 }).scenes.map((s) => s.from), [0, 27]);
+  assert.ok(ws[27].start - 0.15 - 6.2 >= SCENE_REPEAT_GAP);
 });
