@@ -148,6 +148,7 @@
     "enabled": true
   },
   "glow": {
-    "enabled": true
+    "enabled": true,
+    "depthHook": true
   }
 }

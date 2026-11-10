@@ -4,6 +4,8 @@ import { claudeText, firstJSON } from "./claude.mjs";
 import { detectFaces } from "./placement.mjs";
 import { r3 } from "./util.mjs";
 import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
+import { prepareDepthHook } from "./glow-depth.mjs";
+import { holdGlowFeatures } from "./glow-light.mjs";
 
 /**
  * The glow look (studio style): feature lines float as glowing capitals in the band under the chin, built word by
@@ -75,6 +77,7 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "- Use a full-screen scene every 4 to 7 seconds, but scenes in total may cover at most a third of the reel, never two scenes within 1.5 seconds of each other, and never the same scene type twice in a row.",
     "- Use at least four different element types in the reel when the content allows, and prefer the specific types (number, meter, list, steps, versus, quote, people, notify) whenever the words fit them. Use the icons scene only when nothing more specific fits.",
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
+    "- The editor handles title depth and one soft gold light sweep after the title and each feature finish building. Do not request these on subtitles or invent extra text for them. Leave a beat after a feature so its finished letters can catch the light.",
     "- Features, overlays and scenes never share words. Nothing on the words in the first 3 seconds, where the title card sits.",
     'Reply as {"features":[],"icons":[],"overlays":[],"scenes":[]}',
   ].join("\n");
@@ -332,10 +335,10 @@ export function carryProjectAudio(srcDir, destDir, plan) {
 }
 
 /** Restyle a finished job in a new folder: same footage, cuts, audio and timing; glow captions, icons and scenes. */
-export async function restyleGlow(plan, { render, library, ask = claudeText, picks: saved = null } = {}) {
+export async function restyleGlow(plan, { render, library = [], ask = claudeText, picks: saved = null, outDir, detect = detectFaces, cutout } = {}) {
   const W = plan.canvas.width, H = plan.canvas.height, D = plan.video.duration;
   const times = Array.from({ length: Math.max(1, Math.floor(D * 4)) }, (_, k) => r3(Math.min(D - 0.05, k * 0.25 + 0.05)));
-  const detection = render ? await detectFaces(render, times) : null;
+  const detection = render ? await detect(render, times) : null;
   const hookEnd = plan.hook ? plan.hook.start + plan.hook.duration : 0;
   // Saved picks (a re-render after a layout change) skip the Claude call; they are checked again all the same.
   const reply = saved || firstJSON(await ask(glowPrompt(plan.words, library, { hook: plan.hook?.text || "", duration: D }), { timeoutMs: 600000 }));
@@ -347,22 +350,36 @@ export async function restyleGlow(plan, { render, library, ask = claudeText, pic
   plan.glowOverlays = out.overlays;
   plan.style.captions = { ...plan.style.captions, style: "glow", uppercase: true, subPosition: 0.8, subFontSizeFrac: 0.03 };
   if (plan.hook) {
-    plan.style.hook = { ...plan.style.hook, plaque: false, style: "headline" };
+    plan.style.hook = { ...plan.style.hook, plaque: false, style: "headline", treat: "headline" };
+    delete plan.style.hook.side;
     const hookWords = plan.hook.words || plan.hook.text.split(/\s+/).map((text) => ({ text }));
     const total = hookWords.map((w) => w.text).join(" ").length;
     let run = 0, br = -1;
     hookWords.forEach((w, i) => { if (br < 0 && i && run + w.text.length / 2 >= total / 2) br = i; run += w.text.length + 1; });
-    plan.hook.words = hookWords.map((w, i) => ({ ...w, ...(i === br ? { br: true } : {}) }));
+    plan.hook.words = hookWords.map(({ br: oldBreak, ...w }, i) => ({ ...w, ...(i === br ? { br: true } : {}) }));
     const size = Math.round((total > 44 ? 0.028 : 0.032) * H);
     plan.hook.place = { x: Math.round(0.07 * W), ...hookSpot(detection, Math.max(0.5, plan.hook.duration), size / H, out.band, H), w: Math.round(0.86 * W), size };
-    // A title that had to stay in a crowded band keeps the subtitles off until it is gone.
-    if (plan.hook.place.crowded) plan.captions = plan.captions.filter((g) => g.kind !== "sub" || g.start >= plan.hook.start + plan.hook.duration - 0.1);
+    const crowded = plan.hook.place.crowded;
     delete plan.hook.place.crowded;
-  }
+    const depth = glowEnabled(plan.style, plan) ? await prepareDepthHook(plan, detection, { outDir, cutout }) : null;
+    if (depth) {
+      plan.hook.place = { ...depth.place, fallback: plan.hook.place };
+      plan.hook.words = plan.hook.words.map(({ br: oldBreak, ...w }, i) => ({ ...w, ...(depth.place.br && i === depth.place.br ? { br: true } : {}) }));
+      plan.behind = depth.behind;
+    } else plan.behind = null;
+    delete plan.hook.headTop;
+    delete plan.hook.headBottom;
+    // A title that had to stay in a crowded band keeps the subtitles off until it is gone.
+    if (crowded) plan.captions = plan.captions.filter((g) => g.kind !== "sub" || g.start >= plan.hook.start + plan.hook.duration - 0.1);
+  } else plan.behind = null;
   // The old look's card graphics, slams and lower thirds would fight the new layout; the glow look replaces them.
   plan.graphics = [];
   plan.slams = [];
   plan.premise = null;
   plan.timeLabels = [];
+  holdGlowFeatures(plan, { place: (g, end) => {
+    const y = out.band(g.start, end);
+    return y / H + 0.07 <= 0.785 ? { ...g.place, y } : null;
+  } });
   return { plan, picks, reply };
 }
