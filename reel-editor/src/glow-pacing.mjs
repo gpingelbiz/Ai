@@ -2,6 +2,9 @@ import { r3 } from "./util.mjs";
 
 /** Greg wants graphics-rich reels: short clean holds, a quick settle after scenes, up to three band starts per 3 s. */
 export const CLEAN_SHARE = 0.1, SCENE_SETTLE = 0.6, BAND_MAX = 3;
+// Scenes cover about a third of the reel; the hard cap leaves room so a scene every 4 to 7 s is not cut for being a
+// few hundredths of a second over a third (the 11-09 fathom re-pick lost a whole 3.7 s scene that way).
+export const SCENE_SHARE = 0.4;
 // The prompt asks for clean holds of about 10 to 15% of the reel; more than this is a sparse reel.
 const CLEAN_MAX = 0.15;
 

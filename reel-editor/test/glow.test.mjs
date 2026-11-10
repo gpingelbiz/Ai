@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkPicks, fitsTwoLines, layoutGlow, chinDuring, glowPrompt, pacingReport, restyleGlow } from "../src/glow.mjs";
-import { CLEAN_SHARE, SCENE_SETTLE, BAND_MAX } from "../src/glow-pacing.mjs";
+import { CLEAN_SHARE, SCENE_SETTLE, BAND_MAX, SCENE_SHARE } from "../src/glow-pacing.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -35,7 +35,7 @@ test("checked picks drop overlaps, unknown icons, title-card words and repeats",
 
 test("glow direction asks for a graphics-rich reel with short clean holds and the same limits pacing enforces", () => {
   const prompt = glowPrompt(words, library, { duration: 30 });
-  for (const rule of [/graphics-rich/, /about 10 to 14 picks in a 20-second reel/, /about 10 to 15% of the reel/, new RegExp(`at least ${SCENE_SETTLE} seconds on Greg`), new RegExp(`No more than ${BAND_MAX} band elements`), /at least four different element types and at least two different scene types/, /a flow for any process/, /a thread for any exchange/, /bars or a number for any figure/, /first 3 seconds/]) assert.match(prompt, rule);
+  for (const rule of [/graphics-rich/, /about 10 to 14 picks in a 20-second reel/, /about 10 to 15% of the reel/, new RegExp(`needs ${SCENE_SETTLE} seconds on Greg`), /For this 30-second reel that means about 18 picks in all .* about 5 full-screen scenes/, /An icon never sits on a word a scene covers/, new RegExp(`No more than ${BAND_MAX} band elements`), /at least four different element types and at least two different scene types/, /a flow for any process/, /a thread for any exchange/, /bars or a number for any figure/, /first 3 seconds/]) assert.match(prompt, rule);
   // The sparse pacing brief is gone.
   assert.doesNotMatch(prompt, /25 to 35%|1.2 seconds settled|2 band elements|A beat does not need a graphic/);
 });
@@ -575,4 +575,13 @@ test("bars grow from their baseline and count values on cue with stable backward
   assert.ok(run.element("gs-0-rfill").scaleY < 0.01);
   run.seek(scene.right.at + 0.8);
   assert.equal(run.element("gs-0-rnum").textContent, "$20K");
+});
+
+test("scenes may cover a little over a third of the reel but never more than SCENE_SHARE", () => {
+  // Two 4.1 s scenes in a 21 s reel: 39%, over a third (a third would drop the second whole scene) but under the cap.
+  const ws = Array.from({ length: 40 }, (_, i) => ({ text: "point", start: 3.2 + i * 0.45, end: 3.5 + i * 0.45 }));
+  const scenes = [{ type: "icons", from: 0, to: 7, icons: ["ear"] }, { type: "quote", from: 16, to: 23 }, { type: "icons", from: 30, to: 37, icons: ["ear"] }];
+  const picks = checkPicks({ scenes }, ws, library, { duration: 21 });
+  assert.equal(picks.scenes.length, 2);
+  assert.ok(SCENE_SHARE * 21 >= 8.2 && 21 / 3 < 8.2);
 });

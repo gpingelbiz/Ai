@@ -5,7 +5,7 @@ import { detectFaces } from "./placement.mjs";
 import { r3 } from "./util.mjs";
 import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 import { glowSoundCues } from "./glow-sound.mjs";
-import { glowWindow, pacingReport } from "./glow-pacing.mjs";
+import { glowWindow, pacingReport, SCENE_SETTLE, BAND_MAX, SCENE_SHARE } from "./glow-pacing.mjs";
 import { glowIconAction } from "./glow-icons.mjs";
 import { firstGlowIcon, GLOW_BRIDGE_DURATION } from "./glow-scenes.mjs";
 import { prepareDepthHook } from "./glow-depth.mjs";
@@ -50,6 +50,9 @@ const SCENE_TYPES = ["icons", "number", "meter", "list", "steps", "versus", "quo
 const OVERLAY_TYPES = ["notify", "stamp"];
 
 export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
+  // A concrete target for this reel: about 0.6 picks a second after the title, about one scene per 5.5 seconds.
+  const spoken = Math.max(0, duration - 3);
+  const target = Math.max(6, Math.round(spoken * 0.65)), scenes = Math.max(1, Math.round(spoken / 5.5));
   const lines = words.map((w, i) => `${i} ${w.start.toFixed(2)} ${w.text}`).join("\n");
   const icons = library.map((icon) => `${icon.name}: ${icon.draw}`).join("\n");
   return [
@@ -87,9 +90,10 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "",
     "Direction:",
     "- This is a graphics-rich reel: something on screen on most beats, a visual change about every 2 seconds, each graphic matched to its words. Aim for about 10 to 14 picks in a 20-second reel (scale with length).",
+    `- For this ${duration.toFixed(0)}-second reel that means about ${target} picks in all (features, icons, overlays and scenes together), including about ${scenes} full-screen scene${scenes === 1 ? "" : "s"}. Picks that break the timing rules below are dropped, so space them out rather than stacking them.`,
     "- Keep only short clean holds on Greg's face (subtitles only), about 10 to 15% of the reel, for a personal or emotional line. Omit picks for those beats; do not add hold objects to the JSON.",
-    "- Use a full-screen scene every 4 to 7 seconds. Scenes together cover at most a third of the reel; after a scene leave at least 0.6 seconds on Greg before the next scene or band element. Never use the same scene type twice in a row.",
-    "- No more than 3 band elements (features, overlays and icons combined) may start inside any rolling 3-second window.",
+    `- Use a full-screen scene every 4 to 7 seconds. Scenes together cover about a third of the reel (never more than ${Math.round(SCENE_SHARE * 100)}%). A scene stays up about 0.9 seconds after its last word and then needs ${SCENE_SETTLE} seconds on Greg, so start the next scene or band element at least 1.5 seconds after a scene's last word. Never use the same scene type twice in a row. A scene covers at most 12 words (a quote 15; flow and bars 32; a thread 48).`,
+    `- No more than ${BAND_MAX} band elements (features, overlays and icons combined) may start inside any rolling 3-second window. An icon never sits on a word a scene covers.`,
     "- Use at least four different element types and at least two different scene types in the reel when the content allows. Reach for the specific types first (number, meter, list, steps, flow, thread, bars, versus, quote, people, notify, hero and swap features, icon actions); a flow for any process or sequence, a thread for any exchange he describes, bars or a number for any figure he says. Use the icons scene only when nothing more specific fits.",
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
     "- The title's depth and a soft gold light sweep across the title and each finished feature line are automatic; never pick them or add text for them. Leave about a second after a feature's last word before the next band element or scene so its letters can catch the light.",
@@ -173,7 +177,7 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
   };
   const icon = (name) => (names.has(name) ? name : null);
   const scenes = [];
-  const sceneCap = Number.isFinite(duration) ? duration / 3 : Infinity;
+  const sceneCap = Number.isFinite(duration) ? duration * SCENE_SHARE : Infinity;
   let sceneTime = 0, lastType = "";
   for (const s of [...(picks.scenes || [])].sort((a, b) => a.from - b.from)) {
     const type = SCENE_TYPES.includes(s.type) ? s.type : (s.icons ? "icons" : null);
