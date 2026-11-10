@@ -200,11 +200,15 @@ export function renderHTML(plan, footage) {
   const glow = cap.style === "glow";
   const subFont = Math.round((cap.subFontSizeFrac || 0.028) * H);
   const glowCap = (g, i, spans) => g.kind === "feat" && g.place
-    ? `      <div class="cap cap-feat" id="cap-${i}" style="left:${g.place.x}px;top:${g.place.y}px;width:${g.place.w}px;font-size:${g.place.size || capFont}px"><div class="cap-line">${spans}</div></div>`
+    ? `      <div class="cap cap-feat${g.variant === "hero" || g.variant === "swap" ? ` cap-${g.variant}` : ""}" id="cap-${i}" style="left:${g.place.x}px;top:${g.place.y}px;width:${g.place.w}px;font-size:${g.place.size || capFont}px${g.variant === "hero" ? `;--hero-size:${g.place.heroSize || 2 * (g.place.size || capFont)}px` : ""}"><div class="cap-line">${spans}</div></div>`
     : `      <div class="cap cap-sub" id="cap-${i}" style="font-size:${subFont}px"><div class="cap-line">${spans}</div></div>`;
   const capsHTML = captions
     .map((g, i) => {
-      if (glow) return glowCap(g, i, g.words.map((w, j) => `${w.br ? '<span class="br"></span>' : ""}<span class="w${w.key ? " k" : ""}" id="cap-${i}-w${j}">${esc(w.text)}</span>`).join(""));
+      if (glow) {
+        const variant = g.kind === "feat" && g.place && (g.variant === "hero" || g.variant === "swap");
+        const spans = g.words.map((w, j) => `${w.br ? variant ? '</span><span class="cap-row">' : '<span class="br"></span>' : ""}<span class="w${w.key ? " k" : ""}${variant && w.hero ? " hero" : ""}${variant && w.wrong ? " wrong" : ""}${variant && w.right ? " right" : ""}" id="cap-${i}-w${j}">${esc(w.text)}${variant && w.wrong ? `<span class="swap-strike" id="cap-${i}-strike" aria-hidden="true"></span>` : ""}</span>`).join("");
+        return glowCap(g, i, variant ? `<span class="cap-row">${spans}</span>` : spans);
+      }
       const len = g.text.length;
       const scale = cap.shrinkAfterChars && len > cap.shrinkAfterChars ? Math.max(0.7, cap.shrinkAfterChars / len) : 1;
       const firstKey = g.words.findIndex((w) => w.key);
@@ -448,7 +452,7 @@ export function renderHTML(plan, footage) {
     height: H,
     reveal,
     ...(sceneList.length || overList.length ? glowRuntime(sceneList, overList) : {}),
-    ...(glow ? { glow, capKinds: captions.map((g) => (g.kind === "feat" && g.place ? "feat" : "sub")) } : {}),
+    ...(glow ? { glow, capKinds: captions.map((g) => (g.kind === "feat" && g.place ? "feat" : "sub")), capSwaps: captions.map((g) => g.kind === "feat" && g.place && g.variant === "swap" ? { wrong: g.words.findIndex((w) => w.wrong), right: g.words.findIndex((w) => w.right) } : null) } : {}),
     capCut: cap.animation === "cut",
     capDim: dimFuture,
     hookPush: s.hook?.push !== false,
@@ -612,6 +616,11 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap.cap-feat .w { opacity: 0; }
       .cap .br { flex-basis: 100%; height: 0; }
       .cap .w.k { color: ${c.accent}; font-weight: 760; font-size: 1em; text-shadow: 0 0 0.14em ${hexA(c.accent, 0.7)}, 0 0 0.5em ${hexA(c.accent, 0.32)}, 0 0.05em 0.3em rgba(0,0,0,0.7); }
+      .cap.cap-hero .cap-line, .cap.cap-swap .cap-line { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0.04em; }
+      .cap-row { display: flex; flex-wrap: nowrap; gap: 0.26em; white-space: nowrap; }
+      .cap.cap-hero .w.hero { font-size: var(--hero-size); }
+      .cap .w.wrong { position: relative; }
+      .swap-strike { position: absolute; left: 0; right: 0; top: 52%; height: 0.055em; background: ${c.accent}; box-shadow: 0 0 0.12em ${hexA(c.accent, 0.7)}; transform: scaleX(0); transform-origin: 0 50%; }
       .cap.cap-sub { top: ${r3((cap.subPosition || 0.79) * 100)}%; }
       .cap.cap-sub .cap-line { font-weight: 560; text-transform: none; letter-spacing: 0; line-height: 1.2; text-shadow: 0 0.04em 0.16em rgba(0,0,0,0.85), 0 0 0.6em rgba(0,0,0,0.45); background: ${hexA(c.bg || "#0B0B0D", 0.5)}; padding: 0.1em 0.5em 0.14em; border-radius: 0.6em; }
       .cap.cap-sub .w.k { color: inherit; text-shadow: inherit; }
@@ -795,6 +804,12 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
             if (PLAN.capKinds[i] === "feat") {
               // Each word lights up as it is spoken, from a soft blur; the finished line fades out.
               g.words.forEach((w, j) => tl.fromTo("#cap-" + i + "-w" + j, { opacity: 0, y: 8, filter: "blur(10px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.18, ease: "power2.out", immediateRender: false }, Math.max(g.start, w[0] - 0.03)));
+              const swap = PLAN.capSwaps[i];
+              if (swap && swap.wrong >= 0 && swap.right >= 0) {
+                const at = Math.max(g.start, g.words[swap.right][0]);
+                tl.fromTo("#cap-" + i + "-strike", { scaleX: 0 }, { scaleX: 1, duration: 0.22, ease: "power2.out", immediateRender: false }, at);
+                tl.fromTo("#cap-" + i + "-w" + swap.wrong, { opacity: 1 }, { opacity: 0.38, duration: 0.22, ease: "power2.out", immediateRender: false }, at);
+              }
               tl.to(line, { opacity: 0, duration: 0.16, ease: "power2.in" }, Math.max(g.start + 0.2, g.end - 0.16));
             } else tl.fromTo(line, { opacity: 0 }, { opacity: 1, duration: 0.08, ease: "none" }, g.start);
           } else ` : ""}if (PLAN.reveal) {
