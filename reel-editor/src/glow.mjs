@@ -4,6 +4,7 @@ import { claudeText, firstJSON } from "./claude.mjs";
 import { detectFaces } from "./placement.mjs";
 import { r3 } from "./util.mjs";
 import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
+import { glowSoundCues } from "./glow-sound.mjs";
 
 /**
  * The glow look (studio style): feature lines float as glowing capitals in the band under the chin, built word by
@@ -364,5 +365,7 @@ export async function restyleGlow(plan, { render, library, ask = claudeText, pic
   plan.slams = [];
   plan.premise = null;
   plan.timeLabels = [];
+  // The old look's cut cues go; music, narration and a B-roll shot's own generated sound (sfx-broll-*) stay.
+  plan.audio = { ...plan.audio, tracks: [...(plan.audio?.tracks || []).filter((t) => !String(t.id || "").startsWith("sfx-") || String(t.id).startsWith("sfx-broll-")), ...glowSoundCues(plan)] };
   return { plan, picks, reply };
 }
