@@ -79,6 +79,7 @@
   },
   "zooms": {
     "enabled": true,
+    "onKey": false,
     "interval": 5,
     "scales": [
       1.14,

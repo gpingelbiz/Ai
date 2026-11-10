@@ -584,8 +584,9 @@ export async function runEdit(input, opts = {}) {
   }
   let speakerPlan = null;
   if (preset.zooms.enabled) {
-    zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, busy: [...transientCards, ...broll, ...evidence], hook, tight: tightFrame });
-    log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key lines${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
+    // onKey uses transcript punctuation: caption grouping strips sentence-ending periods from the display text.
+    zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, words: cleanWords, busy: [...transientCards, ...broll, ...evidence], hook, tight: tightFrame });
+    log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key ${preset.zooms.onKey ? "words" : "lines"}${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
     if (preset.zooms.cadence?.enabled) {
       zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: [...broll, ...evidence], hook, tight: tightFrame, tail });
       log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
@@ -853,7 +854,7 @@ export async function runEdit(input, opts = {}) {
   if (glowOn) {
     try {
       const library = loadIconLibrary(glowIconDir(preset.glow));
-      const { picks } = await restyleGlow(plan, { render: output, library });
+      const { picks } = await restyleGlow(plan, { render: output, library, outDir: workDir });
       writeJSON(path.join(workDir, "glow-picks.json"), picks);
       writeJSON(path.join(workDir, "plan.json"), plan);
       composeProject(plan, projectDir);

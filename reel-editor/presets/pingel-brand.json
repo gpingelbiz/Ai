@@ -42,6 +42,7 @@
   },
   "zooms": {
     "enabled": true,
+    "onKey": true,
     "minSpacing": 6,
     "maxPer30": 4,
     "interval": 5,
@@ -148,6 +149,7 @@
     "enabled": true
   },
   "glow": {
-    "enabled": true
+    "enabled": true,
+    "depthHook": true
   }
 }
