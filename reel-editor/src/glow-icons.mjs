@@ -16,8 +16,8 @@ export function glowIconsCSS(accent) {
       .icon-act .icon-disc { position: absolute; inset: 0; width: 100%; height: 100%; }
       .icon-act-stack .icon-disc { inset: 12%; width: 76%; height: 76%; }
       .icon-act .icon-disc img { display: block; }
-      .icon-ghost { position: absolute; left: 4%; top: 20%; width: 76%; height: 76%; object-fit: contain; opacity: 0; }
-      .icon-ghost-1 { left: 8%; top: 16%; }
+      .icon-ghost { position: absolute; left: 0; top: 0; width: 76%; height: 76%; object-fit: contain; opacity: 0; }
+      .icon-ghost-1 { left: 6%; top: 6%; }
       .icon-ping { position: absolute; z-index: 1; top: 10%; right: 10%; width: 13%; height: 13%; border-radius: 50%; background: ${accent}; opacity: 0; }
       .icon-hit { position: absolute; z-index: 1; inset: 6%; box-sizing: border-box; border: 3px solid ${accent}; border-radius: 50%; opacity: 0; }
       .icon-shadow { position: absolute; left: 18%; right: 18%; bottom: 6%; height: 8%; border-radius: 50%; background: rgba(0,0,0,0.45); filter: blur(5px); opacity: 0; }`;
@@ -41,7 +41,7 @@ export const GLOW_ICONS_JS = `
           } else {
             tween(disc, { scale: 0.92, opacity: 0 }, { scale: 1, opacity: 1, duration: enter / 2, ease: "power2.out" }, at);
             if (icon.action === "stack") {
-              [0, 1].forEach((k) => tween(el.querySelector(".icon-ghost-" + k), { y: -size * 0.08, opacity: 0 }, { y: 0, opacity: k ? 0.45 : 0.25, duration: enter * 0.65, ease: "power2.out" }, at + k * enter * 0.35));
+              [0, 1].forEach((k) => tween(el.querySelector(".icon-ghost-" + k), { y: -size * 0.08, opacity: 0 }, { y: 0, opacity: k ? 0.6 : 0.35, duration: enter * 0.65, ease: "power2.out" }, at + k * enter * 0.35));
             } else if (icon.action === "ping") {
               tween(el.querySelector(".icon-ping"), { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: enter / 2, ease: "back.out(1.4)" }, at + enter / 2);
             } else if (icon.action === "hit") {
