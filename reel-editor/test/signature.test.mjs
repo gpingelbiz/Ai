@@ -99,7 +99,8 @@ test("legacy render snapshots: no signature and no house list keep every existin
     "pingel-runway": "120535b95e5a57e57af383f8d32459c051a10aaa9be209e823aa68ef2c884f43",
     "pingel-v2": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",
     speaker: "02fd8099cebdcecbf752ed364a994eb4b9b706388112c8db6eedc3512df3f83a",
-    vsl: "64f0e1917c7a8f472f88b2ba1a4c3b0409f69d4acfe67112c9a80977ea5faa9d",
+    // 2026-11-10: Greg picked bigger VSL subtitles on a dark plate.
+    vsl: "63024ec2532c5e2298bca4d54fa2e38761ceb4ce024a2e295c2d5db2298dfe57",
     youtube: "1e0120f8f3c4dc3eb9b118ca35c0c75fdda699f6089095cbc22e7ab8baa4278f",
   };
   for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_") && name !== "broll-shotlist.json").sort()) {
