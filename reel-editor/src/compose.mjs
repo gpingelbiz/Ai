@@ -346,8 +346,8 @@ export function renderHTML(plan, footage) {
   const iconSkin = s.icons?.skin === "glass" ? "glass" : "disc";
   // Full-screen glow scenes: one to three 3D icons over a dark brand ground, the spoken words glowing under them.
   // Glow display elements (glow-scenes.mjs): full-screen scenes on the brand ground and overlays in the band.
-  const sceneList = plan.glowScenes || [];
-  const overList = plan.glowOverlays || [];
+  const sceneList = glow ? plan.glowScenes || [] : [];
+  const overList = glow ? plan.glowOverlays || [] : [];
   const glowSceneHTML = [glowScenesHTML(sceneList, { W, H, esc }), glowOverlaysHTML(overList, { W, H, esc })].filter(Boolean).join("\n");
   const iconHTML = iconList
     .map((icon, i) => `      <div id="icon-${i}" class="icon-pop icon-${icon.image ? "3d" : iconSkin} clip" style="left:${icon.x}px;top:${icon.y}px;width:${icon.size}px;height:${icon.size}px" data-start="${icon.t}" data-duration="${r3(icon.end - icon.t)}" data-track-index="3" data-layout-allow-overflow aria-label="${esc(icon.word)}"><div class="icon-disc">${icon.image ? `<img src="${esc(icon.image)}" alt="">` : icon.svg}</div></div>`)

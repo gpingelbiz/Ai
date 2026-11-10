@@ -38,7 +38,7 @@ const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9']/g, "");
 const clean = (t) => String(t).replace(/["“”]/g, "");
 const featWord = (t) => clean(t).replace(/[.,;:]$/, "");
 
-const SCENE_TYPES = ["icons", "number", "meter", "list", "steps", "versus", "quote", "people"];
+const SCENE_TYPES = ["icons", "number", "meter", "list", "steps", "versus", "quote", "people", "flow", "thread", "bars"];
 const OVERLAY_TYPES = ["notify", "stamp"];
 
 export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
@@ -60,31 +60,83 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "C. overlays, over the speaker in the band under the chin:",
     "   notify: a message card, for a short line someone says or texts (a lead, client, prospect). Fields: type \"notify\", from, to (the quoted spoken words, at most 9), who (\"Lead\", \"Client\", \"Prospect\", at most 12 characters), icon (optional name, e.g. text-message, phone-alert).",
     "   stamp: one huge glowing word for a single punch word that carries the point (a noun, verb or number, like EQUATION or PAY), never a filler such as okay, right or so. Fields: type \"stamp\", word (index).",
-    "D. scenes: full-screen moments on the black and gold ground that replace the speaker for 1.5 to 4 seconds. Fields always: type, from, to (the spoken words the scene covers). Types:",
+    "D. scenes: full-screen moments on the black and gold ground that replace the speaker for at least 1.8 seconds (usually 1.8 to 4 seconds). Fields always: type, from, to (the spoken words the scene covers). Types:",
     "   icons: one to three big icons with the spoken words glowing under them, for one strong idea. Extra: icons (names), key (index in gold).",
-    "   number: a big number that counts up, for a price, amount, percent, count or time span that is said out loud. Extra: value (exactly as it should read, e.g. \"$736\", \"57%\", \"10 MIN\", \"15\"; its digits must be spoken in from..to), label (at most 24 characters, what the number is), icon (optional name).",
+    "   number: a big spoken fact that appears instantly with a scale/glow land; never count a plain fact from zero. For a spoken change only, add countFrom (the spoken starting value) to count from that value to value. The scene field from is already the first word index; countFrom is separate. Both numbers must be spoken inside from..to. For a price, amount, percent, count or time span that is said out loud. Extra: value (exactly as it should read, e.g. \"$736\", \"57%\", \"10 MIN\", \"15\"; its digits must be spoken in from..to), label (at most 24 characters, what the number is), icon (optional name).",
     "   meter: a bar filling to a percent, for a rate or share. Extra: percent (0 to 100, spoken in from..to), label (at most 24 characters).",
     "   list: two to four rows of icon plus label, landing as each is said. Extra: items [{word (index where it is said, inside from..to), icon (name), label (at most 18 characters)}].",
     "   steps: a numbered path for a process or sequence. Extra: items [{word, label (at most 18 characters)}], two to four.",
     "   versus: wrong on the left, right on the right, for a contrast or choice. Extra: left and right, each {word (index where it is said), icon (name), label (at most 14 characters)}; right is the better one.",
     "   quote: a phone with the words typing into a chat bubble, for a longer line someone says. Extra: who (at most 12 characters). The bubble shows the spoken words from..to (at most 14 words).",
+    "   flow: a process or framework along a connected path. Extra: items [{word (index where the label is said, inside from..to), label (at most 14 characters, verbatim spoken phrase), icon (optional library name)}], two to four in spoken order; optional branch {word, label (at most 14 characters, verbatim)} for an objection or detour, shown dimmed.",
+    "   thread: a short reconstructed conversation. Extra: bubbles [{from, to (inclusive word indexes inside the scene, at most 12 words each, exact spoken words), side (\"them\" or \"me\")}], two to four in spoken order without overlapping ranges; who (at most 12 characters, e.g. \"Lead\"). Always labelled ILLUSTRATIVE. Never write or paraphrase bubble text: select transcript ranges.",
+    "   bars: before/after or two-option comparison. Extra: left and right, each {label (at most 14 characters, verbatim spoken phrase), value (as spoken, e.g. \"$10K\" or \"20%\"), amount (numeric value in full units, e.g. 10000 for $10K, 20 for 20%), word (index where that value starts, inside from..to)}. Both values must be spoken in the scene; left precedes right, and right is the better or later option, in gold. Amounts must match the displayed values; no invented comparison.",
     "   people: a row of people icons, for a team, group, cohort or hiring. Extra: count (2 to 10), label (at most 24 characters).",
     "",
     "Direction:",
     "- Something should be on screen almost all the time: a feature, overlay, scene or icon on nearly every phrase, so the reel never sits on plain subtitles for more than about 2 seconds.",
     "- Use a full-screen scene every 4 to 7 seconds, but scenes in total may cover at most a third of the reel, never two scenes within 1.5 seconds of each other, and never the same scene type twice in a row.",
-    "- Use at least four different element types in the reel when the content allows, and prefer the specific types (number, meter, list, steps, versus, quote, people, notify) whenever the words fit them. Use the icons scene only when nothing more specific fits.",
+    "- Use at least four different element types in the reel when the content allows, and prefer the specific types (number, meter, list, steps, flow, thread, bars, versus, quote, people, notify) whenever the words fit them. Use the icons scene only when nothing more specific fits.",
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
     "- Features, overlays and scenes never share words. Nothing on the words in the first 3 seconds, where the title card sits.",
     'Reply as {"features":[],"icons":[],"overlays":[],"scenes":[]}',
   ].join("\n");
 }
 
-const NUMBER_WORDS = new Set("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred thousand million billion half percent dozen".split(" "));
+const SMALL_NUMBERS = Object.fromEntries("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(" ").map((w, i) => [w, i]));
+const TENS = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const SCALES = { thousand: 1000, million: 1000000, billion: 1000000000, k: 1000, m: 1000000, b: 1000000000 };
+
+/** Compare the actual amount, including compact units, rather than accepting any nearby number. */
+function numberAmount(value) {
+  const m = String(value).replace(/,/g, "").match(/^[^\d-]*(-?\d+(?:\.\d+)?)\s*([kmb])?(?:\b|(?=[^a-z])|$)/i);
+  return m ? Number(m[1]) * (SCALES[m[2]?.toLowerCase()] || 1) : null;
+}
+
+function spokenAmount(tokens) {
+  let total = 0, group = 0, seen = false, decimal = "", point = false;
+  for (const t of tokens) {
+    if (t === "and" && seen) continue;
+    if (t === "point" && seen && !point) { point = true; continue; }
+    if (point) { if (SMALL_NUMBERS[t] == null || SMALL_NUMBERS[t] > 9) return null; decimal += SMALL_NUMBERS[t]; continue; }
+    if (SMALL_NUMBERS[t] != null || TENS[t] != null) { group += SMALL_NUMBERS[t] ?? TENS[t]; seen = true; }
+    else if (t === "hundred" && seen) group *= 100;
+    else if (SCALES[t] && seen) { total += group * SCALES[t]; group = 0; }
+    else if (/^[$£€]?-?\d[\d,]*(?:\.\d+)?[kmb%]?$/.test(t)) { group += numberAmount(t); seen = true; }
+    else return null;
+  }
+  return seen ? total + group + (decimal ? Number(`0.${decimal}`) : 0) : null;
+}
+
+function saysAmount(words, value, atStart = false) {
+  const target = numberAmount(value);
+  if (target == null || !Number.isFinite(target)) return false;
+  const tokens = words.flatMap((w) => w.text.toLowerCase().replace(/[,.!?;:]+$/, "").split(/(?<=[a-z])-(?=[a-z])|\s+/));
+  for (let i = 0; i < tokens.length; i++) {
+    if (atStart && i > 0) break;
+    const prev = tokens[i - 1];
+    if (i && (SMALL_NUMBERS[prev] != null || TENS[prev] != null || SCALES[prev] || prev === "hundred" || prev === "point" || prev === "and" && i > 1 && (tokens[i - 2] === "hundred" || spokenAmount([tokens[i - 2]]) != null))) continue;
+    for (let end = i + 1; end <= Math.min(tokens.length, i + 10); end++) {
+      // Do not match a fragment of a larger number (twenty out of twenty five, or 10 out of 10 thousand).
+      if (SMALL_NUMBERS[tokens[end]] != null || TENS[tokens[end]] != null || SCALES[tokens[end]] || tokens[end] === "hundred" || tokens[end] === "point" || tokens[end] === "and" && (SMALL_NUMBERS[tokens[end + 1]] != null || TENS[tokens[end + 1]] != null)) continue;
+      if (Math.abs((spokenAmount(tokens.slice(i, end)) ?? NaN) - target) < 1e-8) {
+        if (!String(value).includes("%") || tokens.slice(i, end).some((t) => t.endsWith("%")) || /^(percent|percentage)$/.test(tokens[end] || "") || tokens[end] === "per" && tokens[end + 1] === "cent") return true;
+      }
+    }
+  }
+  return false;
+}
+function sceneTiming(s, words, duration) {
+  const start = r3(Math.max(0, words[s.from].start - (s.type === "thread" ? 0.45 : 0.15)));
+  const lastAt = Math.max(0, ...(s.items || []).map((it) => words[it.word].start), ...(s.bubbles || []).map((b) => words[b.to].end), s.right ? words[s.right.word].start : 0, s.branch ? words[s.branch.word].start : 0);
+  const end = r3(Math.min(duration - 0.05, Math.max(words[s.to].end + 0.5, start + 1.8, lastAt + 0.9)));
+  return { start, end };
+}
+
 const FILLER = new Set("okay ok right so like yeah yes no um uh well and but or the a an to of in on it is was that this just really very you i we they he she gonna kinda".split(" "));
 /** A stamp word carries meaning: at least four letters (or a number) and never a filler. */
 export const punchWord = (t) => { const w = String(t).toLowerCase().replace(/[^a-z0-9']/g, ""); return !FILLER.has(w) && (/\d/.test(w) || w.length >= 4); };
-const short = (t, n) => { const v = String(t || "").replace(/\s+/g, " ").trim(); return v && v.length <= n ? v : ""; };
+const short = (t, n) => { const v = String(t ?? "").replace(/\s+/g, " ").trim(); return v && v.length <= n ? v : ""; };
 
 /** Keep only well-formed, non-overlapping picks that point at real words and real icons, and say what was spoken. */
 export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infinity } = {}) {
@@ -101,10 +153,13 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
   const span = (x, max) => inRange(x.from) && inRange(x.to) && x.to >= x.from && x.to - x.from < max && afterHook(x.from);
   const within = (x, i) => Number.isInteger(i) && i >= x.from && i <= x.to;
   const spoken = (x) => words.slice(x.from, x.to + 1).map((w) => w.text.toLowerCase());
-  const saysNumber = (x, value) => {
-    const said = spoken(x);
-    const digits = String(value).replace(/[^\d]/g, "");
-    return said.some((w) => /\d/.test(w) && (!digits || w.replace(/[^\d]/g, "").startsWith(digits.slice(0, 2)))) || said.some((w) => NUMBER_WORDS.has(w.replace(/[^a-z]/g, "")));
+  const saysNumber = (x, value) => saysAmount(words.slice(x.from, x.to + 1), value);
+  const labelSaid = (x, label, limit, word = null) => {
+    const text = short(label, limit);
+    if (!text) return "";
+    const want = text.split(/\s+/).map(norm).join(" ");
+    const source = (word == null ? spoken(x) : words.slice(word, x.to + 1).map((w) => w.text)).map(norm).join(" ");
+    return want && ` ${source} `.includes(` ${want} `) && (word == null || source === want || source.startsWith(`${want} `)) ? text : "";
   };
   const icon = (name) => (names.has(name) ? name : null);
   const scenes = [];
@@ -112,10 +167,10 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
   let sceneTime = 0, lastType = "";
   for (const s of [...(picks.scenes || [])].sort((a, b) => a.from - b.from)) {
     const type = SCENE_TYPES.includes(s.type) ? s.type : (s.icons ? "icons" : null);
-    if (!type || !span(s, type === "quote" ? 15 : 12) || type === lastType) continue;
+    if (!type || !span(s, type === "thread" ? 48 : type === "flow" || type === "bars" ? 32 : type === "quote" ? 15 : 12) || type === lastType) continue;
     let out = null;
     if (type === "icons") { const list = (s.icons || []).filter(icon).slice(0, 3); if (list.length) out = { icons: list, key: within(s, s.key) ? s.key : null }; }
-    if (type === "number") { const value = short(s.value, 10); if (value && /\d/.test(value) && saysNumber(s, value)) out = { value, label: short(s.label, 24), icon: icon(s.icon) }; }
+    if (type === "number") { const value = short(s.value, 10); const countFrom = s.countFrom == null ? null : short(s.countFrom, 10); if (value && /\d/.test(value) && saysNumber(s, value) && (s.countFrom == null || countFrom && saysNumber(s, countFrom))) out = { value, ...(countFrom == null ? {} : { countFrom }), label: short(s.label, 24), icon: icon(s.icon) }; }
     if (type === "meter") { const p = Math.round(Number(s.percent)); if (p >= 0 && p <= 100 && saysNumber(s, p)) out = { percent: p, value: `${p}%`, label: short(s.label, 24) }; }
     if (type === "list" || type === "steps") {
       const items = (s.items || []).filter((it) => within(s, it.word) && short(it.label, 18) && (type === "steps" || icon(it.icon))).sort((a, b) => a.word - b.word).slice(0, 4).map((it) => ({ word: it.word, label: short(it.label, 18), icon: icon(it.icon) }));
@@ -126,13 +181,38 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
       const l = side(s.left), r = side(s.right);
       if (l && r && l.word <= r.word) out = { left: l, right: r };
     }
+    if (type === "flow") {
+      const node = (it) => {
+        if (!it || !within(s, it.word)) return null;
+        const label = labelSaid(s, it.label, 14, it.word);
+        return label && (it.icon == null || icon(it.icon)) ? { word: it.word, label, icon: icon(it.icon) } : null;
+      };
+      const items = Array.isArray(s.items) ? s.items.map(node) : [];
+      const branch = s.branch == null ? null : node(s.branch);
+      if (items.length >= 2 && items.length <= 4 && items.every(Boolean) && items.every((it, i) => !i || it.word > items[i - 1].word) && (s.branch == null || branch)) out = { items, ...(branch ? { branch: { word: branch.word, label: branch.label } } : {}) };
+    }
+    if (type === "thread") {
+      const bubbles = Array.isArray(s.bubbles) ? s.bubbles : [];
+      if (short(s.who, 12) && bubbles.length >= 2 && bubbles.length <= 4 && bubbles.every((b, i) => b && within(s, b.from) && within(s, b.to) && b.to >= b.from && b.to - b.from < 12 && ["them", "me"].includes(b.side) && (!i || b.from > bubbles[i - 1].to))) out = { who: short(s.who, 12), bubbles: bubbles.map((b) => ({ from: b.from, to: b.to, side: b.side })) };
+    }
+    if (type === "bars") {
+      const side = (x) => {
+        if (!x || !within(s, x.word)) return null;
+        const label = labelSaid(s, x.label, 14), value = short(x.value, 10);
+        return label && value && typeof x.amount === "number" && Number.isFinite(x.amount) && x.amount >= 0 && x.amount === numberAmount(value) && saysAmount(words.slice(x.word, s.to + 1), value, true) ? { label, value, amount: x.amount, word: x.word } : null;
+      };
+      const left = side(s.left), right = side(s.right);
+      if (left && right && left.word < right.word && Math.max(left.amount, right.amount) > 0) out = { left, right };
+    }
     if (type === "quote") out = { who: short(s.who, 12) || "Lead" };
     if (type === "people") { const c = Math.round(Number(s.count)); if (c >= 2 && c <= 10 && names.has("person")) out = { count: c, label: short(s.label, 24) }; }
     if (!out) continue;
-    const length = Math.max(1.8, words[s.to].end - words[s.from].start + 0.5);
+    const timing = sceneTiming({ ...s, ...out, type }, words, duration);
+    const length = timing.end - timing.start;
+    if (length < 1.8 - 1e-9 || timing.start < hookEnd - 0.05) continue;
     const prev = scenes.at(-1);
     if (sceneTime + length > sceneCap) continue;
-    if (prev && words[s.from].start - words[prev.to].end < 1.5) continue;
+    if (prev && (words[s.from].start - words[prev.to].end < 1.5 || timing.start < sceneTiming(prev, words, duration).end + 0.3)) continue;
     if (!claim(s.from, s.to)) continue;
     scenes.push({ type, from: s.from, to: s.to, ...out });
     sceneTime += length;
@@ -198,9 +278,12 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
   const sceneFrom = (s, ws) => {
     const base = { type: s.type };
     switch (s.type) {
-      case "number": return { ...base, value: s.value, labelWords: labelWords(s.label), icon: file(s.icon) };
+      case "number": return { ...base, value: s.value, ...(s.countFrom == null ? {} : { from: s.countFrom }), labelWords: labelWords(s.label), icon: file(s.icon) };
       case "meter": return { ...base, value: s.value, percent: s.percent, labelWords: labelWords(s.label) };
       case "list": case "steps": return { ...base, items: s.items.map((it) => ({ label: it.label, icon: file(it.icon), at: at(it.word) })) };
+      case "flow": return { ...base, items: s.items.map((it) => ({ label: it.label, icon: file(it.icon), at: at(it.word) })), ...(s.branch ? { branch: { label: s.branch.label, at: at(s.branch.word) } } : {}) };
+      case "thread": return { ...base, who: s.who, bubbles: s.bubbles.map((b) => ({ side: b.side, at: at(b.from), words: words.slice(b.from, b.to + 1).map((w) => ({ ...w, text: clean(w.text) })) })) };
+      case "bars": return { ...base, left: { label: s.left.label, value: s.left.value, amount: s.left.amount, at: at(s.left.word) }, right: { label: s.right.label, value: s.right.value, amount: s.right.amount, at: at(s.right.word) } };
       case "versus": return { ...base, left: { label: s.left.label, icon: file(s.left.icon), at: at(s.left.word) }, right: { label: s.right.label, icon: file(s.right.icon), at: at(s.right.word) }, cross: file("cross"), check: file("check") };
       case "quote": return { ...base, who: s.who, words: ws.map((w) => ({ ...w, text: clean(words.find((x) => x.start === w.start)?.text || w.text), key: false })) };
       case "people": return { ...base, count: s.count, icon: file("person"), labelWords: labelWords(s.label) };
@@ -241,8 +324,8 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
       if (f) captions.push({ kind: "feat", start, end, text: ix.map((j) => words[j].text).join(" "), words: ws, place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.58 * W), size: featSize } });
       else {
         const scene = sceneFrom(s, ws);
-        const lastAt = Math.max(0, ...(scene.items || []).map((it) => it.at), scene.right?.at || 0);
-        scenes.push({ ...scene, start: r3(Math.max(0, start - 0.1)), end: r3(Math.min(D - 0.05, Math.max(end, start + 1.8, lastAt + 0.9))) });
+        const timing = sceneTiming(s, words, D);
+        if (timing.end - timing.start >= 1.8 - 1e-9) scenes.push({ ...scene, ...timing });
       }
       i = g.to;
       continue;
@@ -279,7 +362,7 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
   captions.sort((a, b) => a.start - b.start);
   captions.forEach((g, i) => { if (g.kind !== "feat") return; const nx = captions.slice(i + 1).find((x) => x.kind === "feat"); if (nx && g.end > nx.start - 0.05) g.end = r3(nx.start - 0.05); });
   // No caption under a scene.
-  scenes.forEach((sc, k) => { const nx = scenes[k + 1]; if (nx && sc.end > nx.start - 0.3) sc.end = r3(Math.max(sc.start + 1.2, nx.start - 0.3)); });
+  scenes.forEach((sc, k) => { const nx = scenes[k + 1]; if (nx && sc.end > nx.start - 0.3) sc.end = r3(Math.max(sc.start + 1.8, nx.start - 0.3)); });
   // One thing at a time in the band under the chin: a feature line or overlay leaves before the next one arrives.
   const bandItems = [...captions.filter((g) => g.kind === "feat"), ...overlays].sort((x, y) => x.start - y.start);
   bandItems.forEach((g, k) => { const nx = bandItems[k + 1]; if (nx && g.end > nx.start - 0.05) g.end = r3(Math.max(g.start + 0.3, nx.start - 0.05)); });

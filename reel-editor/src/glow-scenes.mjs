@@ -2,7 +2,7 @@
  * Glow display elements: the full-screen scenes (on the brand's dark ground) and the band overlays (over the speaker)
  * of the glow look. Each element type has markup, styles and a timeline; the plan says what to show and when.
  *
- * Scenes: icons, number, meter, list, steps, versus, quote, people. Overlays: notify, stamp.
+ * Scenes: icons, number, meter, list, steps, versus, quote, people, flow, thread, bars. Overlays: notify, stamp.
  * Icon images are already copied into the project (icon.image); words carry their spoken start times.
  */
 
@@ -16,11 +16,14 @@ function hexA(hex, a) {
 
 /** "$9.99" → { prefix "$", value 9.99, decimals 2, suffix "" }; null when there is no number to count. */
 export function splitNumber(text) {
-  const m = String(text || "").match(/^([^\d]*?)(\d[\d,]*(?:\.\d+)?)(.*)$/);
+  const m = String(text || "").match(/^([^\d]*?)(-?\d[\d,]*(?:\.\d+)?)(.*)$/);
   if (!m) return null;
   const digits = m[2].replace(/,/g, "");
   return { prefix: m[1], value: Number(digits), decimals: (digits.split(".")[1] || "").length, comma: m[2].includes(","), suffix: m[3] };
 }
+
+const flowNodes = (count) => Array.from({ length: count }, (_, k) => ({ x: 160, y: 140 + k * 720 / (count - 1) }));
+const numberScale = (n) => ({ k: 1000, m: 1000000, b: 1000000000 }[n?.suffix.trim().toLowerCase()] || 1);
 
 const img = (icon, id, size, esc, cls = "") => icon?.image ? `<img${id ? ` id="${id}"` : ""} class="gs-img${cls ? ` ${cls}` : ""}" src="${esc(icon.image)}" style="width:${size}px;height:${size}px" alt="">` : "";
 const wordsHTML = (words, i, esc, prefix = "gs") => (words || []).map((w, j) => `<span class="gsw${w.key ? " k" : ""}" id="${prefix}-${i}-w${j}">${esc(w.text)}</span>`).join(" ");
@@ -29,7 +32,7 @@ function sceneInner(scene, i, { W, H, esc }) {
   const id = (s) => `gs-${i}-${s}`;
   switch (scene.type) {
     case "number": {
-      return `${scene.icon ? `<div class="gs-top">${img(scene.icon, id("i0"), Math.round(W * 0.3), esc)}</div>` : ""}<div class="gs-num" id="${id("num")}">${esc(scene.value)}</div><div class="gs-label">${wordsHTML(scene.labelWords, i, esc)}</div>`;
+      return `${scene.icon ? `<div class="gs-top">${img(scene.icon, id("i0"), Math.round(W * 0.3), esc)}</div>` : ""}<div class="gs-num" id="${id("num")}">${esc(scene.from ?? scene.value)}</div><div class="gs-label">${wordsHTML(scene.labelWords, i, esc)}</div>`;
     }
     case "meter": {
       return `<div class="gs-num gs-num-meter" id="${id("num")}">${esc(scene.value)}</div><div class="gs-bar"><div class="gs-fill" id="${id("fill")}" style="width:${Math.max(0, Math.min(100, scene.percent))}%"></div></div><div class="gs-label gs-label-meter">${wordsHTML(scene.labelWords, i, esc)}</div>`;
@@ -40,6 +43,20 @@ function sceneInner(scene, i, { W, H, esc }) {
     }
     case "steps": {
       return `<div class="gs-steps"><div class="gs-line" id="${id("line")}"></div>${scene.items.map((it, k) => `<div class="gs-step" id="${id(`r${k}`)}"><span class="gs-node">${k + 1}</span><span class="gs-row-label">${esc(it.label)}</span></div>`).join("")}</div>`;
+    }
+    case "flow": {
+      const nodes = flowNodes(scene.items.length);
+      const path = nodes.map((p, k) => `${k ? "L" : "M"}${p.x} ${p.y}`).join(" ");
+      const branchY = (nodes[0].y + nodes[1].y) / 2;
+      return `<div class="gs-flow"><svg class="gs-flow-svg" viewBox="0 0 800 1000" preserveAspectRatio="none"><path class="gs-flow-path" id="${id("path")}" d="${path}"/>${scene.branch ? `<path class="gs-flow-branch-path" id="${id("bpath")}" d="M160 ${branchY} H440"/>` : ""}</svg>${scene.items.map((it, k) => `<div class="gs-flow-row" id="${id(`r${k}`)}" style="top:${nodes[k].y / 10}%"><span class="gs-flow-dot">${img(it.icon, "", Math.round(W * 0.06), esc)}</span><span>${esc(it.label)}</span></div>`).join("")}${scene.branch ? `<div class="gs-flow-branch" id="${id("branch")}" style="top:${branchY / 10}%">${esc(scene.branch.label)}</div>` : ""}<svg class="gs-flow-svg gs-flow-token-layer" viewBox="0 0 800 1000" preserveAspectRatio="none"><circle class="gs-flow-token" id="${id("token")}" cx="160" cy="140" r="12"/></svg></div>`;
+    }
+    case "thread": {
+      return `<div class="gs-thread"><div class="gs-thread-head"><span>${esc(scene.who)}</span><span class="gs-illustrative">ILLUSTRATIVE</span></div><div class="gs-thread-window">${scene.bubbles.map((b, k) => `<div class="gs-thread-bubble gs-thread-${b.side}" id="${id(`b${k}`)}">${b.words.map((w) => esc(w.text)).join(" ")}</div><div class="gs-typing gs-thread-${b.side}" id="${id(`typing${k}`)}" aria-label="Typing"><span></span><span></span><span></span></div>`).join("")}</div></div>`;
+    }
+    case "bars": {
+      const max = Math.max(scene.left.amount, scene.right.amount);
+      const side = (b, k) => `<div class="gs-bars-side gs-bars-${k}" id="${id(k)}"><div class="gs-bars-plot"><div class="gs-bars-fill" id="${id(`${k}fill`)}" style="height:${r3(b.amount / max * 100)}%"></div><span class="gs-bars-value" id="${id(`${k}num`)}" style="bottom:${r3(b.amount / max * 100)}%">${esc(b.value.replace(/-?\d[\d,]*(?:\.\d+)?/, "0"))}</span></div><div class="gs-bars-label">${esc(b.label)}</div></div>`;
+      return `<div class="gs-bars">${side(scene.left, "l")}${side(scene.right, "r")}</div>`;
     }
     case "versus": {
       const size = Math.round(W * 0.34);
@@ -116,6 +133,32 @@ export function glowScenesCSS({ W, H, c }) {
       .gs-people { position: absolute; left: 8%; right: 8%; top: 22%; display: flex; flex-wrap: wrap; justify-content: center; gap: 2% 1%; }
       .gs-person { opacity: 0; }
       .gs-label-people { top: 60%; }
+      .gs-flow { position: absolute; left: 8%; right: 18%; top: 16%; height: 60%; }
+      .gs-flow-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+      .gs-flow-token-layer { pointer-events: none; }
+      .gs-flow-path, .gs-flow-branch-path { fill: none; stroke: ${accent}; stroke-width: 4; }
+      .gs-flow-branch-path { opacity: 0; }
+      .gs-flow-token { fill: ${accent}; filter: drop-shadow(0 0 12px ${accent}); }
+      .gs-flow-row { position: absolute; left: 20%; right: 0; display: flex; align-items: center; gap: 0.6em; transform: translate(-${Math.round(W * 0.037)}px, -50%); opacity: 0.2; font-size: ${px(0.03)}px; line-height: 1.05; font-weight: 760; text-transform: uppercase; letter-spacing: 0.012em; text-shadow: ${glow}; }
+      .gs-flow-dot { width: ${Math.round(W * 0.074)}px; height: ${Math.round(W * 0.074)}px; flex: 0 0 ${Math.round(W * 0.074)}px; border: 3px solid ${accent}; border-radius: 50%; background: ${bg}; display: grid; place-items: center; }
+      .gs-flow-branch { position: absolute; left: 55%; right: 0; padding: 0.3em 0.5em; background: ${bg}; color: ${accent}; opacity: 0; font-size: ${px(0.026)}px; font-weight: 700; text-transform: uppercase; transform: translateY(-50%); }
+      .gs-thread { position: absolute; left: 10%; right: 18%; top: 20%; height: 50%; border: 2px solid ${hexA(accent, 0.4)}; border-radius: ${px(0.02)}px; background: ${hexA(bg, 0.85)}; overflow: hidden; }
+      .gs-thread-head { position: absolute; top: 0; left: 0; right: 0; padding: 1em; display: flex; justify-content: space-between; align-items: center; color: ${accent}; font-size: ${px(0.021)}px; border-bottom: 1px solid ${hexA(accent, 0.25)}; }
+      .gs-illustrative { font-size: 0.55em; letter-spacing: 0.13em; }
+      .gs-thread-window { position: absolute; left: 5%; right: 5%; top: 15%; bottom: 5%; overflow: hidden; }
+      .gs-thread-bubble, .gs-typing { position: absolute; bottom: 0; max-width: 88%; padding: 0.65em 0.8em; border-radius: 0.65em; font-size: ${px(0.025)}px; line-height: 1.2; font-weight: 600; color: ${bg}; opacity: 0; overflow-wrap: anywhere; }
+      .gs-thread-them { left: 0; background: ${text}; border-bottom-left-radius: 0.15em; }
+      .gs-thread-me { right: 0; background: ${accent}; border-bottom-right-radius: 0.15em; }
+      .gs-typing { display: flex; gap: 0.2em; align-items: center; height: 0.7em; }
+      .gs-typing span { width: 0.16em; height: 0.16em; background: ${bg}; border-radius: 50%; opacity: 0.55; }
+      .gs-bars { position: absolute; left: 12%; right: 20%; top: 25%; height: 43%; display: flex; justify-content: space-between; gap: 14%; }
+      .gs-bars-side { flex: 1 1 0; min-width: 0; text-align: center; }
+      .gs-bars-plot { position: relative; height: 85%; border-bottom: 3px solid ${hexA(text, 0.5)}; }
+      .gs-bars-fill { position: absolute; bottom: 0; left: 12%; right: 12%; background: ${hexA(text, 0.45)}; border-radius: 12px 12px 0 0; transform-origin: 50% 100%; }
+      .gs-bars-r .gs-bars-fill { background: ${accent}; box-shadow: 0 0 40px ${hexA(accent, 0.25)}; }
+      .gs-bars-value { position: absolute; left: -10%; right: -10%; margin-bottom: 0.2em; opacity: 0; font-size: ${px(0.045)}px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: ${glow}; }
+      .gs-bars-r .gs-bars-value { color: ${accent}; text-shadow: ${goldGlow}; }
+      .gs-bars-label { padding-top: 0.7em; font-size: ${px(0.03)}px; line-height: 1.1; font-weight: 700; text-transform: uppercase; overflow-wrap: anywhere; }
       .glow-over { position: absolute; opacity: 0; pointer-events: none; font-family: "Inter", sans-serif; }
       .go-card { display: flex; align-items: center; gap: 0.6em; padding: 0.55em 0.8em; border-radius: 0.6em; background: ${hexA(bg, 0.8)}; border-left: 6px solid ${accent}; box-shadow: 0 18px 50px rgba(0,0,0,0.55); backdrop-filter: blur(10px); font-size: ${px(0.026)}px; }
       .go-icon { flex: 0 0 2.6em; width: 2.6em; height: 2.6em; object-fit: contain; }
@@ -127,9 +170,12 @@ export function glowScenesCSS({ W, H, c }) {
 
 /** The runtime plan's view of each scene and overlay: only timing and counts. */
 export function glowRuntime(scenes, overlays) {
-  const nums = (s) => { const n = splitNumber(s.value); return n ? { num: n } : {}; };
+  const nums = (s) => {
+    const n = splitNumber(s.value), from = splitNumber(s.from);
+    return n ? { num: { ...n, ...(from ? { from: from.value * numberScale(from) / numberScale(n) } : {}) } } : {};
+  };
   return {
-    glowScenes: scenes.map((s) => ({ type: s.type || "icons", start: s.start, end: s.end, words: (s.words || []).map((w) => w.start), label: (s.labelWords || []).length, icons: (s.icons || []).filter((icon) => icon.image).length, items: (s.items || []).map((it) => it.at), at: s.left ? [s.left.at, s.right.at] : [], count: s.count || 0, ...(s.type === "number" || s.type === "meter" ? nums(s) : {}), hasIcon: !!s.icon?.image })),
+    glowScenes: scenes.map((s) => ({ type: s.type || "icons", start: s.start, end: s.end, words: (s.words || []).map((w) => w.start), label: (s.labelWords || []).length, icons: (s.icons || []).filter((icon) => icon.image).length, items: (s.items || []).map((it) => it.at), at: s.left ? [s.left.at, s.right.at] : [], count: s.count || 0, ...(s.type === "number" || s.type === "meter" ? nums(s) : {}), hasIcon: !!s.icon?.image, ...(s.type === "flow" ? { nodes: flowNodes(s.items.length), branch: s.branch?.at ?? null } : {}), ...(s.type === "thread" ? { bubbles: s.bubbles.map((b) => ({ side: b.side, at: b.at, words: b.words.map((w) => w.start) })) } : {}), ...(s.type === "bars" ? { bars: [s.left, s.right].map((b) => ({ at: b.at, amount: b.amount, ...nums(b) })) } : {}) })),
     glowOverlays: overlays.map((o) => ({ type: o.type, start: o.start, end: o.end, words: (o.words || []).map((w) => w.start) })),
   };
 }
@@ -139,12 +185,12 @@ export const GLOW_SCENES_JS = `
         const gsWords = (i, list, from) => list.forEach((t, j) => tl.fromTo("#gs-" + i + "-w" + j, { opacity: 0, y: 10, filter: "blur(10px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.18, ease: "power2.out", immediateRender: false }, Math.max(from, t - 0.03)));
         const gsLabel = (i, n, at) => { for (let j = 0; j < n; j++) tl.fromTo("#gs-" + i + "-w" + j, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.2, ease: "power2.out", immediateRender: false }, at + j * 0.06); };
         const gsPop = (sel, at, k) => tl.fromTo(sel, { opacity: 0, scale: 0.7, y: 40 }, { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: "back.out(1.6)", immediateRender: false }, at);
-        const gsCount = (sel, n, at, dur) => {
+        const gsCount = (sel, n, at, dur, from = 0) => {
           const el = document.querySelector(sel);
           if (!el || !n) return;
           const fmt = (v) => { const s = v.toFixed(n.decimals); return n.prefix + (n.comma ? Number(s).toLocaleString("en-US", { minimumFractionDigits: n.decimals, maximumFractionDigits: n.decimals }) : s) + n.suffix; };
-          const o = { v: 0 };
-          tl.fromTo(o, { v: 0 }, { v: n.value, duration: dur, ease: "power2.out", immediateRender: false, onUpdate: () => { el.textContent = fmt(o.v); } }, at);
+          const o = { v: from };
+          tl.fromTo(o, { v: from }, { v: n.value, duration: dur, ease: "power2.out", immediateRender: false, onUpdate: () => { el.textContent = fmt(o.v); } }, at);
         };
         (PLAN.glowScenes || []).forEach((s, i) => {
           const el = document.getElementById("gscene-" + i);
@@ -152,8 +198,8 @@ export const GLOW_SCENES_JS = `
           tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.1, ease: "power2.out", immediateRender: false }, s.start);
           if (s.type === "number") {
             if (s.hasIcon) gsPop("#gs-" + i + "-i0", t0, 0);
-            tl.fromTo("#gs-" + i + "-num", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(1.7)", immediateRender: false }, t0 + 0.05);
-            gsCount("#gs-" + i + "-num", s.num, t0 + 0.05, Math.min(0.9, Math.max(0.4, s.end - t0 - 0.6)));
+            tl.fromTo("#gs-" + i + "-num", { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.3, ease: "power3.out", immediateRender: false }, s.start);
+            if (s.num && s.num.from != null) gsCount("#gs-" + i + "-num", s.num, s.start, Math.min(0.9, Math.max(0.4, s.end - t0 - 0.6)), s.num.from);
             gsLabel(i, s.label, t0 + 0.35);
           } else if (s.type === "meter") {
             tl.fromTo("#gs-" + i + "-num", { opacity: 0 }, { opacity: 1, duration: 0.2, immediateRender: false }, t0);
@@ -164,6 +210,55 @@ export const GLOW_SCENES_JS = `
             if (s.type === "steps") tl.fromTo("#gs-" + i + "-line", { scaleY: 0 }, { scaleY: 1, duration: Math.max(0.4, (s.items[s.items.length - 1] || t0) - t0 + 0.3), ease: "none", immediateRender: false }, t0);
             // The first row is there as the scene opens (never an empty ground); the rest land on their words.
             s.items.forEach((t, k) => tl.fromTo("#gs-" + i + "-r" + k, { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 0.28, ease: "power3.out", immediateRender: false }, k ? Math.max(t0 + k * 0.12, t - 0.05) : t0));
+          } else if (s.type === "flow") {
+            const path = document.getElementById("gs-" + i + "-path");
+            // Measured once at build; the connector starts hidden and each segment draws as the token travels it, so
+            // the line's front and the token stay together on any seek.
+            const length = path.getTotalLength();
+            const seg = length / Math.max(1, s.items.length - 1);
+            path.style.strokeDasharray = length + " " + length;
+            path.style.strokeDashoffset = length;
+            const token = "#gs-" + i + "-token";
+            s.items.forEach((t, k) => {
+              tl.fromTo("#gs-" + i + "-r" + k, { opacity: 0.2 }, { opacity: 1, duration: 0.2, ease: "power2.out", immediateRender: false }, k ? t : s.start);
+              if (k) {
+                const prev = k === 1 ? s.start : s.items[k - 1];
+                const dur = Math.max(0.01, t - prev);
+                tl.fromTo(token, { attr: { cx: s.nodes[k - 1].x, cy: s.nodes[k - 1].y } }, { attr: { cx: s.nodes[k].x, cy: s.nodes[k].y }, duration: dur, ease: "power1.inOut", immediateRender: false }, prev);
+                tl.fromTo(path, { strokeDashoffset: length - (k - 1) * seg }, { strokeDashoffset: length - k * seg, duration: dur, ease: "power1.inOut", immediateRender: false }, prev);
+              }
+            });
+            if (s.branch != null) {
+              const bAt = Math.max(s.start, s.branch);
+              tl.fromTo("#gs-" + i + "-bpath", { opacity: 0 }, { opacity: 0.3, duration: 0.2, immediateRender: false }, bAt);
+              tl.fromTo("#gs-" + i + "-branch", { opacity: 0 }, { opacity: 0.55, duration: 0.2, immediateRender: false }, bAt);
+            }
+          } else if (s.type === "thread") {
+            const bubbleEls = s.bubbles.map((b, k) => document.getElementById("gs-" + i + "-b" + k));
+            // Earlier bubbles move up first (0.6 s ahead), the typing dots show in the room for 0.4 s, then the bubble
+            // lands; quick replies wait so the moves never overlap.
+            let last = -Infinity;
+            s.bubbles.forEach((b, k) => {
+              const at = last = Math.max(s.start + 0.4, b.at, last + 0.85);
+              const typing = "#gs-" + i + "-typing" + k;
+              tl.set(typing, { opacity: 1 }, at - 0.4);
+              tl.fromTo(typing + " span", { opacity: 0.35 }, { opacity: 0.85, stagger: 0.08, duration: 0.16, ease: "sine.inOut", immediateRender: false }, at - 0.4);
+              tl.set(typing, { opacity: 0 }, at);
+              tl.fromTo(bubbleEls[k], { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.2, ease: "power2.out", immediateRender: false }, at);
+              // Measure once when building the timeline; explicit offsets keep forward and backward seeks identical.
+              for (let j = 0; j < k; j++) {
+                const offset = (end) => bubbleEls.slice(j + 1, end + 1).reduce((sum, el) => sum + el.offsetHeight + 22, 0);
+                tl.fromTo(bubbleEls[j], { y: -offset(k - 1) }, { y: -offset(k), duration: 0.2, ease: "power2.out", immediateRender: false }, at - 0.6);
+              }
+            });
+          } else if (s.type === "bars") {
+            s.bars.forEach((b, k) => {
+              const side = k ? "r" : "l";
+              const at = k ? Math.max(s.start, b.at) : s.start;
+              tl.fromTo("#gs-" + i + "-" + side + "fill", { scaleY: 0 }, { scaleY: 1, duration: 0.65, ease: "power2.out", immediateRender: false }, at);
+              tl.fromTo("#gs-" + i + "-" + side + "num", { opacity: 0 }, { opacity: 1, duration: 0.2, immediateRender: false }, at);
+              gsCount("#gs-" + i + "-" + side + "num", b.num, at, 0.65);
+            });
           } else if (s.type === "versus") {
             // Both sides are there from the start (the better one waiting, dim); it lights up when it is said.
             tl.fromTo("#gs-" + i + "-l", { opacity: 0, x: -60 }, { opacity: 1, x: 0, duration: 0.3, ease: "power3.out", immediateRender: false }, t0);
