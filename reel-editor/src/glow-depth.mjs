@@ -13,8 +13,12 @@ export function depthHookSpot(hook, detection, { W = 1080, H = 1920 } = {}) {
   const w = Math.floor(0.86 * W) - Math.round(0.07 * W);
   const top = Math.min(...tops) * H;
   const candidates = [];
-  for (let br = 0; br < words.length; br++) {
-    const lines = br ? [words.slice(0, br), words.slice(br)] : [words];
+  // One to three lines: a long title (36+ characters) only reaches a large size on three.
+  const splits = [[]];
+  for (let a = 1; a < words.length; a++) { splits.push([a]); for (let b = a + 1; b < words.length; b++) splits.push([a, b]); }
+  for (const breaks of splits) {
+    const cuts = [0, ...breaks, words.length];
+    const lines = cuts.slice(1).map((end, k) => words.slice(cuts[k], end));
     // Anton caps are condensed; leave width for tracking and wide letters, including a short word or digit.
     const chars = Math.max(...lines.map((line) => line.map((word) => word.text).join(" ").length));
     const size = Math.floor(Math.min(0.075 * H, w / Math.max(1, chars * 0.6)));
@@ -24,9 +28,9 @@ export function depthHookSpot(hook, detection, { W = 1080, H = 1920 } = {}) {
     const bottom = Math.round(top + size * 0.18);
     const y = Math.round(bottom - lines.length * size);
     if (y < 0.07 * H || bottom > 0.5 * H) continue;
-    candidates.push({ x: Math.round(0.07 * W), y, w, size, depth: true, bottom, br });
+    candidates.push({ x: Math.round(0.07 * W), y, w, size, depth: true, bottom, br: breaks[0] || 0, breaks });
   }
-  return candidates.sort((a, b) => b.size - a.size || a.br - b.br)[0] || null;
+  return candidates.sort((a, b) => b.size - a.size || a.breaks.length - b.breaks.length || a.br - b.br)[0] || null;
 }
 
 /** Reuse an exact-window matte; a newly generated matte always uses clean footage, never the rendered graphics. */

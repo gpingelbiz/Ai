@@ -304,3 +304,10 @@ test("Claude leaves depth and the gold sweep to the deterministic layout", () =>
   assert.match(prompt, /title's depth and a soft gold light sweep .* are automatic; never pick them or add text for them/);
   assert.equal(loadPreset("pingel-brand").glow.depthHook, true);
 });
+
+test("a long title reaches the large depth size on three lines", () => {
+  const hook = { text: "Every objection is one of two things", start: 0, duration: 3 };
+  const place = depthHookSpot(hook, detection(0, 0.32));
+  assert.equal(place.breaks.length, 2);
+  assert.ok(place.size >= 0.045 * 1920 && place.y >= 0.07 * 1920);
+});

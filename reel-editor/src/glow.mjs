@@ -509,7 +509,8 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
     const depth = glowEnabled(plan.style, plan) ? await prepareDepthHook(plan, detection, { outDir, cutout }) : null;
     if (depth) {
       plan.hook.place = { ...depth.place, fallback: plan.hook.place };
-      plan.hook.words = plan.hook.words.map(({ br: oldBreak, ...w }, i) => ({ ...w, ...(depth.place.br && i === depth.place.br ? { br: true } : {}) }));
+      const breaks = depth.place.breaks || (depth.place.br ? [depth.place.br] : []);
+      plan.hook.words = plan.hook.words.map(({ br: oldBreak, ...w }, i) => ({ ...w, ...(breaks.includes(i) ? { br: true } : {}) }));
       plan.behind = depth.behind;
     } else plan.behind = null;
     delete plan.hook.headTop;
