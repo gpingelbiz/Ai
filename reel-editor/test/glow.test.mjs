@@ -117,3 +117,19 @@ test("the title goes above the head when the chin band is full", async () => {
   assert.deepEqual(hookSpot(low, 3, 0.032, band), { y: Math.round(0.07 * 1920) });
   assert.deepEqual(hookSpot(lowAndTall, 3, 0.032, band), { y: 1000, crowded: true });
 });
+
+test("a restyle copy carries the music bed but not the packaged sound effects", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { carryProjectAudio } = await import("../src/glow.mjs");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "restyle-audio-"));
+  const src = path.join(root, "job"), dest = path.join(root, "job-glow");
+  fs.mkdirSync(path.join(src, "project", "assets", "sfx"), { recursive: true });
+  fs.writeFileSync(path.join(src, "project", "assets", "music.m4a"), "bed");
+  fs.writeFileSync(path.join(src, "project", "assets", "sfx", "move.wav"), "sfx");
+  const plan = { audio: { tracks: [{ id: "music", src: "assets/music.m4a" }, { id: "sfx-move-1", src: "assets/sfx/move.wav" }, { id: "gone", src: "assets/missing.m4a" }] } };
+  assert.deepEqual(carryProjectAudio(src, dest, plan), ["assets/music.m4a"]);
+  assert.equal(fs.readFileSync(path.join(dest, "project", "assets", "music.m4a"), "utf8"), "bed");
+  assert.equal(fs.existsSync(path.join(dest, "project", "assets", "sfx", "move.wav")), false);
+});

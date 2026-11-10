@@ -399,7 +399,7 @@ export async function main(argv) {
       // A finished reel again in the glow look, in a copy of its job folder: same footage, cuts and audio.
       const { opts, positionals } = parse(rest, { icons: { type: "string" }, out: { type: "string" }, repick: { type: "boolean" }, "no-render": { type: "boolean" }, help: { type: "boolean", short: "h" } });
       if (opts.help || !positionals[0]) return console.log(USAGE);
-      const { restyleGlow, loadIconLibrary, glowIconDir } = await import("./glow.mjs");
+      const { restyleGlow, loadIconLibrary, glowIconDir, carryProjectAudio } = await import("./glow.mjs");
       const src = path.resolve(positionals[0]);
       const plan = readJSON(path.join(src, "plan.json"));
       const render = path.join(src, "renders", `${plan.name}.mp4`);
@@ -409,6 +409,7 @@ export async function main(argv) {
       const saved = !opts.repick && fs.existsSync(pickFile) ? readJSON(pickFile) : null;
       fs.rmSync(dest, { recursive: true, force: true });
       fs.cpSync(src, dest, { recursive: true, filter: (f) => !/[\\/](renders|project|covers)$/.test(f) });
+      carryProjectAudio(src, dest, plan);
       const library = loadIconLibrary(opts.icons || glowIconDir());
       log(`restyle: ${library.length} 3D icons`);
       const { plan: next, picks } = await restyleGlow(plan, { render: fs.existsSync(render) ? render : null, library, picks: saved });
