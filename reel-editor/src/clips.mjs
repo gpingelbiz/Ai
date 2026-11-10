@@ -10,7 +10,7 @@ import { runEdit } from "./pipeline.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3, slug } from "./util.mjs";
 import { reframeClip, describeLayout } from "./speakers.mjs";
 import { audioEnvelope } from "./cuts.mjs";
-import { sentenceLines, lineEnergy, cutPoints, momentsPrompt, region, edgesPrompt, resolveClips, describeEdges } from "./moments.mjs";
+import { sentenceLines, lineEnergy, cutPoints, momentsPrompt, region, askEdges, resolveClips, describeEdges } from "./moments.mjs";
 
 /**
  * One long video (a live, a training, a podcast) into several reels. The whole thing is transcribed once, headless
@@ -163,17 +163,19 @@ async function pickCleanEdges({ input, words, duration, count, voice, workDir })
   let energy = [];
   try { energy = lineEnergy(lines, await audioEnvelope(input)); } catch {}
   log(`clips: ${lines.length} lines, ${energy.filter((e) => e.tag).length} with raised energy; Claude is finding the moments…`);
-  const r1 = firstJSON(await claudeText(momentsPrompt({ lines, energy, count, duration, voice }), { timeoutMs: 300000 }));
+  const r1 = firstJSON(await claudeText(momentsPrompt({ lines, energy, count, duration, voice }), { timeoutMs: 600000 }));
   const moments = (r1.moments || []).filter((m) => lines.some((l) => l.id === m.anchor)).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, count * 3);
   if (!moments.length) throw new Error("Claude found no moments with a valid line label");
   const points = cutPoints(lines, words);
   const regions = moments.map((m) => region(lines, points, m.anchor));
   const usable = regions.filter(Boolean);
   log(`clips: ${moments.length} moments; Claude is choosing clean openings and endings…`);
-  const r2 = firstJSON(await claudeText(edgesPrompt(usable), { timeoutMs: 300000 }));
+  const r2 = await askEdges(usable, async (prompt) => firstJSON(await claudeText(prompt, { timeoutMs: 600000 })), {
+    onFail: (e, from, to) => warn(`clips: Claude gave no openings and endings for moments ${from}-${to} (${e.message}); those are dropped`),
+  });
   // Region numbers in the reply count only the usable regions; line them back up with the moments.
   const order = regions.map((r, k) => (r ? k : -1)).filter((k) => k >= 0);
-  const edges = (r2.edges || []).map((e) => ({ ...e, region: order[Number(e.region) - 1] + 1 }));
+  const edges = r2.map((e) => ({ ...e, region: order[Number(e.region) - 1] + 1 }));
   const dropped = [];
   const clips = resolveClips({ moments, regions, edges, lines, words, duration, count, dropped });
   log(`clips: ${clips.length} clip${clips.length === 1 ? "" : "s"} (${clips.filter((c) => !c.problems.length).length} with clean edges)${dropped.length ? `; dropped ${dropped.length}: ${dropped.map((d) => `"${d.hook}" (${d.why})`).join(", ")}` : ""}`);
