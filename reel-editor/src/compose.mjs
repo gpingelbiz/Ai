@@ -615,7 +615,9 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap-line { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2; letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: ${QUIET_SHADOWS[cap.quietShadow] || QUIET_SHADOWS.soft}; gap: 0.06em 0.26em; }
       .cap .w.k { ${colorKeywords ? `color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none;` : "color: inherit; background: none; padding: 0; border-radius: 0; font-weight: 950; font-size: 1.06em;"} }${cap.serif ? `
       .cap-line { font-family: "Look Serif", "Anton", serif; font-weight: 500; line-height: 1.14; letter-spacing: 0; }
-      .cap .w.k { font-weight: 500; }` : ""}` : ""}${glow ? `
+      .cap .w.k { font-weight: 500; }` : ""}${cap.plate ? `
+      /* VSL subtitles on a soft dark plate: readable over a white shirt, bare arms or a light wall (Greg, 2026-11-10). */
+      .cap-line { background: ${hexA(c.bg || "#0B0B0D", cap.plate === true ? 0.62 : Number(cap.plate))}; padding: 0.1em 0.5em 0.16em; border-radius: 0.3em; text-shadow: 0 0.03em 0.1em rgba(0,0,0,0.45); }` : ""}` : ""}${glow ? `
       .cap-line { font-family: "Inter", sans-serif; font-weight: 760; line-height: 1.08; letter-spacing: 0.012em; -webkit-text-stroke: 0; gap: 0.04em 0.26em; text-shadow: 0 0 0.12em rgba(255,255,255,0.5), 0 0 0.45em rgba(255,255,255,0.2), 0 0.05em 0.3em rgba(0,0,0,0.7); }
       .cap.cap-feat { right: auto; margin-top: 0; justify-content: flex-start; }
       .cap.cap-feat .cap-line { justify-content: flex-start; text-align: left; }

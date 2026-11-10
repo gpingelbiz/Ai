@@ -188,3 +188,21 @@ test("script names feed the caption spelling fix", async () => {
   const md = "## S1 Open\nSAY: Hey, it's Sam.\nSAY: I made the Confidence on Camera Academy for you.\nSAY: Okay, I'm here. Join the Highly Confident podcast.\n";
   assert.deepEqual(scriptTerms(parseVslScript(md)), ["Sam", "Confidence on Camera Academy", "Highly Confident"]);
 });
+
+test("VSL subtitles are big, never shrunk and sit on a dark plate (Greg 2026-11-10)", async () => {
+  const { renderHTML } = await import("../src/compose.mjs");
+  const p = loadPreset("vsl");
+  assert.ok(p.captions.fontSizeFrac >= 0.05, "about twice the old shrunk size");
+  assert.equal(p.captions.shrinkAfterChars, 0, "a long line never drops to 70%");
+  assert.ok(p.captions.maxChars <= 32, "short lines fit at the bigger size");
+  assert.ok(p.captions.plate > 0);
+  const html = (style) => renderHTML({
+    version: 1, name: "plate", canvas: { width: 1920, height: 1080, mode: "landscape" }, style,
+    video: { src: "/tmp/fixed.mp4", duration: 4, width: 1920, height: 1080, fps: 30, hasAudio: false },
+    hook: null, cta: null, captions: [{ start: 0.2, end: 1.4, text: "I had money", words: words("I had money", 0.2) }],
+    zooms: [], graphics: [], broll: [], slams: [], icons: [], audio: { tracks: [] },
+    framing: { scale: 1, origin: "50% 40%", shift: 0, face: null, side: "right" }, reframe: [],
+  }, "assets/footage.mp4");
+  assert.match(html(p), /\.cap-line \{ background: rgba\(11, ?11, ?13, ?0\.6\)/);
+  assert.doesNotMatch(html(loadPreset("youtube")), /soft dark plate/);
+});
