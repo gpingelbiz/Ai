@@ -5,9 +5,12 @@ export function glowWindow(kind, pick, words, duration, hookEnd = 3) {
   const first = words[pick.from ?? pick.word], last = words[pick.to ?? pick.word];
   let start, end;
   if (kind === "scenes") {
+    // A thread opens early for its first typing dots; every scene holds 0.9 s after its last timed piece (an item,
+    // the branch, the right side, the end of the last bubble) and at least 1.8 s in all.
     const base = r3(first.start - 0.05);
-    const lastAt = Math.max(0, ...(pick.items || []).map((it) => words[it.word].start), pick.right ? words[pick.right.word].start : 0);
-    start = base - 0.1;
+    const at = (x) => (x && Number.isInteger(x.word) ? words[x.word].start : 0);
+    const lastAt = Math.max(0, ...(pick.items || []).map(at), at(pick.branch), at(pick.left), at(pick.right), ...(pick.bubbles || []).map((b) => words[b.to]?.end || 0));
+    start = base - (pick.type === "thread" ? 0.4 : 0.1);
     end = Math.max(last.end + 0.5, base + 1.8, lastAt + 0.9);
   } else if (kind === "icons") {
     start = first.start - 0.08; end = last.end + 1;
