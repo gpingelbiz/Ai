@@ -150,6 +150,6 @@ for (const mode of ["reel", "broll", "runway", "long"]) {
     fs.writeFileSync(preset, JSON.stringify({ name: "brand-example" }));
     assert.equal(run().status, 1);
     args = fs.readFileSync(path.join(f.home, "args"), "utf8");
-    assert.match(args, new RegExp(`--caption-style\\n${mode === "reel" ? "pop" : "reveal"}`));
+    assert.match(args, new RegExp(`--caption-style\\n${mode === "reel" || mode === "long" ? "pop" : "reveal"}`));
   });
 }

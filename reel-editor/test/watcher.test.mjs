@@ -257,7 +257,7 @@ test("a long recording in Raw - Long Form becomes a Clips folder with one reel p
   assert.deepEqual(r.list(`${r.day} Clips 1`), ["Clip 1 - Own it first. Clip 1.mp4", "Clip 2 - Own it first. Clip 2.mp4"]);
   assert.ok(fs.existsSync(path.join(r.done, `${r.day} Clips 1`, ".Clip 2.reel.json")), "each clip keeps its hidden publish metadata");
   assert.match(fs.readFileSync(path.join(r.home, "Reels", "videos", "podcast-clips", "clips.txt"), "utf8"), /Clip 1 {2}\(1:00-1:45, score 89\)\n {2}Own it \*first\*\. Clip 1\?\n {2}a stake, a turn/);
-  assert.ok(r.calls.split("\n").some((l) => /^clips .*raw-long\/podcast\.mp4 --out .*podcast-clips --title podcast-clips --count 5 .*--broll --graphics --caption-style reveal/.test(l)), r.calls);
+  assert.ok(r.calls.split("\n").some((l) => /^clips .*raw-long\/podcast\.mp4 --out .*podcast-clips --title podcast-clips --count 5 .*--broll --graphics --caption-style pop/.test(l)), r.calls);
   assert.ok(r.seen.some((s) => s.startsWith("long-podcast.mp4@") && s.endsWith(".done")));
 });
 
