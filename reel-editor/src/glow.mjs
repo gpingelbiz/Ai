@@ -178,7 +178,7 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
   const icon = (name) => (names.has(name) ? name : null);
   const scenes = [];
   const sceneCap = Number.isFinite(duration) ? duration * SCENE_SHARE : Infinity;
-  let sceneTime = 0, lastType = "";
+  let sceneTime = 0, lastType = "", lastEnd = -Infinity;
   for (const s of [...(picks.scenes || [])].sort((a, b) => a.from - b.from)) {
     const type = SCENE_TYPES.includes(s.type) ? s.type : (s.icons ? "icons" : null);
     if (!type || !span(s, type === "thread" ? 48 : type === "flow" || type === "bars" ? 32 : type === "quote" ? 15 : 12) || type === lastType) continue;
@@ -223,12 +223,16 @@ export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infi
     if (!out) continue;
     const window = glowWindow("scenes", { type, from: s.from, to: s.to, ...out }, words, duration, hookEnd);
     const length = window.end - window.start;
-    // A scene holds at least 1.8 s (the end of the reel can cut one short); pacing keeps 1.2 s settled between them.
+    // A scene holds at least 1.8 s (the end of the reel can cut one short). One that comes before the previous scene
+    // has settled is skipped here, not later in pacing, so it never uses up the scene budget or the type rotation of
+    // a later scene that would have fit (the 11-09 re-pick lost a versus to a back-to-back list that pacing dropped).
     if (length < 1.8 - 1e-9 || sceneTime + length > sceneCap) continue;
+    if (lastEnd > -Infinity && window.start < lastEnd + SCENE_SETTLE - 1e-9) continue;
     if (!claim(s.from, s.to)) continue;
     scenes.push({ type, from: s.from, to: s.to, ...out });
     sceneTime += length;
     lastType = type;
+    lastEnd = window.end;
   }
   const overlays = [];
   for (const o of [...(picks.overlays || [])].sort((a, b) => (a.from ?? a.word) - (b.from ?? b.word))) {

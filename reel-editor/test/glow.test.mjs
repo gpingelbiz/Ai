@@ -585,3 +585,12 @@ test("scenes may cover a little over a third of the reel but never more than SCE
   assert.equal(picks.scenes.length, 2);
   assert.ok(SCENE_SHARE * 21 >= 8.2 && 21 / 3 < 8.2);
 });
+
+test("a scene too close to the previous one does not use up the budget or type rotation of a later scene", () => {
+  const ws = Array.from({ length: 40 }, (_, i) => ({ text: "point", start: 3.2 + i * 0.45, end: 3.5 + i * 0.45 }));
+  // icons, then a quote right after it (too soon), then a quote later: without the early skip the first quote took the
+  // rotation, the later quote was dropped as a repeat, and pacing then dropped the first quote too.
+  const scenes = [{ type: "icons", from: 0, to: 3, icons: ["ear"] }, { type: "quote", from: 5, to: 8 }, { type: "quote", from: 20, to: 23 }];
+  const picks = checkPicks({ scenes }, ws, library, { duration: 40 });
+  assert.deepEqual(picks.scenes.map((s) => s.from), [0, 20]);
+});
