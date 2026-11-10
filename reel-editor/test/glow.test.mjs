@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkPicks, fitsTwoLines, layoutGlow, chinDuring } from "../src/glow.mjs";
+import { checkPicks, fitsTwoLines, layoutGlow, chinDuring, glowPrompt, pacingReport, restyleGlow } from "../src/glow.mjs";
 
 const said = "So the first thing is listening judgment and practice matter more than any script you memorized today";
 const words = said.split(" ").map((text, i) => ({ text, start: 3 + i * 0.4, end: 3 + i * 0.4 + 0.3 }));
@@ -20,8 +20,105 @@ test("checked picks drop overlaps, unknown icons, title-card words and repeats",
     scenes: [{ from: 12, to: 14, icons: ["script"], key: 14 }],
   }, words, library, { hookEnd: 3.5 });
   assert.deepEqual(picks.features.map((f) => [f.from, f.to]), [[5, 6]]);
-  assert.deepEqual(picks.icons.map((p) => p.icon), ["ear", "target"]);
+  assert.deepEqual(picks.icons.map((p) => p.icon), ["ear"], "the third band element in 3 seconds is trimmed");
   assert.equal(picks.scenes.length, 1);
+});
+
+test("glow direction follows argument beats, camera space and subtitle-only holds", () => {
+  const prompt = glowPrompt(words, library, { duration: 30 });
+  for (const rule of [/For each beat choose a graphic/, /zooms are planned elsewhere/, /2 to 4 seconds/, /25 to 35%/, /1.2 seconds settled/, /2 band elements/, /first 3 seconds/]) assert.match(prompt, rule);
+  assert.doesNotMatch(prompt, /almost all the time|nearly every phrase|at least four different/);
+});
+
+test("pacing trims rolling band windows by value, preserves its inputs and is idempotent", () => {
+  const ws = Array.from({ length: 8 }, (_, i) => ({ text: "point", start: 4 + i * 0.5, end: 4.3 + i * 0.5 }));
+  ws[7] = { text: "point", start: 8.1, end: 8.4 };
+  const picks = { features: [{ from: 2, to: 3, key: 2 }], overlays: [{ type: "stamp", from: 4, to: 4 }], icons: [{ word: 0, icon: "ear" }, { word: 1, icon: "target" }, { word: 7, icon: "ear" }], scenes: [] };
+  const before = structuredClone(picks);
+  const report = pacingReport(picks, ws, 20);
+  assert.deepEqual(picks, before);
+  assert.deepEqual(report.picks.features, picks.features);
+  assert.deepEqual(report.picks.overlays, picks.overlays);
+  assert.deepEqual(report.picks.icons, [picks.icons[2]], "features and overlays outrank earlier decorative icons");
+  assert.equal(report.dropped.filter((d) => d.reason === "band-window").length, 2);
+  assert.deepEqual(pacingReport(report.picks, ws, 20).picks, report.picks);
+});
+
+test("band windows roll across fixed buckets and allow exactly three seconds between first and third", () => {
+  const ws = [5.9, 6.2, 8.8, 8.9].map((start) => ({ text: "point", start, end: start + 0.1 }));
+  const picks = { icons: [0, 1, 2, 3].map((word) => ({ word, icon: `icon-${word}` })) };
+  const report = pacingReport(picks, ws, 30);
+  assert.deepEqual(report.picks.icons.map((p) => p.word), [0, 1, 3]);
+});
+
+test("pacing reserves the title's full three seconds including entrance padding", () => {
+  const ws = [2.99, 3, 3.05].map((start) => ({ text: "point", start, end: start + 0.2 }));
+  const picks = checkPicks({ features: [{ from: 0, to: 0 }, { from: 1, to: 1 }], icons: [{ word: 2, icon: "ear" }] }, ws, library, { hookEnd: 0, duration: 20 });
+  assert.deepEqual(picks.features.map((p) => p.from), [1]);
+  const out = layoutGlow({ words: ws, video: { duration: 20 } }, picks, library, null);
+  assert.ok(out.captions.filter((g) => g.kind === "feat").every((g) => g.start >= 3));
+  assert.ok(out.icons.every((g) => g.t >= 3));
+});
+
+test("scene settling uses displayed exits including minimum holds and delayed rows", () => {
+  const ws = [4, 4.1, 5.8, 6.8, 7.1, 9, 12, 14.1, 16, 16.3].map((start) => ({ text: "point", start, end: start + 0.1 }));
+  const picks = {
+    scenes: [{ type: "icons", from: 0, to: 1, icons: ["ear"] }, { type: "quote", from: 2, to: 2 }, { type: "steps", from: 6, to: 7, items: [{ word: 6, label: "point" }, { word: 7, label: "point" }] }],
+    overlays: [2, 3, 4, 8, 9].map((from) => ({ type: "stamp", from, to: from })),
+    features: [{ from: 2, to: 2 }], icons: [{ word: 3, icon: "ear" }],
+  };
+  const report = pacingReport(picks, ws, 30);
+  assert.deepEqual(report.picks.scenes.map((s) => s.from), [0, 6]);
+  assert.deepEqual(report.picks.overlays.map((o) => o.from), [4, 9]);
+  assert.equal(report.picks.features.length, 0);
+  assert.equal(report.picks.icons.length, 0);
+  const out = layoutGlow({ words: ws, video: { duration: 30 } }, report.picks, library, null);
+  assert.ok(out.overlays[0].start - out.scenes[0].end >= 1.2);
+  assert.ok(out.scenes[1].start - out.scenes[0].end >= 1.2);
+  assert.equal(out.scenes[1].end, 15, "the final step gets its full 0.9-second hold");
+  assert.ok(out.overlays[1].start - out.scenes[1].end >= 1.2);
+});
+
+test("scene settling is applied by checkPicks before layout", () => {
+  const ws = [4, 4.2, 6.9, 7.2, 10].map((start) => ({ text: "point", start, end: start + 0.15 }));
+  const picks = checkPicks({ scenes: [{ type: "icons", from: 0, to: 1, icons: ["ear"] }, { type: "quote", from: 2, to: 2 }], overlays: [{ type: "stamp", word: 2 }, { type: "stamp", word: 3 }] }, ws, library, { duration: 30 });
+  assert.equal(picks.scenes.length, 1, "6.75 entrance is less than 1.2 seconds after the 5.75 exit");
+  assert.deepEqual(picks.overlays.map((o) => o.from), [3]);
+  const repeats = checkPicks({ scenes: [{ type: "icons", from: 0, to: 1, icons: ["ear"] }, { type: "quote", from: 2, to: 2 }, { type: "icons", from: 4, to: 4, icons: ["ear"] }] }, ws, library, { duration: 30 });
+  assert.equal(repeats.scenes.length, 1, "dropping a crowded intervening scene must not leave repeated scene types");
+});
+
+test("pacing drops icons first to restore at least 25% clean holds and reports sparse gaps", () => {
+  const ws = [3.2, 3.8, 5, 6, 7, 8, 9].map((start) => ({ text: "point", start, end: start + 0.8 }));
+  const report = pacingReport({ features: [{ from: 0, to: 3 }], icons: [{ word: 5, icon: "ear" }, { word: 6, icon: "target" }] }, ws, 10);
+  assert.ok(report.cleanFraction >= 0.25);
+  assert.equal(report.picks.features.length, 1);
+  assert.equal(report.picks.icons.length, 0);
+  assert.ok(report.dropped.some((d) => d.reason === "clean-hold"));
+  const sparse = pacingReport({}, ws, 20);
+  assert.equal(sparse.cleanSeconds, 17, "the title is not counted as clean face time");
+  assert.equal(sparse.onTarget, false);
+  assert.deepEqual(sparse.gaps, [{ start: 3, end: 20 }]);
+  assert.ok(Number.isFinite(pacingReport({}, [], Infinity).cleanFraction));
+  assert.equal(pacingReport({}, [], 0).cleanSeconds, 0);
+});
+
+test("a fixture restyle composes only the paced picks into the page runtime", async () => {
+  const { loadPreset } = await import("../src/presets.mjs");
+  const { renderHTML } = await import("../src/compose.mjs");
+  const ws = [3.3, 3.8, 4.3, 8, 8.3, 10, 11, 14].map((start) => ({ text: "point", start, end: start + 0.3 }));
+  const plan = { name: "paced", canvas: { width: 1080, height: 1920 }, video: { duration: 20, hasAudio: false }, words: ws, style: loadPreset("pingel-brand"), hook: { text: "The point", start: 0, duration: 3 } };
+  const { picks } = await restyleGlow(plan, { library, picks: { features: [{ from: 0, to: 1, key: 1 }], icons: [{ word: 0, icon: "ear" }, { word: 2, icon: "target" }], scenes: [{ type: "icons", from: 3, to: 4, icons: ["ear"] }], overlays: [{ type: "stamp", word: 5 }, { type: "stamp", word: 7 }] } });
+  assert.equal(picks.icons.length, 1);
+  assert.deepEqual(picks.overlays.map((o) => o.from), [7]);
+  const html = renderHTML(plan, "assets/fixture.mp4");
+  const runtime = JSON.parse(html.match(/const PLAN = (.+);/)[1]);
+  assert.equal(runtime.glowScenes.length, 1);
+  assert.equal(runtime.glowOverlays.length, 1);
+  assert.match(html, /id="gscene-0"/);
+  assert.match(html, /id="gover-0"/);
+  assert.doesNotMatch(html, /id="gover-1"/);
+  assert.equal(runtime.glowOverlays[0].start, plan.glowOverlays[0].start);
 });
 
 test("layout turns picks into feature lines, subtitles, icons and a scene with no caption under it", () => {
