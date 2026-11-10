@@ -22,7 +22,7 @@ const featureDone = (g) => Math.max(g.start, ...g.words.map((w) => Math.max(g.st
 export function holdGlowFeatures(plan, { place = (g) => g.place } = {}) {
   const obstacles = [...plan.captions.filter((g) => g.kind === "feat"), ...(plan.glowOverlays || []), ...(plan.glowScenes || [])];
   plan.captions = plan.captions.map((g) => {
-    if (g.kind !== "feat") return g;
+    if (g.kind !== "feat" || g.run) return g;
     const end = Math.max(g.end, r3(featureDone(g) + 0.6 + 0.16));
     const next = obstacles.filter((x) => x !== g && x.start > g.start).map((x) => x.start - 0.05);
     const position = place(g, end);

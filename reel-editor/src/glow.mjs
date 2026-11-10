@@ -526,6 +526,49 @@ export function carryProjectAudio(srcDir, destDir, plan) {
   return carried;
 }
 
+/**
+ * Every subtitle becomes a running caption in the band under the chin: the feature lines' glowing capitals, up to two
+ * lines of 16 characters, with no gold word and no light sweep. Words the title is still showing are left to the
+ * title, an overlay keeps the band to itself, and a feature line leaves as the next caption arrives, so the band
+ * shows one thing at a time.
+ */
+export function runningCaptions(plan, band, { W = 1080, H = 1920 } = {}) {
+  const hookEnd = plan.hook ? plan.hook.start + plan.hook.duration : 0;
+  const size = Math.round(0.029 * H), h = Math.round(0.07 * H);
+  const overlays = plan.glowOverlays || [];
+  const inOverlay = (t0, t1) => overlays.some((o) => t0 < o.end && t1 > o.start);
+  const runs = [];
+  for (const g of plan.captions.filter((c) => c.kind === "sub")) {
+    const ws = g.words.filter((w) => w.start >= hookEnd - 0.05);
+    const chunks = [];
+    let cur = [], line = 0, len = 0;
+    for (const w of ws) {
+      const t = featWord(w.text), add = (len ? 1 : 0) + t.length;
+      if (cur.length && len + add > 16) {
+        if (line === 1) { chunks.push(cur); cur = []; line = 0; len = 0; }
+        else { line = 1; len = 0; }
+      }
+      cur.push({ ...w, text: t, ...(line === 1 && len === 0 && cur.length ? { br: true } : {}) });
+      len += (len ? 1 : 0) + t.length;
+    }
+    if (cur.length) chunks.push(cur);
+    chunks.forEach((c, k) => {
+      const start = r3(Math.max(g.start, hookEnd, c[0].start - 0.05));
+      const end = r3(k < chunks.length - 1 ? chunks[k + 1][0].start - 0.06 : Math.max(g.end, c.at(-1).end + 0.05));
+      if (end - start < 0.2 || inOverlay(start, end)) return;
+      const y = Math.min(band(start, end), Math.round(0.785 * H) - h);
+      runs.push({ kind: "feat", run: true, sweep: false, start, end, text: c.map((w) => w.text).join(" "), words: c, place: { x: Math.round(0.07 * W), y, w: Math.round(0.58 * W), size, h } });
+    });
+  }
+  const captions = [...plan.captions.filter((c) => c.kind !== "sub"), ...runs].sort((a, b) => a.start - b.start);
+  captions.forEach((g, i) => {
+    if (g.kind !== "feat") return;
+    const nx = captions.slice(i + 1).find((x) => x.kind === "feat");
+    if (nx && g.end > nx.start - 0.05) g.end = r3(Math.max(g.start + 0.3, nx.start - 0.05));
+  });
+  return captions;
+}
+
 /** Restyle a finished job in a new folder: same footage, cuts, audio and timing; glow captions, icons and scenes. */
 export async function restyleGlow(plan, { render, library = [], ask = claudeText, picks: saved = null, outDir, detect = detectFaces, cutout } = {}) {
   const W = plan.canvas.width, H = plan.canvas.height, D = plan.video.duration;
@@ -580,6 +623,9 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
   plan.slams = [];
   plan.premise = null;
   plan.timeLabels = [];
+  // Greg 11-10: captions all the way through, but no small subtitles. The words between feature lines run in the band
+  // as plain glowing captions instead. A preset can bring the subtitles back with glow.subtitles.
+  if (plan.style.glow?.subtitles !== true) plan.captions = runningCaptions(plan, out.band, { W, H });
   // A feature line holds for its light sweep where the band has room (a hero block keeps its own height), else it
   // becomes subtitles.
   holdGlowFeatures(plan, { place: (g, end) => {

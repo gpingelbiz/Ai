@@ -211,6 +211,8 @@ test("restyle does not generate a depth cutout for a wide reel or a different pr
 
 test("a feature reserves the full light sweep after the final spoken word builds", async () => {
   const plan = fixture();
+  // Nothing spoken after the line, so the band is free for the sweep (running captions take it back otherwise).
+  plan.words = plan.words.slice(0, 2);
   await restyleGlow(plan, { picks: { ...emptyPicks, features: [{ from: 0, to: 1, key: 1 }] } });
   const feat = plan.captions.find((g) => g.kind === "feat");
   const light = glowLightRuntime(plan).find((s) => s.selector.startsWith("#cap-"));
@@ -238,6 +240,7 @@ test("the extended feature hold still clears the face throughout its sweep", asy
 
 test("gold light markup and runtime target only the hook and feature lines, once for 0.6 seconds", async () => {
   const plan = fixture();
+  plan.style.glow = { ...plan.style.glow, subtitles: true };
   await restyleGlow(plan, { picks: { ...emptyPicks, features: [{ from: 0, to: 1, key: 1 }] } });
   const html = renderHTML(plan, "assets/footage.mp4");
   const rt = runtime(html);
