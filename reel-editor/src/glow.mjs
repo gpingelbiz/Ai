@@ -154,6 +154,36 @@ const FILLER = new Set("okay ok right so like yeah yes no um uh well and but or 
 export const punchWord = (t) => { const w = String(t).toLowerCase().replace(/[^a-z0-9']/g, ""); return !FILLER.has(w) && (/\d/.test(w) || w.length >= 4); };
 const short = (t, n) => { const v = String(t ?? "").replace(/\s+/g, " ").trim(); return v && v.length <= n ? v : ""; };
 
+/**
+ * Spoken stretches after the title with nothing on screen for at least `min` seconds, as word index ranges. Claude
+ * under-picks against a total, so a short second pass fills these.
+ */
+export function bareStretches(picks, words, duration, hookEnd = 3, min = 2.5) {
+  const spans = ["features", "icons", "overlays", "scenes"].flatMap((kind) => (picks[kind] || []).map((p) => glowWindow(kind, p, words, duration, hookEnd)));
+  const covered = (w) => spans.some((s) => w.start < s.end && w.end > s.start);
+  const out = [];
+  let run = [];
+  const close = () => { if (run.length && words[run.at(-1)].end - words[run[0]].start >= min) out.push({ from: run[0], to: run.at(-1) }); run = []; };
+  words.forEach((w, i) => { if (w.start < hookEnd || covered(w)) close(); else run.push(i); });
+  close();
+  return out;
+}
+
+export function fillPrompt(words, library, stretches) {
+  const icons = library.map((icon) => icon.name).join(", ");
+  const lines = stretches.map((s) => words.slice(s.from, s.to + 1).map((w, k) => `${s.from + k} ${w.start.toFixed(2)} ${w.text}`).join("\n")).join("\n---\n");
+  return [
+    "A premium black and gold talking-head reel has stretches with nothing on screen. Add graphics on these words only (index, start time, word; stretches separated by ---):",
+    lines,
+    "",
+    "Put one to three picks in each stretch, spread out (no two starting within 1 second), each matching what is said:",
+    "- features: punchy phrases as glowing capitals, 2 to 7 consecutive words that read well alone. Fields from, to, key (index in gold), br (index starting line two, or null); each line at most 16 characters. Or variant \"hero\" with hero (one word, at most 9 characters, shown big; the words before and after each at most 16 characters). Or variant \"swap\" with wrong and right (both spoken, wrong before right) only when he literally contrasts a wrong idea with a right one.",
+    "- icons: word (index), icon (a name from: " + icons + "), action (drop, spin, stack, ping, hit or float). The icon must show what that word literally means.",
+    "- overlays: {type \"stamp\", word} for one punch word (never a filler like okay, so, right), or {type \"notify\", from, to, who} for a short line someone says or texts.",
+    "Use only words inside the stretches. Never invent text. Reply with JSON only: {\"features\":[],\"icons\":[],\"overlays\":[]}",
+  ].join("\n");
+}
+
 /** Keep only well-formed, non-overlapping picks that point at real words and real icons, and say what was spoken. */
 export function checkPicks(picks, words, library, { hookEnd = 3, duration = Infinity } = {}) {
   const names = new Set(library.map((icon) => icon.name));
@@ -504,7 +534,17 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
   const hookEnd = plan.hook ? plan.hook.start + plan.hook.duration : 0;
   // Saved picks (a re-render after a layout change) skip the Claude call; they are checked again all the same.
   const reply = saved || firstJSON(await ask(glowPrompt(plan.words, library, { hook: plan.hook?.text || "", duration: D }), { timeoutMs: 900000 }));
-  const picks = checkPicks(reply, plan.words, library, { hookEnd: Math.max(3, hookEnd), duration: D });
+  let picks = checkPicks(reply, plan.words, library, { hookEnd: Math.max(3, hookEnd), duration: D });
+  // Fill pass: bare stretches get a short second ask (only on a fresh pick; saved picks already include it).
+  const bare = saved ? [] : bareStretches(picks, plan.words, D, Math.max(3, hookEnd));
+  if (bare.length) {
+    try {
+      const fill = firstJSON(await ask(fillPrompt(plan.words, library, bare), { timeoutMs: 600000 }));
+      const inBare = (i) => bare.some((s) => Number.isInteger(i) && i >= s.from && i <= s.to);
+      const ok = (p) => inBare(p.from ?? p.word) && inBare(p.to ?? p.word);
+      picks = checkPicks({ ...picks, features: [...picks.features, ...(fill.features || []).filter(ok)], icons: [...picks.icons, ...(fill.icons || []).filter(ok)], overlays: [...picks.overlays, ...(fill.overlays || []).filter(ok)] }, plan.words, library, { hookEnd: Math.max(3, hookEnd), duration: D });
+    } catch { /* the first picks stand */ }
+  }
   const out = layoutGlow(plan, picks, library, detection, { W, H });
   plan.captions = out.captions;
   plan.icons = out.icons;

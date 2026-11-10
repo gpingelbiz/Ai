@@ -604,3 +604,14 @@ test("the same scene type may come back once the reel has moved on, never back t
   assert.deepEqual(checkPicks({ scenes: [list(0), list(27)] }, ws, library, { duration: 40 }).scenes.map((s) => s.from), [0, 27]);
   assert.ok(ws[27].start - 0.15 - 6.2 >= SCENE_REPEAT_GAP);
 });
+
+test("bare stretches find spoken runs with nothing on screen, after the title", async () => {
+  const { bareStretches } = await import("../src/glow.mjs");
+  const ws = Array.from({ length: 30 }, (_, i) => ({ text: "word", start: 3 + i * 0.4, end: 3 + i * 0.4 + 0.3 }));
+  const picks = { features: [{ from: 5, to: 8 }], icons: [], overlays: [], scenes: [] };
+  const bare = bareStretches(picks, ws, 20, 3, 2.5);
+  assert.ok(bare.length >= 1);
+  assert.ok(bare.every((s) => ws[s.to].end - ws[s.from].start >= 2.5));
+  assert.ok(bare.every((s) => s.to < 5 || s.from > 8));
+  assert.deepEqual(bareStretches({ features: [], icons: [], overlays: [], scenes: [] }, ws.slice(0, 3), 10, 3, 2.5), []);
+});
