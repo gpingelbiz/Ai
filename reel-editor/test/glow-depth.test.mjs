@@ -311,3 +311,13 @@ test("a long title reaches the large depth size on three lines", () => {
   assert.equal(place.breaks.length, 2);
   assert.ok(place.size >= 0.045 * 1920 && place.y >= 0.07 * 1920);
 });
+
+test("a head that bobs a little still gets the depth title, tucked at its highest point", () => {
+  const d = detection(0, 0.34);
+  d.frames[1].faces[0].y += 0.025;
+  d.frames[3].faces[0].y += 0.015;
+  const place = depthHookSpot({ text: "Nobody claps for Tuesday", start: 0, duration: 3 }, d);
+  assert.ok(place);
+  const head = (0.34 - 0.15 * 0.26) * 1920;
+  assert.ok(place.bottom - head <= place.size * 0.19);
+});

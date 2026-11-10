@@ -143,9 +143,11 @@ test("glow wipes: runtime rotates left, up, right and uses 0.22-second matching 
   const plan = glowRuntime(scenes, []);
   assert.deepEqual(plan.glowScenes.map((s) => s.wipe.direction), ["left", "up", "right", "left"]);
   assert.deepEqual(plan.glowScenes.map((s) => [s.wipe.enter, s.wipe.exit]), [
-    ["inset(0 0 0 100%)", "inset(0 100% 0 0)"], ["inset(100% 0 0 0)", "inset(0 0 100% 0)"],
-    ["inset(0 100% 0 0)", "inset(0 0 0 100%)"], ["inset(0 0 0 100%)", "inset(0 100% 0 0)"],
+    ["inset(0% 0% 0% 100%)", "inset(0% 100% 0% 0%)"], ["inset(100% 0% 0% 0%)", "inset(0% 0% 100% 0%)"],
+    ["inset(0% 100% 0% 0%)", "inset(0% 0% 0% 100%)"], ["inset(0% 0% 0% 100%)", "inset(0% 100% 0% 0%)"],
   ]);
+  // GSAP pairs the numbers of both strings: a unitless 0 anywhere would make every in-between inset invalid CSS.
+  for (const s of plan.glowScenes) for (const v of [s.wipe.enter, s.wipe.exit, s.wipe.open]) assert.match(v, /^inset\(\d+% \d+% \d+% \d+%\)$/);
   const { calls, nodes } = timeline(plan);
   plan.glowScenes.forEach((s, i) => {
     const scene = calls.filter((c) => c.target === nodes.get(`gscene-${i}`));
@@ -230,7 +232,7 @@ test("glow bridge and wipe timelines restore source, target and ground on backwa
     assert.equal(source.scaleX, 3);
     assert.equal(target.opacity, 1);
     assert.equal(ground.opacity, 1);
-    assert.equal(ground.clipPath, "inset(0 0 0 0)");
+    assert.equal(ground.clipPath, "inset(0% 0% 0% 0%)");
   };
   before();
   after();

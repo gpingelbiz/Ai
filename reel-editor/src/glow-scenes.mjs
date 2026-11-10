@@ -17,10 +17,13 @@ export function firstGlowIcon(scene) {
 }
 
 const WIPE_DIRECTIONS = ["left", "up", "right"];
+// Every inset carries its unit: GSAP pairs the numbers of the two strings, and a unitless "0" end value would make
+// every in-between frame an invalid (unitless, non-zero) inset that the browser ignores, so the wipe would not show.
+const WIPE_OPEN = "inset(0% 0% 0% 0%)";
 const WIPE_CLIPS = {
-  left: ["inset(0 0 0 100%)", "inset(0 100% 0 0)"],
-  up: ["inset(100% 0 0 0)", "inset(0 0 100% 0)"],
-  right: ["inset(0 100% 0 0)", "inset(0 0 0 100%)"],
+  left: ["inset(0% 0% 0% 100%)", "inset(0% 100% 0% 0%)"],
+  up: ["inset(100% 0% 0% 0%)", "inset(0% 0% 100% 0%)"],
+  right: ["inset(0% 100% 0% 0%)", "inset(0% 0% 0% 100%)"],
 };
 
 function hexA(hex, a) {
@@ -197,7 +200,7 @@ export function glowRuntime(scenes, overlays) {
       const [enter, exit] = WIPE_CLIPS[direction];
       const bridge = Number.isInteger(s.bridge) && s.bridge >= 0 && firstGlowIcon(s)?.image
         ? { bridge: s.bridge, bridgeDuration: GLOW_BRIDGE_DURATION, bridgeTarget: `#gs-${i}-${s.type === "people" ? "p0" : "i0"}` } : {};
-      return { type: s.type || "icons", start: s.start, end: s.end, words: (s.words || []).map((w) => w.start), label: (s.labelWords || []).length, icons: (s.icons || []).filter((icon) => icon.image).length, items: (s.items || []).map((it) => it.at), at: s.left ? [s.left.at, s.right.at] : [], count: s.count || 0, ...(s.type === "number" || s.type === "meter" ? nums(s) : {}), hasIcon: !!s.icon?.image, ...(s.type === "flow" ? { nodes: flowNodes(s.items.length), branch: s.branch?.at ?? null } : {}), ...(s.type === "thread" ? { bubbles: s.bubbles.map((b) => ({ side: b.side, at: b.at, words: b.words.map((w) => w.start) })) } : {}), ...(s.type === "bars" ? { bars: [s.left, s.right].map((b) => ({ at: b.at, amount: b.amount, ...nums(b) })) } : {}), wipe: { direction, enter, exit, duration: 0.22 }, ...bridge };
+      return { type: s.type || "icons", start: s.start, end: s.end, words: (s.words || []).map((w) => w.start), label: (s.labelWords || []).length, icons: (s.icons || []).filter((icon) => icon.image).length, items: (s.items || []).map((it) => it.at), at: s.left ? [s.left.at, s.right.at] : [], count: s.count || 0, ...(s.type === "number" || s.type === "meter" ? nums(s) : {}), hasIcon: !!s.icon?.image, ...(s.type === "flow" ? { nodes: flowNodes(s.items.length), branch: s.branch?.at ?? null } : {}), ...(s.type === "thread" ? { bubbles: s.bubbles.map((b) => ({ side: b.side, at: b.at, words: b.words.map((w) => w.start) })) } : {}), ...(s.type === "bars" ? { bars: [s.left, s.right].map((b) => ({ at: b.at, amount: b.amount, ...nums(b) })) } : {}), wipe: { direction, enter, exit, open: WIPE_OPEN, duration: 0.22 }, ...bridge };
     }),
     glowOverlays: overlays.map((o) => ({ type: o.type, start: o.start, end: o.end, words: (o.words || []).map((w) => w.start) })),
   };
@@ -244,7 +247,7 @@ export const GLOW_SCENES_JS = `
           const bridged = gsBridge(s);
           const pop = (sel, at, k) => { if (!bridged || sel !== s.bridgeTarget) gsPop(sel, at, k); };
           if (!bridged && s.bridgeTarget) tl.fromTo(s.bridgeTarget, { opacity: 0 }, { opacity: 1, duration: 0.1, immediateRender: false }, t0);
-          tl.fromTo(el, { clipPath: s.wipe.enter }, { clipPath: "inset(0 0 0 0)", duration: s.wipe.duration, ease: "power2.out", immediateRender: false }, s.start);
+          tl.fromTo(el, { clipPath: s.wipe.enter }, { clipPath: s.wipe.open, duration: s.wipe.duration, ease: "power2.out", immediateRender: false }, s.start);
           tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.1, ease: "power2.out", immediateRender: false }, s.start);
           if (s.type === "number") {
             if (s.hasIcon) pop("#gs-" + i + "-i0", t0, 0);
@@ -333,7 +336,7 @@ export const GLOW_SCENES_JS = `
             }
             gsWords(i, s.words, s.start + 0.1);
           }
-          tl.fromTo(el, { clipPath: "inset(0 0 0 0)" }, { clipPath: s.wipe.exit, duration: s.wipe.duration, ease: "power2.in", immediateRender: false }, s.end - s.wipe.duration);
+          tl.fromTo(el, { clipPath: s.wipe.open }, { clipPath: s.wipe.exit, duration: s.wipe.duration, ease: "power2.in", immediateRender: false }, s.end - s.wipe.duration);
           tl.fromTo(el, { opacity: 1 }, { opacity: 0, duration: 0.16, ease: "power2.in", immediateRender: false }, s.end - 0.16);
         });
         (PLAN.glowOverlays || []).forEach((o, i) => {

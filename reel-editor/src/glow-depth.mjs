@@ -23,8 +23,9 @@ export function depthHookSpot(hook, detection, { W = 1080, H = 1920 } = {}) {
     const chars = Math.max(...lines.map((line) => line.map((word) => word.text).join(" ").length));
     const size = Math.floor(Math.min(0.075 * H, w / Math.max(1, chars * 0.6)));
     if (size < 0.045 * H) continue;
-    // A moving head must still touch the letters without swallowing a word, even a one-character number.
-    if ((Math.max(...tops) - Math.min(...tops)) * H > size * 0.12) continue;
+    // The letters sit on the highest head position, so a head that dips only uncovers them (never swallows a word);
+    // a head that travels far (over 4% of the frame) would leave the title floating most of the time.
+    if ((Math.max(...tops) - Math.min(...tops)) * H > 0.04 * H) continue;
     const bottom = Math.round(top + size * 0.18);
     const y = Math.round(bottom - lines.length * size);
     if (y < 0.07 * H || bottom > 0.5 * H) continue;
