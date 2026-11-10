@@ -11,6 +11,7 @@ import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
 import { evidenceCSS, evidenceHTML, EVIDENCE_JS } from "./evidence.mjs";
 import { timeLabelHTML, TIME_LABELS_JS } from "./time-labels.mjs";
 import { keywordColorOnFootage } from "./captions.mjs";
+import { glowScenesHTML, glowOverlaysHTML, glowScenesCSS, glowRuntime, GLOW_SCENES_JS } from "./glow-scenes.mjs";
 
 // The quiet and serif captions' shadow. "strong" (captions.quietShadow) is darker and tighter, for thin light type over
 // light clothes or hair (Julee's cream serif on a striped shirt, 2026-11-03); "soft" is the October 30 look.
@@ -94,6 +95,15 @@ export function composeProject(plan, projectDir) {
     b.video = /\.(mp4|mov|webm|m4v)$/i.test(b.file || "");
     copyOrLink(b.file, path.join(projectDir, b.src));
   });
+  // 3D icons: cut-out images copied in beside the footage (icon.file on disk, icon.image the project path).
+  const iconImages = (plan.icons || []).filter((icon) => icon.file && fs.existsSync(icon.file));
+  if (iconImages.length) ensureDir(path.join(assets, "icons"));
+  iconImages.forEach((icon, i) => { icon.image = `assets/icons/icon-${i + 1}${path.extname(icon.file)}`; fs.copyFileSync(icon.file, path.join(projectDir, icon.image)); });
+  // Glow scenes: the same cut-out icons, drawn large on the brand's dark ground.
+  const sceneIcons = [...(plan.glowScenes || []), ...(plan.glowOverlays || [])].flatMap((x) => [...(x.icons || []), x.icon, x.cross, x.check, x.left?.icon, x.right?.icon, ...(x.items || []).map((it) => it.icon)]).filter((icon) => icon?.file && fs.existsSync(icon.file));
+  if (sceneIcons.length) ensureDir(path.join(assets, "scenes"));
+  const copied = new Map();
+  sceneIcons.forEach((icon) => { if (!copied.has(icon.file)) { const rel = `assets/scenes/scene-icon-${copied.size + 1}${path.extname(icon.file)}`; fs.copyFileSync(icon.file, path.join(projectDir, rel)); copied.set(icon.file, rel); } icon.image = copied.get(icon.file); });
   // Window-matched person mattes for pop-out slams and cutout b-roll live beside the hook's alpha clip.
   const extraCutouts = [
     ...(plan.broll || []).map((b, i) => ({ cut: b.cutout, src: `assets/cutouts/broll-${i + 1}.webm` })),
@@ -185,8 +195,16 @@ export function renderHTML(plan, footage) {
     const m = MARKERS[cap.marker] || MARKERS[/\d|\$/.test(w.text) ? "circle" : "underline"];
     return `<svg class="an ${m.cls}" viewBox="${m.box}" preserveAspectRatio="none" aria-hidden="true"><path d="${m.d}"/></svg>`;
   };
+  // "glow": the studio look. Feature lines (g.kind "feat") float in a planned spot as light-weight glowing capitals,
+  // built word by word; every other line is a plain sentence-case subtitle low in the frame.
+  const glow = cap.style === "glow";
+  const subFont = Math.round((cap.subFontSizeFrac || 0.028) * H);
+  const glowCap = (g, i, spans) => g.kind === "feat" && g.place
+    ? `      <div class="cap cap-feat" id="cap-${i}" style="left:${g.place.x}px;top:${g.place.y}px;width:${g.place.w}px;font-size:${g.place.size || capFont}px"><div class="cap-line">${spans}</div></div>`
+    : `      <div class="cap cap-sub" id="cap-${i}" style="font-size:${subFont}px"><div class="cap-line">${spans}</div></div>`;
   const capsHTML = captions
     .map((g, i) => {
+      if (glow) return glowCap(g, i, g.words.map((w, j) => `${w.br ? '<span class="br"></span>' : ""}<span class="w${w.key ? " k" : ""}" id="cap-${i}-w${j}">${esc(w.text)}</span>`).join(""));
       const len = g.text.length;
       const scale = cap.shrinkAfterChars && len > cap.shrinkAfterChars ? Math.max(0.7, cap.shrinkAfterChars / len) : 1;
       const firstKey = g.words.findIndex((w) => w.key);
@@ -198,10 +216,10 @@ export function renderHTML(plan, footage) {
   // headline: words on a soft scrim (no box), one gold emphasis, a gold rule drawn under it.
   const hookWordList = plan.hook ? plan.hook.words || plan.hook.text.split(/\s+/).map((t) => ({ text: t })) : [];
   const hookInner = headline
-    ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `<span class="hw${w.key ? " k" : ""}">${esc(w.text)}</span>`).join(" ")}${hk.treat === "type" ? '<span class="hook-cursor"></span>' : ""}</div><div id="hook-bar"></div></div>`
+    ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `${w.br ? "<br>" : ""}<span class="hw${w.key ? " k" : ""}">${esc(w.text)}</span>`).join(" ")}${hk.treat === "type" ? '<span class="hook-cursor"></span>' : ""}</div><div id="hook-bar"></div></div>`
     : `<span id="hook-text">${esc(plan.hook?.text || "")}</span>`;
   const hookHTML = plan.hook
-    ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}${hk.plaque === true ? " hook-plaque" : ""}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
+    ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}${hk.plaque === true ? " hook-plaque" : ""}${glow && headline ? " hook-glow" : ""}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
     : "";
 
   const premiseSectionsHTML = premise?.sections?.length
@@ -323,10 +341,16 @@ export function renderHTML(plan, footage) {
     .join("\n");
 
   // Spoken icon pops: the plan already chose the word, timing and face-safe square; compose only draws it.
-  const iconList = (plan.icons || []).map((icon) => ({ ...icon, svg: inlineIconSVG(icon.icon) })).filter((icon) => icon.svg);
+  // A 3D icon is a cut-out image (icon.image, copied into the project's assets) drawn without the disc.
+  const iconList = (plan.icons || []).map((icon) => ({ ...icon, svg: icon.image ? "" : inlineIconSVG(icon.icon) })).filter((icon) => icon.svg || icon.image);
   const iconSkin = s.icons?.skin === "glass" ? "glass" : "disc";
+  // Full-screen glow scenes: one to three 3D icons over a dark brand ground, the spoken words glowing under them.
+  // Glow display elements (glow-scenes.mjs): full-screen scenes on the brand ground and overlays in the band.
+  const sceneList = plan.glowScenes || [];
+  const overList = plan.glowOverlays || [];
+  const glowSceneHTML = [glowScenesHTML(sceneList, { W, H, esc }), glowOverlaysHTML(overList, { W, H, esc })].filter(Boolean).join("\n");
   const iconHTML = iconList
-    .map((icon, i) => `      <div id="icon-${i}" class="icon-pop icon-${iconSkin} clip" style="left:${icon.x}px;top:${icon.y}px;width:${icon.size}px;height:${icon.size}px" data-start="${icon.t}" data-duration="${r3(icon.end - icon.t)}" data-track-index="3" data-layout-allow-overflow aria-label="${esc(icon.word)}"><div class="icon-disc">${icon.svg}</div></div>`)
+    .map((icon, i) => `      <div id="icon-${i}" class="icon-pop icon-${icon.image ? "3d" : iconSkin} clip" style="left:${icon.x}px;top:${icon.y}px;width:${icon.size}px;height:${icon.size}px" data-start="${icon.t}" data-duration="${r3(icon.end - icon.t)}" data-track-index="3" data-layout-allow-overflow aria-label="${esc(icon.word)}"><div class="icon-disc">${icon.image ? `<img src="${esc(icon.image)}" alt="">` : icon.svg}</div></div>`)
     .join("\n");
 
   // Graphic scenes: designed full-screen cards over the footage, under the captions.
@@ -423,6 +447,8 @@ export function renderHTML(plan, footage) {
     width: W,
     height: H,
     reveal,
+    ...(sceneList.length || overList.length ? glowRuntime(sceneList, overList) : {}),
+    ...(glow ? { glow, capKinds: captions.map((g) => (g.kind === "feat" && g.place ? "feat" : "sub")) } : {}),
     capCut: cap.animation === "cut",
     capDim: dimFuture,
     hookPush: s.hook?.push !== false,
@@ -579,7 +605,24 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap-line { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2; letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: ${QUIET_SHADOWS[cap.quietShadow] || QUIET_SHADOWS.soft}; gap: 0.06em 0.26em; }
       .cap .w.k { ${colorKeywords ? `color: #111111; background: ${c.accent}; padding: 0 0.16em; border-radius: 0.14em; text-shadow: none;` : "color: inherit; background: none; padding: 0; border-radius: 0; font-weight: 950; font-size: 1.06em;"} }${cap.serif ? `
       .cap-line { font-family: "Look Serif", "Anton", serif; font-weight: 500; line-height: 1.14; letter-spacing: 0; }
-      .cap .w.k { font-weight: 500; }` : ""}` : ""}
+      .cap .w.k { font-weight: 500; }` : ""}` : ""}${glow ? `
+      .cap-line { font-family: "Inter", sans-serif; font-weight: 760; line-height: 1.08; letter-spacing: 0.012em; -webkit-text-stroke: 0; gap: 0.04em 0.26em; text-shadow: 0 0 0.12em rgba(255,255,255,0.5), 0 0 0.45em rgba(255,255,255,0.2), 0 0.05em 0.3em rgba(0,0,0,0.7); }
+      .cap.cap-feat { right: auto; margin-top: 0; justify-content: flex-start; }
+      .cap.cap-feat .cap-line { justify-content: flex-start; text-align: left; }
+      .cap.cap-feat .w { opacity: 0; }
+      .cap .br { flex-basis: 100%; height: 0; }
+      .cap .w.k { color: ${c.accent}; font-weight: 760; font-size: 1em; text-shadow: 0 0 0.14em ${hexA(c.accent, 0.7)}, 0 0 0.5em ${hexA(c.accent, 0.32)}, 0 0.05em 0.3em rgba(0,0,0,0.7); }
+      .cap.cap-sub { top: ${r3((cap.subPosition || 0.79) * 100)}%; }
+      .cap.cap-sub .cap-line { font-weight: 560; text-transform: none; letter-spacing: 0; line-height: 1.2; text-shadow: 0 0.04em 0.16em rgba(0,0,0,0.85), 0 0 0.6em rgba(0,0,0,0.45); background: ${hexA(c.bg || "#0B0B0D", 0.5)}; padding: 0.1em 0.5em 0.14em; border-radius: 0.6em; }
+      .cap.cap-sub .w.k { color: inherit; text-shadow: inherit; }
+      #hook.hook-glow #hook-scrim, #hook.hook-glow #hook-bar { display: none; }
+      #hook.hook-glow #hook-block { right: auto; text-align: left; ${plan.hook?.place ? `left: ${plan.hook.place.x}px; top: ${plan.hook.place.y}px; width: ${plan.hook.place.w}px; font-size: ${plan.hook.place.size}px;` : ""} }
+      #hook.hook-glow #hook-lines { font-family: "Inter", sans-serif; font-weight: 760; font-size: 1em; line-height: 1.08; letter-spacing: 0.012em; text-transform: uppercase; color: ${c.text}; -webkit-text-stroke: 0; text-wrap: wrap; text-shadow: 0 0 0.12em rgba(255,255,255,0.5), 0 0 0.45em rgba(255,255,255,0.2), 0 0.05em 0.3em rgba(0,0,0,0.7); }
+      #hook.hook-glow #hook-lines { word-spacing: 0.14em; }
+      #hook.hook-glow #hook-lines .hw { margin: 0; }
+      #hook.hook-glow #hook-lines .hw.k { color: ${c.accent}; font-size: 1em; text-shadow: 0 0 0.14em ${hexA(c.accent, 0.7)}, 0 0 0.5em ${hexA(c.accent, 0.32)}, 0 0.05em 0.3em rgba(0,0,0,0.7); }` : ""}${iconList.some((icon) => icon.image) ? `
+      .icon-3d .icon-disc { background: none; border: 0; border-radius: 0; }
+      .icon-3d .icon-disc img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0.6em 1.2em rgba(0,0,0,0.55)) drop-shadow(0 0 1.4em ${hexA(c.accent, 0.25)}); }` : ""}${sceneList.length || overList.length ? glowScenesCSS({ W, H, c }) : ""}
       #hook {
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
         padding: ${Math.max(0, Math.round(hk.position * H - hookFont * 1.2))}px 7% 0; box-sizing: border-box;
@@ -622,7 +665,7 @@ ${popoutBgHTML}
 ${lowerHTML}
 ${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}${evidenceMarkup ? `\n${evidenceMarkup}` : ""}
 ${premiseHTML}${timeLabelsHTML ? `\n${timeLabelsHTML}` : ""}
-${slamHTML}${iconHTML ? `\n${iconHTML}` : ""}
+${slamHTML}${iconHTML ? `\n${iconHTML}` : ""}${glowSceneHTML ? `\n${glowSceneHTML}` : ""}
 ${hookHTML}
 ${cutoutHTML}
 ${brollCutoutHTML}
@@ -686,7 +729,7 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
           const done = t0 + 0.3 + step * words.length;
           tl.set("#hook-scrim", { opacity: 1 }, h.start);
           tl.fromTo(words, { opacity: 1, y: h.font * 0.12 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out", stagger: step * 0.5 }, t0);
-          tl.fromTo("#hook-lines .hw.k", { scale: 1 }, { scale: 1.09, duration: 0.13, ease: "power2.out", yoyo: true, repeat: 1 }, done - 0.05);
+          ${glow ? "if (!PLAN.glow) " : ""}tl.fromTo("#hook-lines .hw.k", { scale: 1 }, { scale: 1.09, duration: 0.13, ease: "power2.out", yoyo: true, repeat: 1 }, done - 0.05);
           tl.fromTo("#hook-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.36, ease: "power3.inOut" }, h.start + 0.08);
           // The look's treatment: never hides a word on frame 0 (it is the cover).
           if (h.treat === "stamp") tl.fromTo("#hook-lines", { scale: 1.06 }, { scale: 1, duration: 0.26, ease: "back.out(1.6)" }, t0);
@@ -748,7 +791,13 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
             tl.fromTo(p, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.38, ease: "power2.inOut", immediateRender: false }, at);
             tl.fromTo(we, { scale: 1 }, { scale: 1.06, duration: 0.09, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, at + 0.28);
           });
-          if (PLAN.reveal) {
+          ${glow ? `if (PLAN.glow) {
+            if (PLAN.capKinds[i] === "feat") {
+              // Each word lights up as it is spoken, from a soft blur; the finished line fades out.
+              g.words.forEach((w, j) => tl.fromTo("#cap-" + i + "-w" + j, { opacity: 0, y: 8, filter: "blur(10px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.18, ease: "power2.out", immediateRender: false }, Math.max(g.start, w[0] - 0.03)));
+              tl.to(line, { opacity: 0, duration: 0.16, ease: "power2.in" }, Math.max(g.start + 0.2, g.end - 0.16));
+            } else tl.fromTo(line, { opacity: 0 }, { opacity: 1, duration: 0.08, ease: "none" }, g.start);
+          } else ` : ""}if (PLAN.reveal) {
             if (!PLAN.capCut) tl.fromTo(line, { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.12, ease: "power2.out" }, g.start);
             if (PLAN.capDim) g.words.forEach((w, j) => tl.fromTo("#cap-" + i + "-w" + j, { opacity: 0.38 }, { opacity: 1, duration: 0.07, ease: "none", immediateRender: false }, Math.max(g.start, w[0])));
           } else if (!PLAN.capCut) {
@@ -919,7 +968,7 @@ ${sharedBroll ? `          if (b.layout === "window") {
             tl.set(root, { opacity: 0 }, item.at + item.duration);
           });
         }
-${iconList.length ? `        // Spoken icons: a seven-frame sticker landing, a small float, then a five-frame exit.
+${sceneList.length || overList.length ? GLOW_SCENES_JS : ""}${iconList.length ? `        // Spoken icons: a seven-frame sticker landing, a small float, then a five-frame exit.
         const iconFrame = 1 / (PLAN.fps || 30);
         PLAN.icons.forEach((icon, i) => {
           const el = document.getElementById("icon-" + i);
