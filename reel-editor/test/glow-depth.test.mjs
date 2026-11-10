@@ -301,7 +301,6 @@ test("non-glow compositions contain no light or depth runtime, even with stale g
 
 test("Claude leaves depth and the gold sweep to the deterministic layout", () => {
   const prompt = glowPrompt(words, [], { duration: 10 });
-  assert.match(prompt, /editor handles title depth and one soft gold light sweep/);
-  assert.match(prompt, /Do not request these on subtitles or invent extra text/);
+  assert.match(prompt, /title's depth and a soft gold light sweep .* are automatic; never pick them or add text for them/);
   assert.equal(loadPreset("pingel-brand").glow.depthHook, true);
 });

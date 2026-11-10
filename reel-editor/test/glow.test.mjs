@@ -406,7 +406,7 @@ test("the prompt exposes flow, thread, bars and instant facts with an explicitly
   const prompt = glowPrompt(flowWords, library, { duration: 60 });
   for (const type of ["flow", "thread", "bars"]) assert.ok(prompt.includes(`   ${type}:`));
   assert.match(prompt, /countFrom.*spoken starting value/);
-  assert.match(prompt, /never count a plain fact from zero/);
+  assert.match(prompt, /A plain fact lands at once \(it never counts up from zero\)/);
   assert.match(prompt, /Always labelled ILLUSTRATIVE/);
   assert.match(prompt, /at least 1.8 seconds/);
   assert.match(prompt, /Amounts must match the displayed values/);

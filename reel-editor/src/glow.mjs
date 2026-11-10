@@ -61,7 +61,7 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "3D icons you may use (name: what it shows):",
     icons,
     "",
-    "You have a kit of display elements. Pick the right one for each moment from what is being said, so the reel keeps changing and every graphic matches its words. Reply with JSON only.",
+    "You have a kit of display elements. For the moments that earn a graphic, pick the element that fits what is being said, so every graphic matches its words (the Direction below says how often). Reply with JSON only.",
     "",
     "A. features: punchy phrases shown as big glowing capitals under the speaker's chin, built word by word. 2 to 7 consecutive words that read well alone. Fields: from, to (word indexes, inclusive), key (the index shown in gold), br (index that starts line two, or null). Each line holds at most 16 characters including spaces.",
     "   hero: use variant \"hero\" when one word carries the phrase. Add hero (its word index inside from..to, at most 9 characters). It stands alone in gold at twice the size; the exact spoken words before and after each form one small support line, at most 16 characters each. Up to three lines, e.g. YOUR MOST / EXPENSIVE / HABIT. No br or extra key needed.",
@@ -74,7 +74,7 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "   stamp: one huge glowing word for a single punch word that carries the point (a noun, verb or number, like EQUATION or PAY), never a filler such as okay, right or so. Fields: type \"stamp\", word (index).",
     "D. scenes: full-screen moments on the black and gold ground that replace the speaker for at least 1.8 seconds (usually 1.8 to 4 seconds). Fields always: type, from, to (the spoken words the scene covers). Types:",
     "   icons: one to three big icons with the spoken words glowing under them, for one strong idea. Extra: icons (names), key (index in gold).",
-    "   number: a big spoken fact that appears instantly with a scale/glow land; never count a plain fact from zero. For a spoken change only, add countFrom (the spoken starting value) to count from that value to value. The scene field from is already the first word index; countFrom is separate. Both numbers must be spoken inside from..to. For a price, amount, percent, count or time span that is said out loud. Extra: value (exactly as it should read, e.g. \"$736\", \"57%\", \"10 MIN\", \"15\"; its digits must be spoken in from..to), label (at most 24 characters, what the number is), icon (optional name).",
+    "   number: a big number for a price, amount, percent, count or time span that is said out loud. A plain fact lands at once (it never counts up from zero). Extra: value (exactly as it should read, e.g. \"$736\", \"57%\", \"10 MIN\", \"15\"; the amount must be spoken in from..to), label (at most 24 characters, what the number is), icon (optional name), countFrom (only for a spoken change such as \"from 10K to 40K\": the spoken starting value, written like value; the number then counts from it to value). countFrom is a value, not a word index (from is the first word); both numbers must be spoken in from..to.",
     "   meter: a bar filling to a percent, for a rate or share. Extra: percent (0 to 100, spoken in from..to), label (at most 24 characters).",
     "   list: two to four rows of icon plus label, landing as each is said. Extra: items [{word (index where it is said, inside from..to), icon (name), label (at most 18 characters)}].",
     "   steps: a numbered path for a process or sequence. Extra: items [{word, label (at most 18 characters)}], two to four.",
@@ -93,7 +93,7 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "- No more than 2 band elements (features, overlays and icons combined) may start inside any rolling 3-second window. Keep the graphic that carries the argument; drop decorative icons first.",
     "- Prefer a specific type (number, meter, list, steps, flow, thread, bars, versus, quote, people, notify) when the spoken argument earns it. Use the icons scene only when nothing more specific fits; there is no type quota.",
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
-    "- The editor handles title depth and one soft gold light sweep after the title and each feature finish building. Do not request these on subtitles or invent extra text for them. Leave a beat after a feature so its finished letters can catch the light.",
+    "- The title's depth and a soft gold light sweep across the title and each finished feature line are automatic; never pick them or add text for them. Leave about a second after a feature's last word before the next band element or scene so its letters can catch the light.",
     "- Features, overlays and scenes never share words. Nothing on the words in the first 3 seconds, where the title card sits.",
     'Reply as {"features":[],"icons":[],"overlays":[],"scenes":[]}',
   ].join("\n");
@@ -372,6 +372,10 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
       if (f) captions.push({ kind: "feat", ...(f.variant ? { variant: f.variant } : {}), start, end, text: ix.map((j) => words[j].text).join(" "), words: ws, place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.58 * W), ...featureBox } });
       else {
         const scene = sceneFrom(s, ws);
+        // A thread's bubbles show at their display times: each after its 0.4 s of typing dots once the scene is up,
+        // and at least 0.85 s after the one before so the moves never overlap (GLOW_SCENES_JS, glow-sound.mjs).
+        let last = -Infinity;
+        for (const b of scene.bubbles || []) b.at = last = r3(Math.max(start + 0.4, b.at, last + 0.85));
         if (end - start >= 1.8 - 1e-9) scenes.push({ ...scene, start, end });
       }
       i = g.to;

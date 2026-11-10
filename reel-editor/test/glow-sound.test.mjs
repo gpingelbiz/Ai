@@ -27,9 +27,10 @@ test("glow sounds: scene entrances whoosh and timed items, bars and the right si
 });
 
 test("glow sounds: number and meter each pop once at their landing", () => {
-  const cues = glowSoundCues({ glowScenes: [{ type: "number", start: 2 }, { type: "meter", start: 5 }] });
-  assert.deepEqual(times(cues, "move"), [2, 5]);
-  assert.deepEqual(times(cues, "card"), [2.43, 6.08]);
+  const cues = glowSoundCues({ glowScenes: [{ type: "number", start: 2 }, { type: "meter", start: 5 }, { type: "number", start: 9, end: 12, from: "$10K" }] });
+  assert.deepEqual(times(cues, "move"), [2, 5, 9]);
+  // A plain fact lands at once; a spoken change pops when its count ends (0.9 s at most).
+  assert.deepEqual(times(cues, "card"), [2.15, 6.08, 9.9]);
   assert.ok(cues.filter((c) => family(c) === "card").every((c) => c.volume === 0.18));
 });
 
@@ -46,12 +47,12 @@ test("glow sounds: icons pop, stamps hit, notifications ding, the old look and h
   assert.deepEqual(glowSoundCues({}), []);
 });
 
-test("glow sounds: incoming bubbles ding and outgoing bubbles get a half second of typing beforehand", () => {
+test("glow sounds: incoming bubbles ding and outgoing bubbles type under their 0.4 s of dots", () => {
   const cues = glowSoundCues({ glowScenes: [{ type: "thread", start: 1, bubbles: [
     { side: "them", at: 2 }, { side: "me", at: 4 }, { side: "them", at: 6 }, { side: "me", at: 8 }, { side: "unknown", at: 9 },
   ] }] });
   assert.deepEqual(times(cues, "ding"), [2, 6]);
-  assert.deepEqual(times(cues, "typing"), [3.5, 7.5]);
+  assert.deepEqual(times(cues, "typing"), [3.6, 7.6]);
   assert.ok(cues.filter((c) => family(c) === "typing").every((c) => c.duration === 0.5));
   assert.deepEqual(times(glowSoundCues({ glowScenes: [{ bubbles: [{ side: "me", at: 0.2 }] }] }), "typing"), [0]);
 });
@@ -186,4 +187,17 @@ test("glow compose: the final fixture page embeds the regenerated audio and copi
   assert.ok(!html.includes("sfx-broll-1"));
   assert.ok(!fs.existsSync(path.join(dir, "assets/sfx/flash.wav")));
   assert.match(html, /"glow":true/);
+});
+
+test("glow sounds: a flow branch, a swap strike and acting icons get their own quiet cues", () => {
+  const cues = glowSoundCues({
+    glowScenes: [{ type: "flow", start: 1, items: [{ at: 1 }, { at: 2 }], branch: { at: 3 } }],
+    captions: [{ kind: "feat", variant: "swap", start: 6, words: [{ text: "luck", start: 6.2, wrong: true }, { text: "work", start: 7, right: true }] }, { kind: "feat", start: 8, words: [{ text: "plain", start: 8 }] }],
+    icons: [{ t: 10, action: "hit" }, { t: 13, action: "ping" }, { t: 16, action: "drop" }],
+  });
+  assert.deepEqual(times(cues, "card"), [2, 3, 10, 13, 16]);
+  assert.deepEqual(times(cues, "marker"), [7]);
+  assert.deepEqual(times(cues, "slam"), [10.16]);
+  assert.deepEqual(times(cues, "ding"), [13.16]);
+  assert.ok(cues.find((c) => family(c) === "slam").volume < 0.3 * 0.5);
 });

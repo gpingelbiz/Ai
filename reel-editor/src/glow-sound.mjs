@@ -7,6 +7,7 @@ const SOUNDS = {
   slam: { files: ["slam.wav", "slam-2.wav", "slam-3.wav"], durations: [0.173208, 0.161896, 0.18625], volume: 1 },
   ding: { files: ["ding.wav"], durations: [0.42], volume: 0.5 },
   typing: { files: ["typing.wav"], durations: [0.5], volume: 0.3 },
+  marker: { files: ["marker.wav"], durations: [0.161104], volume: 0.45 },
 };
 
 /** Sounds for the final glow layout, never the old look's zooms, graphics, slams or hook. */
@@ -25,14 +26,18 @@ export function glowSoundCues(plan, { level = 0.3 } = {}) {
   };
   for (const scene of plan.glowScenes || []) {
     add("move", scene.start);
-    // Timed collections also cover new scene types such as flows and bars.
+    // Timed collections also cover new scene types: list, steps and flow items, a flow's branch, the right side of a
+    // versus or bars (the left one lands with the entrance).
     for (const item of [...(scene.items || []), ...(scene.bars || [])]) add("card", item.at, 0.75);
+    if (scene.branch) add("card", scene.branch.at, 0.5);
     if (scene.right) add("card", scene.right.at, 0.75);
-    // Match the number's scale landing and the meter's completed fill in GLOW_SCENES_JS.
-    if (scene.type === "number") add("card", scene.start + 0.43);
+    // Match GLOW_SCENES_JS: a plain number lands at once (just after the whoosh), a spoken change pops when its count
+    // ends, a meter when its fill completes.
+    if (scene.type === "number") add("card", scene.from == null ? scene.start + 0.15 : scene.start + Math.min(0.9, Math.max(0.4, scene.end - scene.start - 0.68)));
     if (scene.type === "meter") add("card", scene.start + 1.08);
+    // Thread bubbles: plan times are display times (layoutGlow spaces them); typing runs under the 0.4 s of dots.
     for (const bubble of scene.bubbles || []) {
-      if (bubble.side === "me") add("typing", bubble.at - SOUNDS.typing.durations[0]);
+      if (bubble.side === "me") add("typing", bubble.at - 0.4);
       if (bubble.side === "them") add("ding", bubble.at);
     }
   }
@@ -40,7 +45,19 @@ export function glowSoundCues(plan, { level = 0.3 } = {}) {
     if (overlay.type === "stamp") add("slam", overlay.start);
     if (overlay.type === "notify") add("ding", overlay.start);
   }
-  for (const icon of plan.icons || []) add("card", icon.t, 0.75);
+  // A swap line's strike: a soft marker stroke when the right word is said.
+  for (const g of plan.captions || []) {
+    if (g.kind !== "feat" || g.variant !== "swap") continue;
+    const right = (g.words || []).find((w) => w.right);
+    if (right) add("marker", Math.max(g.start, right.start));
+  }
+  // Icons pop as they land; a hit lands with a quiet hit, a ping with a quiet ding at its badge (GLOW_ICONS_JS: half
+  // way through the 0.32 s entrance).
+  for (const icon of plan.icons || []) {
+    add("card", icon.t, 0.75);
+    if (icon.action === "hit") add("slam", icon.t + 0.16, 0.4);
+    if (icon.action === "ping") add("ding", icon.t + 0.16, 0.5);
+  }
 
   // Choose by audible level first so a later, louder cue also wins; only kept whooshes count toward the cap.
   const kept = [];
