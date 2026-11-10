@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sentenceLines, cutPoints, region, edgeProblems, resolveClips, momentsPrompt, edgesPrompt, lineEnergy } from "../src/moments.mjs";
+import { sentenceLines, cutPoints, region, edgeProblems, resolveClips, momentsPrompt, edgesPrompt, askEdges, lineEnergy } from "../src/moments.mjs";
 
 // A recording as sentences of 5 words each, 0.3 s per word, 0.4 s between sentences.
 function recording(sentences) {
@@ -62,4 +62,30 @@ test("energy: a louder line is tagged against the recording's median", () => {
   const e = lineEnergy(lines, { step: 0.02, db });
   assert.equal(e[1].tag, "[energy]");
   assert.equal(e[0].tag, "");
+});
+
+test("askEdges asks in batches at once and counts region numbers across all of them", async () => {
+  const regions = Array.from({ length: 12 }, (_, i) => ({ anchor: `L${i}`, text: `>> line ${i}`, opens: [], ends: [] }));
+  const prompts = [];
+  const edges = await askEdges(regions, async (prompt) => {
+    prompts.push(prompt);
+    const n = (prompt.match(/=== Region \d+/g) || []).length;
+    return { edges: Array.from({ length: n }, (_, k) => ({ region: k + 1, open: "O1", end: "E1", ok: true, note: prompt.match(/anchor (L\d+)/)[1] })) };
+  });
+  assert.equal(prompts.length, 3); // 5 + 5 + 2
+  assert.deepEqual(edges.map((e) => e.region), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.equal(edges[5].note, "L5"); // region 6 is the first of the second batch
+  assert.ok(prompts.every((p) => /=== Region 1 \(anchor/.test(p) && !/=== Region 6/.test(p)));
+});
+
+test("askEdges keeps the batches that answered when one fails, and throws only when all fail", async () => {
+  const regions = Array.from({ length: 7 }, (_, i) => ({ anchor: `L${i}`, text: "x", opens: [], ends: [] }));
+  const failed = [];
+  const edges = await askEdges(regions, async (prompt) => {
+    if (/anchor L0\)/.test(prompt)) throw new Error("claude timed out after 600s");
+    return { edges: [{ region: 1, ok: true }, { region: 2, ok: true }, { region: 9, ok: true }] }; // 9 is out of range
+  }, { onFail: (e, from, to) => failed.push([e.message, from, to]) });
+  assert.deepEqual(failed, [["claude timed out after 600s", 1, 5]]);
+  assert.deepEqual(edges.map((e) => e.region), [6, 7]);
+  await assert.rejects(askEdges(regions, async () => { throw new Error("down"); }), /down/);
 });

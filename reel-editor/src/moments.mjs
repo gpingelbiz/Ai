@@ -129,6 +129,29 @@ export function edgesPrompt(regions) {
   ].join("\n");
 }
 
+/**
+ * Pass 2 in batches of `size` regions, asked at the same time: all 15 regions of a 23-minute recording in one prompt
+ * took Claude 488 s (IMG_4766, 2026-11-09), past any sane timeout. `ask(prompt)` resolves to the reply's parsed JSON.
+ * Region numbers come back counted across all regions. A batch that fails only loses its own regions (they drop as
+ * "no edges came back"); `onFail(error, from, to)` hears about it. Throws only when every batch failed.
+ */
+export async function askEdges(regions, ask, { size = 5, onFail = () => {} } = {}) {
+  const batches = [];
+  for (let i = 0; i < regions.length; i += size) batches.push(i);
+  const replies = await Promise.allSettled(batches.map((i) => ask(edgesPrompt(regions.slice(i, i + size)))));
+  const edges = [];
+  replies.forEach((r, b) => {
+    const from = batches[b], to = Math.min(regions.length, from + size);
+    if (r.status === "rejected") return onFail(r.reason, from + 1, to);
+    for (const e of r.value?.edges || []) {
+      const n = Number(e.region);
+      if (n >= 1 && n <= to - from) edges.push({ ...e, region: from + n });
+    }
+  });
+  if (batches.length && replies.every((r) => r.status === "rejected")) throw replies[0].reason;
+  return edges;
+}
+
 // "So" is left out: a story often opens on it ("So I heard this once...") without pointing back at anything.
 // Reply words ("No, because...", "Yeah, totally") answer someone the viewer never heard.
 const LEANS = new Set(["and", "but", "because", "which", "that", "this", "these", "those", "it", "they", "them", "he", "she", "also", "then", "or", "plus", "no", "yeah", "yes", "yep", "right", "exactly", "okay", "ok", "totally"]);
