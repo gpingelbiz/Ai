@@ -204,7 +204,7 @@ export function renderHTML(plan, footage) {
   const hookPlace = glow && plan.hook?.place?.depth && !plan.behind?.src ? plan.hook.place.fallback : plan.hook?.place;
   const subFont = Math.round((cap.subFontSizeFrac || 0.028) * H);
   const glowCap = (g, i, spans) => g.kind === "feat" && g.place
-    ? `      <div class="cap cap-feat${g.variant === "hero" || g.variant === "swap" ? ` cap-${g.variant}` : ""}" id="cap-${i}" style="left:${g.place.x}px;top:${g.place.y}px;width:${g.place.w}px;font-size:${g.place.size || capFont}px${g.variant === "hero" ? `;--hero-size:${g.place.heroSize || 2 * (g.place.size || capFont)}px` : ""}"><div class="cap-line">${spans}</div></div>`
+    ? `      <div class="cap cap-feat${g.variant === "hero" || g.variant === "swap" ? ` cap-${g.variant}` : ""}${g.run ? " cap-run" : ""}" id="cap-${i}" style="left:${g.place.x}px;top:${g.place.y}px;width:${g.place.w}px;font-size:${g.place.size || capFont}px${g.variant === "hero" ? `;--hero-size:${g.place.heroSize || 2 * (g.place.size || capFont)}px` : ""}"><div class="cap-line">${spans}</div></div>`
     : `      <div class="cap cap-sub" id="cap-${i}" style="font-size:${subFont}px"><div class="cap-line">${spans}</div></div>`;
   const capsHTML = captions
     .map((g, i) => {
@@ -620,6 +620,7 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap.cap-feat { right: auto; margin-top: 0; justify-content: flex-start; }
       .cap.cap-feat .cap-line { justify-content: flex-start; text-align: left; }
       .cap.cap-feat .w { opacity: 0; }
+      .cap.cap-run .cap-line { text-shadow: 0 0 0.1em rgba(255,255,255,0.35), 0 0.04em 0.12em rgba(0,0,0,0.9), 0 0 0.5em rgba(0,0,0,0.6); }
       .cap .br { flex-basis: 100%; height: 0; }
       .cap .w.k { color: ${c.accent}; font-weight: 760; font-size: 1em; text-shadow: 0 0 0.14em ${hexA(c.accent, 0.7)}, 0 0 0.5em ${hexA(c.accent, 0.32)}, 0 0.05em 0.3em rgba(0,0,0,0.7); }
       .cap.cap-hero .cap-line, .cap.cap-swap .cap-line { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0.04em; }

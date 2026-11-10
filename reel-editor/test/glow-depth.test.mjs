@@ -211,6 +211,8 @@ test("restyle does not generate a depth cutout for a wide reel or a different pr
 
 test("a feature reserves the full light sweep after the final spoken word builds", async () => {
   const plan = fixture();
+  // Nothing spoken after the line, so the band is free for the sweep (running captions take it back otherwise).
+  plan.words = plan.words.slice(0, 2);
   await restyleGlow(plan, { picks: { ...emptyPicks, features: [{ from: 0, to: 1, key: 1 }] } });
   const feat = plan.captions.find((g) => g.kind === "feat");
   const light = glowLightRuntime(plan).find((s) => s.selector.startsWith("#cap-"));

@@ -616,13 +616,21 @@ test("bare stretches find spoken runs with nothing on screen, after the title", 
   assert.deepEqual(bareStretches({ features: [], icons: [], overlays: [], scenes: [] }, ws.slice(0, 3), 10, 3, 2.5), []);
 });
 
-test("the glow look shows no small subtitles unless the preset asks for them", async () => {
-  const ws = "Price feels high or the timing is wrong".split(" ").map((text, i) => ({ text, start: 4 + i * 0.3, end: 4 + i * 0.3 + 0.25 }));
-  const base = () => ({ words: ws, video: { duration: 10 }, canvas: { width: 1080, height: 1920 }, style: { captions: {}, hook: {} }, captions: [], audio: { tracks: [] } });
-  const picks = { features: [{ from: 0, to: 2, key: 0, br: null }], icons: [], scenes: [] };
-  const off = await restyleGlow(base(), { library: [], picks, ask: () => { throw new Error("no call"); } });
-  assert.ok(off.plan.captions.length > 0);
-  assert.ok(off.plan.captions.every((g) => g.kind !== "sub"));
+test("the glow look captions every word in the band, never as small subtitles, and never under the title", async () => {
+  const said = "Nobody claps for Tuesday but Tuesday is where it gets built so remember the boring habits are your moat";
+  const ws = said.split(" ").map((text, i) => ({ text, start: 0.2 + i * 0.35, end: 0.2 + i * 0.35 + 0.3 }));
+  const base = () => ({ words: ws, video: { duration: 10 }, canvas: { width: 1080, height: 1920 }, style: { captions: {}, hook: {} }, captions: [], audio: { tracks: [] }, hook: { text: "Nobody claps for Tuesday", start: 0, duration: 1.6 } });
+  const picks = { features: [{ from: 9, to: 11, key: 11, br: null }], icons: [], scenes: [] };
+  const { plan } = await restyleGlow(base(), { library: [], picks, ask: () => { throw new Error("no call"); } });
+  assert.ok(plan.captions.every((g) => g.kind === "feat" && g.place));
+  const shown = plan.captions.flatMap((g) => g.words.map((w) => w.start));
+  assert.deepEqual(shown, ws.filter((w) => w.start >= 1.55).map((w) => w.start), "every word after the title, once");
+  assert.ok(plan.captions.filter((g) => g.run).every((g) => g.sweep === false && g.words.every((w) => !w.key)));
+  plan.captions.forEach((g, i) => { const nx = plan.captions[i + 1]; if (nx) assert.ok(g.end <= nx.start, "one caption at a time"); });
+  for (const g of plan.captions.filter((c) => c.run)) {
+    const lines = g.words.reduce((acc, w) => { if (w.br) acc.push([]); acc.at(-1).push(w.text); return acc; }, [[]]);
+    assert.ok(lines.length <= 2 && lines.every((l) => l.join(" ").length <= 16));
+  }
   const onPlan = base(); onPlan.style.glow = { subtitles: true };
   const on = await restyleGlow(onPlan, { library: [], picks, ask: () => { throw new Error("no call"); } });
   assert.ok(on.plan.captions.some((g) => g.kind === "sub"));
