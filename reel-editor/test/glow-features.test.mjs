@@ -139,7 +139,7 @@ test("composed hero page has three unwrapped rows, isolated gold text and explic
   const { html, runtime } = page(plan);
   const block = html.match(/<div class="cap cap-feat cap-hero"[^\n]+/)[0];
   assert.equal((block.match(/class="cap-row"/g) || []).length, 3);
-  assert.match(block, /class="w k hero" id="cap-0-w2">expensive<\/span>/);
+  assert.match(block, /class="w k hero" id="cap-0-w2">expensive<span class="glow-light" aria-hidden="true">expensive<\/span><\/span>/);
   assert.match(block, new RegExp(`--hero-size:${plan.captions[0].place.heroSize}px`));
   assert.match(html, /\.cap-row \{ display: flex; flex-wrap: nowrap/);
   assert.match(html, /\.cap\.cap-hero \.w.hero \{ font-size: var\(--hero-size\)/);
@@ -149,15 +149,15 @@ test("composed hero page has three unwrapped rows, isolated gold text and explic
 
 test("composed swap timeline builds each word, then strikes and dims exactly at the right word", () => {
   const { html, script, runtime } = page(fixture(swapWords, [swap]));
-  assert.match(html, /class="w wrong" id="cap-0-w2">luck<span class="swap-strike" id="cap-0-strike" aria-hidden="true"><\/span>/);
-  assert.match(html, /class="w k right" id="cap-0-w4">work<\/span>/);
+  assert.match(html, /class="w wrong" id="cap-0-w2">luck<span class="glow-light" aria-hidden="true">luck<\/span><span class="swap-strike" id="cap-0-strike" aria-hidden="true"><\/span>/);
+  assert.match(html, /class="w k right" id="cap-0-w4">work<span class="glow-light" aria-hidden="true">work<\/span><\/span>/);
   assert.match(html, /\.swap-strike \{[^}]+transform: scaleX\(0\); transform-origin: 0 50%/);
   assert.deepEqual(runtime.capSwaps, [{ wrong: 2, right: 4 }]);
   const calls = [];
   const timeline = script.slice(script.indexOf("PLAN.captions.forEach((g, i) => {"), script.indexOf("// Face-tracking reframe:"));
   vm.runInNewContext(timeline, {
     PLAN: runtime,
-    document: { getElementById: (id) => ({ id, firstElementChild: { id: "line" }, querySelector: () => null }) },
+    document: { getElementById: (id) => ({ id, firstElementChild: { id: "line" }, querySelector: () => null }), querySelectorAll: () => [] },
     tl: Object.fromEntries(["set", "to", "fromTo"].map((method) => [method, (...args) => calls.push({ method, args })])),
   });
   const strike = calls.find((c) => c.args[0] === "#cap-0-strike");

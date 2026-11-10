@@ -13,6 +13,8 @@ import { timeLabelHTML, TIME_LABELS_JS } from "./time-labels.mjs";
 import { keywordColorOnFootage } from "./captions.mjs";
 import { glowIconAction, glowIconExtras, glowIconsCSS, GLOW_ICONS_JS } from "./glow-icons.mjs";
 import { glowScenesHTML, glowOverlaysHTML, glowScenesCSS, glowRuntime, GLOW_SCENES_JS } from "./glow-scenes.mjs";
+import { GLOW_DEPTH_JS } from "./glow-depth.mjs";
+import { glowLightWord, glowLightCSS, glowLightRuntime, GLOW_LIGHT_JS } from "./glow-light.mjs";
 
 // The quiet and serif captions' shadow. "strong" (captions.quietShadow) is darker and tighter, for thin light type over
 // light clothes or hair (Julee's cream serif on a striped shirt, 2026-11-03); "soft" is the October 30 look.
@@ -199,6 +201,7 @@ export function renderHTML(plan, footage) {
   // "glow": the studio look. Feature lines (g.kind "feat") float in a planned spot as light-weight glowing capitals,
   // built word by word; every other line is a plain sentence-case subtitle low in the frame.
   const glow = cap.style === "glow";
+  const hookPlace = glow && plan.hook?.place?.depth && !plan.behind?.src ? plan.hook.place.fallback : plan.hook?.place;
   const subFont = Math.round((cap.subFontSizeFrac || 0.028) * H);
   const glowCap = (g, i, spans) => g.kind === "feat" && g.place
     ? `      <div class="cap cap-feat${g.variant === "hero" || g.variant === "swap" ? ` cap-${g.variant}` : ""}" id="cap-${i}" style="left:${g.place.x}px;top:${g.place.y}px;width:${g.place.w}px;font-size:${g.place.size || capFont}px${g.variant === "hero" ? `;--hero-size:${g.place.heroSize || 2 * (g.place.size || capFont)}px` : ""}"><div class="cap-line">${spans}</div></div>`
@@ -206,8 +209,10 @@ export function renderHTML(plan, footage) {
   const capsHTML = captions
     .map((g, i) => {
       if (glow) {
-        const variant = g.kind === "feat" && g.place && (g.variant === "hero" || g.variant === "swap");
-        const spans = g.words.map((w, j) => `${w.br ? variant ? '</span><span class="cap-row">' : '<span class="br"></span>' : ""}<span class="w${w.key ? " k" : ""}${variant && w.hero ? " hero" : ""}${variant && w.wrong ? " wrong" : ""}${variant && w.right ? " right" : ""}" id="cap-${i}-w${j}">${esc(w.text)}${variant && w.wrong ? `<span class="swap-strike" id="cap-${i}-strike" aria-hidden="true"></span>` : ""}</span>`).join("");
+        const feat = g.kind === "feat" && g.place;
+        const variant = feat && (g.variant === "hero" || g.variant === "swap");
+        // Feature words carry a light layer for the sweep; a swap's wrong word also carries its strike.
+        const spans = g.words.map((w, j) => `${w.br ? variant ? '</span><span class="cap-row">' : '<span class="br"></span>' : ""}<span class="w${w.key ? " k" : ""}${variant && w.hero ? " hero" : ""}${variant && w.wrong ? " wrong" : ""}${variant && w.right ? " right" : ""}" id="cap-${i}-w${j}">${esc(w.text)}${feat ? glowLightWord(w.text) : ""}${variant && w.wrong ? `<span class="swap-strike" id="cap-${i}-strike" aria-hidden="true"></span>` : ""}</span>`).join("");
         return glowCap(g, i, variant ? `<span class="cap-row">${spans}</span>` : spans);
       }
       const len = g.text.length;
@@ -221,10 +226,10 @@ export function renderHTML(plan, footage) {
   // headline: words on a soft scrim (no box), one gold emphasis, a gold rule drawn under it.
   const hookWordList = plan.hook ? plan.hook.words || plan.hook.text.split(/\s+/).map((t) => ({ text: t })) : [];
   const hookInner = headline
-    ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `${w.br ? "<br>" : ""}<span class="hw${w.key ? " k" : ""}">${esc(w.text)}</span>`).join(" ")}${hk.treat === "type" ? '<span class="hook-cursor"></span>' : ""}</div><div id="hook-bar"></div></div>`
+    ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `${w.br ? "<br>" : ""}<span class="hw${w.key ? " k" : ""}">${esc(w.text)}${glow ? glowLightWord(w.text) : ""}</span>`).join(" ")}${hk.treat === "type" ? '<span class="hook-cursor"></span>' : ""}</div><div id="hook-bar"></div></div>`
     : `<span id="hook-text">${esc(plan.hook?.text || "")}</span>`;
   const hookHTML = plan.hook
-    ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}${hk.plaque === true ? " hook-plaque" : ""}${glow && headline ? " hook-glow" : ""}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
+    ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}${hk.plaque === true ? " hook-plaque" : ""}${glow && headline ? " hook-glow" : ""}${glow && hookPlace?.depth ? " hook-glow-depth" : ""}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
     : "";
 
   const premiseSectionsHTML = premise?.sections?.length
@@ -453,7 +458,7 @@ export function renderHTML(plan, footage) {
     height: H,
     reveal,
     ...(sceneList.length || overList.length ? glowRuntime(sceneList, overList) : {}),
-    ...(glow ? { glow, capKinds: captions.map((g) => (g.kind === "feat" && g.place ? "feat" : "sub")), capSwaps: captions.map((g) => g.kind === "feat" && g.place && g.variant === "swap" ? { wrong: g.words.findIndex((w) => w.wrong), right: g.words.findIndex((w) => w.right) } : null) } : {}),
+    ...(glow ? { glow, capKinds: captions.map((g) => (g.kind === "feat" && g.place ? "feat" : "sub")), capSwaps: captions.map((g) => g.kind === "feat" && g.place && g.variant === "swap" ? { wrong: g.words.findIndex((w) => w.wrong), right: g.words.findIndex((w) => w.right) } : null), glowLights: glowLightRuntime(plan), ...(behind && hookPlace?.depth ? { glowDepth: { bottom: hookPlace.bottom, size: hookPlace.size } } : {}) } : {}),
     capCut: cap.animation === "cut",
     capDim: dimFuture,
     hookPush: s.hook?.push !== false,
@@ -626,11 +631,13 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       .cap.cap-sub .cap-line { font-weight: 560; text-transform: none; letter-spacing: 0; line-height: 1.2; text-shadow: 0 0.04em 0.16em rgba(0,0,0,0.85), 0 0 0.6em rgba(0,0,0,0.45); background: ${hexA(c.bg || "#0B0B0D", 0.5)}; padding: 0.1em 0.5em 0.14em; border-radius: 0.6em; }
       .cap.cap-sub .w.k { color: inherit; text-shadow: inherit; }
       #hook.hook-glow #hook-scrim, #hook.hook-glow #hook-bar { display: none; }
-      #hook.hook-glow #hook-block { right: auto; text-align: left; ${plan.hook?.place ? `left: ${plan.hook.place.x}px; top: ${plan.hook.place.y}px; width: ${plan.hook.place.w}px; font-size: ${plan.hook.place.size}px;` : ""} }
+      #hook.hook-glow #hook-block { right: auto; text-align: left; ${hookPlace ? `left: ${hookPlace.x}px; top: ${hookPlace.y}px; width: ${hookPlace.w}px; font-size: ${hookPlace.size}px;` : ""} }
       #hook.hook-glow #hook-lines { font-family: "Inter", sans-serif; font-weight: 760; font-size: 1em; line-height: 1.08; letter-spacing: 0.012em; text-transform: uppercase; color: ${c.text}; -webkit-text-stroke: 0; text-wrap: wrap; text-shadow: 0 0 0.12em rgba(255,255,255,0.5), 0 0 0.45em rgba(255,255,255,0.2), 0 0.05em 0.3em rgba(0,0,0,0.7); }
       #hook.hook-glow #hook-lines { word-spacing: 0.14em; }
       #hook.hook-glow #hook-lines .hw { margin: 0; }
-      #hook.hook-glow #hook-lines .hw.k { color: ${c.accent}; font-size: 1em; text-shadow: 0 0 0.14em ${hexA(c.accent, 0.7)}, 0 0 0.5em ${hexA(c.accent, 0.32)}, 0 0.05em 0.3em rgba(0,0,0,0.7); }` : ""}${iconList.some((icon) => icon.image) ? `
+      #hook.hook-glow #hook-lines .hw.k { color: ${c.accent}; font-size: 1em; text-shadow: 0 0 0.14em ${hexA(c.accent, 0.7)}, 0 0 0.5em ${hexA(c.accent, 0.32)}, 0 0.05em 0.3em rgba(0,0,0,0.7); }
+      #hook.hook-glow-depth #hook-lines { font-family: "Anton", sans-serif; font-weight: 400; line-height: 1; white-space: nowrap; }
+${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
       .icon-3d .icon-disc { background: none; border: 0; border-radius: 0; }
       .icon-3d .icon-disc img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0.6em 1.2em rgba(0,0,0,0.55)) drop-shadow(0 0 1.4em ${hexA(c.accent, 0.25)}); }` : ""}${glow && iconList.some((icon) => icon.image) ? glowIconsCSS(c.accent) : ""}${sceneList.length || overList.length ? glowScenesCSS({ W, H, c }) : ""}
       #hook {
@@ -709,7 +716,7 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
             box.style.width = Math.ceil((right - b.left) / k + (parseFloat(getComputedStyle(box).paddingRight) || 0) + 2) + "px";
           }
         }
-` : ""}        if (PLAN.hook && Number.isFinite(PLAN.hook.headTop)) {
+` : ""}${glow ? GLOW_DEPTH_JS : ""}        if (PLAN.hook && Number.isFinite(PLAN.hook.headTop)) {
           const hookEl = document.getElementById("hook");
           const root = document.getElementById("root").getBoundingClientRect();
           const k = root.height ? root.height / PLAN.height : 1;
@@ -738,7 +745,7 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
           const t0 = h.start;
           const done = t0 + 0.3 + step * words.length;
           tl.set("#hook-scrim", { opacity: 1 }, h.start);
-          tl.fromTo(words, { opacity: 1, y: h.font * 0.12 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out", stagger: step * 0.5 }, t0);
+          tl.fromTo(words, { opacity: 1, y: ${glow ? "PLAN.glowDepth ? -h.font * 0.06 : h.font * 0.12" : "h.font * 0.12"} }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out", stagger: step * 0.5 }, t0);
           ${glow ? "if (!PLAN.glow) " : ""}tl.fromTo("#hook-lines .hw.k", { scale: 1 }, { scale: 1.09, duration: 0.13, ease: "power2.out", yoyo: true, repeat: 1 }, done - 0.05);
           tl.fromTo("#hook-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.36, ease: "power3.inOut" }, h.start + 0.08);
           // The look's treatment: never hides a word on frame 0 (it is the cover).
@@ -827,7 +834,7 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
           }
           tl.set(el, { opacity: 0 }, g.end);
         });
-        // Face-tracking reframe: slide the crop window across a wide source as the speaker moves.
+${glow ? GLOW_LIGHT_JS : ""}        // Face-tracking reframe: slide the crop window across a wide source as the speaker moves.
         if (PLAN.reframe.length) {
           const first = PLAN.reframe[0];
           tl.set(FOOT, { objectPosition: first.x + "% 50%" }, 0);

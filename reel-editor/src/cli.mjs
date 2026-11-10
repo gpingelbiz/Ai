@@ -402,6 +402,11 @@ export async function main(argv) {
       const { restyleGlow, loadIconLibrary, glowIconDir, carryProjectAudio } = await import("./glow.mjs");
       const src = path.resolve(positionals[0]);
       const plan = readJSON(path.join(src, "plan.json"));
+      plan.style.glow = { ...loadPreset(plan.preset).glow, ...plan.style.glow };
+      if (plan.behind?.src && (!plan.behind.file || !fs.existsSync(plan.behind.file))) {
+        const file = path.join(src, "project", plan.behind.src);
+        if (fs.existsSync(file)) plan.behind.file = file;
+      }
       const render = path.join(src, "renders", `${plan.name}.mp4`);
       const dest = path.resolve(opts.out || `${src}-glow`);
       // A restyle run again keeps Claude's picks unless --repick.
@@ -412,7 +417,7 @@ export async function main(argv) {
       carryProjectAudio(src, dest, plan);
       const library = loadIconLibrary(opts.icons || glowIconDir());
       log(`restyle: ${library.length} 3D icons`);
-      const { plan: next, picks } = await restyleGlow(plan, { render: fs.existsSync(render) ? render : null, library, picks: saved });
+      const { plan: next, picks } = await restyleGlow(plan, { render: fs.existsSync(render) ? render : null, library, picks: saved, outDir: dest });
       writeJSON(path.join(dest, "plan.json"), next);
       writeJSON(path.join(dest, "glow-picks.json"), picks);
       log(`restyle: ${picks.features.length} feature lines, ${next.icons.length} icons, ${next.glowOverlays.length} overlays, ${next.glowScenes.length} scenes (${next.glowScenes.map((sc) => sc.type).join(", ")})`);

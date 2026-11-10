@@ -6,10 +6,12 @@ import { r3 } from "./util.mjs";
 import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 import { glowSoundCues } from "./glow-sound.mjs";
 import { glowWindow, pacingReport } from "./glow-pacing.mjs";
-
-export { pacingReport } from "./glow-pacing.mjs";
 import { glowIconAction } from "./glow-icons.mjs";
 import { firstGlowIcon, GLOW_BRIDGE_DURATION } from "./glow-scenes.mjs";
+import { prepareDepthHook } from "./glow-depth.mjs";
+import { holdGlowFeatures } from "./glow-light.mjs";
+
+export { pacingReport } from "./glow-pacing.mjs";
 
 /**
  * The glow look (studio style): feature lines float as glowing capitals in the band under the chin, built word by
@@ -91,6 +93,7 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "- No more than 2 band elements (features, overlays and icons combined) may start inside any rolling 3-second window. Keep the graphic that carries the argument; drop decorative icons first.",
     "- Prefer a specific type (number, meter, list, steps, flow, thread, bars, versus, quote, people, notify) when the spoken argument earns it. Use the icons scene only when nothing more specific fits; there is no type quota.",
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
+    "- The editor handles title depth and one soft gold light sweep after the title and each feature finish building. Do not request these on subtitles or invent extra text for them. Leave a beat after a feature so its finished letters can catch the light.",
     "- Features, overlays and scenes never share words. Nothing on the words in the first 3 seconds, where the title card sits.",
     'Reply as {"features":[],"icons":[],"overlays":[],"scenes":[]}',
   ].join("\n");
@@ -473,10 +476,10 @@ export function carryProjectAudio(srcDir, destDir, plan) {
 }
 
 /** Restyle a finished job in a new folder: same footage, cuts, audio and timing; glow captions, icons and scenes. */
-export async function restyleGlow(plan, { render, library, ask = claudeText, picks: saved = null } = {}) {
+export async function restyleGlow(plan, { render, library = [], ask = claudeText, picks: saved = null, outDir, detect = detectFaces, cutout } = {}) {
   const W = plan.canvas.width, H = plan.canvas.height, D = plan.video.duration;
   const times = Array.from({ length: Math.max(1, Math.floor(D * 4)) }, (_, k) => r3(Math.min(D - 0.05, k * 0.25 + 0.05)));
-  const detection = render ? await detectFaces(render, times) : null;
+  const detection = render ? await detect(render, times) : null;
   const hookEnd = plan.hook ? plan.hook.start + plan.hook.duration : 0;
   // Saved picks (a re-render after a layout change) skip the Claude call; they are checked again all the same.
   const reply = saved || firstJSON(await ask(glowPrompt(plan.words, library, { hook: plan.hook?.text || "", duration: D }), { timeoutMs: 600000 }));
@@ -488,24 +491,41 @@ export async function restyleGlow(plan, { render, library, ask = claudeText, pic
   plan.glowOverlays = out.overlays;
   plan.style.captions = { ...plan.style.captions, style: "glow", uppercase: true, subPosition: 0.8, subFontSizeFrac: 0.03 };
   if (plan.hook) {
-    plan.style.hook = { ...plan.style.hook, plaque: false, style: "headline" };
+    plan.style.hook = { ...plan.style.hook, plaque: false, style: "headline", treat: "headline" };
+    delete plan.style.hook.side;
     const hookWords = plan.hook.words || plan.hook.text.split(/\s+/).map((text) => ({ text }));
     const total = hookWords.map((w) => w.text).join(" ").length;
     let run = 0, br = -1;
     hookWords.forEach((w, i) => { if (br < 0 && i && run + w.text.length / 2 >= total / 2) br = i; run += w.text.length + 1; });
-    plan.hook.words = hookWords.map((w, i) => ({ ...w, ...(i === br ? { br: true } : {}) }));
+    plan.hook.words = hookWords.map(({ br: oldBreak, ...w }, i) => ({ ...w, ...(i === br ? { br: true } : {}) }));
     const size = Math.round((total > 44 ? 0.028 : 0.032) * H);
     plan.hook.place = { x: Math.round(0.07 * W), ...hookSpot(detection, Math.max(0.5, plan.hook.duration), size / H, out.band, H), w: Math.round(0.86 * W), size };
-    // A title that had to stay in a crowded band keeps the subtitles off until it is gone.
-    if (plan.hook.place.crowded) plan.captions = plan.captions.filter((g) => g.kind !== "sub" || g.start >= plan.hook.start + plan.hook.duration - 0.1);
+    const crowded = plan.hook.place.crowded;
     delete plan.hook.place.crowded;
-  }
+    const depth = glowEnabled(plan.style, plan) ? await prepareDepthHook(plan, detection, { outDir, cutout }) : null;
+    if (depth) {
+      plan.hook.place = { ...depth.place, fallback: plan.hook.place };
+      plan.hook.words = plan.hook.words.map(({ br: oldBreak, ...w }, i) => ({ ...w, ...(depth.place.br && i === depth.place.br ? { br: true } : {}) }));
+      plan.behind = depth.behind;
+    } else plan.behind = null;
+    delete plan.hook.headTop;
+    delete plan.hook.headBottom;
+    // A title that had to stay in a crowded band keeps the subtitles off until it is gone.
+    if (crowded) plan.captions = plan.captions.filter((g) => g.kind !== "sub" || g.start >= plan.hook.start + plan.hook.duration - 0.1);
+  } else plan.behind = null;
   // The old look's card graphics, slams and lower thirds would fight the new layout; the glow look replaces them.
   plan.graphics = [];
   plan.slams = [];
   plan.premise = null;
   plan.timeLabels = [];
-  // The old look's cut cues go; music, narration and a B-roll shot's own generated sound (sfx-broll-*) stay.
+  // A feature line holds for its light sweep where the band has room (a hero block keeps its own height), else it
+  // becomes subtitles.
+  holdGlowFeatures(plan, { place: (g, end) => {
+    const y = out.band(g.start, end);
+    return (y + (g.place.h || 0.07 * H)) / H <= 0.785 ? { ...g.place, y } : null;
+  } });
+  // Sounds last, from the final plan. The old look's cut cues go; music, narration and a B-roll shot's own generated
+  // sound (sfx-broll-*) stay.
   plan.audio = { ...plan.audio, tracks: [...(plan.audio?.tracks || []).filter((t) => !String(t.id || "").startsWith("sfx-") || String(t.id).startsWith("sfx-broll-")), ...glowSoundCues(plan)] };
   return { plan, picks, reply };
 }

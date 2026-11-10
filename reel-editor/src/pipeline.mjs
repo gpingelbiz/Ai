@@ -854,7 +854,7 @@ export async function runEdit(input, opts = {}) {
   if (glowOn) {
     try {
       const library = loadIconLibrary(glowIconDir(preset.glow));
-      const { picks } = await restyleGlow(plan, { render: output, library });
+      const { picks } = await restyleGlow(plan, { render: output, library, outDir: workDir });
       writeJSON(path.join(workDir, "glow-picks.json"), picks);
       writeJSON(path.join(workDir, "plan.json"), plan);
       composeProject(plan, projectDir);
