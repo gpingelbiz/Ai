@@ -67,3 +67,22 @@ test("render: slams, markers, camera punch-ins and the b-roll grade are in the c
   const plain = renderHTML({ ...plan, style: { ...style, captions: { ...style.captions, annotate: false }, zooms: {} }, slams: [] }, "assets/footage.mp4");
   assert.ok(!plain.includes("<svg class=\"an") && !plain.includes('id="defocus"') && !plain.includes("slam-0"), "off by default");
 });
+
+test("render: a slam word wider than its stage shrinks to fit it (typewriter look ran off the frame, IMG_4766 clip 4)", () => {
+  const plan = {
+    name: "t", canvas: { width: 1080, height: 1920 }, video: { duration: 10, hasAudio: true },
+    style: { colors: { text: "#fff", accent: "#fc0", stroke: "#000" }, captions: { fontSizeFrac: 0.04, strokeWidthFrac: 0.005, sideMarginFrac: 0.05, position: 0.72, shadow: "none" }, hook: { fontSizeFrac: 0.05, position: 0.2 }, zooms: {}, cta: {}, slams: { style: "type" } },
+    captions: [], slams: [{ t: 3, end: 4.2, text: "conversations" }],
+  };
+  const html = renderHTML(plan, "assets/footage.mp4");
+  assert.match(html, /class="slam-word slam-t-type"[^>]*>conversations</);
+  const fit = html.match(/if \(word\.offsetWidth > stage\.clientWidth\)[^\n]*/)?.[0];
+  assert.ok(fit, "the page fits each slam word to its stage");
+  const run = (word) => new Function("word", "stage", "getComputedStyle", fit)(word, { clientWidth: 972 }, () => ({ fontSize: "137px" }));
+  const wide = { offsetWidth: 1230, style: {} };
+  run(wide);
+  assert.ok(Math.abs(parseFloat(wide.style.fontSize) - 137 * 972 / 1230 * 0.98) < 0.01, "shrunk in proportion, with a little room");
+  const fits = { offsetWidth: 700, style: {} };
+  run(fits);
+  assert.equal(fits.style.fontSize, undefined, "a word that fits keeps its size");
+});

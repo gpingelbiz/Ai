@@ -990,7 +990,10 @@ ${sceneList.length || overList.length ? GLOW_SCENES_JS : ""}${iconList.length ? 
           const el = document.getElementById("slam-" + i);
           const stage = el.querySelector(".slam-stage");
           const word = el.querySelector(".slam-word");
-          const land = 0.42;
+${slamList.length ? `          // The size assumes Anton; a wider look (typewriter Courier, a boxed or padded word) can outgrow the stage and
+          // run off the frame ("pipelin", IMG_4766 clip 4). Shrink it to the stage's width.
+          if (word.offsetWidth > stage.clientWidth) word.style.fontSize = (parseFloat(getComputedStyle(word).fontSize) * stage.clientWidth / word.offsetWidth * 0.98) + "px";
+` : ""}          const land = 0.42;
           const outAt = Math.max(sl.t + land + 3 * frame, sl.end - 0.28);
           if (sl.popout) {
             const bg = document.getElementById("popout-bg-" + i);
