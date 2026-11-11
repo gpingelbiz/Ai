@@ -10,7 +10,7 @@ import { voiceFile, captionAccess, buildPrompt } from "../scripts/write-caption.
 import { PKG_ROOT, readJSON } from "../src/util.mjs";
 
 test("client mode recognizes kits and existing hosted clients", () => {
-  assert.deepEqual(GREG_PRESETS, ["pingel-brand", "pingel-v2", "pingel-runway"]);
+  assert.deepEqual(GREG_PRESETS, ["pingel-brand", "pingel-v2", "pingel-runway", "pingel-bold"]);
   // A kit install is client mode; a client folder on Greg's Mac is a client job but keeps Greg's tools.
   assert.equal(isClientMode({ REEL_CLIENT_MODE: "1" }), true);
   for (const env of [{}, { REEL_CLIENT_MODE: "0" }, { REEL_CLIENT: "" }, { REEL_CLIENT: "sample" }]) assert.equal(isClientMode(env), false);

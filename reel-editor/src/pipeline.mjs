@@ -22,10 +22,12 @@ import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
 import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
+import { eventClock, legacyLanding, measureSfxFile } from "./event-clock.mjs";
 import { runTextcheck } from "./textcheck.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
+import { boldEnabled, restyleBold } from "./bold.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
@@ -584,7 +586,7 @@ export async function runEdit(input, opts = {}) {
     else log("cutout b-roll: no cutaways to matte");
   }
   let speakerPlan = null;
-  if (preset.zooms.enabled) {
+  if (preset.zooms.enabled && !boldEnabled(preset, { preset: preset.name, canvas: canvas0 })) {
     // onKey uses transcript punctuation: caption grouping strips sentence-ending periods from the display text.
     zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, words: cleanWords, busy: [...transientCards, ...broll, ...evidence], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key ${preset.zooms.onKey ? "words" : "lines"}${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
@@ -843,6 +845,12 @@ export async function runEdit(input, opts = {}) {
     words: cleanWords,
     ending: endingMetadata(words, meta.duration, cuts, preset.cuts, endingOverride),
   };
+  if (opts.noRender && boldEnabled(preset, plan)) {
+    const pickFile = path.join(workDir, "bold-picks.json");
+    const result = await restyleBold(plan, { outDir: workDir, protectedPhrases, picks: !opts.repick ? readJSONSafe(pickFile) : null });
+    Object.assign(plan, result.plan);
+    writeJSON(pickFile, result.picks);
+  }
   writeJSON(path.join(workDir, "plan.json"), plan);
   writeFeatures(workDir, plan, { sceneSchema });
   composeProject(plan, projectDir);
@@ -850,8 +858,20 @@ export async function runEdit(input, opts = {}) {
   if (opts.noRender) return { workDir, plan };
   // The glow look (Greg's vertical reels only, never a client job): a quick first render gives the face positions with
   // every zoom in place, then Claude picks the feature lines, icons and scenes and the final render is checked as usual.
-  const glowOn = glowEnabled(preset, plan);
-  let output = await renderProject(workDir, glowOn ? { ...opts, noPreflight: true, noReview: true } : opts);
+  const boldOn = boldEnabled(preset, plan);
+  const glowOn = !boldOn && glowEnabled(preset, plan);
+  let output = await renderProject(workDir, glowOn || boldOn ? { ...opts, noPreflight: true, noReview: true, ...(boldOn ? { boldMeasure: true } : {}) } : opts);
+  if (boldOn) {
+    const pickFile = path.join(workDir, "bold-picks.json");
+    const result = await restyleBold(plan, { outDir: workDir, protectedPhrases, render: output, picks: !opts.repick ? readJSONSafe(pickFile) : null });
+    Object.assign(plan, result.plan);
+    writeJSON(pickFile, result.picks);
+    writeJSON(path.join(workDir, "plan.json"), plan);
+    writeFeatures(workDir, plan, { sceneSchema });
+    composeProject(plan, projectDir);
+    log(`bold look: ${plan.bold.groups.length} phrases, ${plan.bold.overlays.length} overlays`);
+    output = await renderProject(workDir, opts);
+  }
   if (glowOn) {
     try {
       const library = loadIconLibrary(glowIconDir(preset.glow));
@@ -952,7 +972,7 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
   }
 
   if (preset.audio.sounds && cues) {
-    const tracks = soundCues({ ...cues, markers: !!preset.audio.soundMarkers, level: preset.audio.soundsVolume ?? 0.3 }).filter((t) => t.start < duration - 0.2);
+    const tracks = soundCues({ ...cues, markers: !!preset.audio.soundMarkers, level: preset.audio.soundsVolume ?? 0.3, fps: preset.render?.fps || 30, zoomStyle: preset.zooms?.style || "snap", graphicsMode: preset.graphics?.mode || "overlay", duration });
     audio.tracks.push(...tracks);
     log(`sounds: ${tracks.length ? describeCues(tracks) : "nothing to sound"}`);
   }
@@ -960,14 +980,16 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
     if (!eleven.hasKey()) warn("--sfx needs ELEVENLABS_API_KEY; skipping sound effects");
     else {
       const sfxDir = ensureDir(path.join(assets, "sfx"));
+      const clock = (kind, event, sfx) => eventClock({ landAt: legacyLanding(kind, event, { fps: preset.render?.fps || 30, zoomStyle: preset.zooms?.style || "snap", hookStyle: preset.hook?.style || "gold" }), sfx, fps: preset.render?.fps || 30 }).start;
       const zoomIns = zooms.filter((z) => z.scale > 1);
       if (zoomIns.length) {
         await eleven.sfx({ prompt: preset.audio.sfxPrompts.zoom, durationSeconds: 0.7, out: path.join(sfxDir, "whoosh.mp3") });
-        zoomIns.forEach((z, i) => audio.tracks.push({ id: `sfx-zoom-${i}`, src: "assets/sfx/whoosh.mp3", start: r3(Math.max(0, z.t - 0.05)), duration: 0.7, volume: preset.audio.sfxVolume, track: 9 }));
+        const transient = measureSfxFile(path.join(sfxDir, "whoosh.mp3"));
+        zoomIns.forEach((z, i) => audio.tracks.push({ id: `sfx-zoom-${i}`, src: "assets/sfx/whoosh.mp3", start: clock("move", z, transient), duration: 0.7, volume: preset.audio.sfxVolume, track: 9 }));
       }
       if (hook) {
         await eleven.sfx({ prompt: preset.audio.sfxPrompts.hook, durationSeconds: 0.6, out: path.join(sfxDir, "pop.mp3") });
-        audio.tracks.push({ id: "sfx-hook", src: "assets/sfx/pop.mp3", start: r3(hook.start + 0.04), duration: 0.6, volume: preset.audio.sfxVolume, track: 9 });
+        audio.tracks.push({ id: "sfx-hook", src: "assets/sfx/pop.mp3", start: clock("hook", hook, measureSfxFile(path.join(sfxDir, "pop.mp3"))), duration: 0.6, volume: preset.audio.sfxVolume, track: 9 });
       }
       log(`sfx: ${audio.tracks.filter((t) => t.id.startsWith("sfx")).length} hits`);
     }
@@ -1042,8 +1064,10 @@ export async function renderProject(workDir, opts = {}) {
   if (plan.video.hasAudio && plan.style?.render?.deliveryLoudness !== false) await normalizeDelivery(output);
   const outMeta = await probe(output);
   log(`done in ${Math.round((Date.now() - t0) / 1000)}s: ${output} (${outMeta.width}x${outMeta.height}, ${r3(outMeta.duration)}s)`);
-  const textcheck = await runTextcheck(workDir, { video: output });
-  (textcheck.verdict === "hold" ? warn : log)(`text check: ${textcheck.verdict}${textcheck.notes.length ? ` (${textcheck.notes.join("; ")})` : ""}`);
+  if (!(opts.boldMeasure && boldEnabled(plan.style, plan) && !plan.bold)) {
+    const textcheck = await runTextcheck(workDir, { video: output });
+    (textcheck.verdict === "hold" ? warn : log)(`text check: ${textcheck.verdict}${textcheck.notes.length ? ` (${textcheck.notes.join("; ")})` : ""}`);
+  }
   // Preflight: sound, the open, dead air, length and layout checked on the finished file; preflight.txt sits next
   // to plan.json. With preflight.strict a failing file is kept as <name>.failed.mp4 and the run stops.
   const pf = plan.style?.preflight;

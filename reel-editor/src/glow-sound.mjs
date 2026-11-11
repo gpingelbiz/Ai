@@ -1,4 +1,5 @@
 import { r3 } from "./util.mjs";
+import { eventClock, glowLanding } from "./event-clock.mjs";
 
 // Durations measured with ffprobe, including the pitch variants (assets/sfx/NOTICE.md).
 const SOUNDS = {
@@ -11,53 +12,57 @@ const SOUNDS = {
 };
 
 /** Sounds for the final glow layout, never the old look's zooms, graphics, slams or hook. */
-export function glowSoundCues(plan, { level = 0.3 } = {}) {
+export function glowSoundCues(plan, { level = 0.3, audit = false } = {}) {
   const audio = plan.style?.audio;
   level = audio?.soundsVolume ?? level;
   if (audio?.sounds === false || !Number.isFinite(level) || level <= 0) return [];
+  const fps = plan.style?.render?.fps || 30;
+  const landing = (kind, event, context = {}) => glowLanding(kind, event, { ...context, scenes: plan.glowScenes || [], fps });
   const cues = [];
-  const add = (family, at, scale = 1) => {
+  const add = (family, at, landAt, scale = 1, box, anchor = "peak") => {
     if (!Number.isFinite(at)) return;
     const start = r3(Math.max(0, at));
     // Like the old look's cues, nothing in the last 0.2 s (the render trims there).
     if (start >= (plan.video?.duration ?? Infinity) - 0.2) return;
     const duck = (plan.words || []).some((w) => start >= w.start && start < w.end) ? 0.6 : 1;
-    cues.push({ family, start, volume: r3(level * SOUNDS[family].volume * scale * duck) });
+    cues.push({ family, start, landAt, box, anchor, volume: r3(level * SOUNDS[family].volume * scale * duck) });
   };
+  // Selection, ducking and variant rotation keep their former clock. Only accepted cue starts move.
   for (const scene of plan.glowScenes || []) {
-    add("move", scene.start);
+    add("move", scene.start, landing("scene", scene));
     // Timed collections also cover new scene types: list, steps and flow items, a flow's branch, the right side of a
     // versus or bars (the left one lands with the entrance).
-    for (const item of [...(scene.items || []), ...(scene.bars || [])]) add("card", item.at, 0.75);
-    if (scene.branch) add("card", scene.branch.at, 0.5);
-    if (scene.right) add("card", scene.right.at, 0.75);
-    // Match GLOW_SCENES_JS: a plain number lands at once (just after the whoosh), a spoken change pops when its count
-    // ends, a meter when its fill completes.
-    if (scene.type === "number") add("card", scene.from == null ? scene.start + 0.15 : scene.start + Math.min(0.9, Math.max(0.4, scene.end - scene.start - 0.68)));
-    if (scene.type === "meter") add("card", scene.start + 1.08);
+    [...(scene.items || []), ...(scene.bars || [])].forEach((item, index) => add("card", item.at, landing("item", scene, { at: item.at, index }), 0.75));
+    if (scene.branch) add("card", scene.branch.at, landing("branch", scene, { at: scene.branch.at }), 0.5);
+    if (scene.right) add("card", scene.right.at, landing("right", scene, { at: scene.right.at }), 0.75);
+    // Keep the former number-selection times; declared landings follow the entrance, count or meter fill endpoint.
+    if (scene.type === "number") add("card", scene.from == null ? scene.start + 0.15 : scene.start + Math.min(0.9, Math.max(0.4, scene.end - scene.start - 0.68)), landing("number", scene));
+    if (scene.type === "meter") add("card", scene.start + 1.08, landing("meter", scene));
     // Thread bubbles: plan times are display times (layoutGlow spaces them); typing runs under the 0.4 s of dots.
+    let last = -Infinity;
     for (const bubble of scene.bubbles || []) {
-      if (bubble.side === "me") add("typing", bubble.at - 0.4);
-      if (bubble.side === "them") add("ding", bubble.at);
+      const at = last = Math.max((scene.start ?? 0) + 0.4, bubble.at, last + 0.85);
+      if (bubble.side === "me") add("typing", bubble.at - 0.4, landing("typing", scene, { at }), 1, undefined, "attack");
+      if (bubble.side === "them") add("ding", bubble.at, landing("bubble", scene, { at }));
     }
   }
   for (const overlay of plan.glowOverlays || []) {
-    if (overlay.type === "stamp") add("slam", overlay.start);
-    if (overlay.type === "notify") add("ding", overlay.start);
+    if (overlay.type === "stamp") add("slam", overlay.start, landing("stamp", overlay), 1, overlay.place);
+    if (overlay.type === "notify") add("ding", overlay.start, landing("notify", overlay), 1, overlay.place);
   }
   // A swap line's strike: a soft marker stroke when the right word is said.
   for (const g of plan.captions || []) {
     if (g.kind !== "feat" || g.variant !== "swap") continue;
     const right = (g.words || []).find((w) => w.right);
-    if (right) add("marker", Math.max(g.start, right.start));
+    if (right) add("marker", Math.max(g.start, right.start), landing("swap", g, { at: right.start }), 1, g.place);
   }
-  // Icons pop as they land; a hit lands with a quiet hit, a ping with a quiet ding at its badge (GLOW_ICONS_JS: half
-  // way through the 0.32 s entrance).
-  for (const icon of plan.icons || []) {
-    add("card", icon.t, 0.75);
-    if (icon.action === "hit") add("slam", icon.t + 0.16, 0.4);
-    if (icon.action === "ping") add("ding", icon.t + 0.16, 0.5);
-  }
+  // The principal icon, hit ring and ping badge each have their own entrance endpoint in GLOW_ICONS_JS.
+  (plan.icons || []).forEach((icon, index) => {
+    const box = { x: icon.x, y: icon.y, w: icon.size, h: icon.size };
+    add("card", icon.t, landing("icon", icon, { index }), 0.75, box);
+    if (icon.action === "hit") add("slam", icon.t + 0.16, landing("hit", icon, { index }), 0.4, box);
+    if (icon.action === "ping") add("ding", icon.t + 0.16, landing("ping", icon, { index }), 0.5, box);
+  });
 
   // Choose by audible level first so a later, louder cue also wins; only kept whooshes count toward the cap.
   const kept = [];
@@ -71,6 +76,7 @@ export function glowSoundCues(plan, { level = 0.3 } = {}) {
     const sound = SOUNDS[cue.family];
     const n = counts[cue.family] = (counts[cue.family] || 0) + 1;
     const variant = (n - 1) % sound.files.length;
-    return { id: `sfx-${cue.family}-${n}`, src: `assets/sfx/${sound.files[variant]}`, start: cue.start, duration: sound.durations[variant], volume: cue.volume, track: 9 };
+    const sync = eventClock({ landAt: cue.landAt, sfx: sound.files[variant], fps, anchor: cue.anchor });
+    return { id: `sfx-${cue.family}-${n}`, src: `assets/sfx/${sound.files[variant]}`, start: sync.start, duration: sound.durations[variant], volume: cue.volume, track: 9, ...(audit ? { sync: { ...sync, box: cue.box } } : {}) };
   });
 }

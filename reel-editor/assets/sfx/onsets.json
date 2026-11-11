@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "attackDefinition": "First sample at 10% of absolute peak; earliest equal maximum for peak",
+  "files": {
+    "card-2.wav": {
+      "sha256": "fb7eb7df0472597b982664871fdcc54de19ec58b37e4e8d38a0f3bda03b8b12b",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 13215,
+      "attackSample": 3,
+      "peakSample": 29,
+      "attack": 0.0000625,
+      "peak": 0.0006041666666666667
+    },
+    "card-3.wav": {
+      "sha256": "1d53b67f691025ccfb19c6ea0b7eaad7a148df6310bfe5e103858b3a5964bc4e",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 15206,
+      "attackSample": 4,
+      "peakSample": 33,
+      "attack": 0.00008333333333333333,
+      "peak": 0.0006875
+    },
+    "card.wav": {
+      "sha256": "1b4e9377285e16027eaa4af381168bd17e3cb508b216cff8993c7c2aff21f2ea",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 14141,
+      "attackSample": 3,
+      "peakSample": 31,
+      "attack": 0.0000625,
+      "peak": 0.0006458333333333333
+    },
+    "ding.wav": {
+      "sha256": "9402b8100bf074181f18c7710f1d982217eea16bc0f3a4b94d08f60a51d65eec",
+      "sampleRate": 48000,
+      "channels": 2,
+      "samples": 20160,
+      "attackSample": 1,
+      "peakSample": 3378,
+      "attack": 0.000020833333333333333,
+      "peak": 0.070375
+    },
+    "flash.wav": {
+      "sha256": "832bb38fc7e8f6de34cc76d7dd8d854d93f4c9f18f38204ca224bda5eee1e012",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 7370,
+      "attackSample": 2392,
+      "peakSample": 3724,
+      "attack": 0.049833333333333334,
+      "peak": 0.07758333333333334
+    },
+    "marker.wav": {
+      "sha256": "78cf0f25b164abb605a43144727fabdccdf471cce1cf46dbe37644f183bd1ec7",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 7733,
+      "attackSample": 2,
+      "peakSample": 2496,
+      "attack": 0.000041666666666666665,
+      "peak": 0.052
+    },
+    "move-2.wav": {
+      "sha256": "db5ff2ba33d32285aa02281b42c87f540ed065b0c30f8fa2bacf6b92c7fe5440",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 6887,
+      "attackSample": 2236,
+      "peakSample": 3480,
+      "attack": 0.04658333333333333,
+      "peak": 0.0725
+    },
+    "move-3.wav": {
+      "sha256": "f802abafb355541e5cb4bd1cb1149799f3a5b6f1681201db1e1ee0f93edf2f84",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 7925,
+      "attackSample": 2573,
+      "peakSample": 4004,
+      "attack": 0.05360416666666667,
+      "peak": 0.08341666666666667
+    },
+    "move.wav": {
+      "sha256": "832bb38fc7e8f6de34cc76d7dd8d854d93f4c9f18f38204ca224bda5eee1e012",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 7370,
+      "attackSample": 2392,
+      "peakSample": 3724,
+      "attack": 0.049833333333333334,
+      "peak": 0.07758333333333334
+    },
+    "slam-2.wav": {
+      "sha256": "61460394c6782ba7fae3998e448db457cdd716e1fbfe867837bcf63262908a2f",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 7771,
+      "attackSample": 462,
+      "peakSample": 1167,
+      "attack": 0.009625,
+      "peak": 0.0243125
+    },
+    "slam-3.wav": {
+      "sha256": "a37c1864e2a79c14a48648d0a870ee7da77af28a43a97365865cb8ca1eb4edfd",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 8940,
+      "attackSample": 532,
+      "peakSample": 1343,
+      "attack": 0.011083333333333334,
+      "peak": 0.027979166666666666
+    },
+    "slam.wav": {
+      "sha256": "8180c6455d25e2a0ac2cd81b1ec9c66c064b9293bd3e068d0244301ffbfd5dee",
+      "sampleRate": 48000,
+      "channels": 1,
+      "samples": 8314,
+      "attackSample": 495,
+      "peakSample": 1249,
+      "attack": 0.0103125,
+      "peak": 0.026020833333333333
+    },
+    "typing.wav": {
+      "sha256": "629de2f1d06f84ba50d86c4725a1b206b7702ae6882975e280c4257c7a8816a6",
+      "sampleRate": 48000,
+      "channels": 2,
+      "samples": 24000,
+      "attackSample": 0,
+      "peakSample": 17091,
+      "attack": 0,
+      "peak": 0.3560625
+    }
+  }
+}

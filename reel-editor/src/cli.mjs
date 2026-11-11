@@ -32,6 +32,7 @@ Usage
   reel ending <workdir> [--json]    check the opening and ending without rendering
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
   reel restyle <workdir> [--icons <dir>] [--out <dir>] [--repick] [--no-render]  the finished reel again in the glow look, in <workdir>-glow
+  reel restyle <workdir> --look bold [--repick] [--no-render]  Greg's bold look, in <workdir>-bold
   reel render <workdir> [-o out.mp4] render the project in <workdir> again
   reel transcribe <video> [-o words.json] [--engine auto|faster-whisper|elevenlabs|hyperframes] [--model large-v3-turbo]
   reel batch <folder> [options]     edit every video in a folder that has no render yet
@@ -249,6 +250,7 @@ const EDIT_OPTIONS = {
   graphics: { type: "boolean" },
   "no-graphics": { type: "boolean" },
   "new-graphics": { type: "boolean" },
+  repick: { type: "boolean" },
   "persistent-graphics": { type: "boolean" },
   "no-persistent-graphics": { type: "boolean" },
   ladder: { type: "boolean" },
@@ -397,11 +399,46 @@ export async function main(argv) {
     }
     case "restyle": {
       // A finished reel again in the glow look, in a copy of its job folder: same footage, cuts and audio.
-      const { opts, positionals } = parse(rest, { icons: { type: "string" }, out: { type: "string" }, repick: { type: "boolean" }, "no-render": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      const { opts, positionals } = parse(rest, { look: { type: "string" }, icons: { type: "string" }, out: { type: "string" }, repick: { type: "boolean" }, "no-render": { type: "boolean" }, help: { type: "boolean", short: "h" } });
       if (opts.help || !positionals[0]) return console.log(USAGE);
+      if (opts.look && !["bold", "glow"].includes(opts.look)) throw new Error("restyle look must be glow or bold");
+      if (opts.look === "bold") {
+        const { boldEnabled, prepareBoldPlan, restyleBold } = await import("./bold.mjs");
+        const { carryProjectAudio } = await import("./glow.mjs");
+        const src = fs.realpathSync(path.resolve(positionals[0]));
+        const original = readJSON(path.join(src, "plan.json"));
+        const style = loadPreset("pingel-bold");
+        if (!boldEnabled(style, original)) throw new Error("Bold requires a Greg preset, a vertical canvas and a personal job");
+        const dest = path.resolve(opts.out || `${src}-bold`);
+        if (dest === src || dest.startsWith(src + path.sep) || src.startsWith(dest + path.sep) || (fs.existsSync(dest) && fs.lstatSync(dest).isSymbolicLink())) throw new Error("restyle needs a separate sibling job folder");
+        if (fs.existsSync(dest) && (!fs.existsSync(path.join(dest, "plan.json")) || readJSON(path.join(dest, "plan.json")).preset !== "pingel-bold")) throw new Error("restyle destination already exists and is not a bold job");
+        const pickFile = path.join(dest, "bold-picks.json");
+        const saved = !opts.repick && fs.existsSync(pickFile) ? readJSON(pickFile) : null;
+        fs.rmSync(dest, { recursive: true, force: true });
+        fs.cpSync(src, dest, { recursive: true, filter: (f) => !/[\\/](renders|project|covers|glow-picks.json|glow-reply.json)$/.test(f) });
+        const base = prepareBoldPlan(original, { ...style, render: { ...style.render, ...original.style.render }, audio: { ...style.audio, ...original.style.audio } });
+        carryProjectAudio(src, dest, base);
+        writeJSON(path.join(dest, "plan.json"), base);
+        // Measure a clean baseline in the new look; glow scenes and old zooms cannot bias the face samples.
+        const first = await buildProject(dest, { noRender: !!opts.noRender, noPreflight: true, noReview: true, boldMeasure: true });
+        const dict = loadDictionary();
+        const protectedPhrases = [...(dict.terms || []), ...(dict.names || []), ...(dict.phrases || [])];
+        const result = await restyleBold(base, { outDir: dest, protectedPhrases, render: first.output, picks: saved });
+        writeJSON(path.join(dest, "plan.json"), result.plan);
+        writeJSON(pickFile, result.picks);
+        log(`bold look: ${result.plan.bold.groups.length} phrases, ${result.plan.bold.overlays.length} overlays`);
+        const final = await buildProject(dest, { noRender: !!opts.noRender });
+        if (final.output) console.log(final.output);
+        return;
+      }
       const { restyleGlow, loadIconLibrary, glowIconDir, carryProjectAudio } = await import("./glow.mjs");
       const src = path.resolve(positionals[0]);
       const plan = readJSON(path.join(src, "plan.json"));
+      if (plan.bold || plan.style.bold?.enabled) {
+        delete plan.bold;
+        plan.style.bold = { ...plan.style.bold, enabled: false };
+        plan.style.glow = { ...plan.style.glow, enabled: true };
+      }
       plan.style.glow = { ...loadPreset(plan.preset).glow, ...plan.style.glow };
       if (plan.behind?.src && (!plan.behind.file || !fs.existsSync(plan.behind.file))) {
         const file = path.join(src, "project", plan.behind.src);

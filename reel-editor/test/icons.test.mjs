@@ -102,5 +102,5 @@ test("render: icon SVGs are inline, brand skins and frame-timed motion are prese
   assert.ok(!absent.includes("icon-pop") && !absent.includes("PLAN.icons"));
 
   const cue = soundCues({ icons: [icon], level: 0.3 });
-  assert.deepEqual(cue, [{ id: "sfx-icon-1", src: "assets/sfx/card.wav", start: 5, duration: 0.3, volume: 0.135, track: 9 }]);
+  assert.deepEqual(cue, [{ id: "sfx-icon-1", src: "assets/sfx/card.wav", start: 157 / 30, duration: 0.3, volume: 0.135, track: 9 }]);
 });

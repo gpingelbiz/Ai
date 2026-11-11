@@ -95,6 +95,8 @@ test("legacy render snapshots: no signature and no house list keep every existin
     "pace-fast": "afcfbca8378f7e54f2e6fe41f56283cd53df97794cb2c4037c0a948d08b29f53",
     // 2026-11-02: Greg's own captions went back to caps, gold and markers (jungle reel debrief); pingel-v2 keeps its look.
     "pingel-brand": "29081fd96a143dcf925e3e532df2c5c7dd9ba6c18618b6f597011c8ab39a4d44",
+    // Bold's own runtime and caption coverage have separate tests in bold*.test.mjs.
+    "pingel-bold": "92e8b002c1ff181c4c6f6eab9ed9ba31ba3c960c365c3eebd09d8470c0048af4",
     // Runway also disables the inherited focus pull.
     "pingel-runway": "120535b95e5a57e57af383f8d32459c051a10aaa9be209e823aa68ef2c884f43",
     "pingel-v2": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",

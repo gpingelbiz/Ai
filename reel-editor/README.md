@@ -113,6 +113,26 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 `presets/pingel-brand.json` is the default and carries the brand look. `presets/clean.json` is plain subtitles. Any key in `presets/_defaults.json` can be overridden in a preset or passed as a path: `--preset my-look.json`.
 
+### Bold look
+
+Greg's vertical reels can use `reel edit raw.mov --preset pingel-bold` (or `REEL_PRESET=pingel-bold`). Glow remains the default. `reel restyle videos/<name> --look bold` creates `videos/<name>-bold`, preserving footage, cuts and project music. Restyle without `--look` still uses glow. Add `--repick` to edit or restyle to replace the saved direction; `--no-render` writes a project without measuring a rendered face.
+
+Bold makes one argument-planning call. `bold-picks.json` saves `schemaVersion: 1`, the transcript hash, `argument` ranges (`buyerProblem`, `answer`, `payoff`), a verbatim `headline` range with one `emphasis` index, `punch` spans with roles and reasons, quiet `emphasis` word indexes, optional argument `turns`, and `overlays`. Ranges are inclusive. Invalid direction falls back to the opening sentence and quiet captions. `plan.json` retains `words` and adds `bold` version 1 with the headline, caption `groups`, argument, measured `zones`, accepted `overlays` and event landing frames/seconds. Every spoken word remains in one caption group while the headline holds.
+
+The preset's `bold` block controls headline size/hold (3 to 4.5 seconds), phrase timing, quiet Inter 650 at 84 px, punch Inter 900 at 104 px with a 12 px stroke, gold and punch budgets, chin clearance, safe bounds and semantic framing limits. Dimensions scale from 1080×1920. B-roll and legacy graphics are off by default. The registry in `src/bold-overlays.mjs` imports trusted overlay kinds; placement protects the face, headline and caption zone, and sounds use only accepted events. Client jobs cannot enable bold, and its preset is excluded from client releases.
+
+#### Proof folder
+
+Bold supports optional `proof`, `define` and `math` overlays in the same argument-planning call. Put real approved screenshots and `manifest.json` in `~/Reels/brand-assets/proof/`, or set `bold.proof.manifest`. Approved glossary definitions live in `glossary.json` beside it; transcript explanations need no glossary. See [Proof folder setup, schema, defaults and plan fields](docs/bold-proof.md). Sources are locally redacted, cropped and checked against the 32 px text floor. Cards hold 3.5 to 6 seconds; math builds from spoken number ranges beside the face. Each kind is capped at one through 30 seconds, two on longer reels. Missing grounding, files or space leaves captions running clean. No new CLI flags.
+
+#### Conversations, stickers and payoffs
+
+Conversations use optional direction `speakers: [{from,to,speaker:"other",reason}]`. Every unmarked word defaults to Greg. Face turns take priority when `bold.talk.gregPerson` explicitly identifies Greg's zero-based person index from left to right; its default `null` keeps uncertain identity on Greg. Existing `speakerTurns` / `speakerTimeline.turns` are reused, or the existing face-turn helper scans multi-face footage. Phrases never cross voices. Other speech uses gold Inter 600, while Greg stays bone. One optional `topic` overlay selects 4 to 7 consecutive transcript words and holds in the top safe area after the headline until the conversation ends. Unplaceable cards are omitted. `plan.bold.talk` records the resolved speakers, conversation indexes and source.
+
+`bold.sticker.enabled` and `bold.payoff.enabled` are off in the engine defaults and on in `pingel-bold` (Claude decides when a sentence earns one; code caps them). Stickers use `{kind:"sticker",from,to,asset,purpose:"prop"|"reaction",reason}`; asset IDs come from the same planning prompt. `sticker.photosDir` and `iconsDir` name Greg's local folders. Only single-face, clear photos pass; the existing native still-person tool extracts their real pixels. Checks and cutouts cache under the job's `bold-extras/`, and selected PNGs stage under `project/assets/bold-extras/`. No personal assets enter the repository or client releases. Sticker width defaults to 260 px, hold to 1.2 seconds, with 6-frame entrance and 4-frame exit. Code caps width at 220 to 320 px, hold at 0.9 to 1.5 seconds, two stickers per reel, ten seconds apart and one reaction. Limits can be lowered in the preset.
+
+Payoffs use `{kind:"payoff",from,to,style:"stack"|"burst",reason}` only inside an already marked punch `role:"payoff"` that survives caption budgets. One seeded gold-coin decoration lasts about one second below captions. Coins carry no quantities or proof claims. The preset controls width (320), hold (1), style (`stack`) and piece count (9, capped at 12). Missing assets, failed cutouts, absent face measurements or occupied space omit the effect. Accepted stickers get a soft card cue; a payoff gets one slam, aligned by `eventClock`. Speaker captions and topic cards are silent. These additions introduce no CLI flags; the existing `--preset pingel-bold`, `--look bold` and `--repick` controls apply.
+
 ## VSL sales videos
 
 Drop a recording into `~/Desktop/Reels/Raw - VSL Editor` (shortcut to `~/Reels/raw-vsl`). Each client's `~/Desktop/Reels/Clients/<Name>/Raw - VSL Editor` points to that client's `raw-vsl`. Re-run the installer to add Greg's shortcut and watcher path; re-run `node scripts/client.mjs add their-brand.json` for an existing client's shortcut and launchd path. The scanner also creates `raw-vsl` in existing client roots.
@@ -477,6 +497,10 @@ npm test
 ```
 
 Covers cut planning (silence, fillers, stutters, false starts, deliberate repeats), word remapping, caption grouping and keyword picking, hook and zoom planning, and the generated composition HTML. An end-to-end render needs ffmpeg and Chrome; run `reel edit examples/...` on any clip with `--transcript examples/sample-words.json` to exercise it without Whisper.
+
+Sound timing uses `src/event-clock.mjs`: `eventClock({ landAt, sfx: "slam.wav", fps }).start` aligns the file's measured peak to a visual landing on whole frames. `assets/sfx/onsets.json` records attack and peak samples for all vendored WAVs; tests remeasure the files and their hashes. Legacy and glow cue selection, order, levels and variants stay the same. Normal `plan.json` tracks keep `{id, src, start, duration, volume, track}`; only cue starts change. Generated `--sfx` files are measured locally after generation. Saved plans retain their saved audio times until cues are rebuilt.
+
+For a finished render, run `node scripts/sync-check.mjs render.mp4 plan.json [--boxes boxes.json]`. The optional JSON maps cue IDs to `{x,y,w,h}` in canvas pixels; tight boxes should exclude the speaker. The read-only report contains audio correlation, a visual landing candidate from frame differences, and `deltaMs` (positive means audio is late). Moving footage or overlapping graphics can make the visual estimate uncertain; inspect the reported frames. No browser is used. `{audit:true}` on either cue scheduler adds `sync` details for diagnostics without changing normal plans. Frame-zero events report clipped preroll when alignment is impossible.
 
 ## Credits
 

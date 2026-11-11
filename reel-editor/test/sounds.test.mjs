@@ -19,7 +19,7 @@ test("sound cues: one per edit, markers skipped next to a louder cue, levels sca
     level: 0.3,
   });
   assert.deepEqual(cues.map((c) => c.id), ["sfx-flash-1", "sfx-move-1", "sfx-card-1", "sfx-slam-1", "sfx-marker-1"], "a jump cut makes no sound; the marker next to the slam is dropped");
-  assert.equal(cues[1].start, 4.94, "the whoosh leads the move a little");
+  assert.equal(cues[1].start, 148 / 30, "the whoosh peak reaches the move's landing frame");
   assert.equal(cues[3].volume, 0.3);
   assert.equal(cues[4].volume, 0.135);
   for (const k of Object.keys(SOUNDS)) assert.ok(fs.existsSync(path.join(PKG_ROOT, "assets", "sfx", SOUNDS[k].file)), `${k} file vendored`);
