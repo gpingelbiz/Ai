@@ -25,6 +25,9 @@
     "punch": { "size": 104, "weight": 900, "lineHeight": 1.02, "stroke": 12, "payoffScale": 1.9, "payoffFrames": 4, "payoffFrom": 0.96, "payoffSettle": false },
     "zone": { "left": 76, "right": 1004, "top": 200, "bottom": 1600, "captionTop": 1056, "chinGap": 32, "overlayGap": 32, "headMargin": 0.15 },
     "faces": { "samplesPerSecond": 4 },
-    "framing": { "enabled": true, "maxPer30": 4, "minSpacing": 7.5 }
+    "framing": { "enabled": true, "maxPer30": 4, "minSpacing": 7.5 },
+    "talk": { "enabled": true, "gregPerson": null, "otherWeight": 600, "topic": { "enabled": true, "minWords": 4, "maxWords": 7, "width": 720, "size": 44, "padding": 16 } },
+    "sticker": { "enabled": false, "photosDir": "~/automation/ig-content/photos", "iconsDir": "~/Reels/brand-assets/icons3d", "width": 260, "hold": 1.2, "maxPerReel": 2, "minSpacing": 10, "maxReaction": 1, "photoLimit": 24 },
+    "payoff": { "enabled": false, "width": 320, "hold": 1, "style": "stack", "pieces": 9 }
   }
 }
