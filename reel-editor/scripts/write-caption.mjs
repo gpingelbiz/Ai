@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * The Instagram caption for a finished reel, written from what the reel says (its own transcript) and ready to paste:
- * the caption lines, a blank line, 3 hashtags, nothing else (Greg 2026-10-29: "make sure we do captions that would
+ * the caption lines, a blank line, 3 hashtags (none on half of Greg's reels, see hashtagArm), nothing else (Greg 2026-10-29: "make sure we do captions that would
  * represent what we are talking about in the reel"). The same call writes three hook-text options modeled on what
  * Sandcastles shows is winning for the topic; those go to "post notes.txt" in the work folder with the patterns and
  * the trend. Runs Claude Code headless (`claude -p`) with ONE allowed tool family, the Sandcastles hook/format
@@ -65,11 +65,13 @@ export function buildPrompt({ transcript, hook, voice, cta, greg = false, auto =
     "- Caption: what this reel says, so someone who reads it knows what they are about to hear. 2 to 5 short lines in the speaker's own point of view: the reel's main point first, then its key points in the order the speaker makes them. Write it in the language the speaker speaks and address the viewer the way they do (you, du or ihr, tu or vous). No emojis. Nothing the transcript does not say: no invented numbers, results, stories or promises. It is posted exactly as written, so no labels, headers, hook options or notes in it.",
     "- Plain punctuation in the caption: periods, commas and question marks. No dashes of any kind (no em dash, no en dash, no hyphen used as a pause), no semicolons, no ellipses.",
     "- When the speaker quotes someone else or acts out a message, call or line (\"text me: hey, I messed up\"), never present those words as the speaker's own.",
-    "- Hashtags: exactly 3, matching what the reel is about, in the reel's language.",
+    greg
+      ? "- Search words (Greg 2026-11-11, captions research): the caption's first line names the problem this reel solves in the plain words a coach would type into Instagram search (price objection, sales calls, setter handoff, sales follow up, booked calls, no-shows, coaching offer, sales pipeline, closer), still in the speaker's voice. One main phrase, at most two supporting ones, never a keyword list. Write to the coach who owns the offer, not to a rep or salesperson: when it fits, say it plainly (\"If you sell a coaching offer...\"). Do not force sales words into a personal or family reel.\n- Hashtags: exactly 3 that describe THIS reel's specific topic (for example #ObjectionHandling #SalesCalls #CoachingBusiness). Never broad or mood tags (#businessowner, #salesleadership, #motivation, #mindset, #consistency) and never #ai or #aiautomation."
+      : "- Hashtags: exactly 3, matching what the reel is about, in the reel's language.",
     greg
       ? cta
         ? `- End the caption with ONE DM offer built around this call to action: ${cta}. Make clear what the reader gets. This is the only ask. No send line and no save, share, comment, follow or link asks. Never use AI as the ask or keyword.`
-        : '- End the caption with ONE line asking the reader to send this reel to a specific person they can picture, built from what THIS reel says. Example for a reel about discounts: "Send this to the owner who still approves every discount." Do not reuse that recipient for an unrelated reel. No other save, send, share, comment, DM, follow or link asks. Never use AI as the ask or keyword.'
+        : '- End the caption with ONE line asking the reader to send this reel to a specific person they can picture, built from what THIS reel says, normally a coach or offer owner rather than a rep. Example for a reel about discounts: "Send this to the coach who still approves every discount." Do not reuse that recipient for an unrelated reel. No other save, send, share, comment, DM, follow or link asks. Never use AI as the ask or keyword.'
       : cta
       ? `- End the caption with an offer built around this call to action: ${cta}. Phrase it as something the reader gets ("Want the exact words? ${cta} and I'll send them."), never as a bare instruction on its own: Instagram does not recommend posts that only ask people to comment a word.`
       : "- No call to action of any kind (no comment/DM/follow/share/save asks).",
@@ -90,6 +92,18 @@ export function buildPrompt({ transcript, hook, voice, cta, greg = false, auto =
     "",
     'Reply with JSON only, no prose and no code fence: {"topic":"...","caption":"line 1\\nline 2","hashtags":["#a","#b","#c"],"hooks":[{"text":"...","pattern":"...","example":"@handle, 2.4M views, 153x"}],"trend":"one sentence on what is winning for this topic"}',
   ].join("\n");
+}
+
+/**
+ * Greg's hashtag test (2026-11-11 captions research: no study settles tags vs none): half his reels post with no
+ * hashtags, picked by a stable hash of the reel's folder name so a re-run lands in the same arm. REEL_HASHTAG_ARM=0|3
+ * forces one. Returns the number of hashtags to keep.
+ */
+export function hashtagArm(name, env = process.env) {
+  if (env.REEL_HASHTAG_ARM === "0" || env.REEL_HASHTAG_ARM === "3") return Number(env.REEL_HASHTAG_ARM);
+  let h = 0;
+  for (const c of String(name || "")) h = (h * 31 + c.codePointAt(0)) >>> 0;
+  return h % 2 ? 3 : 0;
 }
 
 /** Pull the first JSON object out of Claude's reply and check its shape. */
@@ -167,7 +181,7 @@ export function formatCaptionFile(j, { title, cta, date = new Date().toISOString
     ...String(j.caption).split(/\n+/).map((l) => l.trim()).filter(Boolean),
     "",
     "HASHTAGS",
-    j.hashtags.join(" "),
+    j.hashtags.join(" ") || "(none: this reel is in the no-hashtag half of the test)",
     "",
     "HOOK TEXT (on screen, first 3 seconds) - pick one",
   ];
@@ -231,6 +245,10 @@ async function main() {
     j.best = j.hooks[0]?.text || "";
     j.bestIsWritten = !!j.best;
   } else if (hook && j.hooks[0]?.text !== hook) j.hooks = [{ text: hook, pattern: "the hook in the reel" }, ...j.hooks.filter((h) => h.text !== hook)].slice(0, 3);
+  if (greg) {
+    j.hashtagArm = hashtagArm(path.basename(path.resolve(workDir)));
+    if (!j.hashtagArm) j.hashtags = [];
+  }
   j.caption = oneAsk(j.caption, { greg, cta });
   j.caption = cleanCaption(j.caption, { greg: path.basename(voicePath) === "greg.md" });
   if (greg && !cta && !findAsks(j.caption.split("\n").at(-1)).includes("send")) console.log("caption: no send line");

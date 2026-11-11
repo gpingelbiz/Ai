@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { buildPrompt, parseReply, formatCaptionFile, formatPostText, cleanCaption, voiceFile, findAsks, oneAsk } from "../scripts/write-caption.mjs";
+import { buildPrompt, parseReply, formatCaptionFile, formatPostText, cleanCaption, voiceFile, findAsks, oneAsk, hashtagArm } from "../scripts/write-caption.mjs";
 
 test("the caption prompt carries the voice, the hook, the transcript and the CTA rule", () => {
   const none = buildPrompt({ transcript: "Own it first.", hook: "The 10 minutes after a bad number", voice: "Raw accountability.", cta: "" });
@@ -74,7 +74,7 @@ test("Greg's prompt requests one recipient specific send line from this reel, or
     const options = { transcript: "I still approve every discount.", hook: "Discounts", voice: "Greg", greg: true, sandcastles };
     const send = buildPrompt(options);
     assert.match(send, /ONE line.*specific person they can picture.*THIS reel says/);
-    assert.match(send, /Send this to the owner who still approves every discount\./);
+    assert.match(send, /Send this to the coach who still approves every discount\./);
     assert.match(send, /Do not reuse that recipient for an unrelated reel/);
     assert.match(send, /No other save, send, share, comment, DM, follow or link asks/);
     assert.match(send, /Never use AI as the ask or keyword/);
@@ -139,6 +139,7 @@ test("the caption command guards only Greg, logs a missing send line, and update
     { name: "greg", input: `Yo, discounts need a limit — set one.\nSave this.\n${send}`, expected: `Discounts need a limit, set one.\n${send}`, asks: ["send"] },
     { name: "offer", input: `Save this.\n${dm}\n${send}`, expected: dm, asks: ["dm"], env: { REEL_WATCH_CTA: "DM me DISCOUNT" } },
     { name: "missing", input: "Discounts need a limit.", expected: "Discounts need a limit.", asks: [], missing: true },
+    { name: "notags", input: `Discounts need a limit.\n${send}`, expected: `Discounts need a limit.\n${send}`, asks: ["send"], env: { REEL_HASHTAG_ARM: "0" }, tags: "" },
     { name: "ai", input: "Discounts need a limit.\nComment AI.\nThe Ghost P&L knows.\nDM me AI.", expected: "Discounts need a limit.", asks: [], missing: true },
     { name: "client", input: `Save this.\n${send}`, expected: `Save this.\n${send}`, asks: ["save", "send"], env: { REEL_CLIENT: "example" }, neutral: true },
     { name: "voice", input: `Save this.\n${send}`, expected: `Save this.\n${send}`, asks: ["save", "send"], env: { REEL_CAPTION_VOICE: new URL("../voice/default.md", import.meta.url).pathname }, neutral: true },
@@ -151,12 +152,12 @@ test("the caption command guards only Greg, logs a missing send line, and update
     const promptFile = path.join(work, "prompt.txt");
     const run = spawnSync(process.execPath, [new URL("../scripts/write-caption.mjs", import.meta.url).pathname, work], {
       encoding: "utf8", timeout: 10000,
-      env: { ...process.env, REEL_CLIENT_MODE: "0", REEL_CLIENT: "", REEL_CAPTION_VOICE: "", REEL_WATCH_CTA: "", REEL_CAPTION_SANDCASTLES: "0",
+      env: { ...process.env, REEL_CLIENT_MODE: "0", REEL_CLIENT: "", REEL_CAPTION_VOICE: "", REEL_WATCH_CTA: "", REEL_CAPTION_SANDCASTLES: "0", REEL_HASHTAG_ARM: "3",
         ...c.env, REEL_CLAUDE_BIN: fake, REEL_TEST_PROMPT: promptFile,
         REEL_TEST_REPLY: JSON.stringify({ caption: c.input, hashtags: ["#a", "#b", "#c"], hooks: [{ text: "Discounts need a limit" }] }) },
     });
     assert.equal(run.status, 0, `${c.name}: ${run.stderr}`);
-    assert.equal(fs.readFileSync(path.join(work, "caption.txt"), "utf8"), `${c.expected}\n\n#a #b #c\n`, c.name);
+    assert.equal(fs.readFileSync(path.join(work, "caption.txt"), "utf8"), c.tags === "" ? `${c.expected}\n` : `${c.expected}\n\n#a #b #c\n`, c.name);
     const features = JSON.parse(fs.readFileSync(path.join(work, "analytics-features.json"), "utf8"));
     assert.equal(features.record.captionEnding, c.expected.split("\n").at(-1), c.name);
     assert.deepEqual(features.record.captionAsks, c.asks, c.name);
@@ -169,4 +170,26 @@ test("the caption command guards only Greg, logs a missing send line, and update
       assert.doesNotMatch(prompt, /ONE line asking/);
     } else assert.match(prompt, /ONE (?:line asking|DM offer)/);
   }
+});
+
+test("Greg's captions lead with search words for coaches and pick topic hashtags; clients keep the plain rule", () => {
+  const greg = buildPrompt({ transcript: "x", hook: "", voice: "v", cta: "", greg: true });
+  assert.match(greg, /first line names the problem this reel solves/);
+  assert.match(greg, /coach who owns the offer, not to a rep/);
+  assert.match(greg, /Never broad or mood tags/);
+  assert.match(greg, /Send this to the coach who still approves every discount/);
+  const client = buildPrompt({ transcript: "x", hook: "", voice: "v", cta: "" });
+  assert.match(client, /Hashtags: exactly 3, matching what the reel is about/);
+  assert.doesNotMatch(client, /coach who owns the offer/);
+});
+
+test("hashtagArm splits reels into 0 and 3 hashtags by folder name, stable, with an override", () => {
+  const names = Array.from({ length: 40 }, (_, i) => `clip-${i}`);
+  const arms = names.map((n) => hashtagArm(n, {}));
+  assert.ok(arms.every((a) => a === 0 || a === 3));
+  assert.ok(arms.includes(0) && arms.includes(3));
+  assert.deepEqual(names.map((n) => hashtagArm(n, {})), arms);
+  assert.equal(hashtagArm("clip-1", { REEL_HASHTAG_ARM: "0" }), 0);
+  assert.equal(hashtagArm("clip-1", { REEL_HASHTAG_ARM: "3" }), 3);
+  assert.equal(formatPostText({ caption: "Line one", hashtags: [] }), "Line one\n");
 });
