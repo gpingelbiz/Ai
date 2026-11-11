@@ -9,6 +9,8 @@ import { deepMerge, warn, sha1 } from "./util.mjs";
 import { boldOverlayPrompts, validateBoldOverlay, placeBoldOverlays, boldOverlayHandler } from "./bold-overlays.mjs";
 import { fitBoldText, boldText } from "./bold-render.mjs";
 import { loadBoldProof, stageBoldProof } from "./bold-proof.mjs";
+import { BOLD_TALK_DEFAULTS, boldTalkPrompt, validateBoldSpeakers, resolveBoldTalk } from "./bold-talk.mjs";
+import { BOLD_EXTRAS_DEFAULTS, prepareBoldExtras, stageBoldExtras } from "./bold-extras.mjs";
 
 export { boldText } from "./bold-render.mjs";
 
@@ -23,6 +25,8 @@ const DEFAULTS = {
   zone: { left: 76, right: 1004, top: 200, bottom: 1600, captionTop: 1056, chinGap: 32, overlayGap: 32, headMargin: 0.15 },
   faces: { samplesPerSecond: 4 },
   framing: { enabled: true, maxPer30: 4, minSpacing: 7.5 },
+  talk: BOLD_TALK_DEFAULTS,
+  ...BOLD_EXTRAS_DEFAULTS,
 };
 
 export function boldSettings(preset = {}) { return structuredClone(deepMerge(DEFAULTS, preset.bold || {})); }
@@ -49,9 +53,10 @@ export function boldPrompt(words, { duration = 0, settings = boldSettings(), con
     `Use punch sparingly, at most ${settings.phrases.punchShare * 100}% of caption phrases. Default to quiet when unsure.`,
     `emphasis: [{word,gold,reason}] for quiet phrases. At most one emphasis per phrase; gold in at most ${settings.phrases.goldShare * 100}% of quiet phrases. Other emphasis uses bone bold weight.`,
     'turns: [{from,to,reason}] optional argument turns earning a camera change. No overlaps within turns. No timer-driven framing changes.',
+    boldTalkPrompt(),
     "overlays: [] is valid. There is no graphic quota and no compulsory full-screen scene. Only registered kinds below may be proposed; each needs kind, from, to, reason and the fields its contract requires. Every word or number must be supplied by Greg's transcript or authentic supplied proof. Reasons must tie the visual to the argument.",
     boldOverlayPrompts({ ...context, words, settings }) || "No overlay kinds are available. Return overlays: [].",
-    'Schema: {"schemaVersion":1,"argument":{"buyerProblem":null,"answer":null,"payoff":null},"headline":{"from":0,"to":3,"emphasis":3,"reason":"..."},"punch":[],"emphasis":[],"turns":[],"overlays":[]}',
+    'Schema: {"schemaVersion":1,"argument":{"buyerProblem":null,"answer":null,"payoff":null},"headline":{"from":0,"to":3,"emphasis":3,"reason":"..."},"punch":[],"emphasis":[],"turns":[],"speakers":[],"overlays":[]}',
   ].join("\n");
 }
 
@@ -90,8 +95,11 @@ export function validateBoldPicks(reply, words, { settings = boldSettings(), con
     emphasis.push({ word: p.word, gold: p.gold, reason: p.reason.trim() });
   }
   const turns = rangeList(reply.turns);
-  const overlays = rangeList(reply.overlays).map((pick) => validateBoldOverlay(pick, { ...context, words, settings, argument })).filter(Boolean);
-  return { schemaVersion: 1, argument, headline: h && { from: h.from, to: h.to, emphasis: h.emphasis, reason: h.reason.trim() }, punch, emphasis, turns, overlays, ...(dropped.length ? { dropped: dropped.length } : {}) };
+  const speakers = validateBoldSpeakers(reply.speakers, words);
+  // Topic label indexes may also occur in another visual; its display time is the conversation stretch.
+  const overlayRanges = [...rangeList(reply.overlays.filter((p) => p?.kind !== "topic")), ...reply.overlays.filter((p) => p?.kind === "topic" && span(p, n) && reason(p))];
+  const overlays = overlayRanges.map((pick) => validateBoldOverlay(pick, { ...context, words, settings, argument, punch })).filter(Boolean);
+  return { schemaVersion: 1, argument, headline: h && { from: h.from, to: h.to, emphasis: h.emphasis, reason: h.reason.trim() }, punch, emphasis, turns, ...(reply.speakers != null ? { speakers } : {}), overlays, ...(dropped.length ? { dropped: dropped.length } : {}) };
 }
 
 /** First sentence, bounded to eight words. A short transcript stays honest instead of gaining filler. */
@@ -110,6 +118,7 @@ export function groupBoldWords(words, duration, picks = fallbackBoldDirection(wo
   const indexed = words.map((w, index) => ({ ...w, index, text: boldText(w.text) }));
   const protectedSet = new Set([...cfg.protectedPhrases, ...protectedPhrases]);
   const punchAt = (index) => picks.punch.find((p) => index >= p.from && index <= p.to);
+  const speakerAt = (index) => (picks.speakers || []).some((p) => index >= p.from && index <= p.to) ? "other" : "greg";
   const blocked = new Set();
   const toks = words.map((word) => token(word.text));
   for (const phrase of protectedSet) {
@@ -118,10 +127,11 @@ export function groupBoldWords(words, duration, picks = fallbackBoldDirection(wo
   }
   // Amounts and their units stay together even without a dictionary entry.
   for (let i = 1; i < words.length; i++) if (/\d|^(one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand|million|billion)$/.test(toks[i - 1]) && /^(hundred|thousand|million|billion|percent|dollars|bucks|calls|clients|minutes|hours|days|weeks|months|years)$/.test(toks[i])) blocked.add(i);
+  for (let i = 1; i < words.length; i++) if (speakerAt(i - 1) !== speakerAt(i)) blocked.delete(i);
   const runs = []; let run = [];
   for (const word of indexed) {
     const prev = run.at(-1);
-    if (prev && !blocked.has(word.index) && (punchAt(prev.index) !== punchAt(word.index) || word.start - prev.end > cfg.maxGap || word.start - run[0].start >= cfg.maxSeconds)) { runs.push(run); run = []; }
+    if (prev && (speakerAt(prev.index) !== speakerAt(word.index) || (!blocked.has(word.index) && (punchAt(prev.index) !== punchAt(word.index) || word.start - prev.end > cfg.maxGap || word.start - run[0].start >= cfg.maxSeconds)))) { runs.push(run); run = []; }
     run.push(word);
     if (/[.!?]["'”’)]*$/.test(String(words[word.index].text).trim()) && !blocked.has(word.index + 1)) { runs.push(run); run = []; }
   }
@@ -134,12 +144,12 @@ export function groupBoldWords(words, duration, picks = fallbackBoldDirection(wo
   const merged = [];
   for (let i = 0; i < chunks.length; i++) {
     const cur = [...chunks[i]];
-    while (chunks[i + 1] && (blocked.has(chunks[i + 1][0].index) || (punchAt(cur[0].index) === punchAt(chunks[i + 1][0].index) && chunks[i + 1][0].start - cur[0].start < cfg.minSeconds && chunks[i + 1][0].start - cur.at(-1).end <= cfg.maxGap && cur.length + chunks[i + 1].length <= cfg.protectedMaxWords))) cur.push(...chunks[++i]);
+    while (chunks[i + 1] && speakerAt(cur[0].index) === speakerAt(chunks[i + 1][0].index) && (blocked.has(chunks[i + 1][0].index) || (punchAt(cur[0].index) === punchAt(chunks[i + 1][0].index) && chunks[i + 1][0].start - cur[0].start < cfg.minSeconds && chunks[i + 1][0].start - cur.at(-1).end <= cfg.maxGap && cur.length + chunks[i + 1].length <= cfg.protectedMaxWords))) cur.push(...chunks[++i]);
     merged.push(cur);
   }
   const groups = merged.map((ws, i) => {
     const from = ws[0].index, to = ws.at(-1).index;
-    const punch = picks.punch.find((p) => from >= p.from && to <= p.to);
+    const punch = speakerAt(from) === "other" ? null : picks.punch.find((p) => from >= p.from && to <= p.to);
     const emphasis = picks.emphasis.find((p) => p.word >= from && p.word <= to);
     const totalFrames = Math.max(1, Math.round(duration * fps));
     const startFrame = i ? Math.min(totalFrames - 1, Math.round(Math.max(0, ws[0].start - cfg.lead) * fps)) : 0;
@@ -147,8 +157,12 @@ export function groupBoldWords(words, duration, picks = fallbackBoldDirection(wo
     const endFrame = Math.max(startFrame + 1, Math.min(nextFrame, Math.max(Math.ceil(ws.at(-1).end * fps), startFrame + Math.round(cfg.maxSeconds * fps))));
     return { from, to, startFrame, endFrame, start: startFrame / fps, end: endFrame / fps, mode: punch ? "punch" : "quiet", role: punch?.role || null, reason: punch?.reason || "Running transcript", emphasis: punch ? { word: inside({ from, to }, punch.emphasis) ? punch.emphasis : to, gold: true } : emphasis ? { word: emphasis.word, gold: emphasis.gold } : null, payoff: punch && inside({ from, to }, punch.payoff) ? punch.payoff : null, protectedBreaks: [...blocked].filter((at) => at > from && at <= to).map((at) => at - from), text: ws.map((w) => w.text).join(" ") };
   });
+  for (const g of groups) {
+    if (speakerAt(g.from) === "other") { g.speaker = "other"; g.emphasis = null; g.payoff = null; }
+    else if (picks.conversation && g.emphasis) g.emphasis.gold = false;
+  }
   // Coincident timestamps cannot steal a word. Merge their captions rather than create invisible zero-frame groups.
-  for (let i = groups.length - 2; i >= 0; i--) if (groups[i + 1].startFrame <= groups[i].startFrame) {
+  for (let i = groups.length - 2; i >= 0; i--) if (speakerAt(groups[i].from) === speakerAt(groups[i + 1].from) && groups[i + 1].startFrame <= groups[i].startFrame) {
     if (groups[i].mode !== groups[i + 1].mode) { groups[i].mode = "quiet"; groups[i].role = null; groups[i].emphasis = null; groups[i].payoff = null; }
     groups[i].to = groups[i + 1].to; groups[i].endFrame = groups[i + 1].endFrame; groups[i].end = groups[i + 1].end;
     groups[i].protectedBreaks = [...blocked].filter((at) => at > groups[i].from && at <= groups[i].to).map((at) => at - groups[i].from);
@@ -157,12 +171,20 @@ export function groupBoldWords(words, duration, picks = fallbackBoldDirection(wo
   // A clipped tail cannot borrow display time beyond the reel. Join it backwards instead of flashing it.
   for (let i = groups.length - 1; i > 0; i--) if (groups[i].endFrame - groups[i].startFrame < Math.ceil(cfg.minSeconds * fps)) {
     const prev = groups[i - 1], tail = groups[i];
-    if (tail.start - prev.end > cfg.maxGap) continue;
+    if (speakerAt(prev.from) !== speakerAt(tail.from) || tail.start - prev.end > cfg.maxGap) continue;
     prev.to = tail.to; prev.endFrame = tail.endFrame; prev.end = tail.end;
     prev.protectedBreaks = [...blocked].filter((at) => at > prev.from && at <= prev.to).map((at) => at - prev.from);
     prev.text = indexed.slice(prev.from, prev.to + 1).map((w) => w.text).join(" ");
     if (prev.mode !== tail.mode) { prev.mode = "quiet"; prev.role = null; prev.emphasis = null; prev.payoff = null; }
     groups.splice(i, 1);
+  }
+  if (picks.speakers?.length) {
+    const totalFrames = Math.max(1, Math.round(duration * fps));
+    if (groups.length > totalFrames) throw new Error("too many speaker turns for the bold frame clock");
+    // Coincident turn timestamps get distinct frames instead of merging two voices into one phrase.
+    const starts = groups.map((g) => g.startFrame);
+    for (let i = 0; i < starts.length; i++) starts[i] = Math.min(totalFrames - (starts.length - i), Math.max(starts[i], i ? starts[i - 1] + 1 : 0));
+    groups.forEach((g, i) => { g.startFrame = starts[i]; g.endFrame = Math.max(starts[i] + 1, Math.min(starts[i + 1] ?? totalFrames, g.endFrame)); g.start = g.startFrame / fps; g.end = g.endFrame / fps; });
   }
   let punchCount = 0;
   const punchBudget = Math.floor(groups.length * cfg.punchShare);
@@ -242,7 +264,7 @@ export function prepareBoldPlan(input, preset = input.style) {
 }
 
 /** One argument call, then timing, framing, placement and sounds. All work commits to a cloned plan. */
-export async function restyleBold(input, { render, ask = claudeText, picks: saved = null, detect = detectFaces, env = process.env, log = warn, outDir = null, protectedPhrases = [], proof = {} } = {}) {
+export async function restyleBold(input, { render, ask = claudeText, picks: saved = null, detect = detectFaces, env = process.env, log = warn, outDir = null, protectedPhrases = [], proof = {}, talk: talkOptions = {}, extras: extraOptions = {} } = {}) {
   if (!boldEnabled(input.style, input, env)) {
     if (isClientJob(env) && (input.bold || input.style?.bold?.enabled)) log("bold look disabled for a client job");
     return { plan: input, picks: null, reply: null };
@@ -251,6 +273,7 @@ export async function restyleBold(input, { render, ask = claudeText, picks: save
   const settings = boldSettings(plan.style), fps = plan.style.render?.fps || 30, duration = plan.video.duration;
   const context = { plan, outDir, projectDir: outDir ? path.join(outDir, "project") : null, settings, env, log };
   context.proofCatalog = loadBoldProof(context);
+  try { context.extraAssets = await prepareBoldExtras(context, extraOptions); } catch { context.extraAssets = []; }
   let reply = saved, picks;
   try {
     if (!plan.words.length) reply = fallbackBoldDirection(plan.words, { settings });
@@ -269,7 +292,9 @@ export async function restyleBold(input, { render, ask = claudeText, picks: save
   const times = Array.from({ length: Math.max(1, Math.ceil(duration * settings.faces.samplesPerSecond)) }, (_, i) => Math.min(Math.max(0, duration - 1 / fps), Math.round(i / settings.faces.samplesPerSecond * fps) / fps));
   let detection = null;
   try { detection = render ? await detect(render, times) : null; } catch { /* measured fallback below */ }
-  const captionGroups = groupBoldWords(plan.words, duration, picks, { settings, fps, protectedPhrases });
+  const talk = await resolveBoldTalk(plan, picks, detection, { settings, render, ...talkOptions });
+  const groupPicks = { ...picks, speakers: talk.speakers, conversation: !!talk.conversation };
+  const captionGroups = groupBoldWords(plan.words, duration, groupPicks, { settings, fps, protectedPhrases });
   const payoffs = picks.punch.filter((p) => p.role === "payoff" && captionGroups.some((g) => g.mode === "punch" && g.from >= p.from && g.to <= p.to)).map((p) => ({ ...p, from: p.payoff ?? p.from }));
   const candidates = [...picks.turns, ...payoffs].sort((a, b) => a.from - b.from);
   if (plan.style.zooms?.enabled && settings.framing.enabled) {
@@ -280,9 +305,11 @@ export async function restyleBold(input, { render, ask = claudeText, picks: save
   // The footage never moves: lifting it left a black strip under a full-height source (Pushy, 2026-11-11). Captions
   // start under the chin and shrink to the room that is left.
   const shift = 0;
-  plan.bold = layoutBold(plan, picks, detection, { settings, faceShift: shift, protectedPhrases });
+  plan.bold = layoutBold(plan, groupPicks, detection, { settings, faceShift: shift, protectedPhrases });
+  plan.bold.talk = talk;
   if (plan.bold.zones.measured) context.proofAssets = await stageBoldProof(picks.overlays, { ...context, words: plan.words }, proof);
-  plan.bold.overlays = placeBoldOverlays(picks.overlays, { ...context, words: plan.words, argument: picks.argument, zones: plan.bold.zones, fps, duration, settings });
+  context.stagedExtras = await stageBoldExtras(picks.overlays, context, extraOptions);
+  plan.bold.overlays = placeBoldOverlays(picks.overlays, { ...context, words: plan.words, argument: picks.argument, talk, zones: plan.bold.zones, fps, duration, settings });
   plan.bold.events = [
     ...plan.bold.overlays.map((event) => ({ kind: event.kind, from: event.from, to: event.to, landingFrame: event.landingFrame, landing: event.landing, reason: event.reason })),
     ...plan.zooms.map((key) => ({ kind: "framing", landingFrame: Math.round(key.t * fps), landing: key.t, reason: candidates.find((p) => Math.abs(plan.words[p.from].start - key.t) < 1 / fps)?.reason || "Argument beat" })),

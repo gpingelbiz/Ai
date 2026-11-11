@@ -1,5 +1,6 @@
 import { esc } from "./text.mjs";
 import { boldOverlayHandler } from "./bold-overlays.mjs";
+import { boldTalkCSS } from "./bold-talk.mjs";
 
 export function boldText(text) {
   return String(text ?? "").replace(/[\p{Extended_Pictographic}️‍]/gu, "").replace(/[–—]/g, " ").replace(/[“”"…]/g, "").replace(/\s+/g, " ").trim();
@@ -44,7 +45,7 @@ export function boldHTML(plan, { settings } = {}) {
   };
   return [
     plan.bold.headline ? block(plan.bold.headline, "bold-headline", "bold-headline", true) : "",
-    ...plan.bold.groups.map((g, i) => block(g, `bold-caption-${i}`, `bold-caption bold-${g.mode}`)),
+    ...plan.bold.groups.map((g, i) => block(g, `bold-caption-${i}`, `bold-caption bold-${g.mode}${g.speaker === "other" ? " bold-other" : ""}`)),
     ...(plan.bold.overlays || []).map((event, i) => boldOverlayHandler(event.kind)?.html(event, { esc, plan, settings, i }) || ""),
   ].filter(Boolean).join("\n");
 }
@@ -63,6 +64,7 @@ export function boldCSS(settings, plan) {
       .bold-root .bold-punch { font-weight:${punch.weight}; text-transform:uppercase; line-height:${punch.lineHeight}; -webkit-text-stroke:${punch.stroke * plan.canvas.width / 1080}px ${c.black}; paint-order:stroke fill; text-shadow:0 5px 0 ${c.black},0 5px 18px rgba(0,0,0,0.6); }
       .bold-root .bold-gold { color:${c.gold}; }
       .bold-root .bold-number { font-size:calc(1em * var(--bold-payoff)); }
+${boldTalkCSS(settings, plan)}
 ${[...new Set((plan.bold?.overlays || []).map((event) => event.kind))].map((kind) => boldOverlayHandler(kind)?.css?.({ plan, settings }) || "").join("\n")}`;
 }
 
@@ -89,7 +91,7 @@ export const BOLD_JS = `
           if (g.settle) tl.fromTo(el.firstElementChild, { scale: PLAN.bold.payoffFrom }, { scale: 1, duration: PLAN.bold.payoffFrames / PLAN.fps, ease: "none", immediateRender: false }, g.startFrame / PLAN.fps);
           tl.set(el, { opacity: 0 }, g.endFrame / PLAN.fps);
         });
-        const boldFit = () => document.querySelectorAll(".bold-root .bold-caption, .bold-root .bold-headline").forEach((el) => {
+        const boldFit = () => document.querySelectorAll(".bold-root .bold-caption, .bold-root .bold-headline, .bold-root .bold-topic").forEach((el) => {
           if (!el.dataset.boldSize) el.dataset.boldSize = parseFloat(el.style.fontSize);
           const size = Number(el.dataset.boldSize);
           el.style.fontSize = size + "px";
