@@ -11,6 +11,7 @@ import { PKG_ROOT } from "../src/util.mjs";
 
 const family = (cue) => cue.id.split("-")[1];
 const times = (cues, kind) => cues.filter((c) => family(c) === kind).map((c) => c.start);
+const frames = (cues, kind) => times(cues, kind).map((t) => Math.round(t * 30));
 
 test("glow sounds: scene entrances whoosh and timed items, bars and the right side pop quietly", () => {
   const cues = glowSoundCues({ glowScenes: [
@@ -21,16 +22,16 @@ test("glow sounds: scene entrances whoosh and timed items, bars and the right si
     { type: "versus", start: 13, left: { at: 13.5 }, right: { at: 14 } },
     { type: "future-scene", start: 16, items: [{ at: 17 }] },
   ] });
-  assert.deepEqual(times(cues, "move"), [1, 4, 7, 10, 13, 16]);
-  assert.deepEqual(times(cues, "card"), [1.5, 2, 4.5, 5, 7.5, 8, 10.5, 11, 14, 17]);
+  assert.deepEqual(frames(cues, "move"), [35, 125, 214, 305, 395, 484]);
+  assert.deepEqual(frames(cues, "card"), [41, 67, 131, 157, 216, 246, 320, 350, 426, 520]);
   assert.ok(cues.filter((c) => family(c) === "card").every((c) => c.volume === 0.135));
 });
 
 test("glow sounds: number and meter each pop once at their landing", () => {
   const cues = glowSoundCues({ glowScenes: [{ type: "number", start: 2 }, { type: "meter", start: 5 }, { type: "number", start: 9, end: 12, from: "$10K" }] });
-  assert.deepEqual(times(cues, "move"), [2, 5, 9]);
-  // A plain fact lands at once; a spoken change pops when its count ends (0.9 s at most).
-  assert.deepEqual(times(cues, "card"), [2.15, 6.08, 9.9]);
+  assert.deepEqual(frames(cues, "move"), [65, 155, 274]);
+  // A plain fact lands after its entrance; a spoken change pops when its count ends (0.9 s at most).
+  assert.deepEqual(frames(cues, "card"), [69, 182, 297]);
   assert.ok(cues.filter((c) => family(c) === "card").every((c) => c.volume === 0.18));
 });
 
@@ -40,7 +41,7 @@ test("glow sounds: icons pop, stamps hit, notifications ding, the old look and h
     zooms: [{ t: 8, scale: 1.2 }], graphics: [{ start: 9 }], slams: [{ t: 10 }], hook: { start: 0 },
   });
   assert.deepEqual(cues.map((c) => [family(c), c.start, c.src]), [
-    ["card", 2, "assets/sfx/card.wav"], ["slam", 4, "assets/sfx/slam.wav"], ["ding", 6, "assets/sfx/ding.wav"],
+    ["card", 67 / 30, "assets/sfx/card.wav"], ["slam", 126 / 30, "assets/sfx/slam.wav"], ["ding", 186 / 30, "assets/sfx/ding.wav"],
   ]);
   assert.equal(cues[2].duration, 0.42);
   assert.ok(cues.every((c) => c.track === 9));
@@ -51,7 +52,7 @@ test("glow sounds: incoming bubbles ding and outgoing bubbles type under their 0
   const cues = glowSoundCues({ glowScenes: [{ type: "thread", start: 1, bubbles: [
     { side: "them", at: 2 }, { side: "me", at: 4 }, { side: "them", at: 6 }, { side: "me", at: 8 }, { side: "unknown", at: 9 },
   ] }] });
-  assert.deepEqual(times(cues, "ding"), [2, 6]);
+  assert.deepEqual(frames(cues, "ding"), [64, 184]);
   assert.deepEqual(times(cues, "typing"), [3.6, 7.6]);
   assert.ok(cues.filter((c) => family(c) === "typing").every((c) => c.duration === 0.5));
   assert.deepEqual(times(glowSoundCues({ glowScenes: [{ bubbles: [{ side: "me", at: 0.2 }] }] }), "typing"), [0]);
@@ -95,16 +96,16 @@ test("glow sounds: spacing keeps the louder cue, including later and ducked comp
     glowOverlays: [{ type: "stamp", start: 2.1 }, { type: "stamp", start: 4 }],
     glowScenes: [{ start: 4.08 }], words: [{ start: 4, end: 4.02 }],
   });
-  assert.deepEqual(cues.map((c) => [family(c), c.start]), [["card", 1], ["card", 1.12], ["slam", 2.1], ["move", 4.08]]);
+  assert.deepEqual(cues.map((c) => [family(c), Math.round(c.start * 30)]), [["card", 37], ["card", 41], ["slam", 69], ["move", 127]]);
   for (let i = 1; i < cues.length; i++) assert.ok(cues[i].start - cues[i - 1].start >= 0.12 - 1e-9);
   const ties = glowSoundCues({ icons: [2.1, 2, 2.05].map((t) => ({ t })) });
-  assert.deepEqual(ties.map((c) => c.start), [2], "equal levels keep the earliest cue, regardless of input order");
+  assert.deepEqual(frames(ties, "card"), [67], "equal levels keep the earliest cue, regardless of input order");
 });
 
 test("glow sounds: at most one whoosh per 1.5 seconds and dropped cues do not consume variants", () => {
   const cues = glowSoundCues({ glowScenes: [1, 1.1, 2, 2.5, 4].map((start) => ({ start })), icons: [{ t: 2 }] });
-  assert.deepEqual(times(cues, "move"), [1, 2.5, 4]);
-  assert.deepEqual(times(cues, "card"), [2], "a rate-limited whoosh does not suppress the item at that time");
+  assert.deepEqual(frames(cues, "move"), [35, 80, 124]);
+  assert.deepEqual(frames(cues, "card"), [67], "a rate-limited whoosh does not suppress the item at that time");
   assert.deepEqual(cues.filter((c) => family(c) === "move").map((c) => path.basename(c.src)), ["move.wav", "move-2.wav", "move-3.wav"]);
 });
 
@@ -119,7 +120,7 @@ test("glow sounds: missing or invalid event times are skipped and early typing s
   const plan = { video: { duration: 5 }, icons: [{}, { t: NaN }, { t: Infinity }, { t: 5 }, { t: 6 }, { t: 1.23456 }], glowScenes: [{ items: [{}, { at: Infinity }] }] };
   const before = structuredClone(plan);
   const cues = glowSoundCues(plan);
-  assert.deepEqual(cues.map((c) => c.start), [1.235]);
+  assert.deepEqual(frames(cues, "card"), [44]);
   assert.deepEqual(plan, before, "cue generation is pure");
 });
 
@@ -195,9 +196,9 @@ test("glow sounds: a flow branch, a swap strike and acting icons get their own q
     captions: [{ kind: "feat", variant: "swap", start: 6, words: [{ text: "luck", start: 6.2, wrong: true }, { text: "work", start: 7, right: true }] }, { kind: "feat", start: 8, words: [{ text: "plain", start: 8 }] }],
     icons: [{ t: 10, action: "hit" }, { t: 13, action: "ping" }, { t: 16, action: "drop" }],
   });
-  assert.deepEqual(times(cues, "card"), [2, 3, 10, 13, 16]);
-  assert.deepEqual(times(cues, "marker"), [7]);
-  assert.deepEqual(times(cues, "slam"), [10.16]);
-  assert.deepEqual(times(cues, "ding"), [13.16]);
+  assert.deepEqual(frames(cues, "card"), [66, 96, 305, 395, 490]);
+  assert.deepEqual(frames(cues, "marker"), [215]);
+  assert.deepEqual(frames(cues, "slam"), [306]);
+  assert.deepEqual(frames(cues, "ding"), [398]);
   assert.ok(cues.find((c) => family(c) === "slam").volume < 0.3 * 0.5);
 });
