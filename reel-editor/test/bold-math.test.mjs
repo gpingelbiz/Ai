@@ -85,7 +85,9 @@ test("math stays beside the face, above captions, under 40% width and within har
   const mirror = { ...c, zones: { ...c.zones, faces: [{ ...c.zones.faces[0], x: 120 }] } };
   assert.ok(placeBoldOverlays([validated], mirror)[0].box.x >= 452);
   const full = { ...c, zones: { ...c.zones, faces: [{ ...c.zones.faces[0], x: 76, w: 928 }] } };
-  assert.deepEqual(placeBoldOverlays([validated], full), []);
+  // No room beside a face that fills the width: the panel moves off the face and captions instead of vanishing.
+  const moved = placeBoldOverlays([validated], full)[0];
+  assert.ok(moved); for (const other of [full.zones.faces[0], full.zones.caption]) assert.equal(boldBoxesOverlap(moved.box, other), false);
   assert.deepEqual(placeBoldOverlays([validated], { ...c, zones: { ...c.zones, measured: false } }), []);
   assert.equal(placeBoldOverlays([validated, validated], c).length, 1);
   assert.deepEqual(placeBoldOverlays([validated], { ...c, settings: { ...c.settings, math: { ...c.settings.math, max: 0 } } }), []);

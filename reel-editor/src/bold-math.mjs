@@ -170,17 +170,24 @@ function placeMath(event, context) {
   const cfg = settingsFor(context), max = Math.min(2, Math.max(0, Math.floor(Number(cfg.max) || 0)), context.duration <= 30 ? 1 : 2);
   if ((context.overlays || []).filter((other) => other.kind === "math").length >= max) return null;
   const lines = boldMathLines(event, context);
-  if (!lines.length || lines[0].frame !== event.startFrame || lines.at(-1).frame >= event.endFrame - Math.ceil(0.75 * context.fps) || event.endFrame - event.startFrame > 8 * context.fps) return null;
+  if (!lines.length || lines[0].frame !== event.startFrame) return null;
+  // Numbers said back to back ("$9.99, $19.99") end with their last word: hold the finished panel about 2.5 s after
+  // its last line (found on the first real render, 2026-11-11), within 8 s and the reel.
+  const endFrame = Math.min(Math.round(context.duration * context.fps), event.startFrame + 8 * context.fps, Math.max(event.endFrame, lines.at(-1).frame + Math.round(2.5 * context.fps)));
+  if (lines.at(-1).frame >= endFrame - Math.ceil(0.75 * context.fps)) return null;
+  event = { ...event, endFrame, end: endFrame / context.fps };
   const W = context.plan.canvas.width, scale = W / 1080;
   const maxW = W * Math.min(0.4, Math.max(0.1, Number(cfg.widthFraction) || 0.4));
-  for (let w = maxW; w >= 200 * scale; w -= 24 * scale) {
+  // Beside the face first; a centered talking head leaves about 170 px a side, so then above the head or between the
+  // chin and the captions (never on the face, captions or headline: placeBoldCard checks).
+  for (const beside of [true, false]) for (let w = maxW; w >= 200 * scale; w -= 24 * scale) {
     const padding = 16 * scale;
     const size = Math.min(...lines.map((line) => fitBoldText([line.text], { size: Math.min(128, Number(cfg.size) || 96) * scale, width: w - 2 * padding }).size));
     const labelSize = Math.min(36 * scale, ...lines.filter((line) => line.label).map((line) => fitBoldText([line.label], { size: 36 * scale, width: w - 2 * padding }).size));
     if (size < 32 || labelSize < 32) continue;
     const rowHeight = size * 1.12 + (lines.some((line) => line.label) ? labelSize * 1.2 : 0) + 12 * scale;
-    const box = placeBoldCard({ w, h: lines.length * rowHeight + padding * 2 }, event, context, { beside: true });
-    if (box) return { box, landingFrame: lines[0].frame, data: { lines, padding, size, labelSize, rowHeight } };
+    const box = placeBoldCard({ w, h: lines.length * rowHeight + padding * 2 }, event, context, { beside });
+    if (box) return { box, endFrame, landingFrame: lines[0].frame, data: { lines, padding, size, labelSize, rowHeight } };
   }
   return null;
 }

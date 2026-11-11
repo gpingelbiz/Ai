@@ -186,7 +186,8 @@ export async function stageBoldProof(picks, context, { inspect, redact, crop } =
 export function placeBoldCard(size, event, context, { beside = false } = {}) {
   const { zones, settings, overlays = [] } = context, safe = zones.safe;
   const gap = settings.zone.overlayGap * safe.w / (settings.zone.right - settings.zone.left);
-  const faces = zones.faces.filter((face) => event.start <= face.end && event.end >= face.start);
+  // Face boxes stop at the hairline: keep another third of a face height above them clear for hair or a cap.
+  const faces = zones.faces.filter((face) => event.start <= face.end && event.end >= face.start).map((face) => ({ ...face, y: face.y - face.h / 3, h: face.h * 4 / 3 }));
   const headline = zones.headline && event.start < zones.headline.end ? zones.headline : null;
   const occupied = [zones.caption, ...faces, ...(headline ? [headline] : []), ...overlays.filter((other) => event.start < other.end && event.end > other.start).map((other) => other.box)];
   const { w, h } = size;

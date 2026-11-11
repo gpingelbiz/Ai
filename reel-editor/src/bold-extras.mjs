@@ -130,9 +130,17 @@ export function placeBoldExtraBox(event, { zones, settings, plan, overlays }, wi
   const faces = zones.faces.filter((f) => event.start < f.end && event.end > f.start);
   if (!faces.length) return null;
   const center = faces.reduce((sum, face) => sum + face.y + face.h / 2, 0) / faces.length;
-  const y = beside ? Math.max(safe.y, Math.min(safe.y + safe.h - height, center - height / 2)) : Math.max(safe.y, zones.caption.y + zones.caption.h + gap);
+  // Beside the face first. A centered talking head leaves about 170 px a side, so a sticker then sits above the
+  // head (after the headline) or on the shoulder below the chin; the checks below keep it off the face and captions.
+  const top = Math.min(...faces.map((face) => face.y)), chin = Math.max(...faces.map((face) => face.y + face.h));
+  // Face boxes stop at the hairline; a cap or hair sits higher (a coin stack landed on Greg's cap, 2026-11-11), so the
+  // spot above the head keeps another third of a face height clear.
+  const hair = Math.max(...faces.map((face) => face.h)) / 3;
+  const ys = beside ? [center - height / 2, top - hair - gap - height, chin + gap] : [zones.caption.y + zones.caption.h + gap];
   const active = overlays.filter((e) => event.start < e.end && event.end > e.start);
-  for (const x of [safe.x, safe.x + safe.w - width]) {
+  for (const raw of ys) for (const x of [...(beside ? [safe.x + (safe.w - width) / 2] : []), safe.x, safe.x + safe.w - width]) {
+    if (raw < safe.y) continue;
+    const y = Math.min(safe.y + safe.h - height, raw);
     const box = { x, y, w: width, h: height };
     if (x + width > safe.x + safe.w || y + height > safe.y + safe.h) continue;
     if ([zones.caption, ...faces, ...active.map((e) => e.box), ...(event.start < (zones.headline?.end || 0) ? [zones.headline] : [])].some((b) => boldBoxesOverlap(box, b, gap))) continue;
@@ -150,10 +158,13 @@ export function placeBoldSticker(event, context) {
   if (!image || !/^assets\/bold-extras\/(photo|icon)-[a-f0-9]+\.png$/.test(image.src)) return null;
   const endFrame = Math.min(Math.round(duration * fps), event.startFrame + Math.round(clamp(cfg.hold, 0.9, 1.5, 1.2) * fps));
   if (endFrame - event.startFrame < Math.ceil(0.9 * fps) || endFrame - event.startFrame <= 10) return null;
-  const width = clamp(cfg.width, 220, 320, 260) * context.plan.canvas.width / 1080, height = width * image.height / image.width;
-  const timed = { ...event, endFrame, end: endFrame / fps };
-  const box = placeBoldExtraBox(timed, context, width, height, true);
-  return box && { box, endFrame, landingFrame: event.startFrame + 6, data: image };
+  const timed = { ...event, endFrame, end: endFrame / fps }, unit = context.plan.canvas.width / 1080;
+  // Shrink toward 200 px when the only free spot (above a centered head) is short; never smaller.
+  for (let w = clamp(cfg.width, 220, 320, 260); w >= 200; w -= 20) {
+    const width = w * unit, box = placeBoldExtraBox(timed, context, width, width * image.height / image.width, true);
+    if (box) return { box, endFrame, landingFrame: event.startFrame + 6, data: image };
+  }
+  return null;
 }
 
 export function validateBoldPayoff(pick, context) {

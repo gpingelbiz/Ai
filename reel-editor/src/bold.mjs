@@ -97,7 +97,9 @@ export function validateBoldPicks(reply, words, { settings = boldSettings(), con
   const turns = rangeList(reply.turns);
   const speakers = validateBoldSpeakers(reply.speakers, words);
   // Topic label indexes may also occur in another visual; its display time is the conversation stretch.
-  const overlayRanges = [...rangeList(reply.overlays.filter((p) => p?.kind !== "topic")), ...reply.overlays.filter((p) => p?.kind === "topic" && span(p, n) && reason(p))];
+  // Different kinds may share words (a price tag beside the math panel); the shared placer keeps their boxes apart.
+  const kinds = [...new Set(reply.overlays.map((p) => p?.kind))];
+  const overlayRanges = kinds.flatMap((kind) => kind === "topic" ? reply.overlays.filter((p) => p?.kind === "topic" && span(p, n) && reason(p)) : rangeList(reply.overlays.filter((p) => p?.kind === kind))).sort((a, b) => a.from - b.from);
   const overlays = overlayRanges.map((pick) => validateBoldOverlay(pick, { ...context, words, settings, argument, punch })).filter(Boolean);
   return { schemaVersion: 1, argument, headline: h && { from: h.from, to: h.to, emphasis: h.emphasis, reason: h.reason.trim() }, punch, emphasis, turns, ...(reply.speakers != null ? { speakers } : {}), overlays, ...(dropped.length ? { dropped: dropped.length } : {}) };
 }
