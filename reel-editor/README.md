@@ -478,6 +478,10 @@ npm test
 
 Covers cut planning (silence, fillers, stutters, false starts, deliberate repeats), word remapping, caption grouping and keyword picking, hook and zoom planning, and the generated composition HTML. An end-to-end render needs ffmpeg and Chrome; run `reel edit examples/...` on any clip with `--transcript examples/sample-words.json` to exercise it without Whisper.
 
+Sound timing uses `src/event-clock.mjs`: `eventClock({ landAt, sfx: "slam.wav", fps }).start` aligns the file's measured peak to a visual landing on whole frames. `assets/sfx/onsets.json` records attack and peak samples for all vendored WAVs; tests remeasure the files and their hashes. Legacy and glow cue selection, order, levels and variants stay the same. Normal `plan.json` tracks keep `{id, src, start, duration, volume, track}`; only cue starts change. Generated `--sfx` files are measured locally after generation. Saved plans retain their saved audio times until cues are rebuilt.
+
+For a finished render, run `node scripts/sync-check.mjs render.mp4 plan.json [--boxes boxes.json]`. The optional JSON maps cue IDs to `{x,y,w,h}` in canvas pixels; tight boxes should exclude the speaker. The read-only report contains audio correlation, a visual landing candidate from frame differences, and `deltaMs` (positive means audio is late). Moving footage or overlapping graphics can make the visual estimate uncertain; inspect the reported frames. No browser is used. `{audit:true}` on either cue scheduler adds `sync` details for diagnostics without changing normal plans. Frame-zero events report clipped preroll when alignment is impossible.
+
 ## Credits
 
 Built on [HyperFrames](https://github.com/heygen-com/hyperframes) (Apache-2.0) and GSAP (bundled `assets/vendor/gsap.min.js`, GreenSock standard license). Fonts: Anton and Inter (SIL OFL).

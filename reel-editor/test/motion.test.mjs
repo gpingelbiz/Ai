@@ -66,11 +66,11 @@ test("whip: directional SVG blur and seven-frame slides render, with move.wav cu
   assert.match(html, /"brollCut":"whip"/);
   const cues = soundCues({ broll: [{ start: 6, duration: 2 }], brollCut: "whip" });
   assert.deepEqual(cues.map((c) => [c.id, c.src, c.start]), [
-    ["sfx-move-1", "assets/sfx/move.wav", 5.94],
-    ["sfx-move-2", "assets/sfx/move.wav", 7.94],
+    ["sfx-move-1", "assets/sfx/move.wav", 181 / 30],
+    ["sfx-move-2", "assets/sfx/move.wav", 234 / 30],
   ]);
   const shared = soundCues({ broll: [{ start: 6, duration: 2, layout: "window" }, { start: 12, duration: 2, layout: "split" }, { start: 18, duration: 2, layout: "cutout" }], brollCut: "whip" });
-  assert.deepEqual(shared.map((c) => c.start), [17.94, 19.94], "window and split cutaways do not whip, so they get no whoosh");
+  assert.deepEqual(shared.map((c) => c.start), [541 / 30, 594 / 30], "window and split cutaways do not whip, so they get no whoosh");
   parseInlineScript(html);
 });
 

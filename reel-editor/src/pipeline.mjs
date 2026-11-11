@@ -22,6 +22,7 @@ import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
 import { planBumps, planDrift } from "./motion.mjs";
 import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
+import { eventClock, legacyLanding, measureSfxFile } from "./event-clock.mjs";
 import { runTextcheck } from "./textcheck.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
@@ -952,7 +953,7 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
   }
 
   if (preset.audio.sounds && cues) {
-    const tracks = soundCues({ ...cues, markers: !!preset.audio.soundMarkers, level: preset.audio.soundsVolume ?? 0.3 }).filter((t) => t.start < duration - 0.2);
+    const tracks = soundCues({ ...cues, markers: !!preset.audio.soundMarkers, level: preset.audio.soundsVolume ?? 0.3, fps: preset.render?.fps || 30, zoomStyle: preset.zooms?.style || "snap", graphicsMode: preset.graphics?.mode || "overlay", duration });
     audio.tracks.push(...tracks);
     log(`sounds: ${tracks.length ? describeCues(tracks) : "nothing to sound"}`);
   }
@@ -960,14 +961,16 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
     if (!eleven.hasKey()) warn("--sfx needs ELEVENLABS_API_KEY; skipping sound effects");
     else {
       const sfxDir = ensureDir(path.join(assets, "sfx"));
+      const clock = (kind, event, sfx) => eventClock({ landAt: legacyLanding(kind, event, { fps: preset.render?.fps || 30, zoomStyle: preset.zooms?.style || "snap", hookStyle: preset.hook?.style || "gold" }), sfx, fps: preset.render?.fps || 30 }).start;
       const zoomIns = zooms.filter((z) => z.scale > 1);
       if (zoomIns.length) {
         await eleven.sfx({ prompt: preset.audio.sfxPrompts.zoom, durationSeconds: 0.7, out: path.join(sfxDir, "whoosh.mp3") });
-        zoomIns.forEach((z, i) => audio.tracks.push({ id: `sfx-zoom-${i}`, src: "assets/sfx/whoosh.mp3", start: r3(Math.max(0, z.t - 0.05)), duration: 0.7, volume: preset.audio.sfxVolume, track: 9 }));
+        const transient = measureSfxFile(path.join(sfxDir, "whoosh.mp3"));
+        zoomIns.forEach((z, i) => audio.tracks.push({ id: `sfx-zoom-${i}`, src: "assets/sfx/whoosh.mp3", start: clock("move", z, transient), duration: 0.7, volume: preset.audio.sfxVolume, track: 9 }));
       }
       if (hook) {
         await eleven.sfx({ prompt: preset.audio.sfxPrompts.hook, durationSeconds: 0.6, out: path.join(sfxDir, "pop.mp3") });
-        audio.tracks.push({ id: "sfx-hook", src: "assets/sfx/pop.mp3", start: r3(hook.start + 0.04), duration: 0.6, volume: preset.audio.sfxVolume, track: 9 });
+        audio.tracks.push({ id: "sfx-hook", src: "assets/sfx/pop.mp3", start: clock("hook", hook, measureSfxFile(path.join(sfxDir, "pop.mp3"))), duration: 0.6, volume: preset.audio.sfxVolume, track: 9 });
       }
       log(`sfx: ${audio.tracks.filter((t) => t.id.startsWith("sfx")).length} hits`);
     }
