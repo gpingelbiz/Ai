@@ -52,7 +52,7 @@ export async function resolveBoldTalk(plan, picks, detection, { settings, render
 export function boldTalkCSS(settings, plan) {
   if (!plan.bold?.groups.some((g) => g.speaker === "other")) return "";
   const weight = Math.max(400, Math.min(650, Number(settings.talk.otherWeight) || 600));
-  return `\n      .bold-root .bold-other, .bold-root .bold-other .bold-word { color:${settings.colors.gold}; font-weight:${weight}; }`;
+  return `\n      .bold-root .bold-other, .bold-root .bold-other .bold-word { color:${settings.colors.gold}; font-weight:${weight}; -webkit-text-stroke:${10 * plan.canvas.width / 1080}px ${settings.colors.black}; paint-order:stroke fill; }`;
 }
 
 export function validateBoldTopic(pick, { words, settings }) {
