@@ -7,6 +7,12 @@ description: Edit a raw talking-head video into a finished reel on the local mac
 
 Run everything with the `reel` CLI in this folder (`node bin/reel.mjs` if it is not linked). No hosted service, no credits.
 
+## Bold look
+
+For Greg's vertical reels, `reel edit "<video>" --preset pingel-bold` selects the quiet/punch look beside glow. `reel restyle "<job>" --look bold` writes a separate `<job>-bold` job, keeps cuts and music, and replaces old glow direction. Default restyle remains glow. Direction is reused from `bold-picks.json`; `--repick` replaces it. `--no-render` builds without rendered face measurements, so check placement on the first real render.
+
+Claude chooses inclusive word ranges for the argument, headline, punch spans, emphasis and optional overlays in one call. Code rebuilds every caption from `plan.words`; never add screen copy or numbers. `plan.bold.schemaVersion: 1` holds the headline, groups, argument, measured face/caption zones, accepted overlays and frame-based landing events. All timing and typography settings live under the personal preset's `bold` block. Future overlay modules register in `src/bold-overlays.mjs`; they must honor its grounding, placement and seek-safe timeline contract. No client jobs, generated Greg images or compulsory graphics. Glow stays Greg's default.
+
 ## Standard run
 
 1. Confirm the input is a local file path. Drive or Dropbox links must be downloaded first.

@@ -26,6 +26,7 @@ import { runTextcheck } from "./textcheck.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
+import { boldEnabled, restyleBold } from "./bold.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
@@ -584,7 +585,7 @@ export async function runEdit(input, opts = {}) {
     else log("cutout b-roll: no cutaways to matte");
   }
   let speakerPlan = null;
-  if (preset.zooms.enabled) {
+  if (preset.zooms.enabled && !boldEnabled(preset, { preset: preset.name, canvas: canvas0 })) {
     // onKey uses transcript punctuation: caption grouping strips sentence-ending periods from the display text.
     zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, words: cleanWords, busy: [...transientCards, ...broll, ...evidence], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key ${preset.zooms.onKey ? "words" : "lines"}${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
@@ -843,6 +844,12 @@ export async function runEdit(input, opts = {}) {
     words: cleanWords,
     ending: endingMetadata(words, meta.duration, cuts, preset.cuts, endingOverride),
   };
+  if (opts.noRender && boldEnabled(preset, plan)) {
+    const pickFile = path.join(workDir, "bold-picks.json");
+    const result = await restyleBold(plan, { outDir: workDir, protectedPhrases, picks: !opts.repick ? readJSONSafe(pickFile) : null });
+    Object.assign(plan, result.plan);
+    writeJSON(pickFile, result.picks);
+  }
   writeJSON(path.join(workDir, "plan.json"), plan);
   writeFeatures(workDir, plan, { sceneSchema });
   composeProject(plan, projectDir);
@@ -850,8 +857,20 @@ export async function runEdit(input, opts = {}) {
   if (opts.noRender) return { workDir, plan };
   // The glow look (Greg's vertical reels only, never a client job): a quick first render gives the face positions with
   // every zoom in place, then Claude picks the feature lines, icons and scenes and the final render is checked as usual.
-  const glowOn = glowEnabled(preset, plan);
-  let output = await renderProject(workDir, glowOn ? { ...opts, noPreflight: true, noReview: true } : opts);
+  const boldOn = boldEnabled(preset, plan);
+  const glowOn = !boldOn && glowEnabled(preset, plan);
+  let output = await renderProject(workDir, glowOn || boldOn ? { ...opts, noPreflight: true, noReview: true, ...(boldOn ? { boldMeasure: true } : {}) } : opts);
+  if (boldOn) {
+    const pickFile = path.join(workDir, "bold-picks.json");
+    const result = await restyleBold(plan, { outDir: workDir, protectedPhrases, render: output, picks: !opts.repick ? readJSONSafe(pickFile) : null });
+    Object.assign(plan, result.plan);
+    writeJSON(pickFile, result.picks);
+    writeJSON(path.join(workDir, "plan.json"), plan);
+    writeFeatures(workDir, plan, { sceneSchema });
+    composeProject(plan, projectDir);
+    log(`bold look: ${plan.bold.groups.length} phrases, ${plan.bold.overlays.length} overlays`);
+    output = await renderProject(workDir, opts);
+  }
   if (glowOn) {
     try {
       const library = loadIconLibrary(glowIconDir(preset.glow));
@@ -1042,8 +1061,10 @@ export async function renderProject(workDir, opts = {}) {
   if (plan.video.hasAudio && plan.style?.render?.deliveryLoudness !== false) await normalizeDelivery(output);
   const outMeta = await probe(output);
   log(`done in ${Math.round((Date.now() - t0) / 1000)}s: ${output} (${outMeta.width}x${outMeta.height}, ${r3(outMeta.duration)}s)`);
-  const textcheck = await runTextcheck(workDir, { video: output });
-  (textcheck.verdict === "hold" ? warn : log)(`text check: ${textcheck.verdict}${textcheck.notes.length ? ` (${textcheck.notes.join("; ")})` : ""}`);
+  if (!(opts.boldMeasure && boldEnabled(plan.style, plan) && !plan.bold)) {
+    const textcheck = await runTextcheck(workDir, { video: output });
+    (textcheck.verdict === "hold" ? warn : log)(`text check: ${textcheck.verdict}${textcheck.notes.length ? ` (${textcheck.notes.join("; ")})` : ""}`);
+  }
   // Preflight: sound, the open, dead air, length and layout checked on the finished file; preflight.txt sits next
   // to plan.json. With preflight.strict a failing file is kept as <name>.failed.mp4 and the run stops.
   const pf = plan.style?.preflight;

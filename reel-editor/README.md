@@ -113,6 +113,14 @@ To change what gets cut, edit `cuts.json` is not enough; rerun `reel edit` with 
 
 `presets/pingel-brand.json` is the default and carries the brand look. `presets/clean.json` is plain subtitles. Any key in `presets/_defaults.json` can be overridden in a preset or passed as a path: `--preset my-look.json`.
 
+### Bold look
+
+Greg's vertical reels can use `reel edit raw.mov --preset pingel-bold` (or `REEL_PRESET=pingel-bold`). Glow remains the default. `reel restyle videos/<name> --look bold` creates `videos/<name>-bold`, preserving footage, cuts and project music. Restyle without `--look` still uses glow. Add `--repick` to edit or restyle to replace the saved direction; `--no-render` writes a project without measuring a rendered face.
+
+Bold makes one argument-planning call. `bold-picks.json` saves `schemaVersion: 1`, the transcript hash, `argument` ranges (`buyerProblem`, `answer`, `payoff`), a verbatim `headline` range with one `emphasis` index, `punch` spans with roles and reasons, quiet `emphasis` word indexes, optional argument `turns`, and `overlays`. Ranges are inclusive. Invalid direction falls back to the opening sentence and quiet captions. `plan.json` retains `words` and adds `bold` version 1 with the headline, caption `groups`, argument, measured `zones`, accepted `overlays` and event landing frames/seconds. Every spoken word remains in one caption group while the headline holds.
+
+The preset's `bold` block controls headline size/hold (3 to 4.5 seconds), phrase timing, quiet Inter 650 at 84 px, punch Inter 900 at 104 px with a 12 px stroke, gold and punch budgets, chin clearance, safe bounds and semantic framing limits. Dimensions scale from 1080×1920. B-roll and legacy graphics are off by default. The new registry in `src/bold-overlays.mjs` accepts future kinds through one module import; placement protects the face, headline and caption zone, and sounds use only accepted events. No overlay kinds ship in this phase. Client jobs cannot enable bold, and its preset is excluded from client releases.
+
 ## VSL sales videos
 
 Drop a recording into `~/Desktop/Reels/Raw - VSL Editor` (shortcut to `~/Reels/raw-vsl`). Each client's `~/Desktop/Reels/Clients/<Name>/Raw - VSL Editor` points to that client's `raw-vsl`. Re-run the installer to add Greg's shortcut and watcher path; re-run `node scripts/client.mjs add their-brand.json` for an existing client's shortcut and launchd path. The scanner also creates `raw-vsl` in existing client roots.

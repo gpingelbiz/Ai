@@ -15,6 +15,10 @@ import { glowIconAction, glowIconExtras, glowIconsCSS, GLOW_ICONS_JS } from "./g
 import { glowScenesHTML, glowOverlaysHTML, glowScenesCSS, glowRuntime, GLOW_SCENES_JS } from "./glow-scenes.mjs";
 import { GLOW_DEPTH_JS } from "./glow-depth.mjs";
 import { glowLightWord, glowLightCSS, glowLightRuntime, GLOW_LIGHT_JS } from "./glow-light.mjs";
+import { boldEnabled, boldSettings } from "./bold.mjs";
+import { boldHTML, boldCSS, boldRuntime, boldOverlayTimeline, BOLD_JS } from "./bold-render.mjs";
+import { isClientJob } from "./client-mode.mjs";
+import { warn } from "./util.mjs";
 
 // The quiet and serif captions' shadow. "strong" (captions.quietShadow) is darker and tighter, for thin light type over
 // light clothes or hair (Julee's cream serif on a striped shirt, 2026-11-03); "soft" is the October 30 look.
@@ -146,6 +150,9 @@ export function composeProject(plan, projectDir) {
 export function renderHTML(plan, footage) {
   const { width: W, height: H } = plan.canvas;
   const s = plan.style;
+  const bold = boldEnabled(s, plan);
+  const boldStyle = bold ? boldSettings(s) : null;
+  if (!bold && isClientJob() && (plan.bold || s.bold?.enabled)) warn("bold look disabled for a client job");
   const c = s.colors;
   const cap = s.captions;
   const hk = s.hook;
@@ -154,7 +161,7 @@ export function renderHTML(plan, footage) {
   const stroke = r3(cap.strokeWidthFrac * H);
   const hookFont = Math.round(hk.fontSizeFrac * H);
   const hookStroke = r3((hk.strokeWidthFrac ?? cap.strokeWidthFrac) * H);
-  const captions = plan.captions || [];
+  const captions = bold ? [] : plan.captions || [];
   const premise = plan.premise?.box && s.brand ? plan.premise : null;
   const evidenceList = (plan.evidence || []).filter((item) => item.src);
   const evidenceTokens = evidenceList.length && s.brand ? structuredClone(s.brand) : null;
@@ -200,7 +207,7 @@ export function renderHTML(plan, footage) {
   };
   // "glow": the studio look. Feature lines (g.kind "feat") float in a planned spot as light-weight glowing capitals,
   // built word by word; every other line is a plain sentence-case subtitle low in the frame.
-  const glow = cap.style === "glow";
+  const glow = !bold && cap.style === "glow";
   const hookPlace = glow && plan.hook?.place?.depth && !plan.behind?.src ? plan.hook.place.fallback : plan.hook?.place;
   const subFont = Math.round((cap.subFontSizeFrac || 0.028) * H);
   const glowCap = (g, i, spans) => g.kind === "feat" && g.place
@@ -228,7 +235,7 @@ export function renderHTML(plan, footage) {
   const hookInner = headline
     ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `${w.br ? "<br>" : ""}<span class="hw${w.key ? " k" : ""}">${esc(w.text)}${glow ? glowLightWord(w.text) : ""}</span>`).join(" ")}${hk.treat === "type" ? '<span class="hook-cursor"></span>' : ""}</div><div id="hook-bar"></div></div>`
     : `<span id="hook-text">${esc(plan.hook?.text || "")}</span>`;
-  const hookHTML = plan.hook
+  const hookHTML = !bold && plan.hook
     ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}${hk.plaque === true ? " hook-plaque" : ""}${glow && headline ? " hook-glow" : ""}${glow && hookPlace?.depth ? " hook-glow-depth" : ""}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
     : "";
 
@@ -418,7 +425,7 @@ export function renderHTML(plan, footage) {
 
   const runtimePlan = {
     duration: D,
-    hook: plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(hk.side ? { side: true } : {}), ...(Number.isFinite(plan.hook.headTop) && !behind && !hk.side ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
+    hook: !bold && plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(hk.side ? { side: true } : {}), ...(Number.isFinite(plan.hook.headTop) && !behind && !hk.side ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
@@ -459,6 +466,7 @@ export function renderHTML(plan, footage) {
     reveal,
     ...(sceneList.length || overList.length ? glowRuntime(sceneList, overList) : {}),
     ...(glow ? { glow, capKinds: captions.map((g) => (g.kind === "feat" && g.place ? "feat" : "sub")), capSwaps: captions.map((g) => g.kind === "feat" && g.place && g.variant === "swap" ? { wrong: g.words.findIndex((w) => w.wrong), right: g.words.findIndex((w) => w.right) } : null), glowLights: glowLightRuntime(plan), ...(behind && hookPlace?.depth ? { glowDepth: { bottom: hookPlace.bottom, size: hookPlace.size } } : {}) } : {}),
+    ...(bold ? { bold: boldRuntime(plan, boldStyle) } : {}),
     capCut: cap.animation === "cut",
     capDim: dimFuture,
     hookPush: s.hook?.push !== false,
@@ -672,11 +680,11 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
       #hook.hook-plaque #hook-lines::before, #hook.hook-plaque #hook-lines::after { display: none; }
       #hook.hook-plaque #hook-lines .hw, #hook.hook-plaque #hook-lines .hw.k { color: ${c.text}; background: none; transform: none; font-style: normal; font-size: 1em; text-decoration: none; text-shadow: none; }
       #hook.hook-plaque #hook-lines .hw.k { color: ${c.accent}; }
-` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}
+` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}${bold ? boldCSS(boldStyle, plan) : ""}
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="reel" data-start="0" data-width="${W}" data-height="${H}" data-duration="${D}" data-fps="${s.render?.fps || 30}"${plan.video.hasAudio || tracks.length ? ` data-fx-chain="${esc(JSON.stringify({ version: 1, nodes: [{ type: "truepeak", id: "ceiling", label: "Delivery ceiling", params: { ceiling: -1.5, lookahead: 3, release: 80 } }] }))}"` : ""}>
+    <div id="root"${bold ? ' class="bold-root"' : ""} data-composition-id="reel" data-start="0" data-width="${W}" data-height="${H}" data-duration="${D}" data-fps="${s.render?.fps || 30}"${plan.video.hasAudio || tracks.length ? ` data-fx-chain="${esc(JSON.stringify({ version: 1, nodes: [{ type: "truepeak", id: "ceiling", label: "Delivery ceiling", params: { ceiling: -1.5, lookahead: 3, release: 80 } }] }))}"` : ""}>
 ${whipFiltersHTML}${videoLayerHTML}
 ${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div id="defocus"></div>` : ""}
 ${openHTML}
@@ -693,7 +701,7 @@ ${brollCutoutHTML}
 ${popoutCutoutHTML}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
 ${capsHTML}
-      </div>
+      </div>${bold ? `\n${boldHTML(plan, { settings: boldStyle })}` : ""}
 ${ctaHTML}
 ${audioHTML}
     </div>
@@ -839,7 +847,7 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
           }
           tl.set(el, { opacity: 0 }, g.end);
         });
-${glow ? GLOW_LIGHT_JS : ""}        // Face-tracking reframe: slide the crop window across a wide source as the speaker moves.
+${glow ? GLOW_LIGHT_JS : ""}${bold ? BOLD_JS + boldOverlayTimeline(plan, boldStyle) : ""}        // Face-tracking reframe: slide the crop window across a wide source as the speaker moves.
         if (PLAN.reframe.length) {
           const first = PLAN.reframe[0];
           tl.set(FOOT, { objectPosition: first.x + "% 50%" }, 0);
