@@ -154,7 +154,7 @@ test("restyle makes one injected call, caches direction, measures the baseline a
 test("offline, malformed and absent direction use all quiet fallback, reusable without a second call", async () => {
   for (const ask of [async () => { throw new Error("offline"); }, async () => "junk", async () => JSON.stringify({ schemaVersion: 1 })]) {
     const lines = []; const first = await restyleBold(plan(), { env: {}, ask, log: (line) => lines.push(line) });
-    assert.equal(first.picks.fallback, true); assert.equal(lines.length, 1);
+    assert.equal(first.picks.fallback, true); assert.equal(lines.filter((line) => line.startsWith("bold direction fallback:")).length, 1);
     assert.ok(first.plan.bold.groups.every((g) => g.mode === "quiet"));
     const second = await restyleBold(plan(), { env: {}, picks: first.picks, ask: async () => { assert.fail("cached fallback asks again"); } });
     assert.deepEqual(second.plan.bold, first.plan.bold);
@@ -167,7 +167,7 @@ test("cached direction cannot reuse indexes for another transcript and object-re
   p.words[0].text = "Different";
   const messages = [];
   const second = await restyleBold(p, { env: {}, picks: first.picks, log: (line) => messages.push(line), ask: async () => assert.fail("cached validation must not ask") });
-  assert.equal(second.picks.fallback, true); assert.match(messages[0], /another transcript/);
+  assert.equal(second.picks.fallback, true); assert.ok(messages.some((line) => /another transcript/.test(line)));
   const empty = { ...plan(), words: [] };
   assert.deepEqual((await restyleBold(empty, { env: {}, ask: async () => assert.fail("no words") })).plan.bold.groups, []);
 });

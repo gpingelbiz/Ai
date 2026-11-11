@@ -25,6 +25,9 @@
     "punch": { "size": 104, "weight": 900, "lineHeight": 1.02, "stroke": 12, "payoffScale": 1.9, "payoffFrames": 4, "payoffFrom": 0.96, "payoffSettle": false },
     "zone": { "left": 76, "right": 1004, "top": 200, "bottom": 1600, "captionTop": 1056, "chinGap": 32, "overlayGap": 32, "headMargin": 0.15 },
     "faces": { "samplesPerSecond": 4 },
-    "framing": { "enabled": true, "maxPer30": 4, "minSpacing": 7.5 }
+    "framing": { "enabled": true, "maxPer30": 4, "minSpacing": 7.5 },
+    "proof": { "enabled": true, "manifest": "~/Reels/brand-assets/proof/manifest.json", "max": 2, "width": 820, "height": 360, "soundVolume": 0.12 },
+    "define": { "enabled": true, "max": 2, "width": 820, "maxWords": 14, "soundVolume": 0.12 },
+    "math": { "enabled": true, "max": 2, "widthFraction": 0.4, "size": 96, "resultSound": false, "soundVolume": 0.1 }
   }
 }

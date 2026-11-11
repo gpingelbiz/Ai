@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "id": "placeholder-call-report",
+      "file": "placeholder.png",
+      "crop": { "x": 0, "y": 0, "w": 1, "h": 1 },
+      "proves": "Placeholder call report, not real evidence",
+      "date": "2026-11-10",
+      "label": "Placeholder call report",
+      "redact": [],
+      "approved": false
+    }
+  ]
+}
