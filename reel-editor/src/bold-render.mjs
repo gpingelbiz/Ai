@@ -21,7 +21,7 @@ export function fitBoldText(words, { size = 84, width = 928, lineHeight = 1.08, 
   // Use one line at full size whenever it fits. Otherwise prefer legibility, then fewer lines.
   const full = options[0].size >= size ? options[0] : options.slice().sort((a, b) => b.size - a.size || a.lines.length - b.lines.length || Math.abs(a.widths[0] - a.widths.at(-1)) - Math.abs(b.widths[0] - b.widths.at(-1)))[0];
   const fontSize = Math.floor(full.size * 100) / 100;
-  return { size: fontSize, lines: full.lines.map(([from, to]) => ({ from, to })), h: Math.ceil(full.h), payoffScale };
+  return { size: fontSize, lines: full.lines.map(([from, to]) => ({ from, to })), h: Math.min(Math.ceil(full.h), Math.floor(maxHeight)), payoffScale };
 }
 
 function rows(plan, item, headline = false) {
@@ -58,7 +58,7 @@ export function boldCSS(settings, plan) {
       .bold-root .bold-lines { display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; transform-origin:50% 50%; }
       .bold-root .bold-row { display:block; white-space:nowrap; }
       .bold-root .bold-word { display:inline-block; white-space:nowrap; word-break:keep-all; overflow-wrap:normal; }
-      .bold-root .bold-quiet { font-weight:${quiet.weight}; line-height:${quiet.lineHeight}; text-shadow:${quiet.shadow}; }
+      .bold-root .bold-quiet { font-weight:${quiet.weight}; line-height:${quiet.lineHeight}; text-shadow:${quiet.shadow};${quiet.stroke ? ` -webkit-text-stroke:${quiet.stroke * plan.canvas.width / 1080}px ${c.black}; paint-order:stroke fill;` : ""} }
       .bold-root .bold-quiet .bold-emphasis { font-weight:${quiet.emphasisWeight}; }
       .bold-root .bold-punch { font-weight:${punch.weight}; text-transform:uppercase; line-height:${punch.lineHeight}; -webkit-text-stroke:${punch.stroke * plan.canvas.width / 1080}px ${c.black}; paint-order:stroke fill; text-shadow:0 5px 0 ${c.black},0 5px 18px rgba(0,0,0,0.6); }
       .bold-root .bold-gold { color:${c.gold}; }

@@ -53,7 +53,12 @@ test("strict validation accepts grounded ranges and rejects junk, overlaps, inve
   assert.equal(validateBoldPicks(valid, words).headline.emphasis, 1);
   assert.deepEqual(valid, direction(), "validation preserves its input");
   const invalid = [null, {}, { ...valid, schemaVersion: 2 }, { ...valid, headline: { ...valid.headline, from: -1 } }, { ...valid, headline: { ...valid.headline, text: "Make a million dollars" } }, { ...valid, headline: { ...valid.headline, to: words.length } }, { ...valid, headline: { ...valid.headline, emphasis: 10 } }, { ...valid, argument: { ...valid.argument, answer: { from: 3, to: 6, reason: "overlap" } } }, { ...valid, punch: [...valid.punch, valid.punch[0]] }, { ...valid, punch: [{ ...valid.punch[0], payoff: 16 }] }, { ...valid, punch: [{ ...valid.punch[0], role: "magic" }] }, { ...valid, turns: [{ from: 0.5, to: 4, reason: "fraction" }] }, { ...valid, emphasis: [{ word: 999, gold: true, reason: "invented" }] }, { ...valid, emphasis: [valid.emphasis[0], valid.emphasis[0]] }, { ...valid, overlays: [{ kind: "unknown", from: 0, to: 999, reason: "bad range" }] }];
-  for (const reply of invalid) assert.throws(() => validateBoldPicks(reply, words));
+  // A broken headline, schema or argument still throws (fallback); a single bad punch, turn, emphasis or overlay is dropped.
+  const fatal = invalid.slice(0, 8), droppable = invalid.slice(8);
+  for (const reply of fatal) assert.throws(() => validateBoldPicks(reply, words));
+  for (const reply of droppable) assert.ok(validateBoldPicks(reply, words).dropped >= 1 || validateBoldPicks(reply, words).overlays.length === 0);
+  const noEmphasis = { ...valid, punch: valid.punch.map(({ emphasis, ...p }) => p) };
+  assert.equal(validateBoldPicks(noEmphasis, words).punch.length, valid.punch.length, "a punch without its emphasis word keeps the punch");
   assert.deepEqual(validateBoldPicks({ ...valid, overlays: [{ kind: "unknown", from: 0, to: 2, reason: "No registered handler" }] }, words).overlays, []);
 });
 
@@ -186,14 +191,14 @@ test("semantic zooms and returns all land on transcript beats, while no-face fai
   assert.ok(tight.plan.bold.zones.caption.y + tight.plan.bold.zones.caption.h <= 1600);
 });
 
-test("an extreme close crop gains safe chest room and every framing move has a semantic event", async () => {
+test("an extreme close crop keeps captions in the safe area without lifting the footage, and every framing move has a semantic event", async () => {
   const p = plan();
   const result = await restyleBold(p, { env: {}, picks: direction(), render: "/baseline.mp4", detect: async () => ({ frames: [{ t: 0, faces: [{ x: 0.2, y: 0.3, w: 0.6, h: 0.5 }] }] }) });
   const b = result.plan.bold;
-  assert.ok(result.plan.framing.shift < 0);
-  assert.ok(b.zones.caption.y >= b.zones.chin + 32 - 0.01);
+  assert.ok(!(result.plan.framing?.shift < 0), "the footage is never lifted (a black strip under full-height sources)");
+  // The chin sits below the safe area here, so two quiet lines go over the lowest part of the face instead.
   assert.ok(b.zones.caption.y + b.zones.caption.h <= 1600);
-  for (const face of b.zones.faces) assert.equal(boldBoxesOverlap(face, b.zones.caption), false);
+  assert.ok(1600 - b.zones.caption.y >= 84 * 1.08 * 2 - 0.01);
   assert.ok(result.plan.zooms.length <= 4);
   assert.equal(b.events.filter((event) => event.kind === "framing").length, result.plan.zooms.length);
   const quiet = await restyleBold(p, { env: {}, picks: fallbackBoldDirection(words) });

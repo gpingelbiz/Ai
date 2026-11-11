@@ -1,5 +1,6 @@
 import { claudeText, firstJSON } from "./claude.mjs";
 import path from "node:path";
+import fs from "node:fs";
 import { detectFaces, zoomDuring } from "./placement.mjs";
 import { phraseSplit } from "./captions.mjs";
 import { planZooms } from "./zooms.mjs";
@@ -16,7 +17,7 @@ const DEFAULTS = {
   colors: { black: "#0B0B0D", gold: "#C8A24B", bone: "#F5F1E8" },
   headline: { minWords: 4, maxWords: 8, hold: 3, longHold: 4.5, longWords: 7, size: 84, weight: 900, font: "Inter", lineHeight: 1.08, padding: 20, opacity: 0.94 },
   phrases: { targetWords: 3, minWords: 2, maxWords: 4, protectedMaxWords: 7, targetSeconds: 0.75, minSeconds: 0.4, maxSeconds: 1.8, lead: 0.05, maxGap: 0.7, goldShare: 0.25, punchShare: 0.4, protectedPhrases: [] },
-  quiet: { size: 84, weight: 650, emphasisWeight: 900, lineHeight: 1.08, shadow: "0 3px 8px rgba(0,0,0,0.85), 0 5px 22px rgba(0,0,0,0.65)" },
+  quiet: { size: 84, weight: 650, emphasisWeight: 900, lineHeight: 1.08, stroke: 6, shadow: "0 3px 8px rgba(0,0,0,0.85), 0 5px 22px rgba(0,0,0,0.65)" },
   punch: { size: 104, weight: 900, lineHeight: 1.02, stroke: 12, payoffScale: 1.9, payoffFrames: 4, payoffFrom: 0.96, payoffSettle: false },
   zone: { left: 76, right: 1004, top: 200, bottom: 1600, captionTop: 1056, chinGap: 32, overlayGap: 32, headMargin: 0.15 },
   faces: { samplesPerSecond: 4 },
@@ -69,19 +70,27 @@ export function validateBoldPicks(reply, words, { settings = boldSettings(), con
   }
   const args = Object.values(argument).filter(Boolean);
   if (args.some((p, i) => args.slice(i + 1).some((q) => overlaps(p, q)))) throw new Error("overlapping bold argument");
+  // One bad pick is dropped (with a note), never the whole direction: a punch without its emphasis word cost Pushy
+  // every punch line and gold word on 2026-11-11. Overlaps keep the earlier pick.
+  const dropped = [];
   const rangeList = (list, check = () => true) => {
-    if (list.some((p) => !span(p, n) || !reason(p) || !check(p)) || list.some((p, i) => list.slice(i + 1).some((q) => overlaps(p, q)))) throw new Error("invalid or overlapping bold spans");
-    return list.map((p) => ({ ...p })).sort((a, b) => a.from - b.from);
+    const kept = [];
+    for (const p of [...list].filter((p) => p && typeof p === "object").sort((a, b) => a.from - b.from)) {
+      if (!span(p, n) || !reason(p) || !check(p) || kept.some((q) => overlaps(p, q))) { dropped.push(p); continue; }
+      kept.push({ ...p });
+    }
+    return kept;
   };
+  for (const p of reply.punch) if (p && !Number.isInteger(p.emphasis) && span(p, n)) p.emphasis = p.role === "payoff" && Number.isInteger(p.payoff) ? p.payoff : p.to;
   const punch = rangeList(reply.punch, (p) => ["money", "objection", "rant", "payoff"].includes(p.role) && inside(p, p.emphasis) && (p.payoff == null || (p.role === "payoff" && inside(p, p.payoff) && /\d|^(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)$/i.test(token(words[p.payoff].text)))));
-  const emphasis = reply.emphasis.map((p) => {
-    if (!Number.isInteger(p.word) || p.word < 0 || p.word >= n || typeof p.gold !== "boolean" || !reason(p)) throw new Error("invalid bold emphasis");
-    return { word: p.word, gold: p.gold, reason: p.reason.trim() };
-  });
-  if (new Set(emphasis.map((p) => p.word)).size !== emphasis.length) throw new Error("duplicate bold emphasis");
+  const emphasis = [];
+  for (const p of reply.emphasis) {
+    if (!p || !Number.isInteger(p.word) || p.word < 0 || p.word >= n || typeof p.gold !== "boolean" || !reason(p) || emphasis.some((q) => q.word === p.word)) { dropped.push(p); continue; }
+    emphasis.push({ word: p.word, gold: p.gold, reason: p.reason.trim() });
+  }
   const turns = rangeList(reply.turns);
   const overlays = rangeList(reply.overlays).map((pick) => validateBoldOverlay(pick, { ...context, words, settings, argument })).filter(Boolean);
-  return { schemaVersion: 1, argument, headline: h && { from: h.from, to: h.to, emphasis: h.emphasis, reason: h.reason.trim() }, punch, emphasis, turns, overlays };
+  return { schemaVersion: 1, argument, headline: h && { from: h.from, to: h.to, emphasis: h.emphasis, reason: h.reason.trim() }, punch, emphasis, turns, overlays, ...(dropped.length ? { dropped: dropped.length } : {}) };
 }
 
 /** First sentence, bounded to eight words. A short transcript stays honest instead of gaining filler. */
@@ -196,8 +205,14 @@ export function layoutBold(plan, picks, detection, { settings = boldSettings(pla
   let y = Math.max(safe.y, cfg.captionTop * sy, chin + gap);
   let titleY = above ? safe.y : Math.max(safe.y, chin + gap);
   if (titleHeight && !above) y = Math.max(y, titleY + titleHeight + gap);
+  // The footage is never lifted, so a low chin can leave too little room: keep at least two quiet lines inside the
+  // safe area (over the lowest part of the chin) and send the headline to the top when the two would meet.
+  const minRoom = settings.quiet.size * settings.quiet.lineHeight * 2 * sy;
+  if (safe.y + safe.h - y < minRoom) {
+    y = safe.y + safe.h - minRoom;
+    if (titleHeight && !above && titleY + titleHeight + gap > y) titleY = safe.y;
+  }
   const room = safe.y + safe.h - y;
-  if (room <= 0) throw new Error("bold captions need more room below the measured chin");
   let height = 0;
   for (const g of groups) {
     const mode = settings[g.mode];
@@ -240,6 +255,7 @@ export async function restyleBold(input, { render, ask = claudeText, picks: save
     if (!reply) {
       const raw = await ask(boldPrompt(plan.words, { duration, settings, context }), { timeoutMs: 900000 });
       reply = typeof raw === "string" ? firstJSON(raw) : raw;
+      if (outDir) try { fs.writeFileSync(path.join(outDir, "bold-reply.json"), typeof raw === "string" ? raw : JSON.stringify(raw, null, 2)); } catch { /* a debugging copy only */ }
     }
     // Fallback picks are also cached; recompute them from this transcript rather than trusting their ranges.
     picks = reply?.fallback ? fallbackBoldDirection(plan.words, { settings }) : validateBoldPicks(reply, plan.words, { settings, context });
@@ -259,16 +275,9 @@ export async function restyleBold(input, { render, ask = claudeText, picks: save
     // Reuse the engine's spacing and tight-frame limits. Returns also wait for an argument beat.
     plan.zooms = planZooms(cameraGroups, duration, { ...plan.style.zooms, busy: plan.broll, onKey: false, hook: null, maxPer30: settings.framing.maxPer30, minSpacing: settings.framing.minSpacing, snap: 0, tight: (detection?.frames || []).some((frame) => (frame.faces || []).some((face) => face.h > 0.4)) }).filter((key) => key.scale > 1).map((key, i) => ({ ...key, scale: i % 2 ? 1 : key.scale, t: Math.round(key.t * fps) / fps, snap: 0, cut: true }));
   }
-  // An extreme close crop needs a little more chest room. Shift the footage, never the captions onto the face.
-  const faces = boldFaceBoxes(detection, { W: plan.canvas.width, H: plan.canvas.height, zooms: plan.zooms, origin: plan.framing?.scale > 1 ? plan.framing.origin : plan.style.zooms?.origin, margin: settings.zone.headMargin });
-  const maxChin = faces.length ? Math.max(...faces.map((face) => face.y + face.h)) : (plan.head?.bottom || 0) * plan.canvas.height;
-  const sy = plan.canvas.height / 1920;
-  const required = (settings.headline.size * settings.headline.lineHeight * 2 + settings.headline.padding * 2 + settings.punch.size * settings.punch.payoffScale * 2 + settings.zone.chinGap * 3) * sy;
-  const shift = Math.min(0, (settings.zone.bottom * sy - required - maxChin) / plan.canvas.height);
-  if (shift < 0) {
-    plan.framing = { ...plan.framing, shift: (plan.framing?.shift || 0) + shift };
-    if (plan.head) plan.head = { top: plan.head.top + shift, bottom: plan.head.bottom + shift };
-  }
+  // The footage never moves: lifting it left a black strip under a full-height source (Pushy, 2026-11-11). Captions
+  // start under the chin and shrink to the room that is left.
+  const shift = 0;
   plan.bold = layoutBold(plan, picks, detection, { settings, faceShift: shift, protectedPhrases });
   plan.bold.overlays = placeBoldOverlays(picks.overlays, { ...context, words: plan.words, argument: picks.argument, zones: plan.bold.zones, fps, duration, settings });
   plan.bold.events = [
