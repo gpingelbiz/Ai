@@ -5,14 +5,16 @@ import { boldSettings, restyleBold, fallbackBoldDirection } from "../src/bold.mj
 import { boldHTML, boldCSS, boldOverlayTimeline } from "../src/bold-render.mjs";
 import { loadPreset } from "../src/presets.mjs";
 
-test("registry has no production kinds; registration is explicit, complete and unique", () => {
-  assert.deepEqual(boldOverlayKinds(), []); assert.equal(boldOverlayHandler("unknown"), null);
-  assert.equal(boldOverlayPrompts(), ""); assert.equal(validateBoldOverlay({ kind: "unknown" }, {}), null);
+test("trusted kinds register explicitly, and registration stays complete and unique", () => {
+  const trusted = boldOverlayKinds();
+  for (const kind of ["proof", "define", "math"]) assert.ok(trusted.includes(kind));
+  assert.equal(boldOverlayHandler("unknown"), null);
+  assert.match(boldOverlayPrompts(), /proof: Disabled/); assert.equal(validateBoldOverlay({ kind: "unknown" }, {}), null);
   assert.throws(() => registerBoldOverlay("Bad name", {})); assert.throws(() => registerBoldOverlay("incomplete", {}));
   const dispose = registerBoldOverlay("fixture", { prompt: () => "Choose a grounded range", validate: (p) => p, place: () => null, html: () => "" });
   try {
     assert.match(boldOverlayPrompts(), /fixture: Choose a grounded range/);
-    assert.deepEqual(boldOverlayKinds(), ["fixture"]);
+    assert.deepEqual(boldOverlayKinds(), [...trusted, "fixture"]);
     assert.throws(() => registerBoldOverlay("fixture", {}));
   } finally { dispose(); }
 });

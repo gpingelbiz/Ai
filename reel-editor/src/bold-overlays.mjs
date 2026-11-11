@@ -10,8 +10,12 @@
  * startFrame/endFrame/landingFrame are integer frames. Times always come from transcript indexes.
  * Context includes plan, words, argument, settings, zones and outDir/projectDir when staging a job.
  * Approved local assets can be staged in projectDir; return their relative URLs in data for html.
- * Unknown kinds fail closed. No kinds or personal asset paths are bundled with the core.
+ * Unknown kinds fail closed. Personal assets stay outside the distributable engine.
  */
+// Trusted modules register their kinds here. Each owns its Greg-only grounding guard.
+import "./bold-proof.mjs";
+import "./bold-math.mjs";
+
 // Lazy storage also lets a registered module import this contract during this module's own imports.
 function registry() { return registry.entries ||= new Map(); }
 

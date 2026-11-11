@@ -8,6 +8,7 @@ import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 import { deepMerge, warn, sha1 } from "./util.mjs";
 import { boldOverlayPrompts, validateBoldOverlay, placeBoldOverlays, boldOverlayHandler } from "./bold-overlays.mjs";
 import { fitBoldText, boldText } from "./bold-render.mjs";
+import { loadBoldProof, stageBoldProof } from "./bold-proof.mjs";
 
 export { boldText } from "./bold-render.mjs";
 
@@ -241,14 +242,15 @@ export function prepareBoldPlan(input, preset = input.style) {
 }
 
 /** One argument call, then timing, framing, placement and sounds. All work commits to a cloned plan. */
-export async function restyleBold(input, { render, ask = claudeText, picks: saved = null, detect = detectFaces, env = process.env, log = warn, outDir = null, protectedPhrases = [] } = {}) {
+export async function restyleBold(input, { render, ask = claudeText, picks: saved = null, detect = detectFaces, env = process.env, log = warn, outDir = null, protectedPhrases = [], proof = {} } = {}) {
   if (!boldEnabled(input.style, input, env)) {
     if (isClientJob(env) && (input.bold || input.style?.bold?.enabled)) log("bold look disabled for a client job");
     return { plan: input, picks: null, reply: null };
   }
   const plan = prepareBoldPlan(input);
   const settings = boldSettings(plan.style), fps = plan.style.render?.fps || 30, duration = plan.video.duration;
-  const context = { plan, outDir, projectDir: outDir ? path.join(outDir, "project") : null };
+  const context = { plan, outDir, projectDir: outDir ? path.join(outDir, "project") : null, settings, env, log };
+  context.proofCatalog = loadBoldProof(context);
   let reply = saved, picks;
   try {
     if (!plan.words.length) reply = fallbackBoldDirection(plan.words, { settings });
@@ -279,6 +281,7 @@ export async function restyleBold(input, { render, ask = claudeText, picks: save
   // start under the chin and shrink to the room that is left.
   const shift = 0;
   plan.bold = layoutBold(plan, picks, detection, { settings, faceShift: shift, protectedPhrases });
+  if (plan.bold.zones.measured) context.proofAssets = await stageBoldProof(picks.overlays, { ...context, words: plan.words }, proof);
   plan.bold.overlays = placeBoldOverlays(picks.overlays, { ...context, words: plan.words, argument: picks.argument, zones: plan.bold.zones, fps, duration, settings });
   plan.bold.events = [
     ...plan.bold.overlays.map((event) => ({ kind: event.kind, from: event.from, to: event.to, landingFrame: event.landingFrame, landing: event.landing, reason: event.reason })),
