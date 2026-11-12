@@ -40,8 +40,8 @@ set -euo pipefail
 FILE="${1:-}"
 MODE="${2:-reel}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-[ -n "$FILE" ] && [ -f "$FILE" ] || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
-case "$MODE" in reel|broll|carousel|long|youtube|vsl|runway|own-broll) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube, vsl, runway or own-broll"}'; exit 1;; esac
+[ -n "$FILE" ] && { [ -f "$FILE" ] || { [ "$MODE" = stitch ] && [ -d "$FILE" ]; }; } || { echo '{"ok":false,"error":"no such file"}'; exit 1; }
+case "$MODE" in reel|broll|carousel|long|youtube|vsl|runway|own-broll|stitch) ;; *) echo '{"ok":false,"error":"mode must be reel, broll, carousel, long, youtube, vsl, runway or own-broll"}'; exit 1;; esac
 # Environment: n8n and launchd start with a bare PATH, so set everything the pipeline needs here.
 [ -f "$HOME/.reel/env.sh" ] || export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Pull REEL_/ELEVENLABS_/PRODUCER_ exports from ~/.zshrc, but let values already set (n8n, launchd, a test) win.
@@ -85,7 +85,7 @@ wait_image() {
   done
   return 1
 }
-if [ "${REEL_WATCH_FAST:-0}" != 1 ] && [ "${REEL_WATCH_READY:-}" != "$(filesize "$FILE")-$(filemtime "$FILE")" ]; then
+if [ "$MODE" != stitch ] && [ "${REEL_WATCH_FAST:-0}" != 1 ] && [ "${REEL_WATCH_READY:-}" != "$(filesize "$FILE")-$(filemtime "$FILE")" ]; then
   last=-1; lastmtime=-1; good=0
   for _ in $(seq 1 150); do
     size=$(filesize "$FILE")
@@ -103,14 +103,16 @@ if [ "${REEL_WATCH_FAST:-0}" != 1 ] && [ "${REEL_WATCH_READY:-}" != "$(filesize 
 fi
 
 # Check the work volume before any edit or paid request. A pause stays unmarked for a later scan.
+note_target="$FILE - why it failed.txt"
+[ "$MODE" != stitch ] || note_target="$FILE/why it failed.txt"
 free_kb=$(LC_ALL=C df -Pk "$REELS" 2>/dev/null | awk 'NR == 2 { print $4 }') || free_kb=""
 case "$free_kb" in
   ''|*[!0-9]*)
-    printf 'Editing is paused because free space could not be checked. Your original is safe. Check storage in System Settings.\n' > "$FILE - why it failed.txt"
+    printf 'Editing is paused because free space could not be checked. Your original is safe. Check storage in System Settings.\n' > "$note_target"
     exit 75;;
 esac
 if [ "$free_kb" -lt 7812500 ]; then
-  printf 'Editing is paused because this Mac is nearly full. Your original is safe.\n' > "$FILE - why it failed.txt"
+  printf 'Editing is paused because this Mac is nearly full. Your original is safe.\n' > "$note_target"
   exit 75
 fi
 
@@ -152,6 +154,7 @@ create_reel_folder() {
 
 base=$(basename "$FILE")
 stem="${base%.*}"
+[ "$MODE" != stitch ] || stem="$base"
 hook=""
 case "$stem" in *__*) hook="${stem#*__}"; stem="${stem%%__*}";; esac
 hook=$(printf '%s' "$hook" | sed -E 's/ *#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/^ +| +$//g')
@@ -201,6 +204,9 @@ if [ -n "${REEL_PRESET:-}" ]; then
   ' "$REEL_PRESET" "$HERE" 2>/dev/null || true)
 fi
 case "$MODE" in
+  stitch)
+    flags+=(--no-deliver)
+    case "$base" in *"#broll"*) flags+=(--broll-engine "${REEL_BROLL_ENGINE:-codex}" --broll --graphics);; esac;;
   broll) flags+=(--broll-engine "${REEL_BROLL_ENGINE:-codex}" --broll --graphics)
     [ -n "$brand_captions" ] || flags+=(--caption-style reveal);;
   # Clips from a long recording get the outlined captions: the reveal style (no outline, dimmed upcoming words) was
@@ -236,10 +242,19 @@ esac
 name=$(echo "$stem" | sed -E 's/#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
 [ -n "$name" ] || name="reel"
 # Each mode has its own work folder, so the same clip can go through two drop folders.
-case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; vsl) name="$name-vsl";; runway) name="$name-runway";; esac
+case "$MODE" in broll) name="$name-broll";; carousel) name="$name-carousel";; long) name="$name-clips";; youtube) name="$name-youtube";; vsl) name="$name-vsl";; stitch) name="$name-stitch";; runway) name="$name-runway";; esac
 
 work="$REELS/videos/$name"
 log="$REELS/watch.log"
+EDIT_CMD=edit
+if [ "$MODE" = stitch ]; then
+  EDIT_CMD=stitch
+  if [ -n "${REEL_WATCH_STITCH_READY:-}" ]; then
+    mkdir -p "$work/stitch"
+    node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));fs.writeFileSync(process.argv[2],JSON.stringify(j.clips.map(c=>c.file)))' "$REEL_WATCH_STITCH_READY" "$work/stitch/input-order.json"
+    flags+=(--order "$work/stitch/input-order.json")
+  fi
+fi
 pair_key=$(printf '%s' "$stem" | sed -E 's/ *#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/^ +| +$//g')
 shopt -s nullglob nocaseglob
 for image in "$(dirname "$FILE")/$pair_key proof"*.{png,jpg,jpeg,heic} "$(dirname "$FILE")/$pair_key receipt"*.{png,jpg,jpeg,heic}; do
@@ -341,7 +356,7 @@ if [ -z "$hook" ] && [ "$MODE" != vsl ] && [ "$MODE" != carousel ] && [ "${REEL_
   # A caption left by an earlier run of this clip must never pass for this run's.
   rm -f "$work/caption.txt" "$work/caption.json"
   # shellcheck disable=SC2086
-  if reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} --no-render $EXTRA_ARGS >> "$log" 2>&1 \
+  if reel "$EDIT_CMD" "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} --no-render $EXTRA_ARGS >> "$log" 2>&1 \
      && node "$HERE/write-caption.mjs" "$work" "$work/caption.txt" >> "$log" 2>&1 && [ -s "$work/caption.txt" ]; then
     written_hook=$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(j.bestIsWritten&&j.best)process.stdout.write(j.best)}catch(e){}' "$work/caption.json" 2>/dev/null || true)
     if [ -n "$written_hook" ]; then
@@ -357,7 +372,10 @@ rm -f "$work/No b-roll this time.txt"
 run_start=$(( $(wc -l < "$log" 2>/dev/null || echo 0) + 1 ))
 # shellcheck disable=SC2086
 # ${flags[@]+...}: macOS bash 3.2 treats an empty array as unbound under set -u (a plain drop has no flags).
-if ! reel edit "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
+if reel "$EDIT_CMD" "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then :; else
+  edit_status=$?
+  if [ "$MODE" = stitch ] && [ "$edit_status" = 75 ]; then exit 75; fi
+  if [ "$MODE" = stitch ] && [ -f "$FILE/why it's held.txt" ]; then exit 76; fi
   echo "$(date '+%F %T') FAIL  $base (see above)" >> "$log"
   notify "Reel failed" "$base. Rename it to retry; details in ~/Reels/watch.log"
   printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"
@@ -407,11 +425,15 @@ else
     shots=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const b of p.broll||[])if(b.file)console.log(b.file)}catch(e){}' "$work/plan.json" 2>/dev/null || true)
     if [ "$MODE" = runway ]; then folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel " with Runway")"; else folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel " with B-roll")"; fi
   else
-    folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel)"
+    if [ "$MODE" = stitch ]; then folder="$(create_reel_folder "$DONE" "$REELS/videos" Stitch)"; else folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel)"; fi
   fi
   label="$(basename "$folder")"
   dest="$folder/$title.mp4"
   cp "$work/renders/$name.mp4" "$dest"
+  if [ "$MODE" = stitch ]; then
+    cp "$FILE/Order - check this.jpg" "$folder/Order - check this.jpg"
+    cp "$FILE/Order.txt" "$folder/Order.txt"
+  fi
   # Hidden, for the Publish folder (AI label, preflight gate, cover frame) and the analytics; Finder never shows them.
   reel_meta "$work" "$folder/.reel.json"
   [ -s "$work/analytics-features.json" ] && cp -f "$work/analytics-features.json" "$folder/.reel-features.json"

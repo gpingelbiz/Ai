@@ -1,3 +1,4 @@
+import { fitSceneWindow, sceneAt } from "./stitch-scenes.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -276,7 +277,7 @@ export function layoutGeometry(item, { W, H, captionTop, tokens, face, detection
 }
 
 /** Resolve, OCR, redact, time and lay out real user-supplied images. Any failed item logs once and disappears. */
-export async function makeEvidence({ specs = [], workDir, transcript = [], duration = 0, video, fps = 30, settings = {}, tokens, canvas, captionTop, face = null, detection = null, framing = {} } = {}) {
+export async function makeEvidence({ specs = [], workDir, transcript = [], duration = 0, video, fps = 30, settings = {}, tokens, canvas, captionTop, face = null, detection = null, framing = {}, sceneFaces = null } = {}) {
   if (settings.enabled === false || !specs.length) return [];
   if (settings.redact === false) warn("evidence: --no-redact exposes private text and faces; the supplied images will be rendered without automatic redaction");
   const bin = await ocrBinary();
@@ -311,9 +312,14 @@ export async function makeEvidence({ specs = [], workDir, transcript = [], durat
       writeJSON(recordFile, record);
       if (timing.skip) { log(`evidence ${n}: skipped ${path.basename(input.file)} (${timing.reason})`); continue; }
 
+      if (sceneFaces && !fitSceneWindow(timing, sceneFaces)) continue;
+      const localScene = sceneFaces ? sceneAt(sceneFaces, timing.start) : null;
+      const itemFace = localScene ? localScene.face : face;
+      const itemDetection = localScene ? localScene.detection : detection;
+      const itemFraming = localScene ? localScene.framing : framing;
       const requested = ["auto", "card", "focus", "over"].includes(settings.layout) ? settings.layout : "auto";
       let cutout = null;
-      const talkingHead = !!face;
+      const talkingHead = !!itemFace;
       const mayNeedCutout = (requested === "over" || (requested === "auto" && !timing.quoted.length)) && talkingHead;
       if (mayNeedCutout) {
         const made = await makeCutout({ video, start: timing.start, duration: timing.duration, fps, outDir: dir, name: `evidence-${n}` });
@@ -321,15 +327,15 @@ export async function makeEvidence({ specs = [], workDir, transcript = [], durat
       }
       let layout = chooseEvidenceLayout({ requested, quoted: timing.quoted, cutoutAvailable: !!cutout, talkingHead });
       let item = { id: n, sourceFile, cleanedFile, recordFile, sourceName: path.basename(input.file), label: input.label || path.basename(input.file), ocr, timing, start: timing.start, duration: timing.duration, layout, cutout };
-      let geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face, detection, framing, zoomScale: Math.max(1, ...(settings.zoomScales || [1])) });
-      if (geometry.skip && timing.quoted.length) { layout = "focus"; item.layout = layout; item.cutout = null; geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face, detection, framing, zoomScale: 1 }); }
+      let geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: Math.max(1, ...(settings.zoomScales || [1])) });
+      if (geometry.skip && timing.quoted.length) { layout = "focus"; item.layout = layout; item.cutout = null; geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: 1 }); }
       if (geometry.skip) { log(`evidence ${n}: skipped ${path.basename(input.file)} (${geometry.reason})`); continue; }
       const quotedLines = timing.quoted.map((match) => ocr.lines[match.ocr]).filter(Boolean);
       const legibilityLines = quotedLines.length ? quotedLines : ocr.lines;
       let textPx = renderedEvidenceTextPx(legibilityLines, geometry.imageBox, layout === "focus" ? geometry.zoom : 1);
       if (textPx != null && textPx < 32 && layout !== "focus" && timing.quoted.length) {
         item.layout = layout = "focus"; item.cutout = null;
-        geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face, detection, framing, zoomScale: 1 });
+        geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: 1 });
         textPx = renderedEvidenceTextPx(quotedLines, geometry.imageBox, geometry.zoom);
       }
       if (textPx != null && textPx < 32) { log(`evidence ${n}: skipped ${path.basename(input.file)} (source text would render at ${Math.round(textPx)}px, below 32px)`); continue; }

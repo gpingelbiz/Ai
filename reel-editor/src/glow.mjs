@@ -1,3 +1,4 @@
+import { fitSceneWindow, applyScenePlan, detectionInScene } from "./stitch-scenes.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { claudeText, firstJSON } from "./claude.mjs";
@@ -344,8 +345,8 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
   const featSize = Math.round(0.029 * H);
   // The band starts just under the chin, wherever the chin is; text that would not fit above the subtitles (0.8)
   // there is not shown in the band at all.
-  const band = (t0, t1) => Math.round((Math.max(0.4, chinDuring(detection, t0, t1)) + 0.02) * H);
-  const roomy = (t0, t1, h) => Math.max(0.4, chinDuring(detection, t0, t1)) + 0.02 + h <= 0.785;
+  const band = (t0, t1) => Math.round((Math.max(0.4, chinDuring(plan.stitchScenes ? detectionInScene(detection, plan.stitchScenes, t0) : detection, t0, t1)) + 0.02) * H);
+  const roomy = (t0, t1, h) => Math.max(0.4, chinDuring(plan.stitchScenes ? detectionInScene(detection, plan.stitchScenes, t0) : detection, t0, t1)) + 0.02 + h <= 0.785;
   const featAt = new Map(picks.features.map((f) => [f.from, f]));
   const sceneAt = new Map(picks.scenes.map((s) => [s.from, s]));
   const overAt = new Map((picks.overlays || []).map((o) => [o.from, o]));
@@ -486,7 +487,7 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
   icons.forEach((icon) => { if (!bridges.has(icon)) cutAtScene(icon, "t", "end"); });
   icons = icons.filter((icon) => ![...scenes, ...overlays].some((s) => s !== bridges.get(icon) && icon.t < s.end && icon.end > s.start))
     .filter((icon) => icon.y + icon.size <= 0.785 * H)
-    .filter((icon) => !faceDuring(detection, icon.t, icon.end).some((f) => icon.x < (f.x + f.w) * W && icon.x + icon.size > f.x * W && icon.y < (f.y + f.h * 0.85) * H && icon.y + icon.size > f.y * H));
+    .filter((icon) => !faceDuring(plan.stitchScenes ? detectionInScene(detection, plan.stitchScenes, icon.t) : detection, icon.t, icon.end).some((f) => icon.x < (f.x + f.w) * W && icon.x + icon.size > f.x * W && icon.y < (f.y + f.h * 0.85) * H && icon.y + icon.size > f.y * H));
   icons.forEach((icon, i) => { const nx = icons[i + 1]; if (nx && icon.end > nx.t - 0.05) icon.end = r3(nx.t - 0.05); });
   icons = icons.filter((icon) => bridges.has(icon) ? icon.end >= bridges.get(icon).start + GLOW_BRIDGE_DURATION - 0.001 : icon.end - icon.t >= 0.6);
   icons.forEach((icon, i) => { const scene = bridges.get(icon); if (scene) scene.bridge = i; });
@@ -588,6 +589,10 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
       picks = checkPicks({ ...picks, features: [...picks.features, ...(fill.features || []).filter(ok)], icons: [...picks.icons, ...(fill.icons || []).filter(ok)], overlays: [...picks.overlays, ...(fill.overlays || []).filter(ok)] }, plan.words, library, { hookEnd: Math.max(3, hookEnd), duration: D });
     } catch { /* the first picks stand */ }
   }
+  if (plan.stitchScenes) for (const kind of ["features", "icons", "overlays", "scenes"]) picks[kind] = picks[kind].filter((pick) => {
+    const window = glowWindow(kind, pick, plan.words, D, Math.max(3, hookEnd));
+    return fitSceneWindow(window, plan.stitchScenes);
+  });
   const out = layoutGlow(plan, picks, library, detection, { W, H });
   plan.captions = out.captions;
   plan.icons = out.icons;
@@ -603,7 +608,7 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
     hookWords.forEach((w, i) => { if (br < 0 && i && run + w.text.length / 2 >= total / 2) br = i; run += w.text.length + 1; });
     plan.hook.words = hookWords.map(({ br: oldBreak, ...w }, i) => ({ ...w, ...(i === br ? { br: true } : {}) }));
     const size = Math.round((total > 44 ? 0.028 : 0.032) * H);
-    plan.hook.place = { x: Math.round(0.07 * W), ...hookSpot(detection, Math.max(0.5, plan.hook.duration), size / H, out.band, H), w: Math.round(0.86 * W), size };
+    plan.hook.place = { x: Math.round(0.07 * W), ...hookSpot(plan.stitchScenes ? detectionInScene(detection, plan.stitchScenes, 0) : detection, Math.max(0.5, plan.hook.duration), size / H, out.band, H), w: Math.round(0.86 * W), size };
     const crowded = plan.hook.place.crowded;
     delete plan.hook.place.crowded;
     const depth = glowEnabled(plan.style, plan) ? await prepareDepthHook(plan, detection, { outDir, cutout }) : null;
@@ -635,5 +640,6 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
   // Sounds last, from the final plan. The old look's cut cues go; music, narration and a B-roll shot's own generated
   // sound (sfx-broll-*) stay.
   plan.audio = { ...plan.audio, tracks: [...(plan.audio?.tracks || []).filter((t) => !String(t.id || "").startsWith("sfx-") || String(t.id).startsWith("sfx-broll-")), ...glowSoundCues(plan)] };
+  if (plan.stitchScenes) applyScenePlan(plan);
   return { plan, picks, reply };
 }

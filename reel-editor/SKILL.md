@@ -113,6 +113,24 @@ Finished videos land in a new `<date> VSL <n>/` under the usual delivery root (D
 
 By hand: `reel edit recording.mov --preset vsl --canvas landscape [--script script.md]`. Script parsing, alignment and SCREEN cards are supplied by the VSL script planner; `graphics.scriptOnly` prevents automatic card planning, and cards leave the first 2 s and last 2.5 s clear.
 
+## Stitch clips
+
+On Greg's editing Mac, drop one reel's clips into a subfolder of `~/Reels/raw-stitch` using `Raw - Stitch Clips` on the Desktop. Hosted clients have the same shortcut in their own Desktop folder. Loose clips make one reel and move into `Used/<reel name>` after delivery. Client kits do not install this folder.
+
+Order is remembered across drops. Clips arriving together use filming time, then file birth time. If every filename starts with a number, numbers win: `1.mov`, `2.mov`, `10.mov`. To fix the order, number every clip. Adding, removing or numbering clips makes a new edit with cached analysis.
+
+After all clips settle and 90 seconds pass without arrivals, `Order - check this.jpg` and `Order.txt` show their order, kept duration, first kept words, place letters and warnings. Rendering follows immediately. The sheet also lands in the finished `<date> Stitch <n>` Desktop folder. Held reels get `why it's held.txt` beside the clips.
+
+```bash
+reel stitch ./lesson --preset pingel-brand
+reel stitch first.mov next.mov --preset /path/to/client/preset.json
+reel stitch ./lesson --order ./order.json --no-render
+```
+
+Explicit CLI clips keep argument order. `--order` is a JSON array of every clip path, relative to that file. Edit flags carry through at 30 fps. `--no-deliver` keeps output in the work folder; `--no-render` writes the master and project only. Watched folder tags include `#nomusic` and `#broll`.
+
+`REEL_WATCH_RAW_STITCH` changes Greg's input folder; `REEL_STITCH_QUIET` changes the 90 second wait. Reinstall the main watcher and rerun `scripts/client.mjs add` for existing hosted clients to add their shortcut and minute scan. Work and JSON stages live in `<work>/stitch/`. Captions are transcribed from the master. A manual edit can pass `--scenes <scenes.json>`.
+
 ## Clients
 
 `node scripts/client.mjs add their-brand.json` sets up a client edited on this Mac: drop folders in `~/Desktop/Reels/Clients/<Name>/`, finished reels there too, everything in the client's brand (`src/clients.mjs`, `client.env` per client, scanned by the same `watch-folder.sh` under one lock). The Greg card look, Greg's Sandcastles watchlist and his CTA never reach a client. `client.mjs list` shows them.

@@ -20,6 +20,9 @@ export const DROP_FOLDERS = [
   ["raw-runway", "Raw - Reel with Runway B-roll"],
 ];
 
+// Hosted clients only. DROP_FOLDERS remains the kit folder contract.
+export const HOSTED_DROP_FOLDERS = [...DROP_FOLDERS, ["raw-stitch", "Raw - Stitch Clips"]];
+
 export const clientsRoot = (env = process.env) => env.REEL_CLIENTS || path.join(os.homedir(), "Reels", "clients");
 export const clientsDesktop = (env = process.env) => env.REEL_CLIENTS_DESKTOP || path.join(os.homedir(), "Desktop", "Reels", "Clients");
 
@@ -43,7 +46,7 @@ export function clientPaths(brand, env = process.env) {
     studio: path.join(root, "Content Studio"),
     cache: path.join(root, "cache"),
     fonts: path.join(root, "fonts"),
-    drops: DROP_FOLDERS.map(([dir, label]) => ({ dir: path.join(root, dir), label })),
+    drops: HOSTED_DROP_FOLDERS.map(([dir, label]) => ({ dir: path.join(root, dir), label })),
     label: `com.pingel.reel-watch.client.${slug}`,
   };
 }
@@ -99,6 +102,7 @@ ${vars}
   <key>WatchPaths</key>
   <array>${watch.map((w) => `<string>${xml(w)}</string>`).join("")}</array>
   <key>RunAtLoad</key><false/>
+  <key>StartInterval</key><integer>60</integer>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>${xml(log)}</string>
   <key>StandardErrorPath</key><string>${xml(log)}</string>

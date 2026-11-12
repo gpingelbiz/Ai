@@ -1,3 +1,4 @@
+import { fitSceneWindow, sceneAt } from "./stitch-scenes.mjs";
 /**
  * Bold overlay contract (schemaVersion 1): register a trusted module once, then import it here.
  * prompt describes its word-index picks. validate(pick, context) returns sanitized data or null;
@@ -49,7 +50,8 @@ export function boldBoxesOverlap(a, b, gap = 0) {
 
 /** One admission point for every visual. An unsafe proposal leaves the speaker and captions alone. */
 export function placeBoldOverlays(picks, context) {
-  const { words, zones, fps, duration, settings } = context;
+  const { words, fps, duration, settings } = context;
+  let zones = context.zones;
   if (zones.measured === false) return [];
   const accepted = [];
   for (const pick of [...picks].sort((a, b) => (a.kind === "topic" ? 0 : 1) - (b.kind === "topic" ? 0 : 1) || a.from - b.from)) {
@@ -59,11 +61,14 @@ export function placeBoldOverlays(picks, context) {
     const endFrame = Math.min(Math.round(duration * fps), Math.max(startFrame + 1, Math.ceil(words[pick.to].end * fps), startFrame + Math.round((pick.holdSeconds || 0) * fps)));
     if (endFrame <= startFrame) continue;
     const event = { ...pick, startFrame, endFrame, start: startFrame / fps, end: endFrame / fps };
+    if (context.plan?.stitchScenes && !fitSceneWindow(event, context.plan.stitchScenes)) continue;
+    if (context.sceneZones) zones = sceneAt(context.sceneZones, event.start).zones;
     let proposal;
-    try { proposal = handler.place(event, { ...context, overlays: accepted }); } catch { continue; }
+    try { proposal = handler.place(event, { ...context, zones, overlays: accepted }); } catch { continue; }
     const first = proposal?.startFrame ?? startFrame, last = proposal?.endFrame ?? endFrame;
     if (!Number.isInteger(first) || !Number.isInteger(last) || first < 0 || last <= first || last > Math.round(duration * fps)) continue;
     Object.assign(event, { startFrame: first, endFrame: last, start: first / fps, end: last / fps });
+    if (context.plan?.stitchScenes && !fitSceneWindow(event, context.plan.stitchScenes)) continue;
     const box = proposal?.box, safe = zones.safe;
     if (!box || ![box.x, box.y, box.w, box.h].every(Number.isFinite) || box.w <= 0 || box.h <= 0) continue;
     if (box.x < safe.x || box.y < safe.y || box.x + box.w > safe.x + safe.w || box.y + box.h > safe.y + safe.h) continue;

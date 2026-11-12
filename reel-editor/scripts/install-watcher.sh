@@ -20,6 +20,8 @@ RAW_YOUTUBE="${REEL_WATCH_RAW_YOUTUBE:-$HOME/Reels/raw-youtube}"
 RAW_VSL="${REEL_WATCH_RAW_VSL:-$HOME/Reels/raw-vsl}"
 RAW_RUNWAY="${REEL_WATCH_RAW_RUNWAY:-$HOME/Reels/raw-runway}"
 RAW_OWN_BROLL="${REEL_WATCH_RAW_OWN_BROLL:-$HOME/Reels/raw-own-broll}"
+RAW_STITCH="${REEL_WATCH_RAW_STITCH:-$HOME/Reels/raw-stitch}"
+STITCH_ENV=""; STITCH_WATCH=""; STITCH_INTERVAL=""
 MUSIC="${REEL_WATCH_MUSIC:-$HOME/Reels/music}"
 DONE="${REEL_WATCH_DONE:-$HOME/Reels/done}"
 LOG="${REEL_WATCH_ROOT:-$HOME/Reels}/watch-launchd.log"
@@ -33,6 +35,11 @@ fi
 
 xml() { printf '%s' "$1" | sed -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
 # No login shell: the agent gets the exact tool search path used by this setup.
+if [ "${REEL_CLIENT_MODE:-0}" != 1 ]; then
+  STITCH_ENV="<key>REEL_WATCH_RAW_STITCH</key><string>$(xml "$RAW_STITCH")</string><key>REEL_STITCH_QUIET</key><string>$(xml "${REEL_STITCH_QUIET:-90}")</string>"
+  STITCH_WATCH="<string>$(xml "$RAW_STITCH")</string>"
+  STITCH_INTERVAL="<key>StartInterval</key><integer>60</integer>"
+fi
 AGENT_PATH="$(xml "$PATH")"
 AGENT_COMMAND='[ ! -f "$HOME/.reel/env.sh" ] || . "$HOME/.reel/env.sh"; exec /bin/bash "$1"'
 
@@ -62,12 +69,14 @@ render() {
     <key>REEL_WATCH_RAW_VSL</key><string>$(xml "$RAW_VSL")</string>
     <key>REEL_WATCH_RAW_RUNWAY</key><string>$(xml "$RAW_RUNWAY")</string>
     <key>REEL_WATCH_RAW_OWN_BROLL</key><string>$(xml "$RAW_OWN_BROLL")</string>
+    $STITCH_ENV
     <key>REEL_WATCH_MUSIC</key><string>$(xml "$MUSIC")</string>
     <key>REEL_WATCH_DONE</key><string>$(xml "$DONE")</string>
   </dict>
   <key>WatchPaths</key>
-  <array><string>$(xml "$RAW")</string><string>$(xml "$RAW_BROLL")</string><string>$(xml "$RAW_CAROUSEL")</string><string>$(xml "$RAW_LONG")</string><string>$(xml "$RAW_YOUTUBE")</string><string>$(xml "$RAW_VSL")</string><string>$(xml "$RAW_RUNWAY")</string><string>$(xml "$RAW_OWN_BROLL")</string></array>
+  <array><string>$(xml "$RAW")</string><string>$(xml "$RAW_BROLL")</string><string>$(xml "$RAW_CAROUSEL")</string><string>$(xml "$RAW_LONG")</string><string>$(xml "$RAW_YOUTUBE")</string><string>$(xml "$RAW_VSL")</string><string>$(xml "$RAW_RUNWAY")</string><string>$(xml "$RAW_OWN_BROLL")</string>$STITCH_WATCH</array>
   <key>RunAtLoad</key><true/>
+  $STITCH_INTERVAL
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>$(xml "$LOG")</string>
   <key>StandardErrorPath</key><string>$(xml "$LOG")</string>
@@ -87,6 +96,10 @@ if [ "${1:-}" = "--dry-run" ]; then
 fi
 
 mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$RAW_LONG" "$RAW_YOUTUBE" "$RAW_VSL" "$RAW_RUNWAY" "$RAW_OWN_BROLL" "$MUSIC" "$(dirname "$PLIST")"
+if [ "${REEL_CLIENT_MODE:-0}" != 1 ]; then
+  mkdir -p "$RAW_STITCH" "$HOME/Desktop/Reels"
+  [ -e "$HOME/Desktop/Reels/Raw - Stitch Clips" ] || ln -s "$RAW_STITCH" "$HOME/Desktop/Reels/Raw - Stitch Clips"
+fi
 mv "$tmp" "$PLIST"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"

@@ -391,6 +391,10 @@ if [ "$WATCH" = y ]; then
   [ -L "$D/Raw - VSL" ] && [ ! -e "$D/Raw - VSL Editor" ] && mv "$D/Raw - VSL" "$D/Raw - VSL Editor"
   [ -e "$D/Raw - VSL Editor" ] || ln -s "$HOME/Reels/raw-vsl" "$D/Raw - VSL Editor"
   [ -e "$D/Raw - Reel with Runway B-roll" ] || ln -s "$HOME/Reels/raw-runway" "$D/Raw - Reel with Runway B-roll"
+  if [ "${REEL_CLIENT_MODE:-0}" != 1 ]; then
+    mkdir -p "${REEL_WATCH_RAW_STITCH:-$HOME/Reels/raw-stitch}"
+    [ -e "$D/Raw - Stitch Clips" ] || ln -s "${REEL_WATCH_RAW_STITCH:-$HOME/Reels/raw-stitch}" "$D/Raw - Stitch Clips"
+  fi
   [ -e "$D/Music" ] || ln -s "$HOME/Reels/music" "$D/Music"
   # Their music is their own: the folder gets a note and clickable links to where Greg's comes from (src/music-source.mjs).
   if [ -n "${RELEASE:-}" ]; then

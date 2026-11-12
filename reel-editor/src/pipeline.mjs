@@ -1,3 +1,4 @@
+import { loadStitchScenes, planSceneCuts, remapStitchScenes, measureSceneFaces, applyScenePlan, sceneAt, fitSceneWindow, sceneZooms, endSceneCuts } from "./stitch-scenes.mjs";
 import { speakerLoudnessFilter } from "./speaker-normalize.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -72,7 +73,7 @@ function sameSource(saved, input) {
   }
 }
 
-export async function runEdit(input, opts = {}) {
+export async function runEdit(input, opts = {}, deps = {}) {
   input = path.resolve(input);
   if (!fs.existsSync(input)) throw new Error(`no such file: ${input}`);
   const name = slug(opts.title || path.basename(input, path.extname(input)));
@@ -99,6 +100,7 @@ export async function runEdit(input, opts = {}) {
   log(`preset: ${preset.name}`);
 
   const meta = await probe(input);
+  const sourceScenes = opts.scenes ? loadStitchScenes(path.resolve(opts.scenes), meta.duration) : null;
   writeJSON(path.join(workDir, "meta.json"), { input, ...meta });
   log(`source: ${meta.width}x${meta.height} ${r3(meta.duration)}s ${meta.fps}fps audio=${meta.hasAudio}`);
 
@@ -140,6 +142,7 @@ export async function runEdit(input, opts = {}) {
     primaryEngine = readJSON(wordsPath).engine || resolveEngine(preset.transcribe.engine);
     log(`${words.length} words`);
   }
+  if (sourceScenes) words = words.filter((w) => !sceneAt(sourceScenes, w.start)?.silent);
   const heard = words;
   words = applyCorrections(words, dict.corrections);
   // A dictionary fix changes words, so its timing (split evenly across what it replaced) needs the aligner too.
@@ -217,6 +220,8 @@ export async function runEdit(input, opts = {}) {
     if (changed) writeJSON(wordsPath, { source: input, sourceStat, engine: primaryEngine, words });
   }
 
+  if (sourceScenes) words = words.filter((w) => !sceneAt(sourceScenes, w.start)?.silent);
+
   // 2. Cut plan
   // A clip that is mostly not talking (a walk-up, a vlog shot, a room) has nothing to cut around: cutting the
   // "silence" would leave only its few words ("Greg? Yeah" out of a 20 s walk-up came back as a 1 s reel).
@@ -224,7 +229,7 @@ export async function runEdit(input, opts = {}) {
   const quiet = mostlyNotTalking(words, meta.duration);
   if (quiet && !opts.noCuts && endingOverride == null) log(`cuts: only ${words.length} word${words.length === 1 ? "" : "s"} spoken in ${r3(meta.duration)} s, keeping every frame (no talking to cut around)`);
   const cutsOn = endingOverride != null || (!opts.noCuts && !quiet && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers));
-  let cuts = cutsOn
+  let cuts = sourceScenes && cutsOn ? planSceneCuts(words, meta.duration, sourceScenes, { ...preset.cuts, ...(endingOverride != null ? { signOff: false } : {}) }) : cutsOn
     ? planCuts(words, meta.duration, { ...preset.cuts, endAt: endingOverride })
     : { segments: [{ start: 0, end: r3(meta.duration) }], removed: [], originalDuration: r3(meta.duration), keptDuration: r3(meta.duration), words };
   if (cutsOn && meta.hasAudio && preset.cuts.audioGuard !== false) {
@@ -233,11 +238,13 @@ export async function runEdit(input, opts = {}) {
     if (guarded.restored) log(`audio check: kept sound in ${guarded.restored} cut${guarded.restored === 1 ? "" : "s"} the transcript timing would have clipped`);
     if (guarded.noisy) warn("audio check: the room is noisy (fan, AC, traffic?), so most silence cuts were kept; the reel will run longer. A quieter room or --silence off avoids this");
   }
+  if (sourceScenes && endingOverride != null) cuts = endSceneCuts(cuts, sourceScenes, endingOverride, meta.duration);
   if (cutsOn) {
     // Frame-aligned edges keep video and audio cutting at the same instants (no lip-sync drift over many cuts).
     cuts.segments = snapSegments(cuts.segments, meta.fps || preset.render.fps || 30, meta.duration);
     cuts.keptDuration = r3(cuts.segments.reduce((a, s) => a + (s.end - s.start), 0));
   }
+  const cleanScenes = sourceScenes ? remapStitchScenes(endingOverride != null ? sourceScenes.filter((s) => s.start < cuts.segments.at(-1).end) : sourceScenes, cuts.segments) : null;
   writeJSON(path.join(workDir, "cuts.json"), cuts);
   const byReason = {};
   for (const r of cuts.removed) byReason[r.reason] = (byReason[r.reason] || 0) + 1;
@@ -263,7 +270,7 @@ export async function runEdit(input, opts = {}) {
   // Studio sound: DeepFilterNet denoises the whole voice on the source timeline; the cut pass then takes that WAV
   // instead of the source audio and runs the leveler chain. Falls back to the spectral denoiser when it is missing.
   let roomTone = null;
-  if (needsPass && cuts.segments.length > 1 && meta.hasAudio && preset.audio.roomTone !== false) {
+  if (needsPass && !sourceScenes && cuts.segments.length > 1 && meta.hasAudio && preset.audio.roomTone !== false) {
     roomTone = findRoomTone(await early.envelope, words, meta.duration);
     if (roomTone) log(`room tone: ${r3(roomTone.end - roomTone.start)} s from ${roomTone.start.toFixed(2)} s, ${Math.round(roomTone.db)} dB`);
     else log("room tone: no clean room found, cuts fade to silence as before");
@@ -289,8 +296,9 @@ export async function runEdit(input, opts = {}) {
   const protectedPhrases = new Set([...(dict.terms || []), ...(dict.names || []), ...(dict.phrases || [])]);
   const groups = markKeywords(groupWords(cleanWords, duration, { ...preset.captions, protectedPhrases }), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
   const showCaptions = !!preset.captions.enabled;
-  const hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) }) : null;
+  let hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) }) : null;
   if (hook) Object.assign(hook, hookWords(hook.text, dict));
+  if (hook && cleanScenes) hook.duration = Math.min(hook.duration, cleanScenes[0].end - hook.start);
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
   let premise = await makePremise({ workDir, groups, hook, duration, settings: preset.premise, force: !!opts.force });
@@ -302,7 +310,9 @@ export async function runEdit(input, opts = {}) {
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
   const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || premise || timeLabels.length || preset.graphics?.persistent || preset.graphics?.ladder || requestedCredits.length || ["window", "split", "mix"].includes(preset.broll?.layout));
-  if (wantFace) {
+  const sceneFaces = cleanScenes ? await measureSceneFaces(videoSrc, cleanScenes, deps.detectFaces || detectFaces, { ...preset, captions: { ...preset.captions, autoPlace: preset.captions.autoPlace && opts.captionPosition == null } }) : null;
+  if (sceneFaces) detection = sceneFaces[0].detection;
+  if (wantFace && !cleanScenes) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
     const times = premise || timeLabels.length || preset.graphics?.persistent || preset.graphics?.ladder
       ? Array.from({ length: 12 }, (_, i) => r3(Math.min(duration - 0.05, 0.1 + (i * Math.max(0, duration - 0.2)) / 11)))
@@ -314,7 +324,8 @@ export async function runEdit(input, opts = {}) {
   let framing = { scale: 1, origin: preset.zooms.origin || "50% 40%" };
   let face = null;
   let people = [];
-  if (preset.framing?.enabled && sameShape) {
+  if (sceneFaces) { framing = sceneFaces[0].framing; face = sceneFaces[0].face; }
+  if (preset.framing?.enabled && sameShape && !cleanScenes) {
     const det = await detectFaces(videoSrc, Array.from({ length: 12 }, (_, i) => r3(Math.min(duration - 0.05, 0.5 + (i * duration) / 12))));
     face = faceBox(det);
     people = peopleFrom(det);
@@ -418,7 +429,7 @@ export async function runEdit(input, opts = {}) {
   if (preset.reframe?.enabled !== false && needsReframe(cleanMeta, canvas1)) {
     // Face detection runs on clean.mp4: each join is the cumulative length of the kept segments before it.
     let at = 0;
-    const cutTimes = [];
+    const cutTimes = cleanScenes ? cleanScenes.slice(1).map((s) => s.start) : [];
     for (let i = 0; i < cuts.segments.length - 1; i++) {
       at += cuts.segments[i].end - cuts.segments[i].start;
       if (cuts.segments[i + 1].start > cuts.segments[i].end) cutTimes.push(r3(at));
@@ -476,6 +487,7 @@ export async function runEdit(input, opts = {}) {
   let graphics = vslPlan ? vslPlan.scenes : preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [], modes: preset.brand?.modes || preset.brand?.contentModes || {} }, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
+  if (cleanScenes) graphics = graphics.filter((g) => fitSceneWindow(g, cleanScenes));
   const graphicsSchema = graphics.schema || 1;
   const sceneSchema = graphicsSchema;
   // The reel's look (picked with the cards) themes the rest of it: hook treatment, caption marker, slam style,
@@ -554,6 +566,7 @@ export async function runEdit(input, opts = {}) {
     face: face || faceBox(detection),
     detection,
     framing,
+    ...(sceneFaces ? { sceneFaces } : {}),
   });
   const overlapsEvidence = (item) => evidence.some((proof) => item.start < proof.start + proof.duration && item.start + item.duration > proof.start);
   const coveredProof = allCards.filter((item) => item.type === "message" && item.mode === "proof" && overlapsEvidence(item));
@@ -577,6 +590,7 @@ export async function runEdit(input, opts = {}) {
     : [];
   // "full-split": one cutaway with clear time after it is held longer, to become a split once the face is known.
   if (preset.broll?.layout === "full-split" && broll.length) broll = holdForSplit(broll, { duration, cta, busy: brollArgs.busy, tail, gap: preset.broll.gap ?? 4, hold: preset.broll.hold ?? 5, clipSeconds: preset.broll.videoSeconds ?? 5 });
+  if (cleanScenes) broll = broll.filter((b) => fitSceneWindow(b, cleanScenes));
   // Cutout layout: the generated still or clip remains the moving background; a window-matched person matte stays
   // registered over it. Each failed matte falls back to the established full-frame cutaway.
   if (brollLayout(preset.broll?.layout) === "cutout") {
@@ -601,6 +615,7 @@ export async function runEdit(input, opts = {}) {
       log(speakerPlan ? `speakers: ${speakerPlan.turns.length} turn${speakerPlan.turns.length === 1 ? "" : "s"}, ${zooms.filter((z) => z.who != null).length} of ${zooms.filter((z) => z.scale > 1).length} punch-ins and cuts aimed at the person talking` : "speakers: could not tell who talks, zooms aim at the middle of the group");
     }
   }
+  if (cleanScenes) zooms = sceneZooms(zooms, cleanScenes, cleanWords);
   if (requestedCredits.length && framing.multi && !speakerPlan) speakerPlan = await speakerTimeline(videoSrc, cleanWords, { duration, people: framing.people });
   // Shared-frame b-roll is placed after zooms: each panel clears the whole head at the strongest move in its window.
   if (broll.length && ["window", "split", "mix", "full-split"].includes(preset.broll?.layout)) {
@@ -611,7 +626,7 @@ export async function runEdit(input, opts = {}) {
       if (preset.broll.layout === "full-split" && !b.hold) { perShot.push(null); continue; }
       const det = sameShape ? await detectFaces(videoSrc, [0.15, 0.5, 0.85].map((f) => r3(b.start + f * b.duration))) : null;
       const f = faceBox(det);
-      perShot.push(f ? { face: f, detection: det } : null);
+      perShot.push(f ? { face: f, detection: det, ...(sceneFaces ? { framing: sceneAt(sceneFaces, b.start).framing, captionTop: sceneAt(sceneFaces, b.start).captionPosition - 0.04 } : {}) } : null);
     }
     const placed = planBrollLayouts(broll, { layout: preset.broll.layout, W: canvas0.width, H: canvas0.height, captionTop, face: face || faceBox(detection), detection, zooms, framing, perShot });
     broll = placed.shots;
@@ -627,15 +642,17 @@ export async function runEdit(input, opts = {}) {
   // fail open by dropping only this new overlay.
   if (allCards.some(isPersistentScene)) {
     const kept = [];
-    const persistentFace = face || faceBox(detection);
+    let persistentFace = face || faceBox(detection);
     const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
     const driftScale = preset.motion?.drift?.enabled ? 1 + (preset.motion.drift.scale || 0) : 1;
     const persistentFraming = { ...framing, scale: framing.scale * driftScale };
     for (const card of allCards) {
       if (!isPersistentScene(card)) { kept.push(card); continue; }
-      const placed = planPersistentLayout(card, { W: canvas0.width, H: canvas0.height, captionTop, face: persistentFace, detection, zooms, framing: persistentFraming, brand: preset.brand });
+      const localScene = sceneFaces ? sceneAt(sceneFaces, card.start) : null;
+      if (localScene) persistentFace = localScene.face;
+      const placed = planPersistentLayout(card, { W: canvas0.width, H: canvas0.height, captionTop, face: persistentFace, detection: localScene?.detection || detection, zooms, framing: localScene?.framing || persistentFraming, brand: preset.brand });
       if (placed.skip) { log(`graphics: persistent ${card.type} skipped (${placed.reason})`); continue; }
-      const head = headBoxFor(persistentFace, detection, { zoom: zoomDuring(zooms, card.start, card.start + card.duration), scale: persistentFraming.scale, originY, shift: framing.shift || 0 });
+      const head = headBoxFor(persistentFace, localScene?.detection || detection, { zoom: zoomDuring(zooms, card.start, card.start + card.duration), scale: localScene?.framing.scale || persistentFraming.scale, originY: localScene ? parseFloat(localScene.framing.origin.split(" ")[1]) / 100 : originY, shift: localScene?.framing.shift || framing.shift || 0 });
       Object.assign(card, { placement: placed.placement, box: { x: placed.placement.x, y: placed.placement.y, w: placed.placement.w, h: placed.placement.h }, fontSize: placed.fontSize, ...(head ? { head } : {}) });
       kept.push(card);
       log(`graphics: ${placed.note}`);
@@ -690,7 +707,7 @@ export async function runEdit(input, opts = {}) {
     const originY = parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38;
     for (const g of allCards) {
       if (isPersistentScene(g)) continue;
-      const top = cardHeadTop(detection, { zooms, drift: driftPlan.stretches, t0: g.start, t1: g.start + g.duration, scale: framing.scale, originY, shift: framing.shift || 0 });
+      const top = cardHeadTop(sceneFaces ? sceneAt(sceneFaces, g.start)?.detection : detection, { zooms, drift: driftPlan.stretches, t0: g.start, t1: g.start + g.duration, scale: sceneFaces ? sceneAt(sceneFaces, g.start).framing.scale : framing.scale, originY: sceneFaces ? parseFloat(sceneAt(sceneFaces, g.start).framing.origin.split(" ")[1]) / 100 : originY, shift: sceneFaces ? sceneAt(sceneFaces, g.start).framing.shift || 0 : framing.shift || 0 });
       if (top != null) g.headTop = top;
     }
   }
@@ -741,6 +758,7 @@ export async function runEdit(input, opts = {}) {
     H: canvas0.height,
     captionTop,
     tail,
+    ...(sceneFaces ? { sceneFaces } : {}),
   }) : [];
   if (preset.icons?.enabled) {
     const skipped = Object.entries(icons.skipped || {}).map(([why, n]) => `${n} ${why}`).join(", ");
@@ -806,6 +824,7 @@ export async function runEdit(input, opts = {}) {
     }
   }
   const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  if (sourceScenes && early.envelope) await early.envelope;
   const signatureHead = preset.signature?.enabled !== false && preset.brand?.signature?.kind !== "none"
     ? headBoxFor(face || faceBox(detection), detection, { zoom: Math.max(1, ...zooms.map((z) => z.scale || 1)), scale: framing.scale, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0 })
     : null;
@@ -836,6 +855,7 @@ export async function runEdit(input, opts = {}) {
     coldOpen,
     lowerThird,
     structure,
+    ...(cleanScenes ? { stitchScenes: cleanScenes, stitchFaces: sceneFaces } : {}),
     ...(vslPlan ? { vslSections: vslPlan.sections, vslScript: scriptPath } : {}),
     framing: { ...framing, face, side: face ? (face.cx < 0.5 ? "right" : "left") : "right", ...(signatureHead ? { headBox: signatureHead } : {}) },
     reframe,
@@ -845,6 +865,7 @@ export async function runEdit(input, opts = {}) {
     words: cleanWords,
     ending: endingMetadata(words, meta.duration, cuts, preset.cuts, endingOverride),
   };
+  if (cleanScenes) { plan.style.hook.push = false; applyScenePlan(plan); }
   if (opts.noRender && boldEnabled(preset, plan)) {
     const pickFile = path.join(workDir, "bold-picks.json");
     const result = await restyleBold(plan, { outDir: workDir, protectedPhrases, picks: !opts.repick ? readJSONSafe(pickFile) : null });
