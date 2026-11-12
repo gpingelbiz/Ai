@@ -26,6 +26,7 @@ RAW_YOUTUBE="${REEL_WATCH_RAW_YOUTUBE:-$HOME/Reels/raw-youtube}"
 RAW_VSL="${REEL_WATCH_RAW_VSL:-$HOME/Reels/raw-vsl}"
 RAW_RUNWAY="${REEL_WATCH_RAW_RUNWAY:-$HOME/Reels/raw-runway}"
 RAW_OWN_BROLL="${REEL_WATCH_RAW_OWN_BROLL:-$HOME/Reels/raw-own-broll}"
+RAW_STITCH="${REEL_WATCH_RAW_STITCH:-$HOME/Reels/raw-stitch}"
 SEEN="${REEL_WATCH_ROOT:-$HOME/Reels}/videos/.seen"
 JOB="$(cd "$(dirname "$0")" && pwd)/watch-reel.sh"
 mkdir -p "$RAW" "$RAW_BROLL" "$RAW_CAROUSEL" "$RAW_LONG" "$RAW_YOUTUBE" "$RAW_VSL" "$RAW_RUNWAY" "$RAW_OWN_BROLL" "$SEEN"
@@ -121,13 +122,23 @@ scan() {
 # Clients (scripts/client.mjs): each has its own drop folders and markers under ~/Reels/clients/<slug>.
 CLIENTS="${REEL_CLIENTS:-$HOME/Reels/clients}"
 
+# Stitch folders use their own ordered content markers. Kits keep their existing folders.
+scan_stitch() {
+  [ "${REEL_CLIENT_MODE:-0}" != 1 ] || return 0
+  local helper="$(dirname "$JOB")/stitch-watch.mjs"
+  [ -f "$helper" ] || return 0
+  node "$helper" "$1" "$2" "$JOB" "$3"
+}
+
 # Keep scanning until a pass finds nothing new, so clips dropped mid-render are not missed.
 while :; do
   did=0
   scan "$SEEN" "" "reel|$RAW" "broll|$RAW_BROLL" "carousel|$RAW_CAROUSEL" "long|$RAW_LONG" "youtube|$RAW_YOUTUBE" "vsl|$RAW_VSL" "runway|$RAW_RUNWAY" "own-broll|$RAW_OWN_BROLL"
+  scan_stitch "$RAW_STITCH" "$SEEN" ""
   for envf in "$CLIENTS"/*/client.env; do
     c="$(dirname "$envf")"
     mkdir -p "$c/videos/.seen" "$c/raw-vsl"
+    scan_stitch "$c/raw-stitch" "$c/videos/.seen" "$envf"
     scan "$c/videos/.seen" "$envf" "reel|$c/raw" "broll|$c/raw-broll" "carousel|$c/raw-carousel" "long|$c/raw-long" "youtube|$c/raw-youtube" "vsl|$c/raw-vsl" "runway|$c/raw-runway"
   done
   [ "$did" = 1 ] || break

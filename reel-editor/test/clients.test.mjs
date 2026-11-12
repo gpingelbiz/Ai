@@ -15,7 +15,8 @@ test("client paths: a root of its own under the clients folder, finished reels i
   const p = clientPaths(brand, { REEL_CLIENTS: "/x/clients", REEL_CLIENTS_DESKTOP: "/d/Clients" });
   assert.equal(p.root, "/x/clients/jane-doe");
   assert.equal(p.desktop, "/d/Clients/Jane Doe");
-  assert.equal(p.drops.length, 7);
+  assert.equal(p.drops.length, 8);
+  assert.ok(p.drops.some((d) => d.label === "Raw - Stitch Clips"));
   assert.equal(p.label, "com.pingel.reel-watch.client.jane-doe");
 });
 
@@ -122,7 +123,7 @@ test("client add: a new client gets your folders, a Content Studio with Publish,
   assert.equal(r.status, 0, r.stderr);
   const p = clientPaths(brand, env);
   const desk = fs.readdirSync(p.desktop).sort();
-  for (const name of ["Content Studio", "Music", "Publish", ...DROP_FOLDERS.map(([, label]) => label)]) assert.ok(desk.includes(name), `Desktop has ${name}`);
+  for (const name of ["Content Studio", "Music", "Publish", ...p.drops.map((d) => d.label)]) assert.ok(desk.includes(name), `Desktop has ${name}`);
   assert.equal(fs.realpathSync(path.join(p.desktop, "Publish")), fs.realpathSync(path.join(p.studio, "Publish")));
   const cfg = JSON.parse(fs.readFileSync(path.join(p.studio, "studio.json"), "utf8"));
   assert.deepEqual([cfg.client, cfg.publish.mode, cfg.slots.length, cfg.metricool.blogId], ["Jane Doe", "off", 0, ""], "posting stays off until their brand is picked");

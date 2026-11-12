@@ -1,3 +1,4 @@
+import { applyScenePlan, layoutSceneBold } from "./stitch-scenes.mjs";
 import { claudeText, firstJSON } from "./claude.mjs";
 import path from "node:path";
 import fs from "node:fs";
@@ -308,10 +309,11 @@ export async function restyleBold(input, { render, ask = claudeText, picks: save
   // start under the chin and shrink to the room that is left.
   const shift = 0;
   plan.bold = layoutBold(plan, groupPicks, detection, { settings, faceShift: shift, protectedPhrases });
+  if (plan.stitchScenes) plan.bold = layoutSceneBold(plan, groupPicks, detection, { settings, faceShift: shift, protectedPhrases }, layoutBold, fitBoldText, boldText);
   plan.bold.talk = talk;
   if (plan.bold.zones.measured) context.proofAssets = await stageBoldProof(picks.overlays, { ...context, words: plan.words }, proof);
   context.stagedExtras = await stageBoldExtras(picks.overlays, context, extraOptions);
-  plan.bold.overlays = placeBoldOverlays(picks.overlays, { ...context, words: plan.words, argument: picks.argument, talk, zones: plan.bold.zones, fps, duration, settings });
+  plan.bold.overlays = placeBoldOverlays(picks.overlays, { ...context, words: plan.words, argument: picks.argument, talk, zones: plan.bold.zones, sceneZones: plan.bold.sceneZones, fps, duration, settings });
   plan.bold.events = [
     ...plan.bold.overlays.map((event) => ({ kind: event.kind, from: event.from, to: event.to, landingFrame: event.landingFrame, landing: event.landing, reason: event.reason })),
     ...plan.zooms.map((key) => ({ kind: "framing", landingFrame: Math.round(key.t * fps), landing: key.t, reason: candidates.find((p) => Math.abs(plan.words[p.from].start - key.t) < 1 / fps)?.reason || "Argument beat" })),
@@ -330,5 +332,6 @@ export async function restyleBold(input, { render, ask = claudeText, picks: save
     plan.style.hook.fontSizeFrac = h.place.size / plan.canvas.height;
   }
   plan.style.captions.position = plan.bold.zones.caption.y / plan.canvas.height + 0.6 * plan.style.captions.fontSizeFrac;
+  if (plan.stitchScenes) applyScenePlan(plan);
   return { plan, picks, reply };
 }

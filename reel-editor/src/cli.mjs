@@ -28,6 +28,8 @@ Usage
   reel speaker approve <folder> --version v --by "Client name"   record explicit client approval
   reel speaker deliver <folder> --version v                  copy the approved files
   reel speaker status <folder>                              show progress and next step
+  reel stitch <folder|clips...> [--order file] [--preset ...] [edit options]
+                                    ordered clips into one reel, with an order sheet and scene joins
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
   reel ending <workdir> [--json]    check the opening and ending without rendering
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
@@ -81,6 +83,7 @@ Usage
 Options (edit / batch)
   --out <dir>              work dir (default videos/<name>)
   --preset <name|path>     default: $REEL_PRESET (set by install.sh), else pingel-brand
+  --scenes <file>          scene boundaries for a stitched master (30 fps JSON)
   --transcript <file>      skip ASR and use this words json / srt
   --engine <e>             auto (default: ElevenLabs Scribe when ELEVENLABS_API_KEY is set, else Whisper) | faster-whisper | elevenlabs | hyperframes
   --model <m>              whisper model: large-v3-turbo (default), small (fast, mis-hears more), large-v3
@@ -189,6 +192,7 @@ const EDIT_OPTIONS = {
   out: { type: "string" },
   preset: { type: "string" }, // no default here: loadPreset falls back to REEL_PRESET, then pingel-brand
   transcript: { type: "string" },
+  scenes: { type: "string" },
   script: { type: "string" },
   engine: { type: "string" },
   "no-verify": { type: "boolean" },
@@ -363,6 +367,19 @@ export async function main(argv) {
     case "speaker": {
       const { speakerMain } = await import("./speaker.mjs");
       return speakerMain(rest);
+    }
+    case "stitch": {
+      const { opts, positionals } = parse(rest, { ...EDIT_OPTIONS, order: { type: "string" }, "no-deliver": { type: "boolean" } });
+      if (opts.help || !positionals.length) return console.log(USAGE);
+      const { runStitch } = await import("./stitch.mjs");
+      try {
+        const result = await runStitch(positionals, opts);
+        if (result.output) console.log(result.delivery || result.output);
+      } catch (error) {
+        if (!["STITCH_HELD", "STITCH_CHANGED"].includes(error.code)) throw error;
+        console.error(error.message); process.exitCode = error.code === "STITCH_CHANGED" ? 75 : 76;
+      }
+      return;
     }
     case "edit": {
       const { opts, positionals } = parse(rest);

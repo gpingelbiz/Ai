@@ -1,3 +1,4 @@
+import { sceneAt, fitSceneWindow } from "./stitch-scenes.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { faceBox, headBoxFor, zoomDuring } from "./placement.mjs";
@@ -138,7 +139,7 @@ const repeatedNeighbor = (items) => {
  * Rank gold matches, then nouns, then time. Keep the winners clear of every supplied busy window and place each
  * against the strongest zoom in its hold. The returned array carries a transient `skipped` count for one log line.
  */
-export function planIcons(groups, duration, { hook = null, busy = [], zooms = [], face = null, detection = null, framing = {}, W = 1080, H = 1920, captionTop = 0.68, minSpacing = 6, max = 4, maxPer30 = 3, hold = 1.2, size = 0.12, tail = 1.5 } = {}) {
+export function planIcons(groups, duration, { hook = null, busy = [], zooms = [], face = null, detection = null, framing = {}, W = 1080, H = 1920, captionTop = 0.68, minSpacing = 6, max = 4, maxPer30 = 3, hold = 1.2, size = 0.12, tail = 1.5, sceneFaces = null } = {}) {
   const skipped = {};
   const skip = (why) => { skipped[why] = (skipped[why] || 0) + 1; };
   const windows = [...busy, ...(hook ? [{ start: hook.start, duration: hook.duration, kind: "hook" }] : [])];
@@ -154,10 +155,14 @@ export function planIcons(groups, duration, { hook = null, busy = [], zooms = []
     const timed = [...picked, { ...c, end }];
     if (rollingOver(timed, maxPer30)) { skip("30-second cap"); continue; }
     if (repeatedNeighbor(timed)) { skip("repeat"); continue; }
-    const nearest = detection?.frames?.length ? detection.frames.reduce((best, frame) => Math.abs(frame.t - c.t) < Math.abs(best.t - c.t) ? frame : best) : null;
-    const localDetection = nearest ? { ...detection, frames: [nearest] } : detection;
-    const localFace = framing.multi ? face : faceBox(localDetection) || face;
-    const spot = placeIcon({ face: localFace, detection: localDetection, zooms, t: c.t, end, size, W, H, scale: framing.scale || 1, originY: parseFloat(String(framing.origin || "50% 38%").split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0, captionTop });
+    if (sceneFaces && !fitSceneWindow({ t: c.t, end }, sceneFaces)) { skip("scene cut"); continue; }
+    const localScene = sceneFaces ? sceneAt(sceneFaces, c.t) : null;
+    const sceneDetection = localScene ? localScene.detection : detection;
+    const sceneFraming = localScene ? localScene.framing : framing;
+    const nearest = sceneDetection?.frames?.length ? sceneDetection.frames.reduce((best, frame) => Math.abs(frame.t - c.t) < Math.abs(best.t - c.t) ? frame : best) : null;
+    const localDetection = nearest ? { ...sceneDetection, frames: [nearest] } : sceneDetection;
+    const localFace = sceneFraming.multi ? face : faceBox(localDetection) || localScene?.face || face;
+    const spot = placeIcon({ face: localFace, detection: localDetection, zooms, t: c.t, end, size, W, H, scale: sceneFraming.scale || 1, originY: parseFloat(String(sceneFraming.origin || "50% 38%").split(" ")[1]) / 100 || 0.38, shift: sceneFraming.shift || 0, captionTop: localScene ? localScene.captionPosition - 0.04 : captionTop });
     if (spot.skip) { skip(spot.reason); continue; }
     picked.push({ t: c.t, end, icon: c.icon, word: c.word, x: spot.x, y: spot.y, size: spot.size });
   }

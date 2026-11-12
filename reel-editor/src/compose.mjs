@@ -1,3 +1,4 @@
+import { stitchTimeline } from "./stitch-scenes.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile, ownDisplay } from "./util.mjs";
@@ -429,7 +430,7 @@ export function renderHTML(plan, footage) {
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
-    zooms: plan.zooms || [],
+    zooms: plan.stitchScenes ? [] : plan.zooms || [],
     broll: brollList.map((b, i) => {
       const layout = brollLayout(b);
       return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY, seamY: b.split.seamY ?? Math.round(H / 2) } : {}) } : {}) };
@@ -686,7 +687,7 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
   <body>
     <div id="root"${bold ? ' class="bold-root"' : ""} data-composition-id="reel" data-start="0" data-width="${W}" data-height="${H}" data-duration="${D}" data-fps="${s.render?.fps || 30}"${plan.video.hasAudio || tracks.length ? ` data-fx-chain="${esc(JSON.stringify({ version: 1, nodes: [{ type: "truepeak", id: "ceiling", label: "Delivery ceiling", params: { ceiling: -1.5, lookahead: 3, release: 80 } }] }))}"` : ""}>
 ${whipFiltersHTML}${videoLayerHTML}
-${runtimePlan.zoomStyle === "camera" && runtimePlan.zooms.length ? `      <div id="defocus"></div>` : ""}
+${runtimePlan.zoomStyle === "camera" && (runtimePlan.zooms.length || (plan.stitchScenes && (plan.zooms || []).some((z) => !z.stitch))) ? `      <div id="defocus"></div>` : ""}
 ${openHTML}
 ${brollHTML}${signatureLayerHTML ? `
       ${signatureLayerHTML}` : ""}
@@ -881,7 +882,7 @@ ${glow ? GLOW_LIGHT_JS : ""}${bold ? BOLD_JS + boldOverlayTimeline(plan, boldSty
             }
           });
         } else PLAN.zooms.forEach((z) => (z.cut ? jump(z) : tl.to(WRAP, { scale: z.scale * BASE, xPercent: z.xPercent || 0, duration: z.snap, ease: "power3.out" }, z.t)));
-${hasImpact || hasDrift ? `        // Drift and impact are isolated from WRAP, so their scales multiply the active punch-in instead of replacing it.
+${stitchTimeline(plan)}${hasImpact || hasDrift ? `        // Drift and impact are isolated from WRAP, so their scales multiply the active punch-in instead of replacing it.
         const MOTION_FRAME = 1 / (PLAN.fps || 30);
 ${hasDrift ? `        const DRIFT = ".drift-inner";
         PLAN.motion.drift.forEach((d) => {

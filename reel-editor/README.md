@@ -320,6 +320,24 @@ The look is not only the cards. Once Claude picks it, the same look sets the res
 
 Caption type, size, words per line and timing never change with the look, so captions read the same in every reel. Every hook stays fully on screen on frame 0, because frame 0 is the cover: the hooks drawn on a solid block (typed, stamp, panel) never run behind the head. They sit above it, smaller if needed, with the person cutout under the block, so a cold-open still keeps the person on the cover. `--zoom-style` and `--broll-cut` on the command line win over the look. `node scripts/themes-preview.mjs --footage <video> --still <broll.png>` renders one row per look: the hook, a caption with its marker, a slam and a graded b-roll still (on the GPU: the grades are WebGL, and the b-roll frame is captured in its own snapshot run because a multi-time snapshot skips the grade).
 
+## Stitch clips
+
+On Greg's editing Mac, drop one reel's clips into a subfolder of `~/Reels/raw-stitch` using `Raw - Stitch Clips` on the Desktop. Hosted clients have the same shortcut in their own Desktop folder. Loose clips make one reel and move into `Used/<reel name>` after delivery. Client kits do not install this folder.
+
+Order is remembered across drops. Clips arriving together use filming time, then file birth time. If every filename starts with a number, numbers win: `1.mov`, `2.mov`, `10.mov`. To fix the order, number every clip. Adding, removing or numbering clips makes a new edit with cached analysis.
+
+After all clips settle and 90 seconds pass without arrivals, `Order - check this.jpg` and `Order.txt` show their order, kept duration, first kept words, place letters and warnings. Rendering follows immediately. The sheet also lands in the finished `<date> Stitch <n>` Desktop folder. Held reels get `why it's held.txt` beside the clips.
+
+```bash
+reel stitch ./lesson --preset pingel-brand
+reel stitch first.mov next.mov --preset /path/to/client/preset.json
+reel stitch ./lesson --order ./order.json --no-render
+```
+
+Explicit CLI clips keep argument order. `--order` is a JSON array of every clip path, relative to that file. Edit flags carry through at 30 fps. `--no-deliver` keeps output in the work folder; `--no-render` writes the master and project only. Watched folder tags include `#nomusic` and `#broll`.
+
+`REEL_WATCH_RAW_STITCH` changes Greg's input folder; `REEL_STITCH_QUIET` changes the 90 second wait. Reinstall the main watcher and rerun `scripts/client.mjs add` for existing hosted clients to add their shortcut and minute scan. Work and JSON stages live in `<work>/stitch/`. Captions are transcribed from the master. A manual edit can pass `--scenes <scenes.json>`.
+
 ## Clients: edit a client's footage on this Mac, in their brand
 
 `node scripts/client.mjs add their-brand.json` sets up a client from the same brand file a kit uses (`kit/brand-template.json`, plus an optional `cta`). Your team then drops the client's clips in `~/Desktop/Reels/Clients/<Name>/`, which has the same six drop folders as yours (Raw - Reel, with B-roll, Carousel, Clips from Long Video, Full YouTube Edit, with Runway B-roll) and a Music shortcut. Their finished reels land in that same folder. `node scripts/client.mjs list` shows the clients set up here. Re-running `add` with an edited brand file updates the client and keeps their reels. `add` also gives the client a Content Studio (`~/Reels/clients/<slug>/Content Studio`, posting off and no carousel slots until their Metricool brand is set in its `studio.json`; `--guide <brand-guide.md>` copies their guide in) with **Publish** and **Content Studio** shortcuts in their Desktop folder and its watcher, and their Music folder starts empty with a note and two clickable links to where Greg's music comes from (Epidemic Sound's music and plans; `src/music-source.mjs`): Greg's tracks are licensed to Greg, so each client brings their own. A kit's installer writes the same note and links, and a Content Studio kit adds `Desktop/Reels/Publish`.
