@@ -153,6 +153,7 @@ export function cardFootprint(card = {}) {
     case "bars": return { w: 900, h: 120 + eyebrow + Math.max(2, n) * 84, minW: 620, minVisual: 520, wrap: 0.3 };
     case "message": return { w: 900, h: 150 + Math.max(2, n) * 104, minW: 560, wrap: 0.5 };
     case "post": return { w: 900, h: 340, minW: 600, wrap: 0.5 };
+    case "flip": return { w: 900, h: 150 + eyebrow + Math.ceil(Math.max(words(card.wrong), words(card.right)) / 18) * 86, minW: 480, wrap: 0.7 };
     case "notify": return { w: 670, h: 150, minW: 520, wrap: 0.5 };
     case "stamp": { const w = Math.round(Math.max(4, words(card.text)) * 0.62 * 144 + 24); return { w, h: 160, minW: w, minVisual: 200, wrap: 0 }; }
     case "slam": return { w: Math.max(300, words(card.text) * 0.52 * 200), h: 220, minW: 260, wrap: 0, slam: true };
@@ -241,13 +242,13 @@ export function openSpaces(frame, { gap = 28, behind = false } = {}) {
  */
 const sizeClass = (a, W, H) => (a < 0.07 * W * H ? "small" : a < 0.15 * W * H ? "medium" : "large");
 
-export function placeCard(card, frame, { history = [], pin = null, maxScale = 0.85, minScale = 0.56, maxArea = 0.3, allowFull = true, allowPush = true, allowBehind = false, maxHidden = 0.3, kind = "card", fullCost = COST.full } = {}) {
+export function placeCard(card, frame, { history = [], pin = null, maxScale = 0.85, minScale = 0.56, maxArea = 0.3, allowFull = true, allowPush = true, allowBehind = false, maxHidden = 0.3, kind = "card", fullCost = COST.full, behindCost = COST.behind } = {}) {
   const foot = card.foot || cardFootprint(card);
   const { W, H, head, body } = frame;
   const allowed = pin ? (Array.isArray(pin) ? pin : [pin]) : null;
   const prev = history.at(-1), prev2 = history.at(-2);
   const options = [];
-  for (const sp of openSpaces(frame, { behind: allowBehind && kind === "card" })) {
+  for (const sp of openSpaces(frame, { behind: allowBehind && (kind === "card" || kind === "scene") })) {
     if (kind === "scene" && sp.slot === "base") continue;
     if (allowed && !allowed.includes(sp.slot)) continue;
     if (kind === "slam" && sp.slot === "base") continue;
@@ -260,7 +261,7 @@ export function placeCard(card, frame, { history = [], pin = null, maxScale = 0.
     const hidden = head ? inter(box, head) / Math.max(1, area(box)) : 0;
     if (sp.slot === "behind" ? hidden < 0.02 || hidden > maxHidden : head && overlaps(box, head, 8)) continue;
     if (overlaps(box, frame.caption, 8)) continue;
-    let cost = COST[sp.slot] + (sp.slot === "behind" ? hidden * 0.8 : 0);
+    let cost = (sp.slot === "behind" ? behindCost : COST[sp.slot]) + (sp.slot === "behind" ? hidden * 0.8 : 0);
     cost += (max - fit.scale) * 0.6; // a squeezed card reads worse (the page refits it to its real size)
     cost += 0.5 * busyUnder(frame, box);
     // Over the torso is a normal spot for a card (the lower third); it only counts a little against the wall.

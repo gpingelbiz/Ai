@@ -12,15 +12,20 @@ for (const dir of process.argv.slice(2)) {
     ...(plan.graphics || []).filter((g) => g.place).map((g) => ({ what: `card ${g.type}`, t0: g.start, t1: g.start + g.duration, p: g.place })),
     ...(plan.glowOverlays || []).map((o) => ({ what: `glow ${o.type}`, t0: o.start, t1: o.end, p: { slot: o.place.slot || "band", x: o.place.x, y: o.place.y, w: o.place.w * (o.place.scale || 1), h: (o.type === "stamp" ? 160 : 150) * (o.place.scale || 1) } })),
     ...(plan.slams || []).filter((s) => s.place).map((s) => ({ what: `slam "${s.text}"`, t0: s.t, t1: s.end, p: s.place })),
-  ];
+    // Glow scenes on a panel in the frame; one behind the speaker has his matte drawn over it, so a face there is the
+    // point (the check then only asks that the face is still seen).
+    ...(plan.glowScenes || []).filter((s) => s.place).map((s) => ({ what: `glow ${s.type} scene`, t0: s.start, t1: s.end, p: s.place })),
+  ].sort((a, b) => a.t0 - b.t0);
   console.log(`\n${path.basename(dir)}: ${items.length} placed`);
   for (const it of items) {
     const times = [0.3, 0.5, 0.8].map((f) => +(it.t0 + f * (it.t1 - it.t0)).toFixed(3));
     const det = await detectFaces(render, times);
     const faces = (det?.frames || []).flatMap((f) => f.faces || []).map((b) => ({ x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H }));
     const full = it.p.slot === "full";
-    const hit = !full && faces.some((f) => over(it.p, f));
+    const behind = it.p.slot === "behind";
+    const hit = !full && !behind && faces.some((f) => over(it.p, f));
+    if (behind && !faces.length) process.exitCode = 1;
     if (hit) process.exitCode = 1;
-    console.log(`  ${it.t0.toFixed(1)}s ${it.what.padEnd(22)} ${String(it.p.slot + (it.p.side && it.p.side !== "center" ? " " + it.p.side : "")).padEnd(12)} ${full ? "full screen" : `${Math.round(it.p.w)}x${Math.round(it.p.h)} at ${Math.round(it.p.x)},${Math.round(it.p.y)} scale ${it.p.scale ?? "-"}`}  face ${faces.length ? (hit ? "HIT" : "clear") : "none seen"}`);
+    console.log(`  ${it.t0.toFixed(1)}s ${it.what.padEnd(22)} ${String(it.p.slot + (it.p.side && it.p.side !== "center" ? " " + it.p.side : "")).padEnd(12)} ${full ? "full screen" : `${Math.round(it.p.w)}x${Math.round(it.p.h)} at ${Math.round(it.p.x)},${Math.round(it.p.y)} scale ${it.p.scale ?? "-"}`}  face ${behind ? (faces.length ? "in front (matte)" : "LOST behind the card") : faces.length ? (hit ? "HIT" : "clear") : "none seen"}`);
   }
 }

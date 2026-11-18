@@ -141,6 +141,8 @@ export const MARKERS = {
   box: { box: "0 0 100 60", d: "M4 8 L 96 5 L 97 54 L 3 56 Z", cls: "an-circle" },
   bracket: { box: "0 0 100 60", d: "M14 4 L 4 4 L 4 56 L 14 56 M86 4 L 96 4 L 96 56 L 86 56", cls: "an-circle" },
   circle: { box: "0 0 100 60", d: "M8 31 C 9 11, 36 3, 58 6 C 84 9, 98 19, 96 33 C 94 49, 70 58, 46 56 C 22 54, 4 45, 6 31 C 8 19, 24 11, 44 9", cls: "an-circle" },
+  // The element mix's third mark: a hand-drawn arrow off the word's lower left, pointing at it.
+  arrow: { box: "0 0 100 100", d: "M6 94 C 22 74, 44 58, 84 24 M60 18 L 86 21 L 81 46", cls: "an-arrow" },
 };
 
 /** The skin a card gets in a look. */
