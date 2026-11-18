@@ -377,8 +377,10 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
     if (!s.items.length) return null;
   } else if (s.type === "flip") {
     // Myth flip: one slot, the wrong phrase strikes through and the right phrase replaces it, both his words.
-    s.wrong = copy(raw.wrong, 30).replace(/\*/g, "");
-    s.right = copy(raw.right, 30).replace(/\*/g, "");
+    // Too long for one slot is no flip (never cut a phrase short).
+    if (String(raw.wrong || "").length > 40 || String(raw.right || "").length > 40) return null;
+    s.wrong = copy(raw.wrong, 40).replace(/\*/g, "");
+    s.right = copy(raw.right, 40).replace(/\*/g, "");
     if (!s.wrong || !s.right || s.wrong.toLowerCase() === s.right.toLowerCase() || wordCount(s.wrong) > 5 || wordCount(s.right) > 5) return null;
     const pivotLine = Number.isInteger(raw.pivotLine) ? raw.pivotLine : parseInt(raw.pivotLine, 10);
     if (Number.isInteger(pivotLine)) s.pivotLine = pivotLine;

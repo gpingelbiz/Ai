@@ -90,7 +90,7 @@ const JOB_NOTES = {
   proof: "proof: a number, result or message that really exists in his words. A stat, bars or the proof message; leave it out if there is no real number or message",
   emphasis: "emphasis: the punch line. A headline or post card, one dominant event",
   takeaway: "takeaway: the closing lesson. No card; let the line land on the speaker",
-  plain: "plain: talk. Usually no card; a clean beat between cards is correct",
+  plain: "plain: talk. A headline, quote or post when the line lands a point; keep a few plain beats clean between cards",
 };
 
 /** The beat list for the card planner (graphics.mjs scenesPrompt). */
@@ -121,21 +121,24 @@ const GLOW_NOTES = {
  * [{ from, to, wrongFrom, wrongTo, rightFrom, rightTo, pivot }] as word indexes (pivot = the word where the right
  * idea starts being said). Each side is one to four words.
  */
-const STOP = new Set("a an the about just really very your my his her their our it its".split(" "));
+const STOP = new Set("a an the about just really very your my his her their our it its because".split(" "));
 export function findFlips(words = []) {
   const t = words.map((w) => tok(w.text));
   const out = [];
+  // One side: up to five words from `from`, ending before the turn word (the wrong side) or at a comma or full stop
+  // (the right side, so a phrase is never cut mid-thought: "the signal that you're" is not a side).
   const take = (from, max, stopAt) => {
-    // Up to `max` words from `from`, ending at a comma/period, or before a stop index.
     const idx = [];
-    for (let k = from; k < Math.min(words.length, from + max + 2) && idx.length < max; k++) {
-      if (k === stopAt) break;
+    let closed = false;
+    for (let k = from; k < words.length && idx.length < 6; k++) {
+      if (k === stopAt) { closed = true; break; }
       if (!t[k]) break;
       idx.push(k);
-      if (/[,.;:?!]["”]?$/.test(words[k].text)) break;
+      if (/[,.;:?!]["”]?$/.test(words[k].text)) { closed = true; break; }
     }
+    if (stopAt == null ? !closed : !closed && idx.at(-1) !== stopAt - 1) return null;
     while (idx.length && STOP.has(t[idx[0]])) idx.shift();
-    return idx.length ? [idx[0], idx.at(-1)] : null;
+    return idx.length && idx.length <= 5 ? [idx[0], idx.at(-1)] : null;
   };
   const isIt = (k) => ["it's", "its", "thats", "that's", "theyre", "they're", "youre", "you're"].includes(t[k]);
   for (let i = 0; i < words.length; i++) {
@@ -185,7 +188,7 @@ export function flipCards(groups = []) {
       wrong: plainText(words, f.wrongFrom, f.wrongTo), right: plainText(words, f.rightFrom, f.rightTo),
       pivotLine: owner[f.pivot], pivotAt: r3(Math.max(0.5, words[f.pivot].start - start)), spokenEnd: r3((words[f.to].end ?? words[f.to].start) - start),
     };
-  }).filter((c) => c.wrong && c.right && c.wrong.length <= 30 && c.right.length <= 30);
+  }).filter((c) => c.wrong && c.right && c.wrong.length <= 40 && c.right.length <= 40);
 }
 
 const jobAt = (beats, t) => beats.find((b) => t >= b.start - 0.05 && t < b.end + 0.05)?.job || beats.filter((b) => b.start <= t).at(-1)?.job || "plain";

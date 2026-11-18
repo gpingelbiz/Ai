@@ -39,6 +39,13 @@ test("the flip finder cuts the wrong and right phrases out of what he says", () 
   }
   assert.deepEqual(findFlips(timed("I am not sure what to say here today")), []);
   assert.deepEqual(findFlips(timed("it's not it, it's it")), []);
+  // From real transcripts: a side that runs on past five words is not a flip (never cut a phrase mid-thought).
+  assert.deepEqual(findFlips(timed("That's not the signal to coast. That's the signal that you're one stretch away from the")), []);
+  assert.deepEqual(findFlips(timed("so not all at once, but you have to show up for it.")), []);
+  const real = timed("not because volume is smarter, but because every attempt teaches you something, and");
+  const [r] = findFlips(real);
+  assert.equal(side(real, r, "wrongFrom", "wrongTo"), "volume is smarter,");
+  assert.equal(side(real, r, "rightFrom", "rightTo"), "every attempt teaches you something,");
 });
 
 test("a flip card is his words, strikes on the spoken turn and fits one slot", () => {
