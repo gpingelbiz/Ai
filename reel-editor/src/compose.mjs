@@ -2,7 +2,7 @@ import { stitchTimeline } from "./stitch-scenes.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir, copyOrLink, r3, PKG_ROOT, fontFile, ownDisplay } from "./util.mjs";
-import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, STRUCTURE_GRAPHICS_JS, numberMotion, progressHTML, progressCSS, PROGRESS_JS, isPersistentScene } from "./graphics.mjs";
+import { sceneHTML, graphicsCSS, proofMessageCSS, GRAPHICS_JS, STRUCTURE_GRAPHICS_JS, placedGraphicsJS, numberMotion, progressHTML, progressCSS, PROGRESS_JS, isPersistentScene } from "./graphics.mjs";
 import { skinsCSS, skinFonts, themeCSS, themeFontSkins, MARKERS, THEMES } from "./looks.mjs";
 import { inlineIconSVG } from "./icons.mjs";
 import { brandQuietCSS } from "./brandlooks.mjs";
@@ -13,7 +13,7 @@ import { evidenceCSS, evidenceHTML, EVIDENCE_JS } from "./evidence.mjs";
 import { timeLabelHTML, TIME_LABELS_JS } from "./time-labels.mjs";
 import { keywordColorOnFootage } from "./captions.mjs";
 import { glowIconAction, glowIconExtras, glowIconsCSS, GLOW_ICONS_JS } from "./glow-icons.mjs";
-import { glowScenesHTML, glowOverlaysHTML, glowScenesCSS, glowRuntime, GLOW_SCENES_JS } from "./glow-scenes.mjs";
+import { glowScenesHTML, glowOverlaysHTML, glowScenesCSS, glowRuntime, GLOW_SCENES_JS, glowInsetCSS, GLOW_INSET_JS, isInsetScene } from "./glow-scenes.mjs";
 import { GLOW_DEPTH_JS } from "./glow-depth.mjs";
 import { glowLightWord, glowLightCSS, glowLightRuntime, GLOW_LIGHT_JS } from "./glow-light.mjs";
 import { boldEnabled, boldSettings } from "./bold.mjs";
@@ -116,11 +116,14 @@ export function composeProject(plan, projectDir) {
   const extraCutouts = [
     ...(plan.broll || []).map((b, i) => ({ cut: b.cutout, src: `assets/cutouts/broll-${i + 1}.webm` })),
     ...(plan.slams || []).map((sl, i) => ({ cut: sl.popout, src: `assets/cutouts/popout-${i + 1}.webm` })),
+    ...(plan.graphics || []).map((g, i) => ({ cut: g.place?.slot === "behind" ? g.cutout : null, src: `assets/cutouts/gfx-behind-${i + 1}.webm` })),
   ].filter((x) => x.cut?.file && fs.existsSync(x.cut.file));
   if (extraCutouts.length) ensureDir(path.join(assets, "cutouts"));
   for (const x of extraCutouts) { x.cut.src = x.src; copyOrLink(x.cut.file, path.join(projectDir, x.src)); }
   for (const b of plan.broll || []) if (b.cutout && !b.cutout.src) b.cutout = null;
   for (const sl of plan.slams || []) if (sl.popout && !sl.popout.src) sl.popout = null;
+  // A behind card whose matte is missing cannot sit behind the head: it goes full screen instead.
+  for (const g of plan.graphics || []) if (g.place?.slot === "behind" && !g.cutout?.src) g.place = { slot: "full", side: "center", why: "matte missing" };
   const evidenceItems = (plan.evidence || []).filter((item) => item.cleanedFile && fs.existsSync(item.cleanedFile));
   if (evidenceItems.length) ensureDir(path.join(assets, "evidence"));
   for (let i = 0; i < evidenceItems.length; i++) {
@@ -345,8 +348,9 @@ export function renderHTML(plan, footage) {
   const slamHTML = slamList
     .map((sl, i) => {
       const p = sl.popout?.src ? sl.popout : null;
-      const stage = p ? ` style="left:${r3((76 / 1080) * 100)}%;right:${r3(((1080 - 940) / 1080) * 100)}%;top:${p.placement.top}px;height:${Math.round(p.placement.fontSize * 1.05)}px"` : "";
-      return `      <div id="slam-${i}" class="slam clip${p ? " slam-popout" : ""}${p?.placement?.fallback ? " slam-front" : ""}" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"${stage}><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${p?.placement.fontSize || slamFont(sl.text)}px">${esc(sl.text)}</div></div></div>`;
+      const at = !p && sl.place ? sl.place : null;
+      const stage = p ? ` style="left:${r3((76 / 1080) * 100)}%;right:${r3(((1080 - 940) / 1080) * 100)}%;top:${p.placement.top}px;height:${Math.round(p.placement.fontSize * 1.05)}px"` : at ? ` style="left:${at.x}px;right:auto;top:${at.y}px;width:${at.w}px;height:${at.h}px"` : "";
+      return `      <div id="slam-${i}" class="slam clip${p ? " slam-popout" : ""}${p?.placement?.fallback ? " slam-front" : ""}" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"${stage}><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${p?.placement.fontSize || (at ? Math.min(at.fontSize, slamFont(sl.text)) : slamFont(sl.text))}px">${esc(sl.text)}</div></div></div>`;
     })
     .join("\n");
   const popoutBgHTML = slamList
@@ -377,6 +381,12 @@ export function renderHTML(plan, footage) {
   const progressList = gfxList.filter((g) => g.type === "progress" && g.placement && !g.placement.skip);
   const cardList = gfxList.some((g) => g.type === "progress") ? gfxList.filter((g) => g.type !== "progress") : gfxList;
   const hasPersistent = cardList.some(isPersistentScene);
+  // Cards behind the speaker: the person matte of the card's window, drawn over the card (no outline: it is the
+  // same footage, only the head and body are lifted above the card).
+  const behindCards = cardList.map((g, i) => ({ g, i })).filter(({ g }) => g.place?.slot === "behind" && g.cutout?.src);
+  const gfxCutoutHTML = behindCards
+    .map(({ g, i }) => `      <div id="gfx-cutout-wrap-${i}" class="cutout-wrap gfx-cutout-wrap" data-layout-allow-overflow>${motionWrap(`<video id="gfx-cutout-${i}" class="clip cutout-person gfx-cutout-person" src="${esc(g.cutout.src)}" data-start="${g.cutout.start}" data-duration="${g.cutout.duration}" data-track-index="4" muted playsinline></video>`, `gfx-cutout-${i}-`)}</div>`)
+    .join("\n");
   // Looks (looks.mjs) restyle the overlay cards; the YouTube band layout keeps the glass cards.
   const gfxMode = s.graphics?.mode || "overlay";
   const faceSide = plan.framing?.side === "left" ? "right" : "left";
@@ -435,9 +445,10 @@ export function renderHTML(plan, footage) {
       const layout = brollLayout(b);
       return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY, seamY: b.split.seamY ?? Math.round(H / 2) } : {}) } : {}) };
     }),
-    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: (g.type === "ladder" ? g.rungs : g.items).map((it) => ({ at: it.at })) } : {}), ...(isPersistentScene(g) ? { persistent: true, duck: g.duck || [], enterEase: s.brand?.motion?.enterEase || "none", exitEase: s.brand?.motion?.exitEase || "none" } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}), ...(g.evidenceDuck?.length ? { evidenceDuck: g.evidenceDuck } : {}) })),
+    graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: (g.type === "ladder" ? g.rungs : g.items).map((it) => ({ at: it.at })) } : {}), ...(isPersistentScene(g) ? { persistent: true, duck: g.duck || [], enterEase: s.brand?.motion?.enterEase || "none", exitEase: s.brand?.motion?.exitEase || "none" } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}), ...(g.place ? { place: g.place } : {}), ...(g.evidenceDuck?.length ? { evidenceDuck: g.evidenceDuck } : {}) })),
     graphicsSchema: Math.max(gfxSchema, hasProof ? 2 : 1),
     graphicsMode: s.graphics?.mode || "overlay",
+    ...(cardList.some((g) => g.place) ? { captionTop: r3(cap.position - 0.6 * (cap.fontSizeFrac || 0.04)), placeFull: s.graphics?.placeFull === true } : {}),
     graphicsSide: plan.framing?.side || "right",
     graphicsText: c.text,
     graphicsAccent: c.accent,
@@ -481,11 +492,13 @@ export function renderHTML(plan, footage) {
       ...(behind ? ["#cutout-wrap"] : []),
       ...brollList.map((b, i) => b.cutout?.src ? `#broll-cutout-wrap-${i}` : null).filter(Boolean),
       ...slamList.map((sl, i) => sl.popout?.src ? `#popout-cutout-wrap-${i}` : null).filter(Boolean),
+      ...behindCards.map(({ i }) => `#gfx-cutout-wrap-${i}`),
     ],
     cutoutMedia: [
       ...(behind ? ["#cutout"] : []),
       ...brollList.map((b, i) => b.cutout?.src ? `#broll-cutout-${i}` : null).filter(Boolean),
       ...slamList.map((sl, i) => sl.popout?.src ? `#popout-cutout-${i}` : null).filter(Boolean),
+      ...behindCards.map(({ i }) => `#gfx-cutout-${i}`),
     ],
   };
   if (iconList.length) runtimePlan.icons = iconList.map((icon) => ({ t: icon.t, end: icon.end, ...(glow && icon.image ? { action: glowIconAction(icon.action) } : {}) }));
@@ -588,7 +601,7 @@ ${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-e
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }
-${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H, persistent: hasPersistent }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}${evidenceTokens ? evidenceCSS(evidenceTokens) : ""}
+${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H, persistent: hasPersistent, placed: cardList.some((g) => g.place) }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}${evidenceTokens ? evidenceCSS(evidenceTokens) : ""}
 ${premise ? `      #premise-strip {
         position: absolute; left: ${premise.box.x}px; top: ${premise.box.y}px; width: ${premise.box.w}px; height: ${premise.box.h}px;
         display: flex; flex-direction: column; justify-content: center; gap: ${premise.gap}px; box-sizing: border-box;
@@ -652,7 +665,7 @@ ${dimFuture ? "      .cap .w { opacity: 0.38; }" : ""}` : ""}${cap.quiet ? `
       #hook.hook-glow-depth #hook-block { text-align: center; }
 ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
       .icon-3d .icon-disc { background: none; border: 0; border-radius: 0; }
-      .icon-3d .icon-disc img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0.6em 1.2em rgba(0,0,0,0.55)) drop-shadow(0 0 1.4em ${hexA(c.accent, 0.25)}); }` : ""}${glow && iconList.some((icon) => icon.image) ? glowIconsCSS(c.accent) : ""}${sceneList.length || overList.length ? glowScenesCSS({ W, H, c }) : ""}
+      .icon-3d .icon-disc img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0.6em 1.2em rgba(0,0,0,0.55)) drop-shadow(0 0 1.4em ${hexA(c.accent, 0.25)}); }` : ""}${glow && iconList.some((icon) => icon.image) ? glowIconsCSS(c.accent) : ""}${sceneList.length || overList.length ? glowScenesCSS({ W, H, c }) : ""}${sceneList.some(isInsetScene) ? glowInsetCSS({ H, c }) : ""}
       #hook {
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
         padding: ${Math.max(0, Math.round(hk.position * H - hookFont * 1.2))}px 7% 0; box-sizing: border-box;
@@ -699,7 +712,7 @@ ${slamHTML}${iconHTML ? `\n${iconHTML}` : ""}${glowSceneHTML ? `\n${glowSceneHTM
 ${hookHTML}
 ${cutoutHTML}
 ${brollCutoutHTML}
-${popoutCutoutHTML}
+${popoutCutoutHTML}${gfxCutoutHTML ? `\n${gfxCutoutHTML}` : ""}
       <div id="captions" data-layout-allow-caption-zone data-layout-allow-overflow>
 ${capsHTML}
       </div>${bold ? `\n${boldHTML(plan, { settings: boldStyle })}` : ""}
@@ -907,7 +920,7 @@ ${hasDrift ? `        const DRIFT = ".drift-inner";
           tl.to(wash, { opacity: 0, duration: 0.18, ease: "power3.out" }, d);
           tl.to(core, { opacity: 0, scale: 1.18, duration: 0.3, ease: "power2.out" }, d + 0.01);
         }
-${cardList.length ? (hasPersistent ? STRUCTURE_GRAPHICS_JS : GRAPHICS_JS) : ""}${progressList.length ? PROGRESS_JS : ""}${evidenceList.length ? `        PLAN.graphics.forEach((card, i) => (card.evidenceDuck || []).forEach((window) => {
+${cardList.length ? (cardList.some((g) => g.place) ? placedGraphicsJS(hasPersistent ? STRUCTURE_GRAPHICS_JS : GRAPHICS_JS) : hasPersistent ? STRUCTURE_GRAPHICS_JS : GRAPHICS_JS) : ""}${progressList.length ? PROGRESS_JS : ""}${evidenceList.length ? `        PLAN.graphics.forEach((card, i) => (card.evidenceDuck || []).forEach((window) => {
           tl.set("#gfx-" + i, { opacity: 0 }, window.start);
           if (window.end < card.start + card.duration) tl.set("#gfx-" + i, { opacity: 1 }, window.end);
         }));
@@ -1005,7 +1018,7 @@ ${sharedBroll ? `          if (b.layout === "window") {
             tl.set(root, { opacity: 0 }, item.at + item.duration);
           });
         }
-${sceneList.length || overList.length ? GLOW_SCENES_JS : ""}${iconList.length ? `        // Spoken icons: a seven-frame sticker landing, a small float, then a five-frame exit.
+${sceneList.some(isInsetScene) ? GLOW_INSET_JS : ""}${sceneList.length || overList.length ? GLOW_SCENES_JS : ""}${iconList.length ? `        // Spoken icons: a seven-frame sticker landing, a small float, then a five-frame exit.
         const iconFrame = 1 / (PLAN.fps || 30);${glow && iconList.some((icon) => icon.image) ? GLOW_ICONS_JS : ""}
         PLAN.icons.forEach((icon, i) => {
           const el = document.getElementById("icon-" + i);
