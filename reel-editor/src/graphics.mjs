@@ -890,7 +890,7 @@ export const PROGRESS_JS = `
  * captions keep the bottom); "overlay" is a compact glass panel in the top third while the footage keeps playing,
  * the way explainer reels drop a payroll card or a checklist over the speaker.
  */
-export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0.68, persistent = false }) {
+export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0.68, persistent = false, placed = false }) {
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const u = H / 1920;
   const px = (n) => `${Math.round(n * u)}px`;
@@ -1094,7 +1094,13 @@ ${persistent ? `      .gfx.gfx-persistent { background: none; }
       .g-post-text { font-size: ${px(40)}; font-weight: 600; line-height: 1.25; color: #e7e9ea; }
       .g-post-foot { display: flex; align-items: center; gap: ${px(10)}; margin-top: ${px(18)}; font-size: ${px(30)}; color: #8b98a5; }
       .g-post-heart { display: inline-block; transform-origin: 50% 50%; }
-      .g-post-heart.lit { color: #f91880; }${overlay}${band}`;
+      .g-post-heart.lit { color: #f91880; }${overlay}${band}${placed ? `
+      .gfx.gfx-placed { background: none; }
+      .gfx.gfx-placed::after { display: none; }
+      .gfx.gfx-placed .g-box { box-sizing: border-box; }
+      .gfx.gfx-full { background: radial-gradient(120% 62% at 50% 34%, ${c.accent}2e 0%, ${c.accent}00 60%), ${c.bg}; }
+      .gfx.gfx-full::after { background: radial-gradient(90% 60% at 50% 40%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.45) 100%); }
+      .gfx.gfx-full .g-box { top: 16%; max-height: ${Math.round((captionTop / H - 0.2) * 100)}%; }` : ""}`;
 }
 
 /** Proof threads are brand artifacts, not phone screenshots; this CSS is emitted only when a proof card exists. */
@@ -1402,3 +1408,103 @@ export const GRAPHICS_JS = STRUCTURE_GRAPHICS_JS
             tl.to(el, { opacity: 1, duration: d.shownAt - d.inAt, ease: g.enterEase }, d.inAt);
           });
 `, "");
+
+/**
+ * Page side of frame-aware card placement (frame-place.mjs). A card with g.place is laid out at its planned width,
+ * scaled with CSS zoom (GSAP keeps the box transform for its entrance), measured, shrunk again if the real card is
+ * taller than its open space, and set in that space. The footage only moves for a "push" placement. A card that
+ * cannot fit its space even at 45% becomes a full-screen card instead of touching the face or the captions.
+ */
+const PLACE_JS = `        const placeCardBox = (g, el, box) => {
+          const p = g.place;
+          if (!p || !box) return null;
+          const root = document.getElementById("root").getBoundingClientRect();
+          const k = root.height ? root.height / PLAN.height : 1;
+          // What the viewer sees: the box when it paints a card (fill, border, shadow), else the union of what is inside
+          // it (a note skin is a few small labels in a wide, invisible box).
+          const painted = (n) => { const c = getComputedStyle(n); return !(c.backgroundColor === "transparent" || /^rgba\\(.*, 0\\)$/.test(c.backgroundColor)) || c.backgroundImage !== "none" || parseFloat(c.borderTopWidth) > 0 || c.boxShadow !== "none"; };
+          const paints = painted(box);
+          const rect = () => {
+            let L = Infinity, T = Infinity, R = -Infinity, B = -Infinity;
+            const add = (b) => { if (!b.width || !b.height) return; L = Math.min(L, b.left); T = Math.min(T, b.top); R = Math.max(R, b.right); B = Math.max(B, b.bottom); };
+            if (paints) add(box.getBoundingClientRect());
+            else for (const n of box.querySelectorAll("*")) {
+              // Painted pieces (label chips, bars, icons) count whole; running text counts only as wide as its words.
+              if (painted(n) || n.tagName === "svg" || n.tagName === "IMG") { add(n.getBoundingClientRect()); continue; }
+              for (const c of n.childNodes) if (c.nodeType === 3 && c.textContent.trim()) { const r = document.createRange(); r.selectNodeContents(c); add(r.getBoundingClientRect()); }
+            }
+            if (!Number.isFinite(L)) { const b = box.getBoundingClientRect(); L = b.left; T = b.top; R = b.right; B = b.bottom; }
+            return { x: (L - root.left) / k, y: (T - root.top) / k, w: (R - L) / k, h: (B - T) / k };
+          };
+          const set = (s, left, top, width) => Object.assign(box.style, { position: "absolute", left: left + "px", top: top + "px", right: "auto", bottom: "auto", width: width + "px", maxWidth: "none", maxHeight: "none", height: "auto", margin: "0", zoom: String(s) });
+          // Reading sizes, unzoomed: the card's main line (its largest text) and its smallest running text (labels
+          // and tracked eyebrows excluded).
+          const fonts = () => {
+            let min = Infinity, max = 0;
+            for (const n of box.querySelectorAll("*")) {
+              if (![...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) continue;
+              const f = parseFloat(getComputedStyle(n).fontSize);
+              if (!(f > 0)) continue;
+              max = Math.max(max, f);
+              if (!/eyebrow|g-tag|g-num|g-node-num|g-mark|g-proof-label|nb-label/.test(String(n.className || "") + String(n.parentElement?.className || ""))) min = Math.min(min, f);
+            }
+            return { min: Number.isFinite(min) ? min : 40, max: max || 40 };
+          };
+          // Fit the card into a space at a scale between floor and cap, then set it at its anchor.
+          const fit = (sp, width, cap, floor, anchor) => {
+            set(1, 100, 100, width);
+            const m1 = rect();
+            const s = Math.min(cap, sp.w / m1.w, sp.h / m1.h);
+            if (s < floor) return null;
+            set(s, 100, 100, width);
+            // The visible content may start inside the box: keep its offset (in zoomed px) when setting the box.
+            const m = rect(), b0 = box.getBoundingClientRect(), ox = (m.x - (b0.left - root.left) / k), oy = (m.y - (b0.top - root.top) / k);
+            const cx = ((b0.left - root.left) / k) / 100 || 1, cy = ((b0.top - root.top) / k) / 100 || 1;
+            const x = anchor === "top-right" || anchor === "right" ? sp.x + sp.w - m.w : anchor === "top-left" || anchor === "left" ? sp.x : sp.x + (sp.w - m.w) / 2;
+            const y = anchor === "top" || anchor === "top-left" || anchor === "top-right" ? sp.y : anchor === "bottom" ? sp.y + sp.h - m.h : Number.isFinite(p.cy) ? Math.max(sp.y, Math.min(sp.y + sp.h - m.h, p.cy - m.h / 2)) : sp.y + (sp.h - m.h) / 2;
+            set(s, (x - ox) / cx, (y - oy) / cy, width);
+            return s;
+          };
+          // The main line reads at 40 px or more on a 1920 frame, nothing runs under 20 px.
+          set(1, 100, 100, p.layoutW || 900);
+          const f = fonts();
+          const floor = Math.max((PLAN.height * 0.021) / f.max, (PLAN.height * 0.0105) / f.min);
+          const goFull = () => {
+            box.removeAttribute("style");
+            el.classList.remove("gfx-placed", "gfx-at-" + p.slot);
+            el.classList.add("gfx-full");
+            // Full screen fills the frame above the captions: up to 1.6x, never past the safe margins.
+            const top = PLAN.height * 0.14, bottom = (PLAN.captionTop || 0.68) * PLAN.height - PLAN.height * 0.03;
+            fit({ x: PLAN.width * 0.07, y: top, w: PLAN.width * 0.86, h: bottom - top }, Math.min(PLAN.width * 0.86, 900), 1.6, 0, "center");
+            return "full";
+          };
+          if (p.slot === "full") return goFull();
+          el.classList.add("gfx-placed", "gfx-at-" + p.slot);
+          const anchor = p.slot === "side" || (p.slot === "behind" && p.side !== "top") ? p.side : p.anchor;
+          const s = fit(p.space, p.layoutW, Math.max(p.scale || 1, floor), floor * 0.98, anchor);
+          // Too big to read in its spot: full screen only where the brand allows it; otherwise the card is not shown
+          // (never over the face or captions, never squeezed past reading size).
+          if (!s && PLAN.placeFull) return goFull();
+          if (!s) { el.style.visibility = "hidden"; return "hidden"; }
+          return p.slot === "push" ? "push" : "placed";
+        };
+`;
+
+/** The card runtime with frame-aware placement switched on; plans without g.place keep the unchanged runtime. */
+export function placedGraphicsJS(base) {
+  const guard = `          const guard = headGuard(g, el, box);\n`;
+  if (!base.includes(guard) || base.split(`tl.to("#video-wrap"`).length !== 7) throw new Error("graphics runtime changed: update placedGraphicsJS");
+  return PLACE_JS + base
+    .replace(guard, `          const placed = placeCardBox(g, el, box);
+          const guard = placed ? { drop: 0 } : headGuard(g, el, box);
+          if (placed === "push" && g.place.drop) {
+            const pf = PLAN.fps || 30;
+            tl.to("#video-wrap", { y: g.place.drop, duration: 8 / pf, ease: "power2.out" }, g.start);
+            tl.to("#video-wrap", { y: 0, duration: 8 / pf, ease: "power2.inOut" }, g.start + g.duration - 8 / pf);
+          }
+`)
+    .split(`tl.to("#video-wrap"`).join(`if (!placed) tl.to("#video-wrap"`)
+    // the two lines just inserted above must keep moving the footage
+    .replace(`            if (!placed) tl.to("#video-wrap", { y: g.place.drop`, `            tl.to("#video-wrap", { y: g.place.drop`)
+    .replace(`            if (!placed) tl.to("#video-wrap", { y: 0, duration: 8 / pf`, `            tl.to("#video-wrap", { y: 0, duration: 8 / pf`);
+}

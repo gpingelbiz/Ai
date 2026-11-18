@@ -100,13 +100,58 @@ function sceneInner(scene, i, { W, H, esc }) {
   }
 }
 
+/** A scene placed in the frame (frame-place.mjs) instead of full screen: its pieces sit on a glass panel over the footage. */
+export const isInsetScene = (scene) => !!scene?.place && scene.place.slot !== "full";
+
 export function glowScenesHTML(scenes, { W, H, esc }) {
-  return scenes.map((scene, i) => `      <div id="gscene-${i}" class="glow-scene gst-${scene.type || "icons"} clip" data-start="${scene.start}" data-duration="${r3(scene.end - scene.start)}" data-track-index="3" data-layout-allow-overflow>${sceneInner(scene, i, { W, H, esc })}</div>`).join("\n");
+  return scenes.map((scene, i) => isInsetScene(scene)
+    ? `      <div id="gscene-${i}" class="glow-scene gst-${scene.type || "icons"} gs-inset clip" data-start="${scene.start}" data-duration="${r3(scene.end - scene.start)}" data-track-index="3" data-layout-allow-overflow><div class="gs-scrim" id="gs-${i}-scrim"></div><div class="gs-stage" id="gs-${i}-stage">${sceneInner(scene, i, { W, H, esc })}</div></div>`
+    : `      <div id="gscene-${i}" class="glow-scene gst-${scene.type || "icons"} clip" data-start="${scene.start}" data-duration="${r3(scene.end - scene.start)}" data-track-index="3" data-layout-allow-overflow>${sceneInner(scene, i, { W, H, esc })}</div>`).join("\n");
 }
+
+/** Styles for inset scenes, emitted only when one exists. */
+export function glowInsetCSS({ H, c }) {
+  const bg = c.bg || "#0B0B0D";
+  return `
+      .glow-scene.gs-inset { background: none; }
+      .gs-stage { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+      .gs-scrim { position: absolute; border-radius: ${Math.round(H * 0.016)}px; background: radial-gradient(ellipse at 50% 40%, ${hexA(c.accent, 0.16)} 0%, ${hexA(bg, 0)} 70%), ${hexA(bg, 0.72)}; box-shadow: 0 ${Math.round(H * 0.012)}px ${Math.round(H * 0.03)}px rgba(0,0,0,0.45), inset 0 0 0 2px ${hexA(c.accent, 0.28)}; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }`;
+}
+
+/** Fit each inset scene's pieces into its planned rectangle: measured at full size, scaled and moved as one stage. */
+export const GLOW_INSET_JS = `
+        const fitInset = (s, i) => {
+          const stage = document.getElementById("gs-" + i + "-stage"), scrim = document.getElementById("gs-" + i + "-scrim");
+          const root = document.getElementById("root").getBoundingClientRect();
+          const k = root.height ? root.height / PLAN.height : 1;
+          let L = Infinity, T = Infinity, R = -Infinity, B = -Infinity;
+          const add = (b) => { if (!b.width || !b.height) return; L = Math.min(L, b.left); T = Math.min(T, b.top); R = Math.max(R, b.right); B = Math.max(B, b.bottom); };
+          for (const n of stage.querySelectorAll("*")) {
+            if (n.tagName === "IMG" || n.tagName === "svg" || /gs-bar|gs-node|gs-line|gs-phone|gs-bubble|gs-badge/.test(String(n.className))) { add(n.getBoundingClientRect()); continue; }
+            for (const c of n.childNodes) if (c.nodeType === 3 && c.textContent.trim()) { const r = document.createRange(); r.selectNodeContents(c); add(r.getBoundingClientRect()); }
+          }
+          if (!Number.isFinite(L)) return;
+          const bx = (L - root.left) / k, by = (T - root.top) / k, bw = (R - L) / k, bh = (B - T) / k;
+          const p = s.place, pad = PLAN.height * 0.018;
+          const sc = Math.min(p.cap || 0.7, (p.w - 2 * pad) / bw, (p.h - 2 * pad) / bh);
+          const w = bw * sc, h = bh * sc;
+          const x = p.side === "left" ? p.x + pad : p.side === "right" ? p.x + p.w - pad - w : p.x + (p.w - w) / 2;
+          const y = p.y + (p.h - h) / 2;
+          gsap.set(stage, { x: x - bx * sc, y: y - by * sc, scale: sc, transformOrigin: "0 0" });
+          Object.assign(scrim.style, { left: (x - pad) + "px", top: (y - pad) + "px", width: (w + 2 * pad) + "px", height: (h + 2 * pad) + "px" });
+        };
+        // Fit once now and again as the scene starts, when its layout (fonts, images) is final; the stage resets to
+        // full size first so the second measure is not of the already scaled pieces.
+        (PLAN.glowScenes || []).forEach((s, i) => {
+          if (!s.place) return;
+          fitInset(s, i);
+          tl.call(() => { gsap.set("#gs-" + i + "-stage", { x: 0, y: 0, scale: 1 }); fitInset(s, i); }, null, Math.max(0, s.start - 0.02));
+        });
+`;
 
 export function glowOverlaysHTML(overlays, { W, H, esc }) {
   return overlays.map((o, i) => {
-    const pos = `left:${o.place.x}px;top:${o.place.y}px;width:${o.place.w}px`;
+    const pos = `left:${o.place.x}px;top:${o.place.y}px;width:${o.place.w}px${o.place.scale && o.place.scale !== 1 ? `;transform:scale(${o.place.scale});transform-origin:0 0` : ""}`;
     if (o.type === "stamp") return `      <div id="gover-${i}" class="glow-over go-stamp clip" style="${pos}" data-start="${o.start}" data-duration="${r3(o.end - o.start)}" data-track-index="3" data-layout-allow-overflow><span id="go-${i}-word">${esc(o.text)}</span></div>`;
     return `      <div id="gover-${i}" class="glow-over go-notify clip" style="${pos}" data-start="${o.start}" data-duration="${r3(o.end - o.start)}" data-track-index="3" data-layout-allow-overflow><div class="go-card" id="go-${i}-card">${o.icon?.image ? `<img class="go-icon" src="${esc(o.icon.image)}" alt="">` : ""}<div class="go-body"><div class="go-who">${esc(o.who)}</div><div class="go-text">${wordsHTML(o.words, i, esc, "go")}</div></div></div></div>`;
   }).join("\n");
@@ -200,7 +245,7 @@ export function glowRuntime(scenes, overlays) {
       const [enter, exit] = WIPE_CLIPS[direction];
       const bridge = Number.isInteger(s.bridge) && s.bridge >= 0 && firstGlowIcon(s)?.image
         ? { bridge: s.bridge, bridgeDuration: GLOW_BRIDGE_DURATION, bridgeTarget: `#gs-${i}-${s.type === "people" ? "p0" : "i0"}` } : {};
-      return { type: s.type || "icons", start: s.start, end: s.end, words: (s.words || []).map((w) => w.start), label: (s.labelWords || []).length, icons: (s.icons || []).filter((icon) => icon.image).length, items: (s.items || []).map((it) => it.at), at: s.left ? [s.left.at, s.right.at] : [], count: s.count || 0, ...(s.type === "number" || s.type === "meter" ? nums(s) : {}), hasIcon: !!s.icon?.image, ...(s.type === "flow" ? { nodes: flowNodes(s.items.length), branch: s.branch?.at ?? null } : {}), ...(s.type === "thread" ? { bubbles: s.bubbles.map((b) => ({ side: b.side, at: b.at, words: b.words.map((w) => w.start) })) } : {}), ...(s.type === "bars" ? { bars: [s.left, s.right].map((b) => ({ at: b.at, amount: b.amount, ...nums(b) })) } : {}), wipe: { direction, enter, exit, open: WIPE_OPEN, duration: 0.22 }, ...bridge };
+      return { type: s.type || "icons", start: s.start, end: s.end, words: (s.words || []).map((w) => w.start), label: (s.labelWords || []).length, icons: (s.icons || []).filter((icon) => icon.image).length, items: (s.items || []).map((it) => it.at), at: s.left ? [s.left.at, s.right.at] : [], count: s.count || 0, ...(s.type === "number" || s.type === "meter" ? nums(s) : {}), hasIcon: !!s.icon?.image, ...(s.type === "flow" ? { nodes: flowNodes(s.items.length), branch: s.branch?.at ?? null } : {}), ...(s.type === "thread" ? { bubbles: s.bubbles.map((b) => ({ side: b.side, at: b.at, words: b.words.map((w) => w.start) })) } : {}), ...(s.type === "bars" ? { bars: [s.left, s.right].map((b) => ({ at: b.at, amount: b.amount, ...nums(b) })) } : {}), wipe: { direction, enter, exit, open: WIPE_OPEN, duration: 0.22 }, ...bridge, ...(isInsetScene(s) ? { place: { x: s.place.x, y: s.place.y, w: s.place.w, h: s.place.h, side: s.place.side, cap: s.place.cap } } : {}) };
     }),
     glowOverlays: overlays.map((o) => ({ type: o.type, start: o.start, end: o.end, words: (o.words || []).map((w) => w.start) })),
   };

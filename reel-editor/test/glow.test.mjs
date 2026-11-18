@@ -205,11 +205,22 @@ test("the glow look is on for Greg's vertical reels only", async () => {
   assert.equal(glowEnabled(on, { ...tall, canvas: { width: 1920, height: 1080 } }, {}), false);
 });
 
-test("with the chin low in frame, feature lines fall back to subtitles and stamps are left out", () => {
+test("with the chin low in frame, feature lines fall back to subtitles and a stamp moves above the head", () => {
   const ws = "We all know the answer is listening every single time".split(" ").map((text, i) => ({ text, start: 4 + i * 0.4, end: 4 + i * 0.4 + 0.3 }));
   const detection = { frames: [4, 5, 6, 7, 8].map((t) => ({ t, faces: [{ x: 0.3, y: 0.45, w: 0.4, h: 0.3 }] })) };
   const out = layoutGlow({ words: ws, video: { duration: 10 } }, { features: [{ from: 0, to: 2, key: 2, br: null }], icons: [], overlays: [{ type: "stamp", from: 6, to: 6 }], scenes: [] }, [], detection);
   assert.equal(out.captions.filter((g) => g.kind === "feat").length, 0);
+  // Frame-aware placement: the band under the chin is full, but the wall above the head is open.
+  assert.equal(out.overlays.length, 1);
+  const p = out.overlays[0].place;
+  assert.ok(p.y + 160 * p.scale <= 0.45 * 1920, `stamp clears the head: ${JSON.stringify(p)}`);
+  assert.deepEqual(out.captions.flatMap((g) => g.words.map((w) => w.text)), ws.filter((_, i) => i !== 6).map((w) => w.text));
+});
+
+test("a cramped stamp with no open spot anywhere is left out and its word stays in the subtitles", () => {
+  const ws = "We all know the answer is listening every single time".split(" ").map((text, i) => ({ text, start: 4 + i * 0.4, end: 4 + i * 0.4 + 0.3 }));
+  const detection = { frames: [4, 5, 6, 7, 8].map((t) => ({ t, faces: [{ x: 0.05, y: 0.12, w: 0.9, h: 0.6 }] })) };
+  const out = layoutGlow({ words: ws, video: { duration: 10 } }, { features: [], icons: [], overlays: [{ type: "stamp", from: 6, to: 6 }], scenes: [] }, [], detection);
   assert.equal(out.overlays.length, 0);
   assert.deepEqual(out.captions.flatMap((g) => g.words.map((w) => w.text)), ws.map((w) => w.text));
 });
@@ -634,4 +645,23 @@ test("the glow look captions every word in the band, never as small subtitles, a
   const onPlan = base(); onPlan.style.glow = { subtitles: true };
   const on = await restyleGlow(onPlan, { library: [], picks, ask: () => { throw new Error("no call"); } });
   assert.ok(on.plan.captions.some((g) => g.kind === "sub"));
+});
+
+test("glow scenes leave the full screen when the frame has room, and never take one spot twice running", async () => {
+  const { placeGlowScenes } = await import("../src/glow.mjs");
+  const { glowScenesHTML, glowRuntime } = await import("../src/glow-scenes.mjs");
+  // A wide shot: the speaker small and low on the right.
+  const frames = Array.from({ length: 80 }, (_, k) => ({ t: k * 0.25, faces: [{ x: 0.58, y: 0.42, w: 0.18, h: 0.1 }], bodies: [] }));
+  const sc = (type, start) => ({ type, start, end: start + 2.5, words: [], labelWords: [] });
+  const out = placeGlowScenes([sc("number", 2), sc("meter", 6), sc("number", 10), { ...sc("flow", 14), items: [{ label: "a", at: 14 }, { label: "b", at: 15 }] }], { frames });
+  const spots = out.map((s) => (s.place ? `${s.place.slot} ${s.place.side}` : "full"));
+  assert.ok(spots.slice(0, 3).some((x) => x !== "full"), spots.join(","));
+  for (let i = 1; i < 3; i++) assert.notEqual(spots[i], spots[i - 1]);
+  assert.equal(spots[3], "full", "a flow scene keeps the full screen");
+  const inset = out.find((s) => s.place);
+  assert.ok(inset.place.y + inset.place.h <= 0.42 * 1920 || inset.place.x + inset.place.w <= 0.58 * 1080 || inset.place.y >= 0.52 * 1920, "clear of the face");
+  const html = glowScenesHTML(out, { W: 1080, H: 1920, esc: String });
+  assert.match(html, /gs-inset/);
+  assert.ok(glowRuntime(out, []).glowScenes.some((s) => s.place));
+  assert.equal(placeGlowScenes([sc("number", 2)], null)[0].place, undefined, "no detection, no change");
 });

@@ -1,8 +1,9 @@
+import { readFrame, placeCard, canvasDetection } from "./frame-place.mjs";
 import { fitSceneWindow, applyScenePlan, detectionInScene } from "./stitch-scenes.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { claudeText, firstJSON } from "./claude.mjs";
-import { detectFaces } from "./placement.mjs";
+import { detectFaces, zoomDuring } from "./placement.mjs";
 import { r3 } from "./util.mjs";
 import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 import { glowSoundCues } from "./glow-sound.mjs";
@@ -337,7 +338,7 @@ export function chinDuring(detection, t0, t1, fallback = 0.47) {
  * Turn checked picks into plan captions, icons, scenes and the hook's placement. Words outside features and scenes
  * become subtitles (clauses broken at punctuation, three words a line).
  */
-export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920 } = {}) {
+export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920, placeDetection = detection } = {}) {
   const words = plan.words;
   const D = plan.video.duration;
   const window = (kind, pick) => glowWindow(kind, pick, words, D, Math.max(3, plan.hook ? plan.hook.start + plan.hook.duration : 0));
@@ -387,12 +388,15 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
     // No room under the chin (a close zoom): a feature line becomes subtitles, an overlay is left out.
     const featureBox = f ? featureLayout(words, f, featSize, Math.round(0.58 * W), H) : null;
     if (f && !roomy(words[f.from].start - 0.05, words[f.to].end + 0.35, featureBox.h / H)) f = null;
-    if (o && !roomy(words[o.from].start - 0.1, words[o.to].end + 0.7, o.type === "stamp" ? 0.08 : 0.075)) o = null;
+    // No room under the chin: the overlay may still fit beside or above the head (placed below); if not, it is left out.
+    const cramped = !!o && !roomy(words[o.from].start - 0.1, words[o.to].end + 0.7, o.type === "stamp" ? 0.08 : 0.075);
+    // Decided here, not later: a dropped overlay's words must stay in the subtitles.
+    if (cramped && !overlaySpace(o.type, plan.stitchScenes ? detectionInScene(placeDetection, plan.stitchScenes, words[o.from].start) : placeDetection, words[o.from].start - 0.1, words[o.to].end + 0.7, { W, H, text: featWord(words[o.from].text) })) o = null;
     if (o) {
       flush();
       const ix = Array.from({ length: o.to - o.from + 1 }, (_, k) => o.from + k);
       const { start, end } = window("overlays", o);
-      overlays.push({ type: o.type, start, end, who: o.who, icon: file(o.icon), text: featWord(words[o.from].text).toUpperCase(), words: ix.map((j) => ({ text: clean(words[j].text), start: words[j].start, end: words[j].end })), place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.62 * W) } });
+      overlays.push({ type: o.type, start, end, who: o.who, icon: file(o.icon), text: featWord(words[o.from].text).toUpperCase(), words: ix.map((j) => ({ text: clean(words[j].text), start: words[j].start, end: words[j].end })), place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.62 * W) }, ...(cramped ? { cramped: true } : {}) });
       i = o.to;
       continue;
     }
@@ -491,7 +495,60 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
   icons.forEach((icon, i) => { const nx = icons[i + 1]; if (nx && icon.end > nx.t - 0.05) icon.end = r3(nx.t - 0.05); });
   icons = icons.filter((icon) => bridges.has(icon) ? icon.end >= bridges.get(icon).start + GLOW_BRIDGE_DURATION - 0.001 : icon.end - icon.t >= 0.6);
   icons.forEach((icon, i) => { const scene = bridges.get(icon); if (scene) scene.bridge = i; });
-  return { captions: visible, icons, scenes, overlays, band };
+  return { captions: visible, icons, scenes: placeGlowScenes(scenes, placeDetection, { W, H, stitchScenes: plan.stitchScenes }), overlays: placeGlowOverlays(overlays, placeDetection, { W, H, stitchScenes: plan.stitchScenes }), band };
+}
+
+/**
+ * Glow notify and stamp overlays read their own frames too (frame-place.mjs): beside the head, above it, a top
+ * corner or the band under the chin, sized to fit and never the same spot twice running. The detection here is of
+ * the finished render, so its boxes are already canvas fractions. Without detection the band under the chin stays.
+ */
+// Scene content at full size (its pieces' extent on the 1080 x 1920 ground), for the planner; the page measures the real one.
+const SCENE_FOOT = { icons: [950, 900], number: [1000, 480], meter: [900, 600], list: [900, 1250], steps: [900, 1080], versus: [1000, 1000], quote: [900, 900], people: [950, 700] };
+
+/**
+ * Glow scenes read their frames too: a scene can sit on a glass panel beside, above or under the speaker instead of
+ * always taking the whole screen (Greg 11-18: every reel looked the same). Full screen stays in the mix and costs
+ * little, but never twice running when another spot fits. Flow, thread and bars scenes, and scenes an icon flies into,
+ * keep the full screen. Without detection every scene stays full screen.
+ */
+export function placeGlowScenes(scenes, detection, { W = 1080, H = 1920, stitchScenes = null, captionTop = 0.785 } = {}) {
+  if (!detection?.frames?.length) return scenes;
+  const history = [];
+  return scenes.map((sc) => {
+    const foot = SCENE_FOOT[sc.type || "icons"];
+    const det = stitchScenes ? detectionInScene(detection, stitchScenes, sc.start) : detection;
+    const frames = (det?.frames || []).filter((f) => f.t >= sc.start - 0.13 && f.t <= sc.end + 0.13);
+    if (!foot || Number.isInteger(sc.bridge) || !frames.length) { history.push({ slot: "full", side: "center", size: "full" }); return sc; }
+    const h = sc.type === "number" && sc.icon ? 1100 : foot[1];
+    const frame = readFrame({ frames }, { W, H, captionTop, captionFontFrac: 0.03 });
+    const p = placeCard({ type: sc.type, foot: { w: foot[0], h, minW: foot[0], minVisual: 380, wrap: 0 } }, frame, { history, allowPush: false, kind: "scene", maxScale: 0.7, minScale: 0.5, maxArea: 0.4, fullCost: 0.38 });
+    if (!p) { history.push({ slot: "full", side: "center", size: "full" }); return sc; }
+    history.push({ slot: p.slot, side: p.side });
+    return p.slot === "full" ? sc : { ...sc, place: { x: p.x, y: p.y, w: p.w, h: p.h, side: p.side, cap: p.scale, slot: p.slot } };
+  });
+}
+
+function overlaySpace(type, detection, t0, t1, { W, H, captionTop = 0.785, text = "" }) {
+  const frames = (detection?.frames || []).filter((f) => f.t >= t0 - 0.13 && f.t <= t1 + 0.13);
+  if (!frames.length) return null;
+  return placeCard({ type, text }, readFrame({ frames }, { W, H, captionTop, captionFontFrac: 0.03 }), { allowFull: false, allowPush: false, kind: "overlay", maxScale: 1, minScale: 0.7 });
+}
+
+export function placeGlowOverlays(overlays, detection, { W = 1080, H = 1920, stitchScenes = null, captionTop = 0.785 } = {}) {
+  if (!detection?.frames?.length) return overlays.filter((o) => !o.cramped);
+  const history = [];
+  return overlays.flatMap((o) => {
+    const det = stitchScenes ? detectionInScene(detection, stitchScenes, o.start) : detection;
+    const frames = (det?.frames || []).filter((f) => f.t >= o.start - 0.13 && f.t <= o.end + 0.13);
+    const { cramped, ...rest } = o;
+    if (!frames.length) return cramped ? [] : [rest];
+    const frame = readFrame({ frames }, { W, H, captionTop, captionFontFrac: 0.03 });
+    const p = placeCard({ type: o.type, text: o.text }, frame, { history, allowFull: false, allowPush: false, kind: "overlay", maxScale: 1, minScale: 0.7 });
+    if (!p) return cramped ? [] : [rest];
+    history.push({ slot: p.slot, side: p.side });
+    return [{ ...rest, place: { x: p.x, y: p.y, w: p.layoutW, scale: p.scale, slot: p.slot, side: p.side } }];
+  });
 }
 
 /**
@@ -575,6 +632,10 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
   const W = plan.canvas.width, H = plan.canvas.height, D = plan.video.duration;
   const times = Array.from({ length: Math.max(1, Math.floor(D * 4)) }, (_, k) => r3(Math.min(D - 0.05, k * 0.25 + 0.05)));
   const detection = render ? await detect(render, times) : null;
+  // Scenes and overlays are placed from the clean footage (moved onto the canvas), not from the old render, where a
+  // full-screen scene or card would hide the speaker.
+  const clean = plan.video?.src && fs.existsSync(plan.video.src) ? plan.video.src : null;
+  const placeDetection = clean ? canvasDetection(await detect(clean, times), plan, { zoomAt: (t) => zoomDuring(plan.zooms || [], t, t) }) || detection : detection;
   const hookEnd = plan.hook ? plan.hook.start + plan.hook.duration : 0;
   // Saved picks (a re-render after a layout change) skip the Claude call; they are checked again all the same.
   const reply = saved || firstJSON(await ask(glowPrompt(plan.words, library, { hook: plan.hook?.text || "", duration: D }), { timeoutMs: 900000 }));
@@ -593,7 +654,7 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
     const window = glowWindow(kind, pick, plan.words, D, Math.max(3, hookEnd));
     return fitSceneWindow(window, plan.stitchScenes);
   });
-  const out = layoutGlow(plan, picks, library, detection, { W, H });
+  const out = layoutGlow(plan, picks, library, detection, { W, H, placeDetection });
   plan.captions = out.captions;
   plan.icons = out.icons;
   plan.glowScenes = out.scenes;

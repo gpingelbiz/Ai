@@ -15,13 +15,14 @@ import { writeFeatures } from "./features.mjs";
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
 import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./review.mjs";
+import { planPlacements, reframeDetection, placeCard } from "./frame-place.mjs";
 import { detectFaces, headExtent, headSpanX, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
 import { pickHook, pickCta, hookSeconds, plaqueLayout, sidePlaqueLayout } from "./hook.mjs";
 import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
 import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
-import { planBumps, planDrift } from "./motion.mjs";
+import { planBumps, planDrift, driftDuring } from "./motion.mjs";
 import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
 import { eventClock, legacyLanding, measureSfxFile } from "./event-clock.mjs";
 import { runTextcheck } from "./textcheck.mjs";
@@ -455,6 +456,21 @@ export async function runEdit(input, opts = {}, deps = {}) {
       log(`reframe: following the face across ${reframe.length} move${reframe.length === 1 ? "" : "s"} (wide source into ${canvas1.mode})`);
     } else log("reframe: no face found in the wide shot, keeping the centre crop");
   }
+  // A reframed wide source: the hook is placed and guarded through the crop window too. Before, nothing measured the
+  // head there, and a close-up's hook at the preset 22% landed on the forehead and eyes (Julee, 2026-11-18).
+  let hookHead = null;
+  if (hook && reframe?.length && !sameShape && opts.hookPosition == null && !behindPlan) {
+    const t0 = hook.start, t1 = hook.start + hook.duration;
+    const det = reframeDetection(await (deps.detectFaces || detectFaces)(videoSrc, [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => r3(Math.min(duration - 0.05, t0 + f * (t1 - t0))))), reframe, cleanMeta, canvas0);
+    hookHead = zoomedHead(det, 1.06);
+    if (hookHead && preset.hook.autoPlace && preset.hook.plaque !== true) {
+      const fontPx = Math.round(preset.hook.fontSizeFrac * canvas0.height * (preset.hook.style === "headline" ? 1.08 : 1));
+      const spot = placeHook(hookHead, { words: hook.words || hook.text.split(/\s+/).map((t) => ({ text: t })), W: canvas0.width, H: canvas0.height, fontPx, captionTop, defaultPosition: preset.hook.position });
+      preset.hook.position = spot.position;
+      preset.hook.fontSizeFrac = r3(preset.hook.fontSizeFrac * spot.fontScale);
+      log(`hook placement (through the face-following crop): ${spot.zone} at ${Math.round(spot.position * 100)}% (head spans ${Math.round(hookHead.top * 100)}-${Math.round(hookHead.bottom * 100)}%)`);
+    }
+  }
   log(`captions: ${groups.length} lines, ${groups.filter((g) => g.words.some((w) => w.key)).length} with a highlight`);
   log(`hook: ${hook ? `"${hook.text}"${hook.auto ? " (auto, pass --hook for a written one)" : ""}` : "none"}`);
   if (cta) log(`cta: "${cta.text}" at ${cta.start}s for ${cta.duration}s (${cta.style})`);
@@ -664,8 +680,8 @@ export async function runEdit(input, opts = {}, deps = {}) {
   }
   // The hook never covers the head either: in front of the speaker (not the text-behind-you cutout) the page measures
   // the real hook text and shrinks it toward its top until it ends above this head top (at the opening push-in).
-  if (hook && !behindPlan && detection && sameShape) {
-    const head = zoomedHead(detection, 1.06);
+  if (hook && !behindPlan && ((detection && sameShape) || hookHead)) {
+    const head = sameShape ? zoomedHead(detection, 1.06) : hookHead;
     if (head) { hook.headTop = r3(head.top); hook.headBottom = r3(head.bottom); }
   }
   // Cold open: the first b-roll still holds under the hook for a beat before the speaker appears.
@@ -710,6 +726,95 @@ export async function runEdit(input, opts = {}, deps = {}) {
       const top = cardHeadTop(sceneFaces ? sceneAt(sceneFaces, g.start)?.detection : detection, { zooms, drift: driftPlan.stretches, t0: g.start, t1: g.start + g.duration, scale: sceneFaces ? sceneAt(sceneFaces, g.start).framing.scale : framing.scale, originY: sceneFaces ? parseFloat(sceneAt(sceneFaces, g.start).framing.origin.split(" ")[1]) / 100 : originY, shift: sceneFaces ? sceneAt(sceneFaces, g.start).framing.shift || 0 : framing.shift || 0 });
       if (top != null) g.headTop = top;
     }
+  }
+  // Frame-aware card placement (frame-place.mjs): each card reads its own frames (head, body, captions, quiet
+  // space) and takes the open spot that suits it, sized to fit: beside the speaker, above, a top corner, between
+  // chin and captions, full screen, or (only when it is the best choice) the old top card with the footage pushed
+  // down. A preset pins it with graphics.placement: a slot name or list, or "push" for the old layout everywhere.
+  const placePin = preset.graphics?.placement ?? "auto";
+  const placeable = transientCards.filter((g) => !(g.type === "message" && g.mode === "proof"));
+  // A reframed wide source is read through its crop window, so it gets the same placement as a native tall clip.
+  const placeDetect = async (video, times) => {
+    const det = await (deps.detectFaces || detectFaces)(video, times);
+    return sameShape ? det : reframe?.length ? reframeDetection(det, reframe, cleanMeta, canvas0) : null;
+  };
+  const placeBusy = sameShape ? deps.frameBusy : async () => null;
+  if ((sameShape || reframe?.length) && canvas0.height > canvas0.width && (preset.graphics?.mode || "overlay") === "overlay" && !["push", "legacy", "off"].includes(placePin) && placeable.length) {
+    const origin = framing.scale > 1 && framing.origin ? framing.origin : preset.zooms.origin || "50% 40%";
+    const allowBehind = preset.graphics?.behind !== false;
+    const { placements, frames: placeFrames, log: placeLog } = await planPlacements(placeable, {
+      video: videoSrc,
+      detect: placeDetect,
+      ...(placeBusy ? { busy: placeBusy } : {}),
+      zoomAt: (t0, t1) => zoomDuring(zooms, t0, t1) * driftDuring(driftPlan.stretches, t0, t1),
+      framingAt: (t) => (sceneFaces ? sceneAt(sceneFaces, t).framing : framing),
+      originAt: (t) => (sceneFaces ? sceneAt(sceneFaces, t).framing.origin : origin),
+      W: canvas0.width, H: canvas0.height,
+      captionTop: captionTop + 0.02,
+      captionFontFrac: preset.captions.fontSizeFrac,
+      pin: placePin === "auto" ? null : placePin,
+      ...(preset.graphics?.placeScale ? { maxScale: preset.graphics.placeScale } : {}),
+      allowBehind,
+      // Greg 11-18: cards go "below to the side anywhere", never full screen; a card with no clear readable spot is
+      // left out. graphics.placeFull: true lets a brand use the full-screen fallback.
+      allowFull: preset.graphics?.placeFull === true,
+    });
+    // A card behind the speaker needs a person matte for its window (the head is drawn again over the card). A
+    // failed matte puts the card back in the best spot that does not need one.
+    for (let i = 0; i < placements.length; i++) {
+      if (placements[i]?.slot !== "behind") continue;
+      const g = placeable[i];
+      const start = r3(Math.max(0, g.start - 0.05)), end = r3(g.start + g.duration + 0.05);
+      const cut = await (deps.makeCutout || makeCutout)({ video: videoSrc, start, duration: r3(end - start), fps: preset.render.fps || 30, outDir: workDir, name: `gfx-behind-${i + 1}` });
+      if (!cut.error) { g.cutout = { file: cut.src, start: cut.start, duration: cut.duration }; continue; }
+      log(`cards: the card at ${r3(g.start)}s stays out of the head instead (${cut.error})`);
+      const history = placements.slice(0, i).filter(Boolean).map((p) => ({ slot: p.slot, side: p.side }));
+      placements[i] = placeFrames[i] ? placeCard(g, placeFrames[i], { history, pin: placePin === "auto" ? null : placePin, allowFull: preset.graphics?.placeFull === true }) : null;
+    }
+    // Measured with no clear spot (and no full screen allowed): the card is left out rather than covering anyone.
+    const noRoom = new Set(placeable.filter((g, i) => !placements[i] && placeFrames[i]?.measured));
+    if (noRoom.size) {
+      log(`cards: left out ${noRoom.size} card${noRoom.size === 1 ? "" : "s"} with no readable spot clear of the face and captions (${[...noRoom].map((g) => `${g.type} at ${r3(g.start)}s`).join(", ")})`);
+      allCards = allCards.filter((g) => !noRoom.has(g));
+      transientCards = transientCards.filter((g) => !noRoom.has(g));
+      allGraphics = allGraphics.filter((g) => !noRoom.has(g));
+      allGraphics.schema = graphicsSchema;
+    }
+    placements.forEach((p, i) => { if (p) placeable[i].place = p; });
+    if (placeLog) log(`cards placed by frame: ${placements.map((p) => (p ? `${p.slot}${p.side && p.side !== "center" ? ` ${p.side}` : ""}` : "unmeasured")).join(", ")}`);
+  }
+  // Keyword slams read their frames the same way: the top band when the head leaves room, else beside the head or
+  // between chin and captions, smaller when that is what fits. Pop-out slams keep their own cut-out placement.
+  const slamPin = preset.slams?.placement ?? "auto";
+  const plainSlams = slams.filter((sl) => !sl.popout);
+  if ((sameShape || reframe?.length) && canvas0.height > canvas0.width && slamPin !== "top" && slamPin !== "legacy" && plainSlams.length) {
+    const origin = framing.scale > 1 && framing.origin ? framing.origin : preset.zooms.origin || "50% 40%";
+    const H0 = canvas0.height, font0 = Math.round(0.115 * H0);
+    const items = plainSlams.map((sl) => {
+      const w = Math.min(0.86 * canvas0.width, String(sl.text).length * 0.52 * font0);
+      return { start: sl.t, duration: Math.max(0.3, sl.end - sl.t), kind: "slam", foot: { w, h: Math.round(font0 * 1.1), minW: w, wrap: 0 } };
+    });
+    const { placements, frames: slamFrames, log: slamLog } = await planPlacements(items, {
+      video: videoSrc,
+      detect: placeDetect,
+      busy: (sameShape && deps.frameBusy) || (async () => null),
+      zoomAt: (t0, t1) => zoomDuring(zooms, t0, t1) * driftDuring(driftPlan.stretches, t0, t1),
+      framingAt: (t) => (sceneFaces ? sceneAt(sceneFaces, t).framing : framing),
+      originAt: (t) => (sceneFaces ? sceneAt(sceneFaces, t).framing.origin : origin),
+      W: canvas0.width, H: H0,
+      captionTop: captionTop + 0.02,
+      captionFontFrac: preset.captions.fontSizeFrac,
+      maxScale: 1, minScale: 0.5, maxArea: 0.2,
+      pin: slamPin === "auto" ? null : slamPin,
+    });
+    placements.forEach((p, i) => { if (p) plainSlams[i].place = { x: p.x, y: p.y, w: p.w, h: p.h, fontSize: Math.round(font0 * p.scale), slot: p.slot, side: p.side }; });
+    // A measured frame with no clear spot: the slam is left out rather than stamped over someone's head.
+    const dropped = plainSlams.filter((_, i) => !placements[i] && slamFrames[i]?.measured);
+    if (dropped.length) {
+      slams = slams.filter((sl) => !dropped.includes(sl));
+      log(`slams: left out ${dropped.map((sl) => `"${sl.text}"`).join(", ")} (no spot clear of the head and captions)`);
+    }
+    if (slamLog) log(`slams placed by frame: ${slamLog}`);
   }
   // The premise is one fixed band, measured against the highest head position across its full lifetime. It does not
   // count as a card; only cards and slams that occupy the band make it duck for their exact window.
