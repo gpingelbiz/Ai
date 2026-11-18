@@ -103,7 +103,8 @@ test("Runway planner uses the synthesis with ranked alternatives, literal subjec
   assert.match(p, /3 seconds from one shot's END to the next START/);
   assert.match(p, /A jungle stays a jungle; a snake stays a snake; a coconut stays a coconut/);
   assert.match(p, /Read the whole passage first/);
-  assert.match(p, /Preserve Greg's reactions, conviction, personal admissions and final/);
+  assert.match(p, /Preserve the speaker's reactions, conviction, personal admissions and final/);
+  assert.doesNotMatch(p, /Greg/, "client edits use this prompt too, so it never names Greg");
   assert.match(p, /across following caption lines/);
   assert.match(p, /1.2 and 2.5 seconds/);
   assert.match(p, /Default for a watched subject: "Locked camera on a tripod/);
