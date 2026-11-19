@@ -121,7 +121,7 @@ export const CARDS = {
       // The shared slot contract wraps text but has no word-count validator.
       const word = o.slots.word[0];
       if (word.from !== word.to || word.text.trim().split(/\s+/).length !== 1) return { inner: "", timeline: "" };
-      return { inner: `<div class="big-copy">${h.copy(word)}</div>`, timeline: `tl.fromTo(${h.sel(".big-copy")},{opacity:0,clipPath:"inset(0 100% 0 0)",scale:1.04},{opacity:1,clipPath:"inset(0 0% 0 0)",scale:1,duration:${h.motion.enter},ease:proEnter,immediateRender:false},${o.reveals[0]});` };
+      return { inner: `<div class="big-copy">${h.esc(word.text.replace(/[^\p{L}\p{N}'’$%]/gu, ""))}</div>`, timeline: `tl.fromTo(${h.sel(".big-copy")},{opacity:0,clipPath:"inset(0 100% 0 0)",scale:1.04},{opacity:1,clipPath:"inset(0 0% 0 0)",scale:1,duration:${h.motion.enter},ease:proEnter,immediateRender:false},${o.reveals[0]});` };
     },
     css: `
       .pro-big-word { display:flex;align-items:center;justify-content:center; }

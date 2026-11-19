@@ -17,7 +17,7 @@ export function proCaptionHTML(group, index, { height = 1920, mark = () => "" } 
 
 export function proHookHTML(hook) {
   const spans = rows(hook.words, hook.lines, (w) => esc(w.text));
-  return `      <div id="hook" class="clip hook-pro" data-start="0" data-duration="${hook.duration}" data-track-index="3" data-layout-allow-overflow><div id="pro-title">${spans}</div></div>`;
+  return `      <div id="hook" class="clip hook-pro" data-start="0" data-duration="${hook.duration}" data-track-index="3" data-layout-allow-overflow><div id="pro-title"${hook.fontSize ? ` style="font-size:${hook.fontSize}px;line-height:${Math.round(hook.fontSize * 1.06)}px"` : ""}>${spans}</div></div>`;
 }
 
 export function proCSS({ height = 1920, captions = false, hook = false } = {}) {

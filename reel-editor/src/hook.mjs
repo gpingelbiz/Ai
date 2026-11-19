@@ -6,11 +6,18 @@ import { norm } from "./text.mjs";
 export function planProHook(words, { text, duration = 2.4, reelDuration, measure } = {}) {
   const source = pickHook(words, { text, maxWords: 12 });
   if (!source) return null;
-  const tokens = source.text.replace(/\*/g, "").split(/\s+/).map((text) => ({ text }));
+  const all = source.text.replace(/\*/g, "").split(/\s+/).map((text) => ({ text }));
+  const weak = /^(a|an|the|to|of|in|on|at|for|with|from|by|and|or|but|your|my|our|their|his|her|its|not|never|no|without|\d+)$/i;
+  // Keep the whole title: step the size down (100, 88, 80 px on 1080x1920; measure is at 108) before dropping words.
+  for (const px of [100, 88, 80]) {
+    const lines = proLineBreaks(all, { measure, maxWidth: 768 * 108 / px });
+    if (lines && !weak.test(all.at(-1).text)) return { text: all.map((w) => w.text).join(" "), words: all, lines: lines.map((line) => line.length), fontSize: px, start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
+  }
+  const tokens = [...all];
   while (tokens.length) {
-    const lines = proLineBreaks(tokens, { measure, maxWidth: 768 });
-    if (lines && !/^(a|an|the|to|of|in|on|at|for|with|from|by|and|or|but|your|my|our|their|his|her|its|not|never|no|without|\d+)$/i.test(tokens.at(-1).text)) {
-      return { text: tokens.map((w) => w.text).join(" "), words: tokens, lines: lines.map((line) => line.length), start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
+    const lines = proLineBreaks(tokens, { measure, maxWidth: 768 * 108 / 80 });
+    if (lines && !weak.test(tokens.at(-1).text)) {
+      return { text: tokens.map((w) => w.text).join(" "), words: tokens, lines: lines.map((line) => line.length), fontSize: 80, start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
     }
     tokens.pop();
   }

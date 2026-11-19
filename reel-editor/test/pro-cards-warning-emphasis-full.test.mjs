@@ -172,7 +172,8 @@ test("labels are optional short headings, reject digits and long copy, and all s
     for (const items of Object.values(o.slots)) for (const item of items) { item.text = '<b>&"'; item.lines = ['<b>&"']; }
     if (type === "big-word") { o.slots.word[0].text = '<b>&"'; }
     const r = renderProOverlay(o);
-    assert.match(r.html, /&lt;b&gt;&amp;&quot;/, type);
+    // big-word keeps letters and digits only, so markup characters are dropped rather than escaped.
+    if (type !== "big-word") assert.match(r.html, /&lt;b&gt;&amp;&quot;/, type);
     assert.doesNotMatch(r.html, /<b>/, type);
     assert.equal(groundCard({}, type, words), null);
     const bad = structuredClone(fixtures[type].pick);
