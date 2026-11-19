@@ -1,4 +1,5 @@
 import { PRO_MOTION, proSize } from "./pro.mjs";
+import { CARDS } from "./pro-cards/index.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const copy = (p) => (p.lines || [p.text]).map(esc).join("<br>");
@@ -20,7 +21,7 @@ function panel(overlay, inner, timeline) {
   const { id, place } = overlay, size = proSize(overlay);
   if (!place || !size) return { html: "", timeline: "" };
   const scale = place.scale || 1;
-  const html = `<div id="${esc(id)}" class="pro-overlay pro-${overlay.type}${overlay.surface === "bone" ? " pro-bone" : ""}" style="left:${place.x}px;top:${place.y}px;width:${size.w}px;height:${size.h}px;transform:scale(${scale});transform-origin:0 0" data-start="${overlay.start}" data-duration="${overlay.duration}" data-track-index="3" data-layout-allow-overflow>${inner}</div>`;
+  const html = `<div id="${esc(id)}" class="pro-overlay pro-${overlay.type}${(overlay.surface || CARDS[overlay.type]?.surface) === "bone" ? " pro-bone" : ""}${CARDS[overlay.type]?.surface === "bare" ? " pro-bare" : ""}${overlay.fullscreen ? " pro-full" : ""}" style="left:${place.x}px;top:${place.y}px;width:${size.w}px;height:${size.h}px;transform:scale(${scale});transform-origin:0 0" data-start="${overlay.start}" data-duration="${overlay.duration}" data-track-index="3" data-layout-allow-overflow>${inner}</div>`;
   const selector = js(`#${id}`);
   return { html, timeline: `tl.fromTo(${selector},{opacity:0,y:${16 * scale}},{opacity:1,y:0,duration:${PRO_MOTION.enter},ease:proEnter,immediateRender:false},${overlay.start});\n${timeline}\ntl.to(${selector},{opacity:0,y:${-8 * scale},duration:${PRO_MOTION.exit},ease:proExit},${at(overlay.end - PRO_MOTION.exit)});` };
 }
@@ -64,7 +65,11 @@ export function label(overlay) {
   return panel(overlay, `<div class="pro-topic">${copy(overlay.phrases[0])}</div>`, "");
 }
 
+const helpers = { esc, copy, js, at, motion: PRO_MOTION };
+
 export function renderProOverlay(overlay) {
+  const def = overlay.card && CARDS[overlay.type];
+  if (def) { const r = def.render(overlay, { ...helpers, sel: (s) => js(`#${overlay.id} ${s}`) }); return panel(overlay, r.inner, r.timeline || ""); }
   const render = { correction, compare, steps: stepsRail, stat, wordMark, label }[overlay.type];
   return render ? render(overlay) : { html: "", timeline: "" };
 }
@@ -103,6 +108,9 @@ export function proCSS() {
       .pro-word-mark { position:absolute;pointer-events:none;overflow:visible;width:calc(100% + 24px);left:-12px; }
       .pro-underline { height:24px;bottom:-24px; }
       .pro-circle { height:calc(100% + 24px);top:-12px; }
+      .pro-bare { background:none;box-shadow:none;padding:0;border-radius:0;overflow:visible; }
+      .pro-full { border-radius:0;padding:110px; }
+${Object.values(CARDS).map((d) => d.css || "").join("\n")}
       .pro-word-mark path { fill:none;stroke:#C8A24B;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1; }
 `;
 }

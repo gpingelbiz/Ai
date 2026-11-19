@@ -6,6 +6,7 @@ import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 import { readFrame, viewFor, overlaps } from "./frame-place.mjs";
 import { eventClock } from "./event-clock.mjs";
 import { r3, writeJSON, warn } from "./util.mjs";
+import { CARDS } from "./pro-cards/index.mjs";
 
 export const PRO_MOTION = Object.freeze({ enter: 0.233, state: 0.3, exit: 0.167, strike: 0.2, hold: 2.4, underline: 0.267, circle: 0.367 });
 export const PRO_RECTS = Object.freeze([
@@ -56,6 +57,7 @@ function phraseSpan(value, words, anchor = 0) {
 export function groundProOverlay(pick, words, { groups = [] } = {}) {
   if (!pick || !words?.length) return null;
   const type = typeFor(pick.type);
+  if (CARDS[type]) return groundCard(pick, type, words);
   if (!["correction", "compare", "steps", "stat", "wordMark", "label"].includes(type)) return null;
   const anchor = words[pick.from]?.start ?? pick.start ?? groups[pick.line]?.start ?? 0;
   const span = (v) => {
@@ -104,9 +106,48 @@ export function groundProOverlay(pick, words, { groups = [] } = {}) {
     complete = Math.max(phrases[1].end, reveals[1] + PRO_MOTION.enter);
     return { type, start, phrases, reveals, strikeAt: r3(strikeAt), complete: r3(complete), end: r3(complete + PRO_MOTION.hold + PRO_MOTION.exit), duration: r3(complete + PRO_MOTION.hold + PRO_MOTION.exit - start) };
   }
-  complete = Math.max(phrases.at(-1).end, reveals.at(-1) + (type === "wordMark" ? PRO_MOTION[pick.mark === "circle" ? "circle" : "underline"] : type === "steps" ? PRO_MOTION.state : PRO_MOTION.enter));
+  complete = Math.max(phrases.at(-1).end, reveals.at(-1) + (type === "wordMark" ? PRO_MOTION["underline"] : type === "steps" ? PRO_MOTION.state : PRO_MOTION.enter));
   const end = type === "label" ? Math.min(start + 2.5, complete + 1.2 + PRO_MOTION.exit) : complete + PRO_MOTION.hold + PRO_MOTION.exit;
-  return { type, start, phrases, reveals, complete: r3(complete), end: r3(end), duration: r3(end - start), ...(label ? { label: textAt(words, label.from, label.to) } : {}), ...(type === "wordMark" ? { word: parts[0].from, mark: pick.mark === "circle" ? "circle" : "underline" } : {}) };
+  return { type, start, phrases, reveals, complete: r3(complete), end: r3(end), duration: r3(end - start), ...(label ? { label: textAt(words, label.from, label.to) } : {}), ...(type === "wordMark" ? { word: parts[0].from, mark: "underline" } : {}) };
+}
+
+
+/** Registry cards: spoken slots are exact word ranges in order; label slots are short planner text with no digits. */
+export function groundCard(pick, type, words) {
+  const def = CARDS[type];
+  const slots = {}, spoken = [];
+  let last = -1;
+  for (const [name, slot] of Object.entries(def.slots || {})) {
+    const raw = pick[name] ?? pick.slots?.[name];
+    const list = slot.repeat ? (Array.isArray(raw) ? raw : []) : raw == null ? [] : [raw];
+    const [min, max] = slot.repeat || [slot.optional ? 0 : 1, 1];
+    if (list.length < min || list.length > max) return null;
+    slots[name] = [];
+    for (const v of list) {
+      let item;
+      if (slot.kind === "label") {
+        const text = String(typeof v === "string" ? v : v?.text || "").trim();
+        if (!text || /\d/.test(text) || tokens(text).length > 4 || text.length > (slot.maxChars || 26)) return null;
+        item = { text, at: null, end: null };
+      } else {
+        const from = v?.from, to = v?.to ?? v?.from;
+        if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from || to >= words.length || from <= last) return null;
+        last = to;
+        item = { text: textAt(words, from, to), from, to, at: words[from].start, end: words[to].end };
+        if (item.text.length > (slot.maxChars || 48)) return null;
+        spoken.push(item);
+      }
+      item.lines = proTextLines(item.text, { width: slot.width || 656, size: slot.size || 52, maxLines: slot.maxLines || 2 });
+      if (!item.lines) return null;
+      slots[name].push(item);
+    }
+  }
+  if (!spoken.length) return null;
+  const start = spoken[0].at;
+  const reveals = spoken.map((p) => p.at);
+  const complete = Math.max(spoken.at(-1).end, reveals.at(-1) + PRO_MOTION.enter);
+  const end = complete + PRO_MOTION.hold + PRO_MOTION.exit;
+  return { type, card: true, start, slots, phrases: spoken, reveals, complete: r3(complete), end: r3(end), duration: r3(end - start), ...(def.fullscreen ? { fullscreen: true } : {}) };
 }
 
 /** Reuse the existing beat jobs and saved element picks before asking for new direction. */
@@ -132,7 +173,9 @@ export function budgetProOverlays(candidates, { duration = 0, hookEnd = 2.6 } = 
   const kept = [];
   for (const c of [...candidates].sort((a, b) => a.start - b.start)) {
     if (!Number.isFinite(c.start) || !Number.isFinite(c.end) || c.start < Math.max(2.6, hookEnd) || c.end > duration || c.end <= c.start) continue;
-    if (kept.some((p) => c.start - p.start < 4 || c.start < p.end)) continue;
+    if (kept.some((p) => c.start - p.start < 3.5 || c.start < p.end)) continue;
+    if (c.fullscreen && kept.some((p) => p.fullscreen)) continue;
+    if (kept.length && kept.at(-1).type === c.type && c.type !== "wordMark") continue;
     const trial = [...kept, c];
     // Occupancy maxima occur when a window edge meets an overlay edge, including a short reel's whole window.
     const windows = [0, ...trial.flatMap((p) => [p.start, p.end - 30])];
@@ -140,7 +183,7 @@ export function budgetProOverlays(candidates, { duration = 0, hookEnd = 2.6 } = 
       const end = Math.min(duration, s + 30), start = Math.max(0, s);
       const count = trial.filter((p) => p.start >= start && p.start < end).length;
       const occupied = trial.reduce((n, p) => n + Math.max(0, Math.min(end, p.end) - Math.max(start, p.start)), 0);
-      return count > 3 || occupied > Math.min(15, duration / 2) + 1e-6;
+      return count > 4 || occupied > Math.min(18, duration * 0.6) + 1e-6;
     })) continue;
     kept.push({ ...c, id: `pro-${kept.length}` });
   }
@@ -149,9 +192,11 @@ export function budgetProOverlays(candidates, { duration = 0, hookEnd = 2.6 } = 
 
 export function proPrompt(words, { duration = 0 } = {}) {
   return [
-    "Plan compact teaching overlays ON Greg's footage. No full-screen cards, icons, decoration, invented claims or paraphrases.",
-    `Duration ${duration}s. Aim for 2-3 overlays per 30s only when earned, at least 4s apart, after 2.6s. Leave at least half the reel clean. Holds include 2.4s after completion.`,
-    "Use inclusive word ranges {from,to} for every phrase. Types: correction {wrong:{from,to},right:{from,to}} ONLY for an explicit wrong/right correction; compare {left:{from,to},right:{from,to}}; steps {items:[{from,to},{from,to},{from,to}]} exactly three; stat {valueRange:{from,to},labelRange:{from,to}}; wordMark {word,mark:underline|circle}; label {from,to} at most three words.",
+    "Plan compact teaching cards ON Greg's footage that write in as he speaks. At most one full-screen card. No decoration, invented claims or paraphrases in spoken slots.",
+    `Duration ${duration}s. Aim for 3-4 cards per 30s, at least 3.5s apart, after 2.6s. Leave at least 40% of the reel clean. Holds include 2.4s after completion.`,
+    "Use inclusive word ranges {from,to} for every phrase. Types: correction {wrong:{from,to},right:{from,to}} ONLY for an explicit wrong/right correction; compare {left:{from,to},right:{from,to}}; steps {items:[{from,to},{from,to},{from,to}]} exactly three; stat {valueRange:{from,to},labelRange:{from,to}}; wordMark {word} (an underline drawn under one caption word); label {from,to} at most three words.",
+    ...Object.entries(CARDS).map(([t, d]) => `${t} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : "{from,to}"}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""}: ${d.hint}`),
+    "Use at least three different types in a reel when the words earn it, never the same type twice in a row. Every number on a card must be a number Greg says.",
     "Correction phrases at most 22 characters each; compare phrases at most 18; steps at most 12 each; stat value at most 8 and label at most 26. Keep qualifiers with numbers. Labels last at most 2.5s. No filler graphics to reach a quota.",
     words.map((w, i) => `${i} ${w.start.toFixed(3)} ${w.text}`).join("\n"),
     "Beat jobs from the existing planner (word range: job). Use correction/compare for distinctions, steps for procedures, stat for numerical proof, wordMark for emphasis. Leave takeaways and plain talk clean when no teaching aid is needed.",
@@ -172,8 +217,8 @@ export async function makeProGraphics({ workDir, words, groups = [], duration, h
     try { graphics = JSON.parse(fs.readFileSync(path.join(workDir, "graphics.json"), "utf8")).scenes || []; } catch {}
   }
   let candidates = proCandidates(words, { groups, graphics, picks });
-  let direction = !force && saved?.schema === 1 && saved.key === key && Array.isArray(saved.direction) ? saved.direction : null;
-  if (!direction && budgetProOverlays(candidates, { duration }).length < 2 && available()) {
+  let direction = !force && saved?.schema === 2 && saved.key === key && Array.isArray(saved.direction) ? saved.direction : null;
+  if (!direction && available()) {
     try {
       const reply = firstJSON(await ask(proPrompt(words, { duration }), { timeoutMs: 240000 }));
       direction = Array.isArray(reply.overlays) ? reply.overlays : [];
@@ -183,11 +228,12 @@ export async function makeProGraphics({ workDir, words, groups = [], duration, h
   direction ||= [];
   candidates = [...candidates, ...direction.map((p) => groundProOverlay(p, words, { groups })).filter(Boolean)];
   const overlays = budgetProOverlays(candidates, { duration, hookEnd: hook ? hook.start + hook.duration : 2.6 });
-  writeJSON(file, { schema: 1, key, direction, overlays });
+  writeJSON(file, { schema: 2, key, direction, overlays });
   return overlays;
 }
 
 export function proSize(overlay) {
+  if (overlay.card && CARDS[overlay.type]) { const z = CARDS[overlay.type].size; return typeof z === "function" ? z(overlay) : z; }
   if (overlay.type === "label") return { w: Math.min(720, Math.max(160, Math.ceil(proTextWidth(overlay.phrases?.[0]?.text || "", 40)) + 64)), h: 112 };
   return { correction: { w: 720, h: 256 }, compare: { w: 720, h: 320 }, steps: { w: 720, h: 240 }, stat: { w: 720, h: 280 }, wordMark: { w: 0, h: 0 } }[overlay.type] || null;
 }
@@ -212,6 +258,7 @@ export function placeProOverlay(overlay, frame) {
   const k = frame.W / 1080;
   if (Math.abs(frame.H / 1920 - k) > 0.01) return null;
   if (overlay.type === "wordMark") return { slot: "caption", ...size };
+  if (overlay.fullscreen) return { slot: "full", x: 0, y: 0, w: frame.W, h: frame.H, scale: k };
   const head = frame.head;
   // Existing face detection has no microphone class. Protect Greg's lower-left mic conservatively when unmeasured.
   const mic = frame.mic || { x: 0, y: 880 * k, w: 280 * k, h: 480 * k };

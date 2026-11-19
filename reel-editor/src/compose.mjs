@@ -21,6 +21,7 @@ import { boldEnabled, boldSettings } from "./bold.mjs";
 import { boldHTML, boldCSS, boldRuntime, boldOverlayTimeline, BOLD_JS } from "./bold-render.mjs";
 import { isClientJob } from "./client-mode.mjs";
 import { warn } from "./util.mjs";
+import { proCaptionHTML, proHookHTML, proCSS as proTextCSS } from "./pro-text.mjs";
 
 // The quiet and serif captions' shadow. "strong" (captions.quietShadow) is darker and tighter, for thin light type over
 // light clothes or hair (Julee's cream serif on a striped shirt, 2026-11-03); "soft" is the October 30 look.
@@ -97,7 +98,10 @@ export function composeProject(plan, projectDir) {
   fs.copyFileSync(path.join(PKG_ROOT, "assets", "vendor", "gsap.min.js"), path.join(assets, "vendor", "gsap.min.js"));
   const sfxUsed = new Set((plan.audio?.tracks || []).map((t) => t.src).filter((s) => s.startsWith("assets/sfx/")));
   if (sfxUsed.size) ensureDir(path.join(assets, "sfx"));
-  for (const s of sfxUsed) fs.copyFileSync(path.join(PKG_ROOT, s), path.join(projectDir, s));
+  for (const s of sfxUsed) {
+    if (plan.style.audio?.pro && fs.existsSync(path.join(projectDir, s))) continue;
+    fs.copyFileSync(path.join(PKG_ROOT, s), path.join(projectDir, s));
+  }
   const ext = path.extname(plan.video.src) || ".mp4";
   const footage = `assets/footage${ext}`;
   copyOrLink(plan.video.src, path.join(projectDir, footage));
@@ -167,8 +171,8 @@ export function renderHTML(plan, footage) {
   const boldStyle = bold ? boldSettings(s) : null;
   if (!bold && isClientJob() && (plan.bold || s.bold?.enabled)) warn("bold look disabled for a client job");
   const c = s.colors;
-  const cap = s.captions;
-  const hk = s.hook;
+  const cap = s.captions.pro ? { ...s.captions, style: "pro", animation: "cut", activeWord: false, annotate: false, uppercase: false, fontSizeFrac: 80 / 1920 } : s.captions;
+  const hk = s.hook.pro ? { ...s.hook, style: "pro", plaque: false, behind: false, side: null, fontSizeFrac: 108 / 1920 } : s.hook;
   const D = plan.video.duration;
   const capFont = Math.round(cap.fontSizeFrac * H);
   const stroke = r3(cap.strokeWidthFrac * H);
@@ -228,6 +232,7 @@ export function renderHTML(plan, footage) {
     : `      <div class="cap cap-sub" id="cap-${i}" style="font-size:${subFont}px"><div class="cap-line">${spans}</div></div>`;
   const capsHTML = captions
     .map((g, i) => {
+      if (cap.pro) return proCaptionHTML(g, i, { height: H, mark: proMark });
       if (glow) {
         const feat = g.kind === "feat" && g.place;
         const variant = feat && (g.variant === "hero" || g.variant === "swap");
@@ -251,7 +256,7 @@ export function renderHTML(plan, footage) {
   const hookInner = headline
     ? `<div id="hook-block"><div id="hook-scrim"></div><div id="hook-lines">${hookWordList.map((w) => `${w.br ? "<br>" : ""}<span class="hw${w.key ? " k" : ""}">${esc(w.text)}${glow ? glowLightWord(w.text) : ""}</span>`).join(" ")}${hk.treat === "type" ? '<span class="hook-cursor"></span>' : ""}</div><div id="hook-bar"></div></div>`
     : `<span id="hook-text">${esc(plan.hook?.text || "")}</span>`;
-  const hookHTML = !bold && plan.hook
+  const hookHTML = hk.pro && plan.hook ? proHookHTML(plan.hook) : !bold && plan.hook
     ? `      <div id="hook" class="clip hook-t-${esc(hk.treat || "headline")}${hk.plaque === true ? " hook-plaque" : ""}${glow && headline ? " hook-glow" : ""}${glow && hookPlace?.depth ? " hook-glow-depth" : ""}" data-start="${plan.hook.start}" data-duration="${plan.hook.duration}" data-track-index="3" data-layout-allow-overflow>${hookInner}</div>`
     : "";
 
@@ -452,7 +457,7 @@ export function renderHTML(plan, footage) {
 
   const runtimePlan = {
     duration: D,
-    hook: !bold && plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(hk.side ? { side: true } : {}), ...(Number.isFinite(plan.hook.headTop) && !behind && !hk.side ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
+    hook: !bold && plan.hook ? { start: plan.hook.start, duration: plan.hook.duration, style: hookStyle, font: hookFont, treat: hk.treat || "headline", ...(hk.side ? { side: true } : {}), ...(!hk.pro && Number.isFinite(plan.hook.headTop) && !behind && !hk.side ? { headTop: plan.hook.headTop, headBottom: plan.hook.headBottom ?? 1 } : {}) } : null,
     cta: plan.cta ? { start: plan.cta.start, duration: plan.cta.duration } : null,
     captions: captions.map((g) => ({ start: g.start, end: g.end, words: g.words.map((w) => [w.start, w.end]) })),
     activeWord: !!cap.activeWord,
@@ -470,7 +475,7 @@ export function renderHTML(plan, footage) {
     graphicsText: c.text,
     graphicsAccent: c.accent,
     slams: slamList.map((sl, i) => ({ t: sl.t, end: sl.end, ...(sl.popout?.src ? { popout: { i, blur: sl.popout.blur ?? 10 } } : {}) })),
-    zoomStyle: s.zooms?.style || "snap",
+    zoomStyle: s.zooms?.pro ? "pro" : s.zooms?.style || "snap",
     focusPull,
     brollCut,
     coldOpen: open ? { duration: open.duration } : null,
@@ -498,7 +503,7 @@ export function renderHTML(plan, footage) {
     ...(bold ? { bold: boldRuntime(plan, boldStyle) } : {}),
     capCut: cap.animation === "cut",
     capDim: dimFuture,
-    hookPush: s.hook?.push !== false,
+    hookPush: s.zooms?.pro || hk.pro ? false : s.hook?.push !== false,
     reframe: plan.reframe || [],
     fps: s.render?.fps || 30,
     base: plan.framing?.scale || 1,
@@ -713,7 +718,7 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
       #hook.hook-plaque #hook-lines::before, #hook.hook-plaque #hook-lines::after { display: none; }
       #hook.hook-plaque #hook-lines .hw, #hook.hook-plaque #hook-lines .hw.k { color: ${c.text}; background: none; transform: none; font-style: normal; font-size: 1em; text-decoration: none; text-shadow: none; }
       #hook.hook-plaque #hook-lines .hw.k { color: ${c.accent}; }
-` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}${bold ? boldCSS(boldStyle, plan) : ""}${pro ? proCSS() : ""}
+` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}${bold ? boldCSS(boldStyle, plan) : ""}${pro ? proCSS() : ""}${cap.pro || hk.pro ? proTextCSS({ height: H, captions: cap.pro, hook: hk.pro }) : ""}
     </style>
   </head>
   <body>
@@ -781,7 +786,10 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
             gsap.set(hookEl, { scale, y, transformOrigin: "50% " + Math.round(top) + "px" });
           }
         }
-        if (PLAN.hook && PLAN.hook.style === "headline") {
+        ${hk.pro ? `if (PLAN.hook && PLAN.hook.style === "pro") {
+          tl.set("#pro-title", { opacity: 1 }, 0);
+          tl.set("#pro-title", { opacity: 0 }, PLAN.hook.duration);
+        } else ` : ""}if (PLAN.hook && PLAN.hook.style === "headline") {
           const h = PLAN.hook;
           const words = document.querySelectorAll("#hook-lines .hw");
           const step = 0.06;
@@ -899,7 +907,9 @@ ${glow ? GLOW_LIGHT_JS : ""}${bold ? BOLD_JS + boldOverlayTimeline(plan, boldSty
         // return); "snap": the hard cut-in zoom.
         // Cut cadence: an instant change of framing (a jump cut) between the punch-ins.
         const jump = (z) => tl.set(WRAP, { scale: z.scale * BASE, xPercent: z.xPercent || 0, yPercent: z.scale > 1 ? -0.6 : 0, rotationX: 0, rotationY: 0 }, z.t);
-        if (PLAN.zoomStyle === "camera") {
+        ${s.zooms?.pro ? `if (PLAN.zoomStyle === "pro") {
+          PLAN.zooms.forEach((z) => tl.to(WRAP, { scale: z.scale * BASE, duration: z.snap, ease: "power2.out" }, z.t));
+        } else ` : ""}if (PLAN.zoomStyle === "camera") {
           gsap.set(WRAP, { transformPerspective: 1200 });
           let n = 0;
           PLAN.zooms.forEach((z) => {

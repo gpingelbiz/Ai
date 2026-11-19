@@ -18,7 +18,7 @@ import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./
 import { planPlacements, reframeDetection, placeCard } from "./frame-place.mjs";
 import { detectFaces, headExtent, headSpanX, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
-import { pickHook, pickCta, hookSeconds, plaqueLayout, sidePlaqueLayout } from "./hook.mjs";
+import { pickHook, pickCta, hookSeconds, plaqueLayout, sidePlaqueLayout, planProHook, proCaptionsUnderHook } from "./hook.mjs";
 import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
 import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -51,7 +51,9 @@ import { makeCover, makeFrameCover, scoreCoverFrames } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
-import { log, warn, readJSON, writeJSON, ensureDir, r3, slug, run, sha1, VIDEO_EXTS } from "./util.mjs";
+import { log, warn, readJSON, writeJSON, ensureDir, r3, slug, run, sha1, VIDEO_EXTS, fontFile, PKG_ROOT } from "./util.mjs";
+import { loadProMeasure, splitProPhrases, markProKeywords, placeProCaptions } from "./pro-captions.mjs";
+import { readMusicHistory, pickProTrack, recordProMusic, proMoodChoice, proMusicGain, proDuckingLane, limitProSfx, measureProLoudness, normalizeProDelivery } from "./pro-audio.mjs";
 
 /** A saved transcript is reused only for the same source file (same path, size and modified time). A work folder
  *  name can repeat for a different clip (IMG_0287 edited in chat, then dropped again), and reusing its words
@@ -82,6 +84,8 @@ export async function runEdit(input, opts = {}, deps = {}) {
   const workDir = path.resolve(opts.out || path.join("videos", name));
   ensureDir(workDir);
   const preset = mergeOverrides(loadPreset(opts.preset), opts);
+  if (preset.captions.pro) Object.assign(preset.captions, { fontSizeFrac: 80 / 1920, position: 0.65, style: "pro", animation: "cut", uppercase: false, annotate: false, activeWord: false });
+  if (preset.hook.pro) Object.assign(preset.hook, { fontSizeFrac: 108 / 1920, position: 260 / 1920, autoPlace: false, plaque: false, behind: false, push: false });
   const scriptPath = opts.script ? path.resolve(opts.script) : null;
   if (scriptPath && !fs.existsSync(scriptPath)) throw new Error(`no such VSL script: ${scriptPath}`);
   if (scriptPath) preset.graphics = { ...preset.graphics, enabled: true };
@@ -305,10 +309,16 @@ export async function runEdit(input, opts = {}, deps = {}) {
   // The caption lines are the timing backbone for everything (cards, stills, punch-ins, callouts, chapters, the
   // srt), so they are always built; whether they show on screen is captions.enabled.
   const protectedPhrases = new Set([...(dict.terms || []), ...(dict.names || []), ...(dict.phrases || [])]);
-  const groups = markKeywords(groupWords(cleanWords, duration, { ...preset.captions, protectedPhrases }), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
+  const proMeasure = preset.captions.pro || preset.hook.pro ? loadProMeasure(fontFile(preset, "Inter.ttf")) : null;
+  const groups = preset.captions.pro
+    ? markProKeywords(splitProPhrases(cleanWords, duration, { measure: proMeasure, protectedPhrases }), duration, dict)
+    : markKeywords(groupWords(cleanWords, duration, { ...preset.captions, protectedPhrases }), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
+  if (preset.captions.pro) for (const group of groups.filter((g) => g.flags?.includes("short-cue"))) warn(`pro captions: cue under 500 ms at ${group.start}s: ${group.text}`);
   const showCaptions = !!preset.captions.enabled;
-  let hook = preset.hook.enabled ? pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) }) : null;
-  if (hook) Object.assign(hook, hookWords(hook.text, dict));
+  let hook = preset.hook.enabled ? (preset.hook.pro
+    ? planProHook(cleanWords, { text: opts.hook, duration: preset.hook.duration, reelDuration: duration, measure: loadProMeasure(fontFile(preset, "Anton-Regular.ttf"), { size: 108, weight: 400, tracking: 0 }) })
+    : pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) })) : null;
+  if (hook && !preset.hook.pro) Object.assign(hook, hookWords(hook.text, dict));
   if (hook && cleanScenes) hook.duration = Math.min(hook.duration, cleanScenes[0].end - hook.start);
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
   const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
@@ -320,15 +330,15 @@ export async function runEdit(input, opts = {}, deps = {}) {
   const canvas0 = canvasFor(preset.canvas, cleanMeta);
   const sameShape = Math.abs(canvas0.width / canvas0.height - cleanMeta.width / cleanMeta.height) < 0.05;
   let detection = null;
-  const wantFace = sameShape && ((showCaptions && preset.captions.autoPlace && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || premise || timeLabels.length || preset.graphics?.persistent || preset.graphics?.ladder || requestedCredits.length || ["window", "split", "mix"].includes(preset.broll?.layout));
+  const wantFace = sameShape && ((showCaptions && (preset.captions.autoPlace || preset.captions.pro) && opts.captionPosition == null && shownGroups.length) || (hook && preset.hook.autoPlace && opts.hookPosition == null) || (hook && preset.hook.behind) || premise || timeLabels.length || preset.graphics?.persistent || preset.graphics?.ladder || requestedCredits.length || ["window", "split", "mix"].includes(preset.broll?.layout));
   const sceneFaces = cleanScenes ? await measureSceneFaces(videoSrc, cleanScenes, deps.detectFaces || detectFaces, { ...preset, captions: { ...preset.captions, autoPlace: preset.captions.autoPlace && opts.captionPosition == null } }) : null;
   if (sceneFaces) detection = sceneFaces[0].detection;
   if (wantFace && !cleanScenes) {
     const t0 = hook ? hook.start : 0, t1 = hook ? hook.start + hook.duration : Math.min(duration, 6);
-    const times = premise || timeLabels.length || preset.graphics?.persistent || preset.graphics?.ladder
+    const times = preset.captions.pro ? [...new Set(groups.flatMap((g) => [g.start, (g.start + g.end) / 2, Math.min(duration - 0.05, g.end)]).map(r3))] : premise || timeLabels.length || preset.graphics?.persistent || preset.graphics?.ladder
       ? Array.from({ length: 12 }, (_, i) => r3(Math.min(duration - 0.05, 0.1 + (i * Math.max(0, duration - 0.2)) / 11)))
       : [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.min(duration - 0.05, t0 + f * (t1 - t0)));
-    detection = await detectFaces(videoSrc, times);
+    detection = await (deps.detectFaces || detectFaces)(videoSrc, times);
   }
   // Base framing (long form): the face sampled across the whole video sets a tighter default frame on a wide
   // shot, and which side of the speaker has room for cards.
@@ -362,7 +372,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     return h && shift ? { top: Math.max(0, h.top + shift), bottom: Math.min(1, h.bottom + shift) } : h;
   };
   let captionTop = preset.captions.position - 0.04;
-  if (showCaptions && preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
+  if (!preset.captions.pro && showCaptions && preset.captions.autoPlace && opts.captionPosition == null && sameShape && shownGroups.length) {
     const head = zoomedHead(detection, framing.multi ? Math.max(1, ...(preset.zooms.scales || [1])) : 1);
     const spot = placeCaptions(head, { fontSizeFrac: preset.captions.fontSizeFrac, defaultPosition: preset.captions.position, min: preset.captions.placeMin ?? 0.56, max: preset.captions.placeMax ?? 0.76, gap: preset.captions.placeGap ?? 0.03 });
     preset.captions.position = spot.position;
@@ -371,10 +381,14 @@ export async function runEdit(input, opts = {}, deps = {}) {
     log(`captions: ${where}, ${Math.round(spot.position * 100)}% from the top`);
   }
   if (hook) {
-    const hide = captionsRepeatingHook(groups, hook);
+    const hide = preset.captions.pro || preset.hook.pro ? new Set() : captionsRepeatingHook(groups, hook);
     if (hide.size) {
       shownGroups = groups.filter((_, i) => !hide.has(i));
       log(`captions: ${hide.size} line${hide.size === 1 ? "" : "s"} hidden while the hook shows the same words`);
+    }
+    if (preset.hook.pro) {
+      shownGroups = proCaptionsUnderHook(groups, hook, { measure: proMeasure });
+      if (preset.captions.pro) shownGroups = markProKeywords(shownGroups, duration, dict);
     }
     const hookFrac0 = preset.hook.fontSizeFrac; // the preset size, before the band above the head shrinks it
     if (preset.hook.autoPlace && opts.hookPosition == null && sameShape) {
@@ -633,7 +647,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     // onKey uses transcript punctuation: caption grouping strips sentence-ending periods from the display text.
     zooms = planZooms(shownGroups, duration - Math.max(0, tail - 1.5), { ...preset.zooms, words: cleanWords, busy: [...transientCards, ...broll, ...evidence], hook, tight: tightFrame });
     log(`zooms: ${zooms.filter((z) => z.scale > 1).length} punch-in${zooms.filter((z) => z.scale > 1).length === 1 ? "" : "s"} on key ${preset.zooms.onKey ? "words" : "lines"}${tightFrame ? " (tight frame, gentle)" : ""}${preset.zooms.style === "camera" ? ", camera move" : ""}`);
-    if (preset.zooms.cadence?.enabled) {
+    if (!preset.zooms.pro && preset.zooms.cadence?.enabled) {
       zooms = planCadence(shownGroups, duration, zooms, { ...preset.zooms.cadence, busy: [...broll, ...evidence], hook, tight: tightFrame, tail });
       log(`cadence: ${zooms.filter((z) => z.cut).length} jump cuts between the punch-ins`);
     }
@@ -717,8 +731,8 @@ export async function runEdit(input, opts = {}, deps = {}) {
 
   // Motion accents live on inner wrappers, independent of the punch-in transform. Drift is planned from the final
   // zoom/cutaway lanes; bumps use the exact card and slam landing times.
-  const bumpPlan = planBumps(transientCards, slams, zooms, { ...preset.motion?.impact, broll, hook, duration, tail });
-  const driftPlan = planDrift(zooms, broll, duration, { ...preset.motion?.drift, hook, tail, zoomStyle: preset.zooms.style });
+  const bumpPlan = planBumps(transientCards, slams, zooms, { ...preset.motion?.impact, ...(preset.zooms.pro ? { enabled: false } : {}), broll, hook, duration, tail });
+  const driftPlan = planDrift(zooms, broll, duration, { ...preset.motion?.drift, ...(preset.zooms.pro ? { enabled: false } : {}), hook, tail, zoomStyle: preset.zooms.style });
   const motion = preset.motion?.impact?.enabled || preset.motion?.drift?.enabled ? { bumps: bumpPlan.bumps, drift: driftPlan.stretches } : null;
   if (preset.motion?.impact?.enabled) {
     const reasons = [["nearMove", "near a punch-in/jump cut"], ["cutaway", "under a cutaway"], ["hook", "under the hook"], ["tail", "in the clean tail"], ["spacing", "too close together"], ["cap", "over the cap"]].filter(([k]) => bumpPlan.skipped[k]).map(([k, s]) => `${bumpPlan.skipped[k]} ${s}`);
@@ -952,7 +966,16 @@ export async function runEdit(input, opts = {}, deps = {}) {
     });
     log(`pro graphics: ${proGraphics.length} teaching overlays placed`);
   }
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate, ...(proOn ? { proGraphics } : {}) } });
+  if (preset.captions.pro) {
+    const heads = (detection?.frames || []).flatMap((frame) => {
+      const t = frame.time ?? frame.t ?? 0;
+      const head = zoomedHead({ frames: [frame] }, zoomDuring(zooms, t, t));
+      return head ? [{ t, chin: head.bottom }] : [];
+    });
+    shownGroups = placeProCaptions(shownGroups, heads, { height: canvas0.height });
+    if (!heads.length) warn("pro captions: no chin measurements; keeping y=1248 (1080x1920)");
+  }
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, voiceFile: videoSrc, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: preset.audio.pro ? cleanWords.map((w) => w.text).join(" ") : shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate, ...(proOn ? { proGraphics } : {}) } });
   if (sourceScenes && early.envelope) await early.envelope;
   const signatureHead = preset.signature?.enabled !== false && preset.brand?.signature?.kind !== "none"
     ? headBoxFor(face || faceBox(detection), detection, { zoom: Math.max(1, ...zooms.map((z) => z.scale || 1)), scale: framing.scale, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0 })
@@ -1062,37 +1085,54 @@ function readVoice(plan) {
   try { return fs.readFileSync(voiceFile(plan), "utf8"); } catch { return ""; }
 }
 
-async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words = [], envelope = null, segments = [], transcript = "", cues = null }) {
+export async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, voiceFile = null, words = [], envelope = null, segments = [], transcript = "", cues = null }) {
   const assets = ensureDir(path.join(projectDir, "assets"));
   const audio = { tracks: brollSoundTracks(cues?.broll || [], assets, { volume: preset.broll?.sfxVolume ?? 0.35 }), replaceAudio: !!opts.replaceAudio };
 
   // The bed: a file (--music), or a pick from the music folder (--music-dir) by the mood of what is said.
   let src = preset.audio.music ? path.resolve(preset.audio.music) : null;
   let pickNote = null;
+  const history = preset.audio.pro ? readMusicHistory() : [];
+  if (preset.audio.pro) audio.musicPick = { reel: workDir, track: null };
   if (src && !fs.existsSync(src)) throw new Error(`music file not found: ${src}`);
+  if (src && preset.audio.pro && !pickProTrack([{ file: src, name: path.basename(src) }], { history, reel: workDir })) {
+    log("pro music: requested track is blocked by rotation; leaving the bed silent");
+    src = null;
+  }
   if (!src && preset.audio.musicDir) {
     const tracks = listTracks(path.resolve(preset.audio.musicDir));
     if (!tracks.length) log(`music: no tracks in ${preset.audio.musicDir}`);
     else {
       const want = preset.audio.musicWant || "";
-      const choice = want ? { moods: [] } : await chooseMoods({ transcript, hook: hook?.text, moods: moodsOf(tracks), voice: readVoice({ style: preset }) });
-      if (choice.none && !want) log(`music: none for this one${choice.why ? ` (${choice.why})` : ""}`);
+      let choice = want && !preset.audio.pro ? { moods: [] } : await chooseMoods({ transcript, hook: hook?.text, moods: moodsOf(tracks), voice: readVoice({ style: preset }) });
+      if (preset.audio.pro && !choice.none && !choice.moods.length) choice = proMoodChoice(transcript, moodsOf(tracks));
+      if (choice.none && (preset.audio.pro || !want)) log(`music: none for this one${choice.why ? ` (${choice.why})` : ""}`);
       else {
-        const t = pickTrack(tracks, { want, moods: choice.moods, seed: workDir });
-        src = t.file;
-        pickNote = describePick(t, choice);
+        const t = preset.audio.pro ? pickProTrack(tracks, { want, moods: choice.moods, seed: workDir, history, reel: workDir }) : pickTrack(tracks, { want, moods: choice.moods, seed: workDir });
+        if (t) { src = t.file; pickNote = describePick(t, choice); }
+        else log("pro music: no eligible track for this mood and rotation; leaving the bed silent");
       }
     }
   }
   if (src) {
     const dst = path.join(assets, "music.m4a");
-    const level = preset.audio.musicVolume;
-    const startAt = Math.min(0.5, duration / 4);
+    let level = preset.audio.musicVolume;
+    if (preset.audio.pro) {
+      const measured = voiceFile ? await measureProLoudness(voiceFile) : null;
+      level = proMusicGain(Number(measured?.input_i ?? -16));
+      audio.musicPick.track = path.basename(src);
+    }
+    const startAt = preset.audio.pro ? 0 : Math.min(0.5, duration / 4);
     // Trim (or loop a short track) to the reel length and normalize the bed, so the level means the same for
     // a loud trap beat and a soft pad: -16 LUFS like the voice, then `level` under it.
-    await run("ffmpeg", ["-y", "-loglevel", "error", "-stream_loop", "-1", "-i", src, "-t", String(r3(duration - startAt)), "-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "192k", dst]);
+    await run("ffmpeg", ["-y", "-loglevel", "error", "-stream_loop", "-1", "-i", src, "-t", String(r3(duration - startAt)), "-vn", "-af", preset.audio.pro ? "loudnorm=I=-20:TP=-2:LRA=11" : "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "192k", dst]);
     let lane = null;
-    if (preset.audio.duck !== false) {
+    if (preset.audio.pro) {
+      let mapped = null;
+      try { mapped = remapEnvelope(await envelope, segments); } catch {}
+      lane = proDuckingLane(words, { duration, level, envelope: mapped });
+      log("pro music: phrase ducking, 6 dB down, 120 ms pre-roll, 100/250/450 ms ramps/hold");
+    } else if (preset.audio.duck !== false) {
       if ((preset.audio.duckFrom || "voice") === "words") {
         lane = duckingLane(words, { duration, level, start: startAt });
         log("music ducking: transcript words");
@@ -1108,10 +1148,11 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
         }
       }
     } else log("music ducking: off");
-    audio.tracks.push({ id: "music", src: "assets/music.m4a", start: startAt, duration: r3(duration - startAt), volume: level, fadeIn: 1, fadeOut: 1.5, lane, track: 8 });
+    audio.tracks.push({ id: "music", src: "assets/music.m4a", start: startAt, duration: r3(duration - startAt), volume: level, fadeIn: preset.audio.pro ? 0.03 : 1, fadeOut: preset.audio.pro ? 0.24 : 1.5, lane, track: 8 });
     fs.writeFileSync(path.join(workDir, "music.txt"), `Music: ${path.basename(src)}\n`);
     log(`music: ${pickNote || path.basename(src)} at ${level}${lane ? ", swelling in the pauses" : ""}`);
   }
+  if (preset.audio.pro && !src) fs.writeFileSync(path.join(workDir, "music.txt"), "Music: none (pro mood/rotation)\n");
 
   if (opts.voiceover) {
     const text = fs.readFileSync(path.resolve(opts.voiceover), "utf8").trim();
@@ -1145,6 +1186,18 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
       log(`sfx: ${audio.tracks.filter((t) => t.id.startsWith("sfx")).length} hits`);
     }
   }
+  if (preset.audio.pro) {
+    const peaks = {};
+    for (const track of audio.tracks.filter((t) => t.id.startsWith("sfx-"))) {
+      if (track.src in peaks) continue;
+      const local = path.join(projectDir, track.src);
+      const asset = fs.existsSync(local) ? local : path.join(PKG_ROOT, track.src);
+      const { err } = await run("ffmpeg", ["-hide_banner", "-nostats", "-i", asset, "-af", "volumedetect", "-f", "null", "-"], { capture: true });
+      const peak = String(err).match(/max_volume:\s*([-\d.]+) dB/);
+      if (peak) peaks[track.src] = Number(peak[1]);
+    }
+    audio.tracks = limitProSfx(audio.tracks, duration, peaks);
+  }
   return audio;
 }
 
@@ -1152,7 +1205,7 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
  * Hook A/B: the first `seconds` of the reel rendered once per alternative hook, into <workDir>/hooks/. The plan is
  * reused as is (same cuts, captions, music); only the hook text changes. Returns the output paths.
  */
-export async function renderHookVariants(workDir, hooks, { seconds = 4, quality = "draft" } = {}) {
+export async function renderHookVariants(workDir, hooks, { seconds = 4, quality = "draft" } = {}, deps = {}) {
   workDir = path.resolve(workDir);
   const base = readJSON(path.join(workDir, "plan.json"));
   if (!base.hook) throw new Error("this reel has no hook to vary");
@@ -1164,11 +1217,24 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
     const dict = loadDictionary();
     const plan = structuredClone(base);
     plan.name = `hook-${i + 1}`;
-    plan.hook = { ...plan.hook, ...hookWords(text, dict) };
+    plan.hook = plan.style.hook.pro
+      ? planProHook(plan.words || [], { text, duration: plan.hook.duration, reelDuration: plan.video.duration, measure: loadProMeasure(fontFile(plan.style, "Anton-Regular.ttf"), { size: 108, weight: 400, tracking: 0 }) })
+      : { ...plan.hook, ...hookWords(text, dict) };
     const D = Math.min(seconds, plan.video.duration);
     plan.video = { ...plan.video, duration: D };
     plan.captions = (plan.captions || []).filter((g) => g.start < D).map((g) => ({ ...g, end: Math.min(g.end, D) }));
     plan.zooms = (plan.zooms || []).filter((z) => z.t < D);
+    if (plan.style.hook.pro) {
+      plan.hook.duration = Math.min(plan.hook.duration, D);
+      const measure = loadProMeasure(fontFile(plan.style, "Inter.ttf"));
+      // Rebuild from speech: the original title may have carried words this alternative no longer shows.
+      if (plan.style.captions.pro) {
+        const groups = markProKeywords(splitProPhrases(plan.words || [], D, { measure }), D, dict);
+        plan.captions = groups.map((g) => ({ ...g, y: base.captions.find((b) => b.thought === g.thought)?.y ?? 1248 * plan.canvas.height / 1920 }));
+      }
+      plan.captions = proCaptionsUnderHook(plan.captions, plan.hook, { measure });
+    }
+    if (plan.style.zooms.pro) plan.zooms = plan.zooms.filter((z) => z.t + z.snap <= D - 2);
     plan.graphics = (plan.graphics || []).filter((g) => g.start < D);
     plan.broll = (plan.broll || []).filter((b) => b.start < D);
     plan.slams = (plan.slams || []).filter((sl) => sl.t < D);
@@ -1176,6 +1242,7 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
     plan.timeLabels = (plan.timeLabels || []).filter((item) => item.at < D);
     plan.cta = null;
     plan.audio = { ...(plan.audio || {}), tracks: (plan.audio?.tracks || []).filter((t) => t.start < D).map((t) => ({ ...t, duration: Math.min(t.duration || D, D - t.start), lane: t.lane ? t.lane.filter((p) => p.t <= D) : t.lane })) };
+    if (plan.style.audio.pro) plan.audio.tracks = plan.audio.tracks.map((t) => t.id === "music" ? { ...t, fadeOut: 0.24, lane: proDuckingLane(plan.words || [], { duration: D, level: t.volume }) } : t);
     const projectDir = path.join(outDir, `project-${i + 1}`);
     // Assets (footage, music, stills) are shared with the main project.
     ensureDir(projectDir);
@@ -1184,7 +1251,8 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
     fs.writeFileSync(path.join(projectDir, "index.html"), (await import("./compose.mjs")).renderHTML(plan, `assets/footage${path.extname(plan.video.src) || ".mp4"}`));
     const output = path.join(outDir, `Hook ${i + 1} - ${text.replace(/\*/g, "").replace(/[/:"*?<>|\\]/g, "").replace(/[.\s]+$/, "")}.mp4`);
     log(`hook ${i + 1}: "${text}" → ${path.basename(output)}`);
-    await render(projectDir, output, { quality });
+    await (deps.render || render)(projectDir, output, { quality });
+    if (plan.style.audio.pro && (plan.video.hasAudio || plan.audio.tracks.length)) await (deps.normalizeProDelivery || normalizeProDelivery)(output);
     outs.push(output);
   }
   return outs;
@@ -1212,7 +1280,11 @@ export async function renderProject(workDir, opts = {}) {
   log(`rendering → ${output}`);
   const t0 = Date.now();
   await render(projectDir, output, { quality: opts.quality || plan.style?.render?.quality || "looks", fps: opts.fps || plan.style?.render?.fps });
-  if (plan.video.hasAudio && plan.style?.render?.deliveryLoudness !== false) await normalizeDelivery(output);
+  if (plan.style?.audio?.pro && (plan.video.hasAudio || plan.audio?.tracks?.length)) {
+    const measured = await normalizeProDelivery(output);
+    log(`pro loudness: ${measured.input_i} LUFS, ${measured.input_tp} dBTP (encoded AAC)`);
+  }
+  else if (plan.video.hasAudio && plan.style?.render?.deliveryLoudness !== false) await normalizeDelivery(output);
   const outMeta = await probe(output);
   log(`done in ${Math.round((Date.now() - t0) / 1000)}s: ${output} (${outMeta.width}x${outMeta.height}, ${r3(outMeta.duration)}s)`);
   if (!(opts.boldMeasure && boldEnabled(plan.style, plan) && !plan.bold)) {
@@ -1245,6 +1317,7 @@ export async function renderProject(workDir, opts = {}) {
       warn(`preflight skipped: ${String(e.message).split("\n")[0]}`);
     }
   }
+  if (plan.style?.audio?.pro && plan.audio?.musicPick) recordProMusic(plan.audio.musicPick);
   return output;
 }
 
