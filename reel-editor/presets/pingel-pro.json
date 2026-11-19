@@ -1,0 +1,20 @@
+{
+  "name": "pingel-pro",
+  "extends": "pingel-brand",
+  "pro": { "enabled": true },
+  "glow": { "enabled": false, "depthHook": false },
+  "bold": { "enabled": false },
+  "graphics": { "enabled": true, "persistent": false, "ladder": false, "placeFull": false },
+  "slams": { "enabled": false, "popout": { "enabled": false } },
+  "icons": { "enabled": false },
+  "coldOpen": { "enabled": false },
+  "broll": { "enabled": false },
+  "houseLooks": { "enabled": false },
+  "premise": { "mode": "off" },
+  "signature": { "enabled": false },
+  "timeLabels": { "enabled": false },
+  "hook": { "duration": 2.6, "push": false, "behind": false },
+  "captions": { "style": "reveal", "animation": "cut", "uppercase": false, "annotate": false, "autoPlace": false, "position": 0.62, "placeMin": 0.62, "placeMax": 0.62 },
+  "audio": { "soundMarkers": false },
+  "motion": { "impact": { "enabled": false }, "drift": { "enabled": false } }
+}

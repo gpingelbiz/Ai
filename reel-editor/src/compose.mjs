@@ -50,6 +50,8 @@ function hexA(hex, a) {
 }
 
 import { esc } from "./text.mjs";
+import { proEnabled } from "./pro.mjs";
+import { renderProOverlay, proCSS, proTimeline } from "./pro-render.mjs";
 
 function fadePoints(t) {
   const v = t.volume ?? 1;
@@ -158,6 +160,10 @@ export function renderHTML(plan, footage) {
   const { width: W, height: H } = plan.canvas;
   const s = plan.style;
   const bold = boldEnabled(s, plan);
+  const pro = proEnabled(s, plan);
+  const proGraphics = pro ? plan.proGraphics || [] : [];
+  const proHTML = proGraphics.filter((o) => o.type !== "wordMark").map((o) => renderProOverlay(o).html).join("\n");
+  const proMark = (i, j) => proGraphics.filter((o) => o.type === "wordMark" && o.caption === i && o.captionWord === j).map((o) => renderProOverlay(o).html).join("");
   const boldStyle = bold ? boldSettings(s) : null;
   if (!bold && isClientJob() && (plan.bold || s.bold?.enabled)) warn("bold look disabled for a client job");
   const c = s.colors;
@@ -235,7 +241,7 @@ export function renderHTML(plan, footage) {
       const len = g.text.length;
       const scale = cap.shrinkAfterChars && len > cap.shrinkAfterChars ? Math.max(0.7, cap.shrinkAfterChars / len) : 1;
       const firstKey = g.words.findIndex((w) => w.key);
-      const spans = g.words.map((w, j) => `<span class="w${w.key ? " k" : ""}" id="cap-${i}-w${j}">${esc(w.text)}${marker(w, j === firstKey)}</span>`).join("");
+      const spans = g.words.map((w, j) => `<span class="w${w.key ? " k" : ""}" id="cap-${i}-w${j}">${esc(w.text)}${marker(w, j === firstKey)}${proMark(i, j)}</span>`).join("");
       return `      <div class="cap" id="cap-${i}" style="font-size:${Math.round(capFont * scale)}px"><div class="cap-line">${spans}</div></div>`;
     })
     .join("\n");
@@ -707,7 +713,7 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
       #hook.hook-plaque #hook-lines::before, #hook.hook-plaque #hook-lines::after { display: none; }
       #hook.hook-plaque #hook-lines .hw, #hook.hook-plaque #hook-lines .hw.k { color: ${c.text}; background: none; transform: none; font-style: normal; font-size: 1em; text-decoration: none; text-shadow: none; }
       #hook.hook-plaque #hook-lines .hw.k { color: ${c.accent}; }
-` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}${bold ? boldCSS(boldStyle, plan) : ""}
+` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}${bold ? boldCSS(boldStyle, plan) : ""}${pro ? proCSS() : ""}
     </style>
   </head>
   <body>
@@ -722,7 +728,7 @@ ${lowerHTML}
 ${gfxHTML}${progressRailHTML ? `\n${progressRailHTML}` : ""}${evidenceMarkup ? `\n${evidenceMarkup}` : ""}
 ${premiseHTML}${timeLabelsHTML ? `\n${timeLabelsHTML}` : ""}
 ${slamHTML}${iconHTML ? `\n${iconHTML}` : ""}${glowSceneHTML ? `\n${glowSceneHTML}` : ""}
-${hookHTML}
+${hookHTML}${proHTML ? `\n${proHTML}` : ""}
 ${cutoutHTML}
 ${brollCutoutHTML}
 ${popoutCutoutHTML}${gfxCutoutHTML ? `\n${gfxCutoutHTML}` : ""}
@@ -874,7 +880,7 @@ ${hk.side ? `        // A plaque beside the head wraps inside its column, and a 
           }
           tl.set(el, { opacity: 0 }, g.end);
         });
-${glow ? GLOW_LIGHT_JS : ""}${bold ? BOLD_JS + boldOverlayTimeline(plan, boldStyle) : ""}        // Face-tracking reframe: slide the crop window across a wide source as the speaker moves.
+${glow ? GLOW_LIGHT_JS : ""}${bold ? BOLD_JS + boldOverlayTimeline(plan, boldStyle) : ""}${pro ? proTimeline(proGraphics) : ""}        // Face-tracking reframe: slide the crop window across a wide source as the speaker moves.
         if (PLAN.reframe.length) {
           const first = PLAN.reframe[0];
           tl.set(FOOT, { objectPosition: first.x + "% 50%" }, 0);

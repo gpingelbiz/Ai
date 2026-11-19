@@ -30,6 +30,7 @@ import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
 import { boldEnabled, restyleBold } from "./bold.mjs";
+import { proEnabled, makeProGraphics, attachProWordMarks, placeProGraphics, proSoundCues } from "./pro.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
@@ -509,7 +510,10 @@ export async function runEdit(input, opts = {}, deps = {}) {
     }
   }
   const vslPlan = scriptPath ? makeVslGraphics({ scriptPath, workDir, words: cleanWords, groups: shownGroups, duration, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [] } }) : null;
-  let graphics = vslPlan ? vslPlan.scenes : preset.graphics?.enabled && shownGroups.length
+  const proOn = !scriptPath && proEnabled(preset, { preset: preset.name, canvas: canvas0 });
+  let proGraphics = proOn && preset.graphics?.enabled
+    ? await makeProGraphics({ workDir, words: cleanWords, groups: shownGroups, duration, hook, force: !!opts.newGraphics, ...(deps.proDirection || {}) }) : [];
+  let graphics = vslPlan ? vslPlan.scenes : proOn ? [] : preset.graphics?.enabled && shownGroups.length
     ? await makeGraphics({ workDir, groups: shownGroups, words: cleanWords, duration, hook, cta, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [], modes: preset.brand?.modes || preset.brand?.contentModes || {} }, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
   if (cleanScenes) graphics = graphics.filter((g) => fitSceneWindow(g, cleanScenes));
@@ -937,7 +941,18 @@ export async function runEdit(input, opts = {}, deps = {}) {
       lowerThird = legacyLowerThird();
     }
   }
-  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate } });
+  if (proOn) {
+    proGraphics = attachProWordMarks(proGraphics, showCaptions ? shownGroups : []);
+    if (cleanScenes) proGraphics = proGraphics.filter((g) => fitSceneWindow(g, cleanScenes));
+    proGraphics = await placeProGraphics(proGraphics, {
+      video: videoSrc, detect: placeDetect, W: canvas0.width, H: canvas0.height,
+      framingAt: (t) => sceneFaces ? sceneAt(sceneFaces, t).framing : framing,
+      zoomAt: (t0, t1) => zoomDuring(zooms, t0, t1) * driftDuring(driftPlan.stretches, t0, t1),
+      captionTop, captionBottom: Math.max(1300 / 1920, preset.captions.position + preset.captions.fontSizeFrac * 1.4),
+    });
+    log(`pro graphics: ${proGraphics.length} teaching overlays placed`);
+  }
+  const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate, ...(proOn ? { proGraphics } : {}) } });
   if (sourceScenes && early.envelope) await early.envelope;
   const signatureHead = preset.signature?.enabled !== false && preset.brand?.signature?.kind !== "none"
     ? headBoxFor(face || faceBox(detection), detection, { zoom: Math.max(1, ...zooms.map((z) => z.scale || 1)), scale: framing.scale, originY: parseFloat(framing.origin.split(" ")[1]) / 100 || 0.38, shift: framing.shift || 0 })
@@ -959,6 +974,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     lines: shownGroups,
     zooms,
     graphics: allGraphics,
+    ...(proOn ? { proGraphics } : {}),
     evidence,
     graphicsSchema,
     scenes: { schema: sceneSchema },
@@ -1107,7 +1123,7 @@ async function prepareAudio({ workDir, projectDir, preset, opts, duration, hook,
   }
 
   if (preset.audio.sounds && cues) {
-    const tracks = soundCues({ ...cues, markers: !!preset.audio.soundMarkers, level: preset.audio.soundsVolume ?? 0.3, fps: preset.render?.fps || 30, zoomStyle: preset.zooms?.style || "snap", graphicsMode: preset.graphics?.mode || "overlay", duration });
+    const tracks = cues.proGraphics ? proSoundCues(cues.proGraphics, { fps: preset.render?.fps || 30, level: preset.audio.soundsVolume ?? 0.08 }) : soundCues({ ...cues, markers: !!preset.audio.soundMarkers, level: preset.audio.soundsVolume ?? 0.3, fps: preset.render?.fps || 30, zoomStyle: preset.zooms?.style || "snap", graphicsMode: preset.graphics?.mode || "overlay", duration });
     audio.tracks.push(...tracks);
     log(`sounds: ${tracks.length ? describeCues(tracks) : "nothing to sound"}`);
   }
