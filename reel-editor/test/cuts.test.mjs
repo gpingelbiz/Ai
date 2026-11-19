@@ -244,3 +244,25 @@ test("a clip that is mostly not talking keeps every frame; a talking clip is sti
   assert.equal(mostlyNotTalking(sample, Math.max(...sample.map((x) => x.end))), false);
   assert.equal(mostlyNotTalking([w("Stop", 0.2, 0.6), w("chasing", 0.7, 1.2), w("clients", 1.3, 1.9)], 2.5), false);
 });
+
+test("words nobody can hear are dropped, quiet real speech stays", async () => {
+  const { dropInaudibleWords } = await import("../src/cuts.mjs");
+  const step = 0.02;
+  // 0-10 s Greg at about -18 dB, 10-12 s a softer aside at -38 dB, 12-20 s the caller in his earbuds at -62 dB.
+  const db = Array.from({ length: 1000 }, (_, i) => (i * step < 10 ? -18 : i * step < 12 ? -38 : -62));
+  const words = [];
+  for (let t = 0.2; t < 19.5; t += 0.5) words.push({ text: `w${words.length}`, start: +t.toFixed(2), end: +(t + 0.3).toFixed(2) });
+  const res = dropInaudibleWords(words, { step, db });
+  assert.ok(res.dropped.length > 0, "the caller's words go");
+  assert.ok(res.dropped.every((w) => w.start >= 12), "only the inaudible stretch is dropped");
+  assert.ok(res.words.some((w) => w.start >= 10 && w.start < 12), "the quiet aside stays");
+  // A recording that is quiet all the way through is left alone.
+  const quiet = dropInaudibleWords(words, { step, db: db.map(() => -62) });
+  assert.equal(quiet.dropped.length, 0);
+  // Most words can be the caller: the speaker's level still sets the bar.
+  const busy = Array.from({ length: 1000 }, (_, i) => (i * step < 4 ? -18 : -62));
+  const mostlyCaller = dropInaudibleWords(words, { step, db: busy });
+  assert.ok(mostlyCaller.dropped.every((w) => w.start >= 4) && mostlyCaller.dropped.length > 20);
+  // No envelope, nothing changes.
+  assert.equal(dropInaudibleWords(words, null).dropped.length, 0);
+});

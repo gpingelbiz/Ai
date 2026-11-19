@@ -290,6 +290,38 @@ export function snapSegments(segments, fps, duration) {
  * True when a clip is mostly not talking: speech covers under 15% of it, or it has a handful of words (under 8) that
  * cover under 35%. A walk-up or vlog shot like that has no dead air to cut; the footage is the content.
  */
+/**
+ * Words the transcript has but nobody can hear: the other side of a call leaking from earbuds, a voice in the next
+ * room. Scribe writes them down at -60 dB, the silence cut keeps any stretch with words, and the reel runs 6 to 24 s
+ * of silence with captions over it (Greg's 85 min training video, 2026-11-18). A word is dropped when its loudest
+ * moment sits far under this recording's own speech and under an absolute floor; quiet but real speech stays.
+ */
+export function dropInaudibleWords(words, env, { below = 24, floor = -45, pad = 0.03, minWords = 4 } = {}) {
+  const db = env?.db || [];
+  const step = env?.step || 0.02;
+  if (!db.length || !Array.isArray(words) || words.length < minWords) return { words, dropped: [] };
+  const level = (w) => {
+    const i0 = Math.max(0, Math.floor((w.start - pad) / step));
+    const i1 = Math.min(db.length, Math.ceil((w.end + pad) / step));
+    let max = -Infinity;
+    for (let i = i0; i < i1; i++) if (db[i] > max) max = db[i];
+    return max;
+  };
+  const levels = words.map(level);
+  const known = levels.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!known.length) return { words, dropped: [] };
+  // The speaker is the loud part of the clip: on a call most of the words can be the quiet caller, so a median would
+  // take their level for speech (2026-11-18 clip 2: 124 of 200 words inaudible).
+  const speech = known[Math.min(known.length - 1, Math.floor(known.length * 0.8))];
+  const cutoff = Math.min(floor, speech - below);
+  const kept = [];
+  const dropped = [];
+  words.forEach((w, i) => (Number.isFinite(levels[i]) && levels[i] < cutoff ? dropped : kept).push(w));
+  // Nothing left would mean the whole clip is quiet, not that it is someone else: keep it as it was.
+  if (kept.length < Math.min(minWords, words.length)) return { words, dropped: [] };
+  return { words: kept, dropped, cutoff: Math.round(cutoff), speech: Math.round(speech) };
+}
+
 export function mostlyNotTalking(words, duration) {
   if (!(duration >= 3)) return false;
   const spoken = (words || []).reduce((s, w) => s + Math.max(0, (w.end ?? 0) - (w.start ?? 0)), 0);
