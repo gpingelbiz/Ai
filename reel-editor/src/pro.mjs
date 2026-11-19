@@ -87,7 +87,7 @@ const normPick = (pick, words) => Object.fromEntries(Object.entries(pick).map(([
 export function groundProOverlay(pick, words, { groups = [] } = {}) {
   if (!pick || !words?.length) return null;
   pick = normPick(pick, words);
-  const type = typeFor(pick.type);
+  const type = CARDS[pick.type] ? pick.type : typeFor(pick.type);
   if (CARDS[type]) return groundCard(pick, type, words);
   if (!["correction", "compare", "steps", "stat", "wordMark", "label"].includes(type)) return null;
   const anchor = words[pick.from]?.start ?? pick.start ?? groups[pick.line]?.start ?? 0;
@@ -237,10 +237,10 @@ export function proPrompt(words, { duration = 0 } = {}) {
     `Duration ${duration}s. About one card per 6-8 s of talk, at most 5 per 30 s, at least 2.5 s apart, never two at once, none before 2.4 s or in the last 3 s. Each type once per reel, never the same family twice in a row. Pick the card whose family fits the words: distinction, procedure, proof, conversation, warning, payoff, emphasis.`,
     "Every {from,to} is a pair of WORD INDEXES (the integer at the start of each transcript line below), never seconds. Types: correction {wrong:{from,to},right:{from,to}} ONLY for an explicit wrong/right correction; compare {left:{from,to},right:{from,to}}; steps {items:[{from,to},{from,to},{from,to}]} exactly three; stat {valueRange:{from,to},labelRange:{from,to}}; wordMark {word} (an underline drawn under one caption word); label {from,to} at most three words.",
     ...Object.entries(CARDS).map(([t, d]) => `${t} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : `{from,to} max ${s.maxChars || 48} chars`}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""} [${d.family}]: ${d.hint}`),
-    "Suggest 8 to 12 candidate cards across the whole reel (more than will be used; the rules pick the final 3-5). Use at least five different types and families. Every number on a card must be a number Greg says. Keep each spoken slot short: the words that would be written on the card, usually 1-6 words.",
-    "Correction phrases at most 22 characters each; compare phrases at most 18; steps at most 12 each; stat value at most 8 and label at most 26. Keep qualifiers with numbers. Labels last at most 2.5s. No filler graphics to reach a quota.",
+    "You MUST suggest 10 to 14 candidate cards spread across the whole reel (more than will be used; the rules pick the final 3-5). Use at least five different types and families. Every number on a card must be a number Greg says. Keep each spoken slot short: the words that would be written on the card, usually 1-6 words.",
+    "Correction phrases at most 22 characters each; compare phrases at most 18; steps at most 12 each; stat value at most 8 and label at most 26. Keep qualifiers with numbers. Labels last at most 2.5s.",
     words.map((w, i) => `${i} ${w.start.toFixed(3)} ${w.text}`).join("\n"),
-    "Beat jobs from the existing planner (word range: job). Use correction/compare for distinctions, steps for procedures, stat for numerical proof, wordMark for emphasis. Leave takeaways and plain talk clean when no teaching aid is needed.",
+    "Beat jobs from the existing planner (word range: job). Use correction/compare for distinctions, steps for procedures, stat for numerical proof, wordMark for emphasis. Greg wants a lot of cards: almost every teaching sentence can carry one (a takeaway -> rule, tip-badge, quote, gold-frame, sticky-note, big-word; a question -> ask-this; a mistake -> red-flag, cost; a conversation -> objection, text-thread, incoming-call).",
     ...classifyBeats(linesFromWords(words), { duration }).map((b) => `${b.from}-${b.to}: ${b.job}`),
     'Reply with JSON only: {"overlays":[]}',
   ].join("\n");
