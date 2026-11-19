@@ -28,7 +28,7 @@ Rare tools stay off by default: `bold.sticker.enabled` and `bold.payoff.enabled`
    ```bash
    reel transcribe "<video>" -o videos/<name>/words.json
    ```
-   Read `words.json`. Write a hook title: 4 to 8 words, Greg's voice (direct, no hype, no emojis), a claim or a contrast that makes the viewer stay. Lead with growing the offer, never with AI. Never use a framework name (Ghost P&L, Five Rooms, The Swap, Closer Line, Wrong Scoreboard, Defend/Decide, A.C.R.A.): say the idea in plain words (Brand Guide v10, ~/automation/brand/brand-guide-v10.md).
+   Read `words.json`. Write a hook title: 4 to 8 words, Greg's voice (direct, no hype, no emojis), a claim or a contrast that makes the viewer stay. Open on the coach's situation and the sales system under the offer, never with AI. Never use a framework name (Ghost P&L, Five Rooms, The Swap, Closer Line, Wrong Scoreboard, Defend/Decide, A.C.R.A.): say the idea in plain words (Brand Guide v11, ~/automation/brand/brand-guide-v11.md).
 3. Edit and render:
    ```bash
    reel edit "<video>" --out videos/<name> --hook "<your hook>"
@@ -41,7 +41,7 @@ Rare tools stay off by default: `bold.sticker.enabled` and `bold.payoff.enabled`
 ## Flags you will actually use
 
 - `--silence slow|medium|fast` (default fast), `--no-bad-takes`, `--no-fillers`, `--no-cuts`
-- `--cta "DM me"` for the call-to-action pop-up in the last 3 seconds, only on Offer, Sales or System reels, never on Story reels, never two asks on one reel. GHOST, SCALE, LEAKS and FREEDOM are retired (Brand Guide v10). `--cta-last`, `--cta-at`, `--cta-style pill|box|text`.
+- `--cta "DM me"` for the call-to-action pop-up in the last 3 seconds, only on Offer, Sales or System reels, never on Story reels, never two asks on one reel. GHOST, SCALE, LEAKS and FREEDOM are retired (Brand Guide v11). `--cta-last`, `--cta-at`, `--cta-style pill|box|text`.
 - Hook style is `headline` by default: words rise on a soft dark glow, one gold phrase, a gold rule under it. The gold phrase is picked automatically; mark it by hand with asterisks (`--hook "The *10 minutes* after a bad number"`). `--title-style gold|outline|box` are the older looks.
 - The hook places itself: Apple Vision finds the face in the hook's frames and the hook goes above the head, or between the chin and the captions, shrinking the text if it must. Check the `hook placement:` summary line. `--hook-position` overrides it.
 - With no `--hook`, the opening sentence is the hook and the caption lines that repeat it are hidden while it shows. A written hook is still better.

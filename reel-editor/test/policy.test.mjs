@@ -36,3 +36,18 @@ test("his wife never; a prospect's spouse objection is fine", () => {
   assert.deepEqual(ids('SWAP #1: "Let me talk to my wife."'), []);
   assert.deepEqual(ids('He said "I need to check with my wife" and hung up.'), []);
 });
+
+test("v11 stop-saying phrases are caught; ordinary copy that shares a word passes", () => {
+  const ids = (t) => policyProblems(t).map((x) => x.id);
+  assert.deepEqual(ids("I've helped coaches grow 3 to 5x in 3 to 6 months."), ["v11-stop-saying"]);
+  assert.deepEqual(ids("Scale your offer 3, 4, 5x."), ["v11-stop-saying"]);
+  assert.deepEqual(ids("I install the whole sales system, A to Z."), ["v11-stop-saying"]);
+  assert.deepEqual(ids("A sales system that runs without you."), ["v11-stop-saying"]);
+  assert.deepEqual(ids("Follow up that never misses."), ["v11-stop-saying"]);
+  assert.deepEqual(ids("Find your biggest leak."), ["v11-stop-saying"]);
+  assert.deepEqual(ids("Take the free scorecard. It takes 4 minutes."), ["v11-stop-saying"]);
+  assert.deepEqual(ids("He never misses leg day."), []);
+  assert.deepEqual(ids("We replied in 4 minutes, not 4 hours."), []);
+  assert.deepEqual(ids("Take the free sales scorecard and see the first place to look."), []);
+  assert.deepEqual(ids("Your offer sells. Every call still waits on you."), []);
+});

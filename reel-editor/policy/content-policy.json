@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-31",
+  "version": "2026-11-19",
   "owner": "Greg Pingel (@officialgregpingel)",
   "about": "The one rule book for what may never appear in Greg's posts (Greg 2026-10-31, 'Start the Now list'). Read by the reel caption gate (src/publish-folder.mjs), the slide gate (src/slide-preflight.mjs, Greg's brand only), `reel policy` (the content engine checks every caption with it before scheduling) and anything else that writes as Greg. Client brands keep their own never-say lists in their brand files. Change a rule here, not in code.",
   "handles": [
@@ -64,6 +64,22 @@
       ],
       "slides": true,
       "source": "brand guide v10 proof rules: no income or dollar outcome claims"
+    },
+    {
+      "id": "v11-stop-saying",
+      "reason": "it uses a phrase Brand Guide v11 stopped (3 to 5x, A to Z, runs without you, never misses, biggest leak, or 4 minutes for the scorecard)",
+      "patterns": [
+        "\\b3\\s*(to|-)\\s*5\\s*x\\b",
+        "\\b3\\s*,\\s*4\\s*,?\\s*(and\\s+|or\\s+)?5\\s*x\\b",
+        "\\ba\\s+to\\s+z\\b",
+        "\\bruns?\\s+(itself\\s+)?without\\s+you\\b",
+        "\\b(it|system|that|which)\\s+never\\s+misses\\b",
+        "\\bbiggest\\s+leak\\b",
+        "\\bscorecard\\b[^\\n]{0,80}\\b(4|four)[\\s-]minutes?\\b",
+        "\\b(4|four)[\\s-]minutes?\\b[^\\n]{0,80}\\bscorecard\\b"
+      ],
+      "slides": true,
+      "source": "brand guide v11 Stop saying and Part 8 rules 22, 26, 27 (Greg 2026-11-18 'Yes to all'; live in every tool 2026-11-19)"
     },
     {
       "id": "dash",
