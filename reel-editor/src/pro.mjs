@@ -236,8 +236,8 @@ export function proPrompt(words, { duration = 0 } = {}) {
     "Plan teaching cards ON Greg's footage that write in as he speaks (the card rules). At most one full-screen card. No decoration, invented claims or paraphrases in spoken slots.",
     `Duration ${duration}s. About one card per 6-8 s of talk, at most 5 per 30 s, at least 2.5 s apart, never two at once, none before 2.4 s or in the last 3 s. Each type once per reel, never the same family twice in a row. Pick the card whose family fits the words: distinction, procedure, proof, conversation, warning, payoff, emphasis.`,
     "Every {from,to} is a pair of WORD INDEXES (the integer at the start of each transcript line below), never seconds. Types: correction {wrong:{from,to},right:{from,to}} ONLY for an explicit wrong/right correction; compare {left:{from,to},right:{from,to}}; steps {items:[{from,to},{from,to},{from,to}]} exactly three; stat {valueRange:{from,to},labelRange:{from,to}}; wordMark {word} (an underline drawn under one caption word); label {from,to} at most three words.",
-    ...Object.entries(CARDS).map(([t, d]) => `${t} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : "{from,to}"}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""} [${d.family}]: ${d.hint}`),
-    "Use at least three different types in a reel when the words earn it, never the same type twice in a row. Every number on a card must be a number Greg says.",
+    ...Object.entries(CARDS).map(([t, d]) => `${t} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : `{from,to} max ${s.maxChars || 48} chars`}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""} [${d.family}]: ${d.hint}`),
+    "Suggest 8 to 12 candidate cards across the whole reel (more than will be used; the rules pick the final 3-5). Use at least five different types and families. Every number on a card must be a number Greg says. Keep each spoken slot short: the words that would be written on the card, usually 1-6 words.",
     "Correction phrases at most 22 characters each; compare phrases at most 18; steps at most 12 each; stat value at most 8 and label at most 26. Keep qualifiers with numbers. Labels last at most 2.5s. No filler graphics to reach a quota.",
     words.map((w, i) => `${i} ${w.start.toFixed(3)} ${w.text}`).join("\n"),
     "Beat jobs from the existing planner (word range: job). Use correction/compare for distinctions, steps for procedures, stat for numerical proof, wordMark for emphasis. Leave takeaways and plain talk clean when no teaching aid is needed.",
@@ -292,7 +292,9 @@ export function attachProWordMarks(overlays, captions) {
   });
 }
 
-/** A candidate is a maximum rectangle, not permission to cover the face or shrink type below reading size. */
+/** Cards go where this shot has room: above the head or on the torso below the captions (an opaque card may cover
+ * the hoodie print). A card scales down to fit, never under 0.62 so its type stays readable on a phone. */
+export const PRO_MIN_SCALE = 0.62;
 export function placeProOverlay(overlay, frame) {
   const size = proSize(overlay);
   if (!frame?.measured || !size) return null;
@@ -303,17 +305,26 @@ export function placeProOverlay(overlay, frame) {
   const head = frame.head;
   // Existing face detection has no microphone class. Protect Greg's lower-left mic conservatively when unmeasured.
   const mic = frame.mic || { x: 0, y: 880 * k, w: 280 * k, h: 480 * k };
-  const caption = { x: 0, y: 1080 * k, w: frame.W, h: 220 * k };
-  for (const rect of PRO_RECTS) {
-    if (overlay.type === "label" && rect.slot !== "upper") continue;
-    if (size.w > rect.w || size.h > rect.h) continue;
-    const box = { x: rect.x * k, y: rect.y * k, w: size.w * k, h: size.h * k };
-    // Include entrance and exit travel; a safe settled rectangle alone is insufficient.
+  const capBox = frame.caption || { x: 0, y: 1080 * k, w: frame.W, h: 220 * k };
+  const topSafe = 176 * k, bottomSafe = 1720 * k, side = 80 * k;
+  const zones = [];
+  zones.push({ slot: "upper", x: side, y: topSafe, w: frame.W - 2 * side, h: Math.min(head ? head.y - 56 * k : Infinity, capBox.y) - topSafe - 8 * k });
+  const lowTop = Math.max(capBox.y + capBox.h, head ? head.y + head.h : 0) + 24 * k;
+  const micRight = mic ? mic.x + mic.w + 24 * k : side;
+  zones.push({ slot: "torso", x: Math.max(side, micRight), y: lowTop, w: frame.W - side - Math.max(side, micRight), h: bottomSafe - lowTop });
+  zones.push({ slot: "torso-wide", x: side, y: Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0), w: frame.W - 2 * side, h: bottomSafe - Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0) });
+  let best = null;
+  for (const z of zones) {
+    if (z.w <= 0 || z.h <= 0) continue;
+    const scale = Math.min(1, z.w / (size.w * k), z.h / (size.h * k));
+    if (scale < PRO_MIN_SCALE) continue;
+    const w = size.w * k * scale, h = size.h * k * scale;
+    const box = { x: z.x + (z.w - w) / 2, y: z.y + 8 * k, w, h };
     const swept = { ...box, y: box.y - 8 * k, h: box.h + 24 * k };
-    if (overlaps(swept, head, 56 * k) || overlaps(swept, mic, 24 * k) || overlaps(swept, caption) || overlaps(swept, frame.caption)) continue;
-    return { slot: rect.slot, ...box, scale: k };
+    if (overlaps(swept, head, 56 * k) || overlaps(swept, mic, 24 * k) || overlaps(swept, capBox)) continue;
+    if (!best || scale > best.scale / k + 0.08 || (z.slot === "upper" && scale >= best.scale / k - 0.08)) best = { slot: z.slot, ...box, scale: scale * k };
   }
-  return null;
+  return best;
 }
 
 /** Measure the entire overlay window in the same transformed coordinate system as the existing frame placer. */

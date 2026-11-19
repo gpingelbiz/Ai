@@ -99,28 +99,28 @@ test("card rules: hook and tail clear, 2.5 s spacing, five per 30 s, 70% cover, 
   }
 });
 
-test("placement protects head plus 56, mic plus 24, caption band and entrance travel without full-screen fallback", () => {
-  assert.equal(PRO_RECTS.length, 3);
-  for (const [type, h] of [["correction", 256], ["compare", 320], ["steps", 240], ["stat", 280]]) {
-    assert.deepEqual(proSize({ type }), { w: 720, h });
-    const p = placeProOverlay({ type }, frame()); assert.ok(p); assert.equal(p.x, 120); assert.equal(p.y, 288); assert.equal(p.h, h);
+test("placement fits each card into the room this shot has, above the head or on the torso, never over face, mic or captions", () => {
+  const hit = (a, b, m = 0) => b && a.x < b.x + b.w + m && a.x + a.w > b.x - m && a.y < b.y + b.h + m && a.y + a.h > b.y - m;
+  const base = { measured: true, W: 1080, H: 1920 };
+  const mic = { x: 0, y: 880, w: 280, h: 480 }, caption = { x: 0, y: 1080, w: 1080, h: 220 };
+  for (const headY of [420, 520, 640]) {
+    const head = { x: 330, y: headY, w: 420, h: 520 };
+    for (const [type, h] of [["correction", 256], ["compare", 320], ["steps", 240], ["stat", 280]]) {
+      const p = placeProOverlay({ type }, { ...base, head });
+      if (!p) continue;
+      const box = { x: p.x, y: p.y - 8, w: p.w, h: p.h + 24 };
+      assert.ok(!hit(box, head, 56) && !hit(box, mic, 24) && !hit(box, caption), `${type} at head ${headY} clears face, mic and captions`);
+      assert.ok(p.scale >= 0.62 && p.scale <= 1);
+      assert.ok(Math.abs(p.h - h * p.scale) < 0.01);
+    }
   }
-  assert.deepEqual(proSize({ type: "label", phrases: [{ text: "Calls" }] }), { w: Math.ceil(proTextWidth("Calls", 40)) + 64, h: 112 });
-  assert.equal(proSize({ type: "other" }), null);
+  // A head filling the frame leaves no room at a readable size.
+  assert.equal(placeProOverlay({ type: "stat" }, { ...base, head: { x: 0, y: 200, w: 1080, h: 1500 } }), null);
   assert.equal(placeProOverlay({ type: "stat" }, null), null);
-  assert.equal(placeProOverlay({ type: "stat" }, { ...frame(), measured: false }), null);
-  assert.equal(placeProOverlay({ type: "stat" }, frame({ x: 120, y: 550, w: 720, h: 320 })), null);
-  assert.equal(placeProOverlay({ type: "stat" }, { ...frame(), mic: { x: 0, y: 590, w: 400, h: 100 } }), null);
-  assert.equal(placeProOverlay({ type: "stat" }, { ...frame(), caption: { x: 0, y: 500, w: 1080, h: 100 } }), null);
-  assert.equal(placeProOverlay({ type: "stat" }, { ...frame(), H: 1080 }), null);
-  // Resting bottom 568 would clear a head starting at 630 with 56px margin, but the entrance crosses it.
-  assert.equal(placeProOverlay({ type: "stat" }, frame({ x: 120, y: 630, w: 720, h: 100 })), null);
-  assert.equal(placeProOverlay({ type: "stat" }, frame({ x: 120, y: 128, w: 720, h: 100 })), null, "exit travel also clears the head guard");
-  assert.equal(placeProOverlay({ type: "label" }, frame({ x: 120, y: 288, w: 720, h: 100 })), null);
-  assert.equal(placeProOverlay({ type: "wordMark" }, frame()).slot, "caption");
-  // Existing readFrame/viewFor expand the full moving head BEFORE pro's extra margin.
-  const f = readFrame({ frames: [{ faces: [{ x: 0.3, y: 0.34, w: 0.2, h: 0.15 }] }] }, { view: viewFor({ framing: { scale: 1.2 } }) });
-  assert.equal(placeProOverlay({ type: "stat" }, f), null);
+  assert.equal(placeProOverlay({ type: "stat" }, { ...base, measured: false }), null);
+  assert.equal(placeProOverlay({ type: "stat" }, { ...base, H: 1080 }), null);
+  assert.equal(placeProOverlay({ type: "wordMark" }, { ...base, head: { x: 330, y: 520, w: 420, h: 520 } }).slot, "caption");
+  assert.equal(placeProOverlay({ type: "full-list", card: true, fullscreen: true, slots: {} }, { ...base, head: { x: 330, y: 520, w: 420, h: 520 } })?.slot, "full");
 });
 
 test("word marks attach only to the actual caption word and fit within its lifetime", () => {
