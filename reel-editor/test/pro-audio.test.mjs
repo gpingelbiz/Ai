@@ -27,7 +27,8 @@ test("pro music history picker enforces mood, last three, and two uses in every 
   const blocked = library.slice(0, 3).map((t, i) => ({ reel: String(i), track: t.name }));
   assert.equal(pickProTrack(library.slice(0, 3), { history: blocked }), null);
   assert.equal(pickProTrack(library, { history: blocked, want: "track-0" }), null, "manual choice cannot bypass rotation");
-  assert.equal(pickProTrack(library, { want: "track-0", moods: ["Dark Beat"] }), null, "manual choice cannot bypass mood");
+  // A track named by a person skips the mood filter (rotation still applies).
+  assert.equal(pickProTrack(library, { want: "track-0", moods: ["Dark Beat"] })?.name, library.find((t) => t.name.includes("track-0")).name, "manual choice skips mood");
   assert.equal(pickProTrack(library, { history: blocked, reel: "0", want: "track-0" }).name, "track-0", "same reel can rebuild");
 });
 

@@ -30,3 +30,18 @@ test("no family twice in a row and no two light cards in a row", () => {
   const c = (type, start, extra = {}) => ({ type, start, end: start + 2, duration: 2, ...extra });
   assert.deepEqual(budgetProOverlays([c("correction", 3), c("compare", 6), c("steps", 9)], { duration: 30 }).map((k) => k.type), ["correction", "steps"]);
 });
+
+test("overlap checker finds cards covering captions, the hook or each other, and drops the later card", async () => {
+  const { findProCollisions, resolveProCollisions } = await import("../src/pro.mjs");
+  const card = (id, start, y, h = 240) => ({ id, type: "steps", start, end: start + 4, place: { x: 180, y, w: 720, h, scale: 1 } });
+  const captions = [{ start: 5, end: 7, y: 1248, lines: [3, 2] }];
+  const hook = { start: 0, duration: 2.4, lines: [3, 2], fontSize: 100 };
+  assert.equal(findProCollisions({ cards: [card("a", 5, 1408)], captions }).length, 1, "a torso card under a two-line caption overlaps");
+  assert.equal(findProCollisions({ cards: [card("a", 5, 1500)], captions }).length, 0);
+  assert.equal(findProCollisions({ cards: [card("a", 1, 200)], hook }).length, 1, "a card over the hook overlaps");
+  assert.equal(findProCollisions({ cards: [card("a", 3, 300), card("b", 5, 320)] }).length, 1, "two cards at once overlap");
+  assert.equal(findProCollisions({ cards: [card("a", 3, 300), card("b", 8, 320)] }).length, 0, "cards at different times do not");
+  const { kept, dropped } = resolveProCollisions([card("a", 3, 300), card("b", 5, 320), card("c", 5, 1408)], { captions });
+  assert.deepEqual(kept.map((k) => k.id), ["a"]);
+  assert.deepEqual(dropped.map((d) => d.id), ["b", "c"]);
+});

@@ -1,3 +1,4 @@
+import { findProCollisions } from "./pro.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { run, r3 } from "./util.mjs";
@@ -448,6 +449,11 @@ export async function runPreflight(file, { plan = null, loudnessTarget = plan?.s
   if (meta.hasAudio) {
     const loud = await measureLoudness(file);
     Object.assign(measures, { lufs: loud.i, lra: loud.lra, truePeak: loud.tp });
+    if (plan?.proGraphics?.length) {
+      const W = plan.canvas?.width || 1080, H = plan.canvas?.height || 1920;
+      const clashes = findProCollisions({ cards: plan.proGraphics, captions: plan.style?.captions?.pro ? plan.captions || [] : [], hook: plan.style?.hook?.pro ? plan.hook : null, W, H });
+      if (clashes.length) items.push({ level: "fail", code: "overlap", message: `${clashes.length} overlap${clashes.length === 1 ? "" : "s"}: ${clashes.slice(0, 3).map((c) => `${c.a} covers ${c.b} at ${c.at.toFixed(1)}s`).join("; ")}` });
+    }
     if (loud.i != null && Math.abs(loud.i - loudnessTarget) > loudnessTolerance) items.push({ level: "fail", code: "loudness", message: `loudness ${loud.i} LUFS (target ${loudnessTarget} ±${loudnessTolerance})` });
     if (loud.tp != null && loud.tp > -0.5) items.push({ level: "fail", code: "peak", message: `true peak ${loud.tp} dBTP (keep at or under -1)` });
     if (loud.lra != null && loud.lra > 14) items.push({ level: "warn", code: "range", message: `loudness range ${loud.lra} LU is wide (quiet lines will drop out on a phone)` });

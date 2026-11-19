@@ -30,7 +30,7 @@ import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
 import { boldEnabled, restyleBold } from "./bold.mjs";
-import { proEnabled, makeProGraphics, attachProWordMarks, placeProGraphics, proSoundCues } from "./pro.mjs";
+import { proEnabled, makeProGraphics, attachProWordMarks, placeProGraphics, proSoundCues, proCaptionBand, resolveProCollisions } from "./pro.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
@@ -955,17 +955,6 @@ export async function runEdit(input, opts = {}, deps = {}) {
       lowerThird = legacyLowerThird();
     }
   }
-  if (proOn) {
-    proGraphics = attachProWordMarks(proGraphics, showCaptions ? shownGroups : []);
-    if (cleanScenes) proGraphics = proGraphics.filter((g) => fitSceneWindow(g, cleanScenes));
-    proGraphics = await placeProGraphics(proGraphics, {
-      video: videoSrc, detect: placeDetect, W: canvas0.width, H: canvas0.height,
-      framingAt: (t) => sceneFaces ? sceneAt(sceneFaces, t).framing : framing,
-      zoomAt: (t0, t1) => zoomDuring(zooms, t0, t1) * driftDuring(driftPlan.stretches, t0, t1),
-      captionTop, captionBottom: Math.max(1300 / 1920, preset.captions.position + preset.captions.fontSizeFrac * 1.4),
-    });
-    log(`pro graphics: ${proGraphics.length} teaching overlays placed`);
-  }
   if (preset.captions.pro) {
     const heads = (detection?.frames || []).flatMap((frame) => {
       const t = frame.time ?? frame.t ?? 0;
@@ -974,6 +963,24 @@ export async function runEdit(input, opts = {}, deps = {}) {
     });
     shownGroups = placeProCaptions(shownGroups, heads, { height: canvas0.height });
     if (!heads.length) warn("pro captions: no chin measurements; keeping y=1248 (1080x1920)");
+  }
+  if (proOn) {
+    proGraphics = attachProWordMarks(proGraphics, showCaptions ? shownGroups : []);
+    if (cleanScenes) proGraphics = proGraphics.filter((g) => fitSceneWindow(g, cleanScenes));
+    proGraphics = await placeProGraphics(proGraphics, {
+      video: videoSrc, detect: placeDetect, W: canvas0.width, H: canvas0.height,
+      framingAt: (t) => sceneFaces ? sceneAt(sceneFaces, t).framing : framing,
+      zoomAt: (t0, t1) => zoomDuring(zooms, t0, t1) * driftDuring(driftPlan.stretches, t0, t1),
+      // Reserve where the captions really sit (pro captions are placed above, per thought).
+      ...(preset.captions.pro && shownGroups.some((g) => Number.isFinite(g.y))
+        ? proCaptionBand(shownGroups, { H: canvas0.height })
+        : { captionTop, captionBottom: Math.max(1300 / 1920, preset.captions.position + preset.captions.fontSizeFrac * 1.4) }),
+    });
+    // Nothing may cover anything else: cards vs captions, the hook and each other, frame by frame in time.
+    const clash = resolveProCollisions(proGraphics, { captions: showCaptions && preset.captions.pro ? shownGroups : [], hook: hook?.pro || preset.hook?.pro ? hook : null, W: canvas0.width, H: canvas0.height });
+    proGraphics = clash.kept;
+    if (clash.dropped.length) warn(`pro graphics: dropped ${clash.dropped.length} card${clash.dropped.length === 1 ? "" : "s"} that would cover ${[...new Set(clash.dropped.map((d) => d.with))].join(", ")}`);
+    log(`pro graphics: ${proGraphics.length} teaching overlays placed`);
   }
   const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, voiceFile: videoSrc, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: preset.audio.pro ? cleanWords.map((w) => w.text).join(" ") : shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate, ...(proOn ? { proGraphics } : {}) } });
   if (sourceScenes && early.envelope) await early.envelope;

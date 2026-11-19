@@ -25,7 +25,8 @@ export function pickProTrack(tracks, { history = [], reel = "", moods = [], want
   const lc = (s) => String(s || "").toLowerCase();
   const moodPool = moods.length ? eligible.filter((t) => moods.some((m) => lc(t.mood).includes(lc(m)))) : eligible;
   // A missing matching mood is preferable to reusing an inappropriate score.
-  const pool = want ? moodPool.filter((t) => lc(t.name).includes(lc(want))) : moodPool;
+  // A named track is a person's choice: rotation still applies, the mood filter does not.
+  const pool = want ? eligible.filter((t) => lc(t.name).includes(lc(want))) : moodPool;
   if (!pool.length) return null;
   const random = seeded(seed || reel || "pro")();
   return pool[Math.floor(random * pool.length)];

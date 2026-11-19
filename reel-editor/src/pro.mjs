@@ -364,3 +364,51 @@ export function proSoundCues(overlays, { fps = 30, level = 0.08 } = {}) {
     duration: 0.294604, volume: Math.min(0.08, level), track: 9,
   }));
 }
+
+/** The caption plates' real band (pro captions: top y per thought, 92 px lines, 12 px padding top and bottom). */
+export function proCaptionBox(g, { W = 1080, H = 1920 } = {}) {
+  const k = H / 1920, lines = g.lines?.length || 1;
+  const y = Number.isFinite(g.y) ? g.y : 1248 * k;
+  return { x: (W - 828 * k) / 2, y, w: 828 * k, h: lines * 92 * k + 24 * k };
+}
+export function proCaptionBand(groups, { H = 1920, W = 1080 } = {}) {
+  const boxes = groups.map((g) => proCaptionBox(g, { W, H }));
+  if (!boxes.length) return { captionTop: 1248 / 1920, captionBottom: 1364 / 1920 };
+  return { captionTop: Math.min(...boxes.map((b) => b.y)) / H, captionBottom: Math.max(...boxes.map((b) => b.y + b.h)) / H };
+}
+/** The pro hook title: centred, top 176 px, lines at its font size plus 16 px padding. */
+export function proHookBox(hook, { W = 1080, H = 1920 } = {}) {
+  if (!hook) return null;
+  const k = H / 1920, px = hook.fontSize || 100, lines = hook.lines?.length || 1;
+  return { x: (W - 816 * k) / 2, y: 176 * k, w: 816 * k, h: (lines * px * 1.06 + 32) * k };
+}
+const timeHit = (a, b, slack = 0.05) => a.start < b.end - slack && b.start < a.end - slack;
+const boxHit = (a, b, pad = 8) => a && b && a.x < b.x + b.w + pad && a.x + a.w > b.x - pad && a.y < b.y + b.h + pad && a.y + a.h > b.y - pad;
+const cardBox = (o) => o.place && o.type !== "wordMark" ? { x: o.place.x, y: o.place.y - 8 * (o.place.scale || 1), w: o.place.w ?? proSize(o).w * (o.place.scale || 1), h: (o.place.h ?? proSize(o).h * (o.place.scale || 1)) + 24 * (o.place.scale || 1) } : null;
+
+/** Every pair of on-screen things that share time and space. Full-screen cards hide captions on purpose. */
+export function findProCollisions({ cards = [], captions = [], hook = null, W = 1080, H = 1920 } = {}) {
+  const items = [
+    ...(hook ? [{ kind: "hook", id: "hook", start: hook.start || 0, end: (hook.start || 0) + hook.duration, box: proHookBox(hook, { W, H }) }] : []),
+    ...captions.map((g, i) => ({ kind: "caption", id: `cap-${i}`, start: g.start, end: g.end, box: proCaptionBox(g, { W, H }) })),
+    ...cards.filter((o) => o.type !== "wordMark" && !o.fullscreen).map((o) => ({ kind: "card", id: o.id, type: o.type, start: o.start, end: o.end, box: cardBox(o) })),
+  ];
+  const out = [];
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i], b = items[j];
+    if (a.kind !== "card" && b.kind !== "card") continue;
+    if (timeHit(a, b) && boxHit(a.box, b.box)) out.push({ a: a.id, b: b.id, kinds: [a.kind, b.kind], at: Math.max(a.start, b.start) });
+  }
+  return out;
+}
+
+/** Keep cards in time order; drop any card that would cover the hook, a caption or a card already kept. */
+export function resolveProCollisions(cards, { captions = [], hook = null, W = 1080, H = 1920 } = {}) {
+  const kept = [], dropped = [];
+  for (const c of [...cards].sort((a, b) => a.start - b.start)) {
+    const hits = findProCollisions({ cards: [...kept, c], captions, hook, W, H }).filter((h) => h.a === c.id || h.b === c.id);
+    if (hits.length) dropped.push({ id: c.id, type: c.type, with: hits.map((h) => (h.a === c.id ? h.kinds[1] : h.kinds[0])).join("+") });
+    else kept.push(c);
+  }
+  return { kept, dropped };
+}
