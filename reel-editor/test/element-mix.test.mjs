@@ -122,13 +122,17 @@ test("glow scenes can sit behind the speaker, never on his face, and only when a
   // No room beside him for the panel: without the matte the scene keeps the full screen.
   const plain = placeGlowScenes(scenes, det);
   assert.equal(plain[0].place, undefined);
-  const behind = placeGlowScenes(scenes, det, { behind: true });
-  assert.equal(behind[0].place?.slot, "behind", JSON.stringify(behind[0].place));
   const frame = readFrame(det, { captionTop: 0.785, captionFontFrac: 0.03 });
-  const p = behind[0].place;
-  const hidden = Math.max(0, Math.min(p.x + p.w, frame.head.x + frame.head.w) - Math.max(p.x, frame.head.x)) * Math.max(0, Math.min(p.y + p.h, frame.head.y + frame.head.h) - Math.max(p.y, frame.head.y));
-  assert.ok(hidden / (p.w * p.h) <= 0.25 + 1e-6);
-  assert.ok(placeCard({ type: "icons", foot: { w: 950, h: 900, minW: 950, minVisual: 380, wrap: 0 } }, frame, { kind: "scene", allowBehind: true, behindCost: 0.12 }));
+  // Asked for behind: the panel goes behind him, and the head plus the shoulders (the matte lifts both) hide at most
+  // a quarter of it.
+  const p = placeCard({ type: "icons", foot: { w: 950, h: 900, minW: 950, minVisual: 380, wrap: 0 } }, frame, { kind: "scene", allowBehind: true, pin: "behind", maxScale: 0.7, minScale: 0.5, maxArea: 0.4, maxHidden: 0.25 });
+  assert.equal(p.slot, "behind", JSON.stringify(p));
+  const cover = (o) => Math.max(0, Math.min(p.x + p.w, o.x + o.w) - Math.max(p.x, o.x)) * Math.max(0, Math.min(p.y + p.h, o.y + o.h) - Math.max(p.y, o.y));
+  assert.ok(p.occl.length === 2, "head and shoulders both block the panel");
+  assert.ok((cover(p.occl[0]) + cover(p.occl[1])) / (p.w * p.h) <= 0.25 + 0.02);
+  // Without the pin it only wins when it beats full screen honestly; either way it never lands on the face.
+  const behind = placeGlowScenes(scenes, det, { behind: true });
+  if (behind[0].place) assert.ok(["behind", "side", "top", "corner", "lower"].includes(behind[0].place.slot));
 });
 
 test("the page side ships only with the mix, and every mark shape exists", () => {

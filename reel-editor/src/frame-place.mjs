@@ -147,11 +147,12 @@ export function cardFootprint(card = {}) {
     case "headline": case "chapter": return { w: 900, h: 110 + eyebrow + Math.ceil(words(card.title || card.text) / 20) * 85, minW: 480, wrap: 0.8 };
     case "quote": return { w: 900, h: 140 + eyebrow + Math.ceil(words(card.text || card.quote) / 26) * 66, minW: 520, wrap: 0.8 };
     // Timed lists keep each row on one line, so they need a wider layout than a wrapped card.
-    case "list": case "ladder": return { w: 900, h: 110 + eyebrow + Math.max(2, n) * 84, minW: 640, wrap: 0.3 };
+    // The compact size: the page tightens padding and gaps when the roomy version does not fit (graphics.mjs).
+    case "list": case "ladder": return { w: 900, h: 130 + eyebrow + Math.max(2, n) * 90, minW: 640, wrap: 0.3 };
     case "steps": return card.items?.every((it) => Number.isFinite(it.at)) ? { w: 900, h: 110 + eyebrow + Math.max(2, n) * 84, minW: 640, wrap: 0.3 } : { w: 900, h: 280 + eyebrow, minW: 720, minVisual: 600, wrap: 0.3 };
     case "compare": return { w: 900, h: 300 + eyebrow, minW: 700, minVisual: 600, wrap: 0.4 };
-    case "bars": return { w: 900, h: 120 + eyebrow + Math.max(2, n) * 84, minW: 620, minVisual: 520, wrap: 0.3 };
-    case "message": return { w: 900, h: 150 + Math.max(2, n) * 104, minW: 560, wrap: 0.5 };
+    case "bars": return { w: 900, h: 120 + eyebrow + Math.max(2, n) * 84, minW: 620, minVisual: 520, wrap: 0.3, minScale: 0.72 };
+    case "message": return { w: 900, h: 150 + Math.max(2, n) * 104, minW: 560, wrap: 0.5, minScale: 0.8 };
     case "post": return { w: 900, h: 340, minW: 600, wrap: 0.5 };
     case "flip": return { w: 900, h: 150 + eyebrow + Math.ceil(Math.max(words(card.wrong), words(card.right)) / 18) * 86, minW: 480, wrap: 0.7 };
     case "notify": return { w: 670, h: 150, minW: 520, wrap: 0.5 };
@@ -224,9 +225,10 @@ export function openSpaces(frame, { gap = 28, behind = false } = {}) {
   // Behind the speaker (Greg 11-18: "put the cards behind the speaker if it covers any"): the card may reach into the
   // head's box because a person matte keeps the head in front of it. Only part of the card may hide behind the head.
   if (behind) {
-    add("behind", "top", L, T, R - L, Math.min(capTop, hTop + 0.5 * head.h) - T, "top");
-    add("behind", "left", L, T, Math.min(R, hL + 0.4 * head.w) - L, capTop - T, { cy: hCy - 0.15 * head.h });
-    add("behind", "right", Math.max(L, hR - 0.4 * head.w), T, R - Math.max(L, hR - 0.4 * head.w), capTop - T, { cy: hCy - 0.15 * head.h });
+    // Sized so a card that fills the space tucks only its own inner edge (13%) behind the head.
+    add("behind", "top", L, T, R - L, Math.min(capTop, T + (hTop - T) / 0.87) - T, "top");
+    add("behind", "left", L, T, Math.min(R, L + (hL - L) / 0.87) - L, capTop - T, { cy: hCy - 0.15 * head.h });
+    add("behind", "right", Math.max(L, R - (R - hR) / 0.87), T, R - Math.max(L, R - (R - hR) / 0.87), capTop - T, { cy: hCy - 0.15 * head.h });
   }
   // Under the captions, above the platform's bottom strip (only when the body does not fill it... the body may).
   add("base", "center", L, capBottom, R - L, floor - capBottom, "center");
@@ -247,6 +249,18 @@ export function placeCard(card, frame, { history = [], pin = null, maxScale = 0.
   const { W, H, head, body } = frame;
   const allowed = pin ? (Array.isArray(pin) ? pin : [pin]) : null;
   const prev = history.at(-1), prev2 = history.at(-2);
+  // What the person matte covers: the head, and the body from the shoulders down (Vision's upper-body box is a
+  // rectangle, so beside the head at head height it is still wall).
+  const shoulders = head && body ? clip({ x: body.x, y: head.y + 0.85 * head.h, w: body.w, h: body.y + body.h - (head.y + 0.85 * head.h) }, W, H) : null;
+  const covers = head ? [head, ...(shoulders ? [shoulders] : [])] : body ? [body] : [];
+  const hiddenArea = (b) => covers.reduce((a, c) => a + inter(b, c), 0) - (covers.length === 2 ? inter(b, clip({ x: Math.max(head.x, shoulders.x), y: Math.max(head.y, shoulders.y), w: Math.min(head.x + head.w, shoulders.x + shoulders.w) - Math.max(head.x, shoulders.x), h: Math.min(head.y + head.h, shoulders.y + shoulders.h) - Math.max(head.y, shoulders.y) }, W, H)) : 0);
+  // Behind the speaker the person may only cover the card's inner edge (its padding), never the middle where the
+  // words are: the head reaches at most 15% into the card from the side that faces it.
+  const edgeOnly = (box, side) => {
+    if (!head) return true;
+    const reach = side === "top" ? (box.y + box.h - head.y) / box.h : side === "left" ? (box.x + box.w - head.x) / box.w : (head.x + head.w - box.x) / box.w;
+    return reach <= 0.15;
+  };
   const options = [];
   for (const sp of openSpaces(frame, { behind: allowBehind && (kind === "card" || kind === "scene") })) {
     if (kind === "scene" && sp.slot === "base") continue;
@@ -256,12 +270,14 @@ export function placeCard(card, frame, { history = [], pin = null, maxScale = 0.
     if (card.type === "flip" && sp.slot === "behind") continue;
     // A corner card is a small card by design; the big slots cap at maxScale ("make them smaller so they fit").
     const max = sp.slot === "corner" ? Math.min(maxScale, 0.66) : maxScale;
-    const fit = fitScale(foot, sp.space, { max, min: minScale });
+    // Small-type cards (bars, message threads) cannot shrink as far as a big headline and still read.
+    const fit = fitScale(foot, sp.space, { max, min: Math.max(minScale, foot.minScale || 0) });
     if (!fit) continue;
     if (fit.w * fit.h > maxArea * W * H) continue;
     const box = boxIn(sp, fit, frame);
-    const hidden = head ? inter(box, head) / Math.max(1, area(box)) : 0;
-    if (sp.slot === "behind" ? hidden < 0.02 || hidden > maxHidden : head && overlaps(box, head, 8)) continue;
+    // Behind the speaker, the person matte lifts the head AND the body above the card: both hide it.
+    const hidden = sp.slot === "behind" ? hiddenArea(box) / Math.max(1, area(box)) : head ? inter(box, head) / Math.max(1, area(box)) : 0;
+    if (sp.slot === "behind" ? hidden < 0.02 || hidden > maxHidden || !edgeOnly(box, sp.side) : head && overlaps(box, head, 8)) continue;
     if (overlaps(box, frame.caption, 8)) continue;
     let cost = (sp.slot === "behind" ? behindCost : COST[sp.slot]) + (sp.slot === "behind" ? hidden * 0.8 : 0);
     cost += (max - fit.scale) * 0.6; // a squeezed card reads worse (the page refits it to its real size)
@@ -295,7 +311,13 @@ export function placeCard(card, frame, { history = [], pin = null, maxScale = 0.
   const best = options[0];
   if (best.slot === "full") return { slot: "full", side: "center", why: options.length === 1 ? "no clear space beside, above or below the speaker" : "full screen beat the open spots" };
   const why = `${best.slot}${best.side !== "center" ? ` ${best.side}` : ""} at ${Math.round(best.fit.scale * 100)}%${best.drop ? `, footage down ${best.drop}px` : ""}`;
-  return { slot: best.slot, side: best.side, ...best.box, scale: best.fit.scale, layoutW: best.fit.layoutW, space: best.space, anchor: typeof best.anchor === "string" ? best.anchor : "center", ...(best.anchor?.cy != null ? { cy: r(best.anchor.cy) } : {}), ...(best.drop ? { drop: best.drop } : {}), why };
+  // The next best clear spots (not the push, not full screen): the page tries them in order when the real card
+  // will not read in the first one, so a card is never hidden while another clear spot exists.
+  const spot = (o) => ({ slot: o.slot, side: o.side, space: o.space, anchor: typeof o.anchor === "string" ? o.anchor : "center", scale: o.fit.scale, layoutW: o.fit.layoutW, ...(o.anchor?.cy != null ? { cy: r(o.anchor.cy) } : {}) });
+  const alts = options.slice(1).filter((o) => o.fit && o.slot !== "push" && !(o.slot === best.slot && o.side === best.side)).slice(0, 3).map(spot);
+  // The page checks every word against these boxes before a card goes behind the speaker.
+  const occl = covers.length ? covers.map((c) => ({ x: r(c.x), y: r(c.y), w: r(c.w), h: r(c.h) })) : null;
+  return { slot: best.slot, side: best.side, ...best.box, scale: best.fit.scale, layoutW: best.fit.layoutW, space: best.space, anchor: typeof best.anchor === "string" ? best.anchor : "center", ...(best.anchor?.cy != null ? { cy: r(best.anchor.cy) } : {}), ...(best.drop ? { drop: best.drop } : {}), ...(alts.length ? { alts } : {}), ...(occl ? { occl } : {}), why };
 }
 
 /** Where the fitted card sits inside its space: hugging the outer edge beside the head, centred on the face height. */
