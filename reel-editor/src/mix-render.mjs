@@ -25,7 +25,7 @@ export function mixCSS({ H, colors }) {
   return `
       .g-flip { display: grid; justify-items: start; align-items: center; min-width: ${px(420)}; }
       .g-flip > div { grid-area: 1 / 1; }
-      .g-flip-text { position: relative; display: inline-block; font-size: ${px(78)}; font-weight: 850; line-height: 1.02; text-transform: uppercase; letter-spacing: -0.01em; }
+      .g-flip-text { position: relative; display: inline-block; font-size: ${px(70)}; font-weight: 850; line-height: 1.02; text-transform: uppercase; letter-spacing: -0.01em; }
       .g-flip-wrong .g-flip-text { color: ${c.text}; opacity: 0.78; }
       .g-flip-right .g-flip-text { color: ${c.accent}; }
       .g-flip-right { opacity: 0; }
@@ -48,7 +48,7 @@ export const MIX_JS = `
           const el = document.getElementById("gfx-" + i);
           if (!el || el.style.opacity === "0") return;
           const box = el.querySelector(".g-box");
-          if (!box || box.style.visibility === "hidden" || el.style.visibility === "hidden") return;
+          if (!box || box.style.display === "none" || el.dataset.placeHidden) return;
           const f = 1 / (PLAN.fps || 30);
           const root = document.getElementById("root").getBoundingClientRect();
           const k = root.height ? root.height / PLAN.height : 1;
@@ -81,9 +81,16 @@ export const MIX_JS = `
             const target = g.type === "flip" ? el.querySelector(".g-flip-key") : g.type === "stat" ? el.querySelector(".g-value-lock, .g-stat, .g-num") : el.querySelector(".g-gold, .g-hl");
             if (!target) return;
             const m = PLAN.mixMarks[g.mark.kind];
-            if (getComputedStyle(target).position === "static") target.style.position = "relative";
+            // A phrase that wraps has no single box to draw on: no mark rather than a stray stroke.
+            if (target.getClientRects().length !== 1) return;
+            const tc = getComputedStyle(target);
+            if (tc.position === "static") target.style.position = "relative";
+            // A look that already paints a highlight in the accent (atelier, paper, editorial) would hide an accent
+            // stroke: the mark takes the ink of the words instead.
+            const painted = tc.backgroundImage !== "none" || !/rgba\(0, 0, 0, 0\)|transparent/.test(tc.backgroundColor);
             target.insertAdjacentHTML("beforeend", '<svg class="mx-mark mx-' + g.mark.kind + '" viewBox="' + m.box + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + m.d + '"/></svg>');
             const svg = target.lastElementChild, p = svg.querySelector("path");
+            if (painted) p.style.stroke = tc.color;
             const L = p.getTotalLength();
             p.style.strokeDasharray = L + " " + L;
             p.style.strokeDashoffset = L;

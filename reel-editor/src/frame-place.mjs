@@ -252,6 +252,8 @@ export function placeCard(card, frame, { history = [], pin = null, maxScale = 0.
     if (kind === "scene" && sp.slot === "base") continue;
     if (allowed && !allowed.includes(sp.slot)) continue;
     if (kind === "slam" && sp.slot === "base") continue;
+    // A flip is read word for word (the old phrase, then the new one): none of it may hide behind the head.
+    if (card.type === "flip" && sp.slot === "behind") continue;
     // A corner card is a small card by design; the big slots cap at maxScale ("make them smaller so they fit").
     const max = sp.slot === "corner" ? Math.min(maxScale, 0.66) : maxScale;
     const fit = fitScale(foot, sp.space, { max, min: minScale });

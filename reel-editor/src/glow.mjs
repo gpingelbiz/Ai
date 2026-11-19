@@ -721,6 +721,21 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
     const y = out.band(g.start, end);
     return (y + (g.place.h || 0.07 * H)) / H <= 0.785 ? { ...g.place, y } : null;
   } });
+  // A mark draws on for about 0.4 s from its word. The line holds until it has finished (a running caption after
+  // it starts up to half a second later; every word is still captioned); where nothing can make room, no mark.
+  plan.captions.sort((a, b) => a.start - b.start);
+  plan.captions.forEach((g, i) => {
+    if (!g.mark) return;
+    const k = g.words.find((w) => w.key);
+    const need = k ? r3(k.start + 0.62) : Infinity;
+    if (g.end >= need) return;
+    const nx = plan.captions[i + 1];
+    const blocked = [...(plan.glowScenes || []), ...(plan.glowOverlays || [])].some((x) => x.start < need + 0.05 && x.end > g.start);
+    if (!k || blocked) { delete g.mark; return; }
+    if (!nx || nx.start >= need + 0.05) { g.end = need; return; }
+    if (nx.run && nx.end - (need + 0.05) >= 0.5 && nx.start + 0.5 >= need + 0.05) { nx.start = r3(need + 0.05); g.end = need; return; }
+    delete g.mark;
+  });
   // Sounds last, from the final plan. The old look's cut cues go; music, narration and a B-roll shot's own generated
   // sound (sfx-broll-*) stay.
   plan.audio = { ...plan.audio, tracks: [...(plan.audio?.tracks || []).filter((t) => !String(t.id || "").startsWith("sfx-") || String(t.id).startsWith("sfx-broll-")), ...glowSoundCues(plan)] };

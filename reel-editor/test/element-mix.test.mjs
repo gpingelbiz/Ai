@@ -46,6 +46,9 @@ test("the flip finder cuts the wrong and right phrases out of what he says", () 
   const [r] = findFlips(real);
   assert.equal(side(real, r, "wrongFrom", "wrongTo"), "volume is smarter,");
   assert.equal(side(real, r, "rightFrom", "rightTo"), "every attempt teaches you something,");
+  // The same line with the comma dropped by the transcriber: "and" ends the phrase.
+  const bare = timed("not because volume is smaller, but because every attempt teaches you something and a skill is built");
+  assert.equal(side(bare, findFlips(bare)[0], "rightFrom", "rightTo"), "every attempt teaches you something");
 });
 
 test("a flip card is his words, strikes on the spoken turn and fits one slot", () => {
@@ -64,6 +67,8 @@ test("a flip card is his words, strikes on the spoken turn and fits one slot", (
   assert.equal(normalizeScene({ type: "flip", line: 1, wrong: "work", right: "Work" }), null);
   const foot = cardFootprint(s);
   assert.ok(foot.w <= 900 && foot.h < 400);
+  const wide = readFrame({ frames: [0, 1].map((t) => ({ t, faces: [{ x: 0.52, y: 0.2, w: 0.22, h: 0.13 }], bodies: [] })) }, { captionTop: 0.68 });
+  assert.notEqual(placeCard(s, wide, { allowBehind: true, pin: ["behind", "side", "lower"] })?.slot, "behind");
   // The planner times it: the strike lands on "it's", and a card right after it never cuts the flip short.
   const cands = groups.map((g, i) => ({ i, start: g.start, text: g.text, words: g.words }));
   const placed = placeScenes([{ ...s, pivotAt: 0.9 }], cands, { duration: 20 });

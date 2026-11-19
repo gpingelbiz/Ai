@@ -598,7 +598,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
  * Plan the graphic scenes for one reel. Saves <workDir>/graphics.json and reuses it while the transcript lines
  * are unchanged (`force` replans). Never throws: any failure returns [] and the reel renders without cards.
  */
-export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false, handle = "", tail = 1.5 }) {
+export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false, handle = "", tail = 1.5, words: spokenList = null }) {
   const planPath = path.join(workDir, "graphics.json");
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
   const structural = settings.persistent === true || settings.ladder === true;
@@ -613,11 +613,11 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   // a spoken myth flip becomes a flip card, and the variety pass keeps types, entrances and marks rotating.
   const mixOn = settings.mix !== false;
   const beats = classifyBeats(groups, { duration });
-  const spokenWords = groups.flatMap((g) => g.words || []);
+  const spokenWords = spokenList?.length ? spokenList : groups.flatMap((g) => g.words || []);
   const withFlips = (cards, look) => {
     if (!mixOn) return cards;
     const near = (f) => cards.some((c) => (c.type === "flip" || c.type === "compare" || c.source === "flip-finder") && Math.abs((candidates.find((x) => x.i === c.line)?.start ?? -99) - (candidates.find((x) => x.i === f.line)?.start ?? 99)) < 4);
-    const found = flipCards(groups).filter((f) => candidates.some((c) => c.i === f.line) && !near(f)).map((f) => ({ ...normalizeScene(f), pivotAt: f.pivotAt, source: "flip-finder" })).filter((f) => f.type === "flip");
+    const found = flipCards(groups, spokenList).filter((f) => candidates.some((c) => c.i === f.line) && !near(f)).map((f) => ({ ...normalizeScene(f), pivotAt: f.pivotAt, source: "flip-finder" })).filter((f) => f.type === "flip");
     return [...cards, ...found.map((f) => ({ ...f, skin: QUIET_SKINS.includes(skinFor(look, "headline")) ? skinFor(look, "headline") : "glass" }))];
   };
   const mix = (cards) => {
@@ -1533,7 +1533,8 @@ const PLACE_JS = `        const placeCardBox = (g, el, box) => {
           // Too big to read in its spot: full screen only where the brand allows it; otherwise the card is not shown
           // (never over the face or captions, never squeezed past reading size).
           if (!s && PLAN.placeFull) return goFull();
-          if (!s) { el.style.visibility = "hidden"; return "hidden"; }
+          // HyperFrames turns a clip's own visibility back on while it plays, so the box itself is taken out.
+          if (!s) { box.style.display = "none"; el.dataset.placeHidden = "1"; return "hidden"; }
           return p.slot === "push" ? "push" : "placed";
         };
 `;

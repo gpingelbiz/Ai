@@ -121,6 +121,7 @@ const GLOW_NOTES = {
  * [{ from, to, wrongFrom, wrongTo, rightFrom, rightTo, pivot }] as word indexes (pivot = the word where the right
  * idea starts being said). Each side is one to four words.
  */
+const CLAUSE = new Set("and but so because then or which".split(" "));
 const STOP = new Set("a an the about just really very your my his her their our it its because".split(" "));
 export function findFlips(words = []) {
   const t = words.map((w) => tok(w.text));
@@ -135,6 +136,8 @@ export function findFlips(words = []) {
       if (!t[k]) break;
       idx.push(k);
       if (/[,.;:?!]["”]?$/.test(words[k].text)) { closed = true; break; }
+      // A transcript without the comma: the next word starting a new clause ends the phrase too.
+      if (CLAUSE.has(t[k + 1]) && idx.length >= 2) { closed = true; break; }
     }
     if (stopAt == null ? !closed : !closed && idx.at(-1) !== stopAt - 1) return null;
     while (idx.length && STOP.has(t[idx[0]])) idx.shift();
@@ -177,9 +180,16 @@ const plainText = (words, a, b) => words.slice(a, b + 1).map((w) => String(w.tex
  * Flip cards for caption groups (graphics.mjs). Each flip becomes { type: "flip", line, wrong, right, pivotAt... }:
  * the line is the group where the wrong phrase starts; pivotAt is seconds after the card starts.
  */
-export function flipCards(groups = []) {
+export function flipCards(groups = [], spoken = null) {
+  // Caption groups drop the commas and full stops a phrase ends on; the transcript words keep them, so the finder
+  // reads those when it has them and maps each word back to its caption line by time.
   const words = [], owner = [];
-  groups.forEach((g, gi) => (g.words || []).forEach((w) => { words.push(w); owner.push(gi); }));
+  if (spoken?.length) {
+    for (const w of spoken) {
+      const gi = groups.findIndex((g, k) => w.start >= g.start - 0.06 && (k === groups.length - 1 || w.start < groups[k + 1].start - 0.06));
+      if (gi >= 0) { words.push(w); owner.push(gi); }
+    }
+  } else groups.forEach((g, gi) => (g.words || []).forEach((w) => { words.push(w); owner.push(gi); }));
   return findFlips(words).map((f) => {
     const line = owner[f.from];
     const start = groups[line]?.start ?? words[f.from].start;
@@ -293,7 +303,11 @@ export function mixGlowPicks(picks, words, { duration = 0, hookEnd = 3, fits = (
     const job = jobAt(beats, words[f.from].start);
     if (!["emphasis", "proof", "distinction", "objection"].includes(job)) return f;
     const pref = /\d|\$|%/.test(words[key].text) ? "circle" : JOB_ELEMENTS[job].mark === "circle" ? "underline" : JOB_ELEMENTS[job].mark || "underline";
-    const mark = pref !== lastMark ? pref : pref === "underline" ? "arrow" : "underline";
+    // Feature lines sit at the left margin: an arrow off a row's first word would point in from outside the frame.
+    const rowStart = key === f.from || key === f.br || (f.variant === "hero" && key === f.hero);
+    let mark = pref !== lastMark ? pref : pref === "underline" ? "arrow" : "underline";
+    if (mark === "arrow" && rowStart) mark = lastMark === "underline" ? "circle" : "underline";
+    if (mark === "circle" && !/\d|\$|%/.test(words[key].text) && lastMark === "underline") { sinceMark = 9; return f; }
     lastMark = mark;
     sinceMark = 0;
     marked.push(`${words[key].text.replace(/[^\w$%']/g, "")} ${mark}`);
