@@ -10,8 +10,16 @@
 //   render(o, h) -> { inner, timeline }  o.slots[name] = [{ text, lines, at, end }], o.reveals; h = helpers
 //   css       string of rules scoped under .pro-<type>
 import { CARDS as core } from "./core.mjs";
+import { CARDS as distinctionPayoff } from "./distinction-payoff.mjs";
+import { CARDS as procedureProof } from "./procedure-proof.mjs";
+import { CARDS as conversation } from "./conversation.mjs";
+import { CARDS as warningEmphasisFull } from "./warning-emphasis-full.mjs";
 // Batch builders: add one import line and one spread each; nothing else in this file changes.
 
 export const CARDS = Object.freeze({
   ...core,
+  ...distinctionPayoff,
+  ...procedureProof,
+  ...conversation,
+  ...warningEmphasisFull,
 });
