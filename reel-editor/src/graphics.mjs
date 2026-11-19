@@ -1498,12 +1498,19 @@ const PLACE_JS = `        const placeCardBox = (g, el, box) => {
             }
             return { min: Number.isFinite(min) ? min : 40, max: max || 40 };
           };
+          // A card a little too tall for its spot first tightens up (half the padding and gaps), the way an editor
+          // would set a compact version, before it gives the spot up.
+          const cs0 = getComputedStyle(box);
+          const pad0 = ["paddingTop", "paddingRight", "paddingBottom", "paddingLeft"].map((k) => parseFloat(cs0[k]) || 0), gap0 = parseFloat(cs0.rowGap) || 0;
+          const compact = (on) => { box.style.padding = on ? pad0.map((v, i) => Math.round(v * (i % 2 ? 0.6 : 0.45)) + "px").join(" ") : ""; box.style.rowGap = on ? Math.round(gap0 * 0.5) + "px" : ""; };
           // Fit the card into a space at a scale between floor and cap, then set it at its anchor.
           const fit = (sp, width, cap, floor, anchor) => {
+            compact(false);
             set(1, 100, 100, width);
-            const m1 = rect();
-            const s = Math.min(cap, sp.w / m1.w, sp.h / m1.h);
-            if (s < floor) return null;
+            let m1 = rect();
+            let s = Math.min(cap, sp.w / m1.w, sp.h / m1.h);
+            if (s < floor) { compact(true); set(1, 100, 100, width); m1 = rect(); s = Math.min(cap, sp.w / m1.w, sp.h / m1.h); }
+            if (s < floor) { compact(false); return null; }
             set(s, 100, 100, width);
             // The visible content may start inside the box: keep its offset (in zoomed px) when setting the box.
             const m = rect(), b0 = box.getBoundingClientRect(), ox = (m.x - (b0.left - root.left) / k), oy = (m.y - (b0.top - root.top) / k);
@@ -1513,10 +1520,28 @@ const PLACE_JS = `        const placeCardBox = (g, el, box) => {
             set(s, (x - ox) / cx, (y - oy) / cy, width);
             return s;
           };
-          // The main line reads at 40 px or more on a 1920 frame, nothing runs under 20 px.
+          // Reading size on a 1920 frame: the main line at 26 px or more, nothing under 16 px. (A 40 px main-line rule
+          // hid every bars and message card, whose own type is 30 to 36 px at full size.)
           set(1, 100, 100, p.layoutW || 900);
           const f = fonts();
-          const floor = Math.max((PLAN.height * 0.021) / f.max, (PLAN.height * 0.0105) / f.min);
+          const floor = Math.max((PLAN.height * 0.0135) / f.max, (PLAN.height * 0.0083) / f.min);
+          // Behind the speaker no word may sit under the person (head and body are drawn again over the card).
+          const textClear = (list) => {
+            if (!list) return true;
+            for (const o of [].concat(list)) if (!textClearOf(o)) return false;
+            return true;
+          };
+          const textClearOf = (o) => {
+            for (const n of box.querySelectorAll("*")) for (const c of n.childNodes) {
+              if (c.nodeType !== 3 || !c.textContent.trim()) continue;
+              const r = document.createRange(); r.selectNodeContents(c);
+              for (const q of r.getClientRects()) {
+                const x = (q.left - root.left) / k, y = (q.top - root.top) / k, w = q.width / k, h = q.height / k;
+                if (w && h && x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y) return false;
+              }
+            }
+            return true;
+          };
           const goFull = () => {
             box.removeAttribute("style");
             el.classList.remove("gfx-placed", "gfx-at-" + p.slot);
@@ -1527,15 +1552,23 @@ const PLACE_JS = `        const placeCardBox = (g, el, box) => {
             return "full";
           };
           if (p.slot === "full") return goFull();
-          el.classList.add("gfx-placed", "gfx-at-" + p.slot);
-          const anchor = p.slot === "side" || (p.slot === "behind" && p.side !== "top") ? p.side : p.anchor;
-          const s = fit(p.space, p.layoutW, Math.max(p.scale || 1, floor), floor * 0.98, anchor);
+          // The planned spot first, then the planner's next best clear spots, until one reads (and, behind the
+          // speaker, keeps every word off the person).
+          let s = null, used = p;
+          for (const o of [p, ...(p.alts || [])]) {
+            const anchor = o.slot === "side" || (o.slot === "behind" && o.side !== "top") ? o.side : o.anchor;
+            s = fit(o.space, o.layoutW || p.layoutW, Math.max(o.scale || 1, floor), floor * 0.98, anchor);
+            if (s && o.slot === "behind" && !textClear(p.occl)) s = null;
+            if (s) { used = o; break; }
+          }
+          if (s) el.classList.add("gfx-placed", "gfx-at-" + used.slot);
+          if (s && used !== p && p.slot === "behind" && used.slot !== "behind") { const cut = document.getElementById("gfx-cutout-wrap-" + el.id.replace("gfx-", "")); if (cut) cut.style.display = "none"; }
           // Too big to read in its spot: full screen only where the brand allows it; otherwise the card is not shown
           // (never over the face or captions, never squeezed past reading size).
           if (!s && PLAN.placeFull) return goFull();
           // HyperFrames turns a clip's own visibility back on while it plays, so the box itself is taken out.
           if (!s) { box.style.display = "none"; el.dataset.placeHidden = "1"; return "hidden"; }
-          return p.slot === "push" ? "push" : "placed";
+          return used.slot === "push" ? "push" : "placed";
         };
 `;
 

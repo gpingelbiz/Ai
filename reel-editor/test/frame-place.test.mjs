@@ -148,3 +148,19 @@ test("behind the speaker: allowed only with a matte, only partly hidden, and nev
   assert.ok(hidden > 0 && hidden <= 0.3, `hidden ${hidden}`);
   assert.ok(!overlaps(withB, close.caption, 0));
 });
+
+test("a card carries its next best clear spots, and small-type cards keep a higher reading floor", () => {
+  const f = frameOf(RIGHT);
+  const p = placeCard({ type: "stat" }, f);
+  assert.ok(p.alts?.length >= 1, "alternates for the page");
+  for (const a of p.alts) {
+    assert.notDeepEqual([a.slot, a.side], [p.slot, p.side]);
+    assert.ok(a.space && a.layoutW && a.scale);
+  }
+  assert.equal(cardFootprint({ type: "bars" }).minScale, 0.72);
+  assert.equal(cardFootprint({ type: "message", items: [{}, {}] }).minScale, 0.8);
+  const js = placedGraphicsJS(GRAPHICS_JS);
+  assert.match(js, /for \(const o of \[p, \.\.\.\(p\.alts \|\| \[\]\)\]\)/, "the page walks the alternates");
+  assert.match(js, /o\.slot === "behind" && !textClear\(p\.occl\)/, "no word behind the person");
+  assert.match(js, /PLAN\.height \* 0\.0135/, "26 px main line floor");
+});
