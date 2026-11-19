@@ -30,9 +30,9 @@ test("pro hook markup and style give frame zero a two-line Anton title on black"
   assert.match(html, /&lt;TALKING&gt;/);
   assert.equal((html.match(/pro-row/g) || []).length, 2);
   const css = proCSS({ hook: true });
-  assert.match(css, /top: 260px/);
+  assert.match(css, /top: 176px/);
   assert.match(css, /font-family: "Anton"/);
-  assert.match(css, /font-weight: 400; font-size: 108px/);
+  assert.match(css, /font-weight: 400; font-size: 100px/);
   assert.match(css, /background: #000000/);
   assert.match(css, /max-width: 768px; padding: 16px 24px/, "816 px outer width includes the plate padding");
   assert.match(css, /opacity: 1/);
