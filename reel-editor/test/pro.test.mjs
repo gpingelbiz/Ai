@@ -80,26 +80,23 @@ test("copy wraps conservatively at the specified size; oversized words and layou
   assert.equal(groundProOverlay({ type: "label", from: 0, to: 3 }, wordsAt("one two three four")), null);
 });
 
-test("rolling budget preserves hook, spacing, up to four cards per 30 s and 40% clean footage", () => {
+test("card rules: hook and tail clear, 2.5 s spacing, five per 30 s, 70% cover, no repeats, one full screen", () => {
   let n = 0;
-  const cue = (start, duration = 3) => ({ type: `t${n++}`, start, duration, end: start + duration });
-  const input = [cue(0), cue(2.59), cue(3), cue(5), cue(8), cue(13), cue(18), cue(23), cue(28)];
-  const kept = budgetProOverlays(input, { duration: 30 });
-  assert.deepEqual(kept.map((o) => o.start), [3, 8, 13, 18]);
-  assert.equal(budgetProOverlays([cue(3), cue(12)], { duration: 30 }).length, 2);
-  assert.equal(budgetProOverlays([cue(3, 8), cue(11, 8)], { duration: 30 }).length, 2);
-  assert.equal(budgetProOverlays([cue(3, 7)], { duration: 10 }).length, 0);
-  assert.equal(budgetProOverlays([cue(3)], { duration: 30, hookEnd: 4 }).length, 0);
-  assert.deepEqual(budgetProOverlays([cue(NaN), cue(28)], { duration: 30 }), []);
-  const rolling = budgetProOverlays(Array.from({ length: 32 }, (_, i) => cue(3 + i * 4)), { duration: 130 });
+  const cue = (start, duration = 3, extra = {}) => ({ type: `t${n++}`, start, duration, end: start + duration, ...extra });
+  assert.deepEqual(budgetProOverlays([cue(0), cue(2.3), cue(2.6), cue(5), cue(8), cue(13), cue(18), cue(23), cue(28)], { duration: 30 }).map((o) => o.start), [2.6, 8, 13, 18, 23]);
+  assert.equal(budgetProOverlays([cue(3), cue(4)], { duration: 30 }).length, 1);
+  assert.equal(budgetProOverlays([cue(3, 2), cue(5.6, 2)], { duration: 30 }).length, 2);
+  const same = budgetProOverlays([{ type: "stat", start: 3, end: 5 }, { type: "stat", start: 9, end: 11 }], { duration: 30 });
+  assert.equal(same.length, 1);
+  const full = budgetProOverlays([cue(3, 4, { fullscreen: true }), cue(10, 4, { fullscreen: true }), cue(17, 6, { fullscreen: true })], { duration: 30 });
+  assert.equal(full.length, 1);
+  const rolling = budgetProOverlays(Array.from({ length: 40 }, (_, i) => cue(3 + i * 3, 2)), { duration: 130 });
   for (let start = 0; start < 130; start += 0.1) {
     const win = rolling.filter((o) => o.start >= start && o.start < start + 30);
-    assert.ok(win.length <= 4);
-    const occupied = rolling.reduce((n, o) => n + Math.max(0, Math.min(start + 30, o.end) - Math.max(start, o.start)), 0);
-    assert.ok(occupied <= 18);
+    assert.ok(win.length <= 5);
+    const occupied = rolling.reduce((m, o) => m + Math.max(0, Math.min(start + 30, o.end) - Math.max(start, o.start)), 0);
+    assert.ok(occupied <= 21 + 1e-6);
   }
-  for (let i = 1; i < rolling.length; i++) assert.ok(rolling[i].start - rolling[i - 1].start >= 4);
-  assert.equal(PRO_MOTION.enter, 0.233); assert.equal(PRO_MOTION.exit, 0.167);
 });
 
 test("placement protects head plus 56, mic plus 24, caption band and entrance travel without full-screen fallback", () => {

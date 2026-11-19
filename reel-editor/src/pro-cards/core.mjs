@@ -1,6 +1,7 @@
 // Reference card for the registry (see index.mjs). Batch builders copy this shape.
 export const CARDS = {
   objection: {
+    family: "conversation",
     hint: "a prospect's objection Greg quotes, then the line he says back",
     slots: {
       theySay: { kind: "spoken", maxChars: 44, width: 656, size: 48, maxLines: 2 },

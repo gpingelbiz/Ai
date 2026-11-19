@@ -1,0 +1,13 @@
+# Pro look card rules (Greg 2026-11-19: "make new rules based off all the cards we just built and the deep research")
+
+Sources: ~/Reels/research/2026-11-19-pro-reels (9 lanes) and the 50 approved card designs (Desktop/Reels/2026-11-18 Clips from long video/New look stills).
+
+1. Earned by the words. A card only appears when Greg's words fit its family (below). Spoken slots are his exact words, revealed when he says them. Labels are at most 4 words and never contain a number; every number on a card is one he says. (Research: irrelevant detail lowers recall; Greg: no made-up numbers.)
+2. Families. distinction (compare, correction, do/don't, myth/truth, before/after, thumbs, poll, signpost, venn), procedure (steps, checklist, timeline, formula, countdown, ranking), proof (stat, percent ring, bars, rating, progress ring, stopwatch, loading bar), conversation (objection, text thread, incoming call, email, notification, ask this, script highlighter, search bar), warning (red flag, cost, receipt, pros/cons), payoff (rule, tip badge, quote, takeaway banner, gold frame, big word, sticky note, green flag, unlock, calendar), emphasis (underline, arrow, label).
+3. Rhythm. About one card per 6 to 8 s of talk: at most 5 card starts in any 30 s, at least 2.5 s between starts, and never two cards on screen at once (an underline on a caption word does not count). On-footage cards may cover up to 70% of any 30 s; Greg stays visible behind them.
+4. Variety. No card type twice in a reel (in reels over 45 s, not within 20 s), no family twice in a row, no two light (bone) cards in a row. (Research: repeating one composition regardless of what is said is what looks templated.)
+5. Full screen. At most one full-screen card a reel, only for a list or something meant to be read, at most 4.5 s on screen.
+6. Clean edges. Nothing before the hook ends (2.4 s) and nothing starting in the last 3 s, so the ending holds still.
+7. Placement. Never over Greg's face (head + 56 px), the mic (+24 px) or the caption band. Upper area first, then torso on an opaque card.
+8. Motion and sound. Enter 233 ms cubic-bezier(.16,1,.3,1) with at most 16 px travel, state changes 300 ms, exit 167 ms, write-in reveals on the spoken word, held 2 s after the last reveal. One soft tick per card at most; labels and underlines are silent.
+9. Word marks. Underline only, drawn under the word. No circles: they covered the words (Greg 2026-11-19).

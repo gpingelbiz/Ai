@@ -26,8 +26,7 @@ test("label slots refuse digits and spoken slots must run in order", () => {
   assert.equal(groundCard({ youSay: { from: 3, to: 5 }, theySay: { from: 11, to: 12 } }, "objection", words), null);
 });
 
-test("the budget allows four cards in 30 s, one full screen, no type twice in a row", () => {
-  const c = (type, start, extra = {}) => ({ type, start, end: start + 3, duration: 3, ...extra });
-  const kept = budgetProOverlays([c("a", 3), c("a", 7), c("b", 11), c("c", 15, { fullscreen: true }), c("d", 19, { fullscreen: true }), c("e", 23)], { duration: 30 });
-  assert.deepEqual(kept.map((k) => k.type), ["a", "b", "c", "e"]);
+test("no family twice in a row and no two light cards in a row", () => {
+  const c = (type, start, extra = {}) => ({ type, start, end: start + 2, duration: 2, ...extra });
+  assert.deepEqual(budgetProOverlays([c("correction", 3), c("compare", 6), c("steps", 9)], { duration: 30 }).map((k) => k.type), ["correction", "steps"]);
 });

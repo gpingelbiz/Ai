@@ -146,7 +146,7 @@ export function groundCard(pick, type, words) {
   const start = spoken[0].at;
   const reveals = spoken.map((p) => p.at);
   const complete = Math.max(spoken.at(-1).end, reveals.at(-1) + PRO_MOTION.enter);
-  const end = complete + PRO_MOTION.hold + PRO_MOTION.exit;
+  const end = complete + PRO_RULES.hold + PRO_MOTION.exit;
   return { type, card: true, start, slots, phrases: spoken, reveals, complete: r3(complete), end: r3(end), duration: r3(end - start), ...(def.fullscreen ? { fullscreen: true } : {}) };
 }
 
@@ -168,22 +168,31 @@ export function proCandidates(words, { graphics = [], picks = {}, groups = [] } 
   return raw.map((p) => groundProOverlay(p, words, { groups })).filter(Boolean);
 }
 
-/** Rolling limits include exits and annotations: three starts and at most 15 occupied seconds in any 30s. */
-export function budgetProOverlays(candidates, { duration = 0, hookEnd = 2.6 } = {}) {
+/** The card rules in docs/pro-card-rules.md: rhythm, variety, one full screen, clean edges. */
+export const PRO_RULES = Object.freeze({ hookEnd: 2.4, tailClear: 3, minGap: 2.5, perWindow: 5, window: 30, coverShare: 0.7, fullMax: 4.5, hold: 2.0 });
+const familyOf = (o) => (o.card ? CARDS[o.type]?.family : { correction: "distinction", compare: "distinction", steps: "procedure", stat: "proof", wordMark: "emphasis", label: "emphasis" }[o.type]) || o.type;
+const surfaceOf = (o) => (o.card ? CARDS[o.type]?.surface : o.surface) || "obsidian";
+
+export function budgetProOverlays(candidates, { duration = 0, hookEnd = PRO_RULES.hookEnd } = {}) {
+  const R = PRO_RULES;
   const kept = [];
   for (const c of [...candidates].sort((a, b) => a.start - b.start)) {
-    if (!Number.isFinite(c.start) || !Number.isFinite(c.end) || c.start < Math.max(2.6, hookEnd) || c.end > duration || c.end <= c.start) continue;
-    if (kept.some((p) => c.start - p.start < 3.5 || c.start < p.end)) continue;
-    if (c.fullscreen && kept.some((p) => p.fullscreen)) continue;
-    if (kept.length && kept.at(-1).type === c.type && c.type !== "wordMark") continue;
-    const trial = [...kept, c];
-    // Occupancy maxima occur when a window edge meets an overlay edge, including a short reel's whole window.
-    const windows = [0, ...trial.flatMap((p) => [p.start, p.end - 30])];
+    if (!Number.isFinite(c.start) || !Number.isFinite(c.end) || c.end <= c.start || c.start < Math.max(R.hookEnd, hookEnd) || c.end > duration || c.start > duration - R.tailClear) continue;
+    if (c.fullscreen && (kept.some((p) => p.fullscreen) || c.end - c.start > R.fullMax)) continue;
+    const prev = kept.filter((p) => p.type !== "wordMark").at(-1);
+    if (c.type !== "wordMark") {
+      if (prev && (c.start - prev.start < R.minGap || c.start < prev.end)) continue;
+      if (kept.some((p) => p.type === c.type && (duration <= 45 || c.start - p.start < 20))) continue;
+      if (prev && familyOf(prev) === familyOf(c)) continue;
+      if (prev && surfaceOf(prev) === "bone" && surfaceOf(c) === "bone") continue;
+    } else if (kept.some((p) => p.type === "wordMark" && c.start < p.end)) continue;
+    const trial = [...kept, c].filter((p) => p.type !== "wordMark");
+    const windows = [0, ...trial.flatMap((p) => [p.start, p.end - R.window])];
     if (windows.some((s) => {
-      const end = Math.min(duration, s + 30), start = Math.max(0, s);
+      const end = Math.min(duration, s + R.window), start = Math.max(0, s);
       const count = trial.filter((p) => p.start >= start && p.start < end).length;
       const occupied = trial.reduce((n, p) => n + Math.max(0, Math.min(end, p.end) - Math.max(start, p.start)), 0);
-      return count > 4 || occupied > Math.min(18, duration * 0.6) + 1e-6;
+      return count > R.perWindow || occupied > R.coverShare * Math.min(R.window, duration) + 1e-6;
     })) continue;
     kept.push({ ...c, id: `pro-${kept.length}` });
   }
@@ -192,10 +201,10 @@ export function budgetProOverlays(candidates, { duration = 0, hookEnd = 2.6 } = 
 
 export function proPrompt(words, { duration = 0 } = {}) {
   return [
-    "Plan compact teaching cards ON Greg's footage that write in as he speaks. At most one full-screen card. No decoration, invented claims or paraphrases in spoken slots.",
-    `Duration ${duration}s. Aim for 3-4 cards per 30s, at least 3.5s apart, after 2.6s. Leave at least 40% of the reel clean. Holds include 2.4s after completion.`,
+    "Plan teaching cards ON Greg's footage that write in as he speaks (the card rules). At most one full-screen card. No decoration, invented claims or paraphrases in spoken slots.",
+    `Duration ${duration}s. About one card per 6-8 s of talk, at most 5 per 30 s, at least 2.5 s apart, never two at once, none before 2.4 s or in the last 3 s. Each type once per reel, never the same family twice in a row. Pick the card whose family fits the words: distinction, procedure, proof, conversation, warning, payoff, emphasis.`,
     "Use inclusive word ranges {from,to} for every phrase. Types: correction {wrong:{from,to},right:{from,to}} ONLY for an explicit wrong/right correction; compare {left:{from,to},right:{from,to}}; steps {items:[{from,to},{from,to},{from,to}]} exactly three; stat {valueRange:{from,to},labelRange:{from,to}}; wordMark {word} (an underline drawn under one caption word); label {from,to} at most three words.",
-    ...Object.entries(CARDS).map(([t, d]) => `${t} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : "{from,to}"}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""}: ${d.hint}`),
+    ...Object.entries(CARDS).map(([t, d]) => `${t} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : "{from,to}"}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""} [${d.family}]: ${d.hint}`),
     "Use at least three different types in a reel when the words earn it, never the same type twice in a row. Every number on a card must be a number Greg says.",
     "Correction phrases at most 22 characters each; compare phrases at most 18; steps at most 12 each; stat value at most 8 and label at most 26. Keep qualifiers with numbers. Labels last at most 2.5s. No filler graphics to reach a quota.",
     words.map((w, i) => `${i} ${w.start.toFixed(3)} ${w.text}`).join("\n"),
