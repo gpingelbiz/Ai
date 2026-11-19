@@ -12,6 +12,9 @@ import { glowIconAction } from "./glow-icons.mjs";
 import { firstGlowIcon, GLOW_BRIDGE_DURATION } from "./glow-scenes.mjs";
 import { prepareDepthHook } from "./glow-depth.mjs";
 import { holdGlowFeatures } from "./glow-light.mjs";
+import { mixGlowPicks, classifyBeats, linesFromWords, beatJobsPrompt } from "./beat-jobs.mjs";
+import { log } from "./util.mjs";
+import { makeCutout } from "./behind.mjs";
 
 export { pacingReport } from "./glow-pacing.mjs";
 
@@ -51,7 +54,7 @@ const featWord = (t) => clean(t).replace(/[.,;:]$/, "");
 const SCENE_TYPES = ["icons", "number", "meter", "list", "steps", "versus", "quote", "people", "flow", "thread", "bars"];
 const OVERLAY_TYPES = ["notify", "stamp"];
 
-export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
+export function glowPrompt(words, library, { hook = "", duration = 0, mix: beatMix = true } = {}) {
   // A concrete target for this reel: about 0.6 picks a second after the title, about one scene per 5.5 seconds.
   const spoken = Math.max(0, duration - 3);
   const target = Math.max(6, Math.round(spoken * 0.65)), scenes = Math.max(1, Math.round(spoken / 5.5));
@@ -103,6 +106,7 @@ export function glowPrompt(words, library, { hook = "", duration = 0 } = {}) {
     "- Labels say what the speaker says, in his words, never new claims or numbers.",
     "- The title's depth and a soft gold light sweep across the title and each finished feature line are automatic; never pick them or add text for them. Leave about a second after a feature's last word before the next band element or scene so its letters can catch the light.",
     "- Features, overlays and scenes never share words. Nothing on the words in the first 3 seconds, where the title card sits.",
+    ...(beatMix ? ["", beatJobsPrompt(classifyBeats(linesFromWords(words), { duration }), { glow: true })] : []),
     'Reply as {"features":[],"icons":[],"overlays":[],"scenes":[]}',
   ].join("\n");
 }
@@ -338,7 +342,7 @@ export function chinDuring(detection, t0, t1, fallback = 0.47) {
  * Turn checked picks into plan captions, icons, scenes and the hook's placement. Words outside features and scenes
  * become subtitles (clauses broken at punctuation, three words a line).
  */
-export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920, placeDetection = detection } = {}) {
+export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920, placeDetection = detection, behind = false } = {}) {
   const words = plan.words;
   const D = plan.video.duration;
   const window = (kind, pick) => glowWindow(kind, pick, words, D, Math.max(3, plan.hook ? plan.hook.start + plan.hook.duration : 0));
@@ -415,7 +419,7 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
         ...(swap && j === f.wrong ? { wrong: true } : {}),
         ...(swap && j === f.right ? { right: true } : {}),
       }));
-      if (f) captions.push({ kind: "feat", ...(f.variant ? { variant: f.variant } : {}), start, end, text: ix.map((j) => words[j].text).join(" "), words: ws, place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.58 * W), ...featureBox } });
+      if (f) captions.push({ kind: "feat", ...(f.variant ? { variant: f.variant } : {}), ...(f.mark ? { mark: f.mark } : {}), start, end, text: ix.map((j) => words[j].text).join(" "), words: ws, place: { x: Math.round(0.07 * W), y: band(start, end), w: Math.round(0.58 * W), ...featureBox } });
       else {
         const scene = sceneFrom(s, ws);
         // A thread's bubbles show at their display times: each after its 0.4 s of typing dots once the scene is up,
@@ -495,7 +499,7 @@ export function layoutGlow(plan, picks, library, detection, { W = 1080, H = 1920
   icons.forEach((icon, i) => { const nx = icons[i + 1]; if (nx && icon.end > nx.t - 0.05) icon.end = r3(nx.t - 0.05); });
   icons = icons.filter((icon) => bridges.has(icon) ? icon.end >= bridges.get(icon).start + GLOW_BRIDGE_DURATION - 0.001 : icon.end - icon.t >= 0.6);
   icons.forEach((icon, i) => { const scene = bridges.get(icon); if (scene) scene.bridge = i; });
-  return { captions: visible, icons, scenes: placeGlowScenes(scenes, placeDetection, { W, H, stitchScenes: plan.stitchScenes }), overlays: placeGlowOverlays(overlays, placeDetection, { W, H, stitchScenes: plan.stitchScenes }), band };
+  return { captions: visible, icons, scenes: placeGlowScenes(scenes, placeDetection, { W, H, stitchScenes: plan.stitchScenes, behind }), overlays: placeGlowOverlays(overlays, placeDetection, { W, H, stitchScenes: plan.stitchScenes }), band };
 }
 
 /**
@@ -512,7 +516,7 @@ const SCENE_FOOT = { icons: [950, 900], number: [1000, 480], meter: [900, 600], 
  * little, but never twice running when another spot fits. Flow, thread and bars scenes, and scenes an icon flies into,
  * keep the full screen. Without detection every scene stays full screen.
  */
-export function placeGlowScenes(scenes, detection, { W = 1080, H = 1920, stitchScenes = null, captionTop = 0.785 } = {}) {
+export function placeGlowScenes(scenes, detection, { W = 1080, H = 1920, stitchScenes = null, captionTop = 0.785, behind = false } = {}) {
   if (!detection?.frames?.length) return scenes;
   const history = [];
   return scenes.map((sc) => {
@@ -522,7 +526,10 @@ export function placeGlowScenes(scenes, detection, { W = 1080, H = 1920, stitchS
     if (!foot || Number.isInteger(sc.bridge) || !frames.length) { history.push({ slot: "full", side: "center", size: "full" }); return sc; }
     const h = sc.type === "number" && sc.icon ? 1100 : foot[1];
     const frame = readFrame({ frames }, { W, H, captionTop, captionFontFrac: 0.03 });
-    const p = placeCard({ type: sc.type, foot: { w: foot[0], h, minW: foot[0], minVisual: 380, wrap: 0 } }, frame, { history, allowPush: false, kind: "scene", maxScale: 0.7, minScale: 0.5, maxArea: 0.4, fullCost: 0.38 });
+    // Behind the speaker (the element mix, SHORTLIST item 9): the panel sits partly behind his head and shoulders and
+    // his cutout is drawn over it, so the card reads as a set piece rather than a sticker. It costs less than a
+    // side panel does, so the reel rotates through it instead of using it every time.
+    const p = placeCard({ type: sc.type, foot: { w: foot[0], h, minW: foot[0], minVisual: 380, wrap: 0 } }, frame, { history, allowPush: false, kind: "scene", maxScale: 0.7, minScale: 0.5, maxArea: 0.4, fullCost: 0.38, allowBehind: behind, behindCost: 0, maxHidden: 0.25 });
     if (!p) { history.push({ slot: "full", side: "center", size: "full" }); return sc; }
     history.push({ slot: p.slot, side: p.side });
     return p.slot === "full" ? sc : { ...sc, place: { x: p.x, y: p.y, w: p.w, h: p.h, side: p.side, cap: p.scale, slot: p.slot } };
@@ -638,7 +645,8 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
   const placeDetection = clean ? canvasDetection(await detect(clean, times), plan, { zoomAt: (t) => zoomDuring(plan.zooms || [], t, t) }) || detection : detection;
   const hookEnd = plan.hook ? plan.hook.start + plan.hook.duration : 0;
   // Saved picks (a re-render after a layout change) skip the Claude call; they are checked again all the same.
-  const reply = saved || firstJSON(await ask(glowPrompt(plan.words, library, { hook: plan.hook?.text || "", duration: D }), { timeoutMs: 900000 }));
+  const mixOn = plan.style?.glow?.mix !== false;
+  const reply = saved || firstJSON(await ask(glowPrompt(plan.words, library, { hook: plan.hook?.text || "", duration: D, mix: mixOn }), { timeoutMs: 900000 }));
   let picks = checkPicks(reply, plan.words, library, { hookEnd: Math.max(3, hookEnd), duration: D });
   // Fill pass: bare stretches get a short second ask (only on a fresh pick; saved picks already include it).
   const bare = saved ? [] : bareStretches(picks, plan.words, D, Math.max(3, hookEnd));
@@ -650,11 +658,26 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
       picks = checkPicks({ ...picks, features: [...picks.features, ...(fill.features || []).filter(ok)], icons: [...picks.icons, ...(fill.icons || []).filter(ok)], overlays: [...picks.overlays, ...(fill.overlays || []).filter(ok)] }, plan.words, library, { hookEnd: Math.max(3, hookEnd), duration: D });
     } catch { /* the first picks stand */ }
   }
+  // The element mix (beat-jobs.mjs): a spoken myth flip becomes a swap line, feature lines take turns carrying a mark.
+  if (mixOn) {
+    const mixed = mixGlowPicks(picks, plan.words, { duration: D, hookEnd: Math.max(3, hookEnd), fits: (f) => fitsTwoLines(plan.words, f), check: (p) => checkPicks(p, plan.words, library, { hookEnd: Math.max(3, hookEnd), duration: D }) });
+    picks = mixed.picks;
+    log(mixed.report);
+  }
   if (plan.stitchScenes) for (const kind of ["features", "icons", "overlays", "scenes"]) picks[kind] = picks[kind].filter((pick) => {
     const window = glowWindow(kind, pick, plan.words, D, Math.max(3, hookEnd));
     return fitSceneWindow(window, plan.stitchScenes);
   });
-  const out = layoutGlow(plan, picks, library, detection, { W, H, placeDetection });
+  const behindOn = mixOn && plan.style?.glow?.behind !== false && !!clean && !plan.stitchScenes;
+  const out = layoutGlow(plan, picks, library, detection, { W, H, placeDetection, behind: behindOn });
+  // A scene behind the speaker needs his matte for its window; a failed matte puts the scene back on full screen.
+  for (const [i, sc] of out.scenes.entries()) {
+    if (sc.place?.slot !== "behind") continue;
+    const start = r3(Math.max(0, sc.start - 0.05)), end = r3(sc.end + 0.05);
+    const made = await (cutout || makeCutout)({ video: clean, start, duration: r3(end - start), fps: plan.style.render?.fps || 30, outDir, name: `gscene-behind-${i + 1}` }).catch((e) => ({ error: e.message }));
+    if (made && !made.error && made.src) sc.cutout = { file: made.src, start: made.start, duration: made.duration };
+    else { log(`glow: the ${sc.type} scene at ${sc.start}s goes full screen (${made?.error || "no matte"})`); delete sc.place; }
+  }
   plan.captions = out.captions;
   plan.icons = out.icons;
   plan.glowScenes = out.scenes;
@@ -698,6 +721,21 @@ export async function restyleGlow(plan, { render, library = [], ask = claudeText
     const y = out.band(g.start, end);
     return (y + (g.place.h || 0.07 * H)) / H <= 0.785 ? { ...g.place, y } : null;
   } });
+  // A mark draws on for about 0.4 s from its word. The line holds until it has finished (a running caption after
+  // it starts up to half a second later; every word is still captioned); where nothing can make room, no mark.
+  plan.captions.sort((a, b) => a.start - b.start);
+  plan.captions.forEach((g, i) => {
+    if (!g.mark) return;
+    const k = g.words.find((w) => w.key);
+    const need = k ? r3(k.start + 0.62) : Infinity;
+    if (g.end >= need) return;
+    const nx = plan.captions[i + 1];
+    const blocked = [...(plan.glowScenes || []), ...(plan.glowOverlays || [])].some((x) => x.start < need + 0.05 && x.end > g.start);
+    if (!k || blocked) { delete g.mark; return; }
+    if (!nx || nx.start >= need + 0.05) { g.end = need; return; }
+    if (nx.run && nx.end - (need + 0.05) >= 0.5 && nx.start + 0.5 >= need + 0.05) { nx.start = r3(need + 0.05); g.end = need; return; }
+    delete g.mark;
+  });
   // Sounds last, from the final plan. The old look's cut cues go; music, narration and a B-roll shot's own generated
   // sound (sfx-broll-*) stay.
   plan.audio = { ...plan.audio, tracks: [...(plan.audio?.tracks || []).filter((t) => !String(t.id || "").startsWith("sfx-") || String(t.id).startsWith("sfx-broll-")), ...glowSoundCues(plan)] };

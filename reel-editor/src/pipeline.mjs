@@ -501,7 +501,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
   }
   const vslPlan = scriptPath ? makeVslGraphics({ scriptPath, workDir, words: cleanWords, groups: shownGroups, duration, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [] } }) : null;
   let graphics = vslPlan ? vslPlan.scenes : preset.graphics?.enabled && shownGroups.length
-    ? await makeGraphics({ workDir, groups: shownGroups, duration, hook, cta, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [], modes: preset.brand?.modes || preset.brand?.contentModes || {} }, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
+    ? await makeGraphics({ workDir, groups: shownGroups, words: cleanWords, duration, hook, cta, settings: { ...preset.graphics, houseLooks: preset.houseLooks?.enabled === false ? [] : preset.brand?.houseLooks || [], modes: preset.brand?.modes || preset.brand?.contentModes || {} }, voice: readVoice({ style: preset }), force: !!opts.newGraphics, handle: preset.carousel?.handle || "", tail })
     : [];
   if (cleanScenes) graphics = graphics.filter((g) => fitSceneWindow(g, cleanScenes));
   const graphicsSchema = graphics.schema || 1;

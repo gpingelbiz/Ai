@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
+import { classifyBeats, beatJobsPrompt, flipCards, mixCards } from "./beat-jobs.mjs";
+import { QUIET_SKINS } from "./brandlooks.mjs";
 
 /**
  * Graphic scenes: designed full-screen cards that show what the speaker is saying, the way explainer reels cut
@@ -14,7 +16,7 @@ import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
  * phrase highlighted), headline (the key statement), steps (2-4 connected nodes: a flow or a before -> after).
  */
 
-export const TYPES = ["stat", "list", "quote", "headline", "steps", "ladder", "compare", "bars", "message", "post", "chapter", "progress"];
+export const TYPES = ["stat", "list", "quote", "headline", "steps", "ladder", "compare", "bars", "message", "post", "chapter", "progress", "flip"];
 
 /**
  * graphics.json schema. 2 = the dynamic-graphics plan (cards timed to the words they show, truthful numbers).
@@ -102,6 +104,8 @@ export function sceneDuration(s) {
   if (s.type === "list" || s.type === "steps" || s.type === "bars") return r3(Math.min(8, 4.5 + 0.7 * n));
   if (s.type === "message") return r3(Math.min(8, 4 + 1.2 * n));
   if (s.type === "compare" && (Number.isInteger(s.pivotLine) || Number.isFinite(s.pivotAt))) return 4.5;
+  // A flip holds the wrong phrase, strikes it as the right one is said, then lets the right one read.
+  if (s.type === "flip") return r3(Math.min(6, Math.max(3.2, (Number(s.pivotAt) || 1.2) + 2.2)));
   if (s.type === "quote" || s.type === "compare") return 6;
   if (s.type === "chapter") return 3.5;
   if (s.type === "headline") return 5.5;
@@ -371,6 +375,17 @@ export function normalizeScene(raw, { schema = GRAPHICS_SCHEMA } = {}) {
         .slice(0, 3);
     }
     if (!s.items.length) return null;
+  } else if (s.type === "flip") {
+    // Myth flip: one slot, the wrong phrase strikes through and the right phrase replaces it, both his words.
+    // Too long for one slot is no flip (never cut a phrase short).
+    if (String(raw.wrong || "").length > 40 || String(raw.right || "").length > 40) return null;
+    s.wrong = copy(raw.wrong, 40).replace(/\*/g, "");
+    s.right = copy(raw.right, 40).replace(/\*/g, "");
+    if (!s.wrong || !s.right || s.wrong.toLowerCase() === s.right.toLowerCase() || wordCount(s.wrong) > 5 || wordCount(s.right) > 5) return null;
+    const pivotLine = Number.isInteger(raw.pivotLine) ? raw.pivotLine : parseInt(raw.pivotLine, 10);
+    if (Number.isInteger(pivotLine)) s.pivotLine = pivotLine;
+    if (Number.isFinite(raw.pivotAt)) s.pivotAt = raw.pivotAt;
+    if (raw.source === "flip-finder") s.source = "flip-finder";
   } else if (s.type === "post") {
     s.text = clean(raw.text, 150);
     if (!s.text) return null;
@@ -416,6 +431,7 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
   const stats = [];
   let contrast = false;
   let proofUsed = false;
+  let flipUsed = false;
   const ready = [...scenes].map((s) => s?.type === "message" && s.mode === "proof" ? groundProof(s, lines, candidates) : s).filter((x) => x && byLine.has(x.line));
   for (const s of ready.sort((a, b) => byLine.get(a.line).start - byLine.get(b.line).start)) {
     if (s.type === "compare" && Number.isInteger(s.pivotLine) && contrast) continue;
@@ -444,12 +460,22 @@ export function placeScenes(scenes, candidates, { duration, cta, gap = 3, max = 
       if (prev.mode === "proof" && room < prev.duration) continue;
       if (room < minHold) continue;
       if (hasTimedItems(prev)) continue;
+      if (prev.type === "flip" && room < prev.pivotAt + 1.4) continue;
       prev.duration = room;
     }
     const dur = r3(Math.min(scene.duration, until - start));
     if (scene.mode === "proof" && dur < scene.duration) continue;
     if (dur < (scene.type === "compare" && Number.isInteger(scene.pivotLine) ? 3 : 2) && !hasTimedItems(scene)) continue;
     let placed = { ...scene, start: r3(start), duration: dur };
+    if (scene.type === "flip") {
+      // The strike lands on the spoken turn ("it's", "but", "start"): the finder knows the word, a planner pick
+      // has its pivot line. One flip per reel.
+      if (flipUsed) continue;
+      const pivotAt = Number.isFinite(scene.pivotAt) ? scene.pivotAt : Number.isInteger(scene.pivotLine) && byLine.get(scene.pivotLine) ? r3(pivotTime(byLine.get(scene.pivotLine)) - start) : null;
+      if (!Number.isFinite(pivotAt) || pivotAt < 0.4 || pivotAt > dur - 1.4) continue;
+      placed.pivotAt = r3(Math.round(pivotAt * fps) / fps);
+      flipUsed = true;
+    }
     if (scene.type === "compare" && Number.isInteger(scene.pivotLine)) {
       const pivot = byLine.get(scene.pivotLine);
       if (!pivot) continue;
@@ -472,7 +498,7 @@ const transcriptWords = (groups) => new Set(groups.flatMap((g) => String(g.text 
 export function sceneUsesSpeakerWords(scene, groups) {
   const printed = (value) => {
     if (!value || typeof value !== "object") return [];
-    const fields = ["eyebrow", "title", "text", "value", "value2", "sub", "label", "tag", "note", "unit", "contact", "context"];
+    const fields = ["eyebrow", "title", "text", "value", "value2", "sub", "label", "tag", "note", "unit", "contact", "context", "wrong", "right"];
     return [...fields.map((key) => value[key]).filter((text) => typeof text === "string"),
       ...(value.items || []).flatMap((item) => typeof item === "string" ? [item] : printed(item)),
       ...(value.rungs || []).flatMap(printed),
@@ -507,7 +533,7 @@ export function resolveProgressScenes(scenes, groups, { hook, duration, cards = 
   return [];
 }
 
-export function scenesPrompt({ candidates, anchors = candidates, transcript, hook, count, voice = "", looks = "", persistent = false, ladder = false }) {
+export function scenesPrompt({ candidates, anchors = candidates, transcript, hook, count, voice = "", looks = "", persistent = false, ladder = false, beats = null }) {
   return [
     "You are the motion designer on a talking-head Instagram reel. You pick the moments where a designed graphic card cuts in to show what the speaker is saying, and you write the words on each card. You never use tools; reply with JSON only.",
     `Pick up to ${count} moments, spread across the reel, at least 6 seconds apart. Only pick a moment when a card makes the point clearer or hit harder: the speaker says a number or amount, lists things, describes steps or a before and after, contrasts two things, quotes something, or lands the key line.`,
@@ -522,6 +548,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     "- bars: 2 to 4 numbers the speaker gives that belong together (months, reps, before/after amounts). title (optional), unit (\"%\", \"k\", \"\"), items [{label, value}], emphasize = index of the number that matters most, motion (\"reveal\" or \"growth\"). Keep exact printed labels and use reveal unless two rows are the explicit starting and ending values of one spoken change.",
     "- message: a text exchange the speaker reads out or acts out. For reconstructed proof, use mode: \"proof\", context (2 to 4 of the speaker's exact words that introduce the message, like \"he reached back out\" or \"he sent me\"), items [{from: \"them\" | \"me\", text, line}] 1-3 bubbles, and optional outcome {line, text}. Each bubble is at most 16 words. Do not add contact in proof mode. Legacy acted-out exchanges may omit mode and use contact plus items without line.",
     "- post: the speaker\u2019s own strongest line shown as a social post card. text, at most 20 words.",
+    "- flip: a myth flip in one slot, only when the speaker literally says the wrong idea and then the right one (it's not luck, it's work; stop chasing, start booking). wrong and right: each 1 to 4 of his exact words; pivotLine: the line where the right idea is said. The wrong phrase strikes through and the right one replaces it. At most one flip.",
     "- progress: one small payoff rail, separate from the card count. title is optional and at most 3 words; style is journey or count; items are 2 to 4 ordered {line, label} milestones, with each label 1 to 3 words taken from the speaker. journey is only for real ordered beats whose final payoff is at least 8 seconds after the hook. count is only when the hook explicitly promises a number, and each item is a promised section start. Never use progress on a one-idea reel.",
     ...(persistent ? ["- persistent list/steps: at most one per reel, only when the speaker explicitly enumerates (three things, first/second/third, step one). Set persistent:true and use 3 to 7 short items, each with the exact line where it is first said. It appears with the first item and stays as the live navigation; do not also use progress. If the speaker clearly moves to a new topic, set endLine to that first new-topic transcript line; otherwise omit it."] : []),
     ...(ladder ? ["- ladder: only when the speaker walks through 2 to 6 amounts, counts or levels in order. Set persistent:true and rungs [{value,label,line}]. Copy every value, qualifier and label exactly; line is where that full rung phrase begins. Never add a midpoint, endpoint or unit the speaker did not say. endLine follows the persistent rule above."] : []),
@@ -562,7 +589,8 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
     ...anchors.map((c) => `${c.i}: ${c.start.toFixed(1)}s ${c.text}`),
     "",
     looks ? `\n${looks}\n` : "",
-    `Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps${ladder ? "|ladder" : ""}|compare|bars|message|post|progress","persistent":false,"endLine":0,"eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","style":"journey|count","unit":"","emphasize":0,"contact":"","mode":"proof","context":"","outcome":{"line":0,"text":""},"pivotLine":0,"kind":"versus|before-after|roles","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"rungs":[{"value":"","label":"","line":0}],"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}`,
+    beats?.length ? `${beatJobsPrompt(beats)}\n` : "",
+    `Reply with JSON only: {"look":"<id>","lookWhy":"...","scenes":[{"line":<number from the list>,"type":"stat|list|quote|headline|steps${ladder ? "|ladder" : ""}|compare|bars|message|post|flip|progress","wrong":"","right":"","persistent":false,"endLine":0,"eyebrow":"...","motion":"reveal|growth","value":"","value2":"","sub":"","title":"","text":"","style":"journey|count","unit":"","emphasize":0,"contact":"","mode":"proof","context":"","outcome":{"line":0,"text":""},"pivotLine":0,"kind":"versus|before-after|roles","a":{"label":"","value":"","note":""},"b":{"label":"","value":"","note":""},"rungs":[{"value":"","label":"","line":0}],"items":[{"text":"","line":<number from the list>,"tag":"","state":"plain","icon":"","label":"","value":"","from":"them"}]}]}`,
   ].join("\n");
 }
 
@@ -570,7 +598,7 @@ export function scenesPrompt({ candidates, anchors = candidates, transcript, hoo
  * Plan the graphic scenes for one reel. Saves <workDir>/graphics.json and reuses it while the transcript lines
  * are unchanged (`force` replans). Never throws: any failure returns [] and the reel renders without cards.
  */
-export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false, handle = "", tail = 1.5 }) {
+export async function makeGraphics({ workDir, groups, duration, hook, cta, settings = {}, voice = "", force = false, handle = "", tail = 1.5, words: spokenList = null }) {
   const planPath = path.join(workDir, "graphics.json");
   const max = graphicsCount(duration, { max: settings.max ?? 6, every: settings.every ?? 10 });
   const structural = settings.persistent === true || settings.ladder === true;
@@ -581,6 +609,24 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
   if (!candidates.length) { log("graphics: no room after the hook, skipped"); return []; }
   const key = candidates.map((c) => `${c.i}@${c.start}:${c.text}`).join("|");
   const features = { persistent: settings.persistent === true, ladder: settings.ladder === true };
+  // The element mix (beat-jobs.mjs, on unless graphics.mix is false): each line gets a job that steers the planner,
+  // a spoken myth flip becomes a flip card, and the variety pass keeps types, entrances and marks rotating.
+  const mixOn = settings.mix !== false;
+  const beats = classifyBeats(groups, { duration });
+  const spokenWords = spokenList?.length ? spokenList : groups.flatMap((g) => g.words || []);
+  const withFlips = (cards, look) => {
+    if (!mixOn) return cards;
+    const near = (f) => cards.some((c) => (c.type === "flip" || c.type === "compare" || c.source === "flip-finder") && Math.abs((candidates.find((x) => x.i === c.line)?.start ?? -99) - (candidates.find((x) => x.i === f.line)?.start ?? 99)) < 4);
+    const found = flipCards(groups, spokenList).filter((f) => candidates.some((c) => c.i === f.line) && !near(f)).map((f) => ({ ...normalizeScene(f), pivotAt: f.pivotAt, source: "flip-finder" })).filter((f) => f.type === "flip");
+    return [...cards, ...found.map((f) => ({ ...f, skin: QUIET_SKINS.includes(skinFor(look, "headline")) ? skinFor(look, "headline") : "glass" }))];
+  };
+  const mix = (cards) => {
+    if (!mixOn) return cards;
+    const calm = cards.some((c) => QUIET_SKINS.includes(c.skin));
+    const out = mixCards(cards, beats, { words: spokenWords, calm });
+    log(`graphics: ${out.report}`);
+    return out.cards;
+  };
   if (!force && fs.existsSync(planPath)) {
     const saved = readJSON(planPath);
     // Reuse while every card still has its line (a new hook hides different caption lines and shifts the line
@@ -605,7 +651,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
       } : s;
       const savedCards = saved.scenes.filter((s) => s.type !== "progress").map(relined).map(remapProof).map((s) => schema >= GRAPHICS_SCHEMA ? { ...s, ...normalizeScene(s, { schema }) } : s).filter(Boolean).map((s) => ({ ...s, line: byStart(s)?.i ?? s.line, duration: sceneDuration(s), skin: skinFor(look, s.type, s.mode), ...(s.type === "post" ? { handle } : {}) }));
       const persistentCards = resolvePersistentScenes(savedCards, lines, { duration, hook, persistent: settings.persistent === true, ladder: settings.ladder === true });
-      const cards = [...(max ? placeScenes(savedCards.filter((s) => !isPersistentScene(s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines }) : []), ...persistentCards].sort((a, b) => a.start - b.start);
+      const cards = mix([...(max ? placeScenes(withFlips(savedCards, look).filter((s) => !isPersistentScene(s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines }) : []), ...persistentCards].sort((a, b) => a.start - b.start));
       const rawProgress = saved.scenes.filter((s) => s.type === "progress").map(normalizeScene).filter(Boolean).map((s) => ({ ...s, skin: skinFor(look, s.type) }));
       const scenes = [...cards, ...(persistentCards.length ? [] : resolveProgressScenes(rawProgress, groups, { hook, duration, cards }))].sort((a, b) => a.start - b.start);
       const old = schema < GRAPHICS_SCHEMA ? `; card plan v${schema}, --new-graphics replans it with the v${GRAPHICS_SCHEMA} cards` : "";
@@ -626,14 +672,14 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
     const exclude = lookExclusions(settings);
     const houseLooks = Array.isArray(settings.houseLooks) ? settings.houseLooks : [];
     if (houseLooks.length && !houseLooks.some((id) => LOOKS[id] && !exclude.includes(id))) warn("graphics: no valid house looks; using the full look catalog");
-    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude, houseLooks, modes: settings.modes }), persistent: settings.persistent === true, ladder: settings.ladder === true }), { timeoutMs: 240000 }));
+    const reply = firstJSON(await claudeText(scenesPrompt({ candidates, anchors, transcript, hook: hook?.text, count: max, voice, looks: fixed ? "" : looksPrompt(recent, { exclude, houseLooks, modes: settings.modes }), persistent: settings.persistent === true, ladder: settings.ladder === true, beats: mixOn ? beats : null }), { timeoutMs: 240000 }));
     const picked = fixed ? { look: fixed, why: "set for this reel" } : pickLook(reply, { transcript, recent, exclude, houseLooks, modes: settings.modes });
     lookPicked = picked;
     // Only the explicit --script path can assign approved-script provenance.
     const raw = (reply.scenes || []).map((scene) => normalizeScene({ ...scene, source: undefined })).filter(Boolean);
     const pickedCards = raw.filter((s) => s.type !== "progress").map((s) => ({ ...(s.type === "post" ? { ...s, handle } : s), skin: skinFor(picked.look, s.type, s.mode) }));
     const persistentCards = resolvePersistentScenes(pickedCards, lines, { duration, hook, persistent: settings.persistent === true, ladder: settings.ladder === true });
-    const cards = [...(max ? placeScenes(pickedCards.filter((s) => !isPersistentScene(s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines }) : []), ...persistentCards].sort((a, b) => a.start - b.start);
+    const cards = mix([...(max ? placeScenes(withFlips(pickedCards, picked.look).filter((s) => !isPersistentScene(s)), candidates, { duration, cta, gap: settings.gap ?? 3, max, tail, lines }) : []), ...persistentCards].sort((a, b) => a.start - b.start));
     const progress = persistentCards.length ? [] : resolveProgressScenes(raw.filter((s) => s.type === "progress").map((s) => ({ ...s, skin: skinFor(picked.look, s.type) })), groups, { hook, duration, cards });
     // A pick the timing, grounding or reading rules turn down is dropped; say so, or an empty reel looks like a choice.
     const dropped = (reply.scenes || []).length - cards.length - progress.length;
@@ -658,6 +704,7 @@ export async function makeGraphics({ workDir, groups, duration, hook, cta, setti
 import { esc } from "./text.mjs";
 import { skinHTML, SKINS_JS, looksPrompt, pickLook, recentLooks, rememberLook, skinFor, lookExclusions, LOOKS } from "./looks.mjs";
 import { QUIET_JS } from "./brandlooks.mjs";
+import { flipHTML } from "./mix-render.mjs";
 const marked = (s, cls) => esc(s).replace(/\*([^*]+)\*/g, `<span class="${cls}">$1</span>`).replace(/\*/g, "");
 
 /**
@@ -707,6 +754,7 @@ export function sceneHTML(s, { schema = 1 } = {}) {
   };
   // A look can reshape a card into an artifact (notification, Notes list, receipt, typed card); otherwise its skin
   // only restyles the regular markup below.
+  if (s.type === "flip") return flipHTML(s);
   const stagedCompare = s.type === "compare" && Number.isFinite(s.pivotAt);
   if (!stagedCompare && s.skin && s.skin !== "glass") { const h = skinHTML({ ...s, motion }, s.skin, { statHTML: renderStat }); if (h) return h; }
   const eyebrow = s.eyebrow ? `<div class="g-eyebrow g-in"><span class="g-dot"></span>${esc(s.eyebrow)}</div>` : "";
@@ -1485,7 +1533,8 @@ const PLACE_JS = `        const placeCardBox = (g, el, box) => {
           // Too big to read in its spot: full screen only where the brand allows it; otherwise the card is not shown
           // (never over the face or captions, never squeezed past reading size).
           if (!s && PLAN.placeFull) return goFull();
-          if (!s) { el.style.visibility = "hidden"; return "hidden"; }
+          // HyperFrames turns a clip's own visibility back on while it plays, so the box itself is taken out.
+          if (!s) { box.style.display = "none"; el.dataset.placeHidden = "1"; return "hidden"; }
           return p.slot === "push" ? "push" : "placed";
         };
 `;
