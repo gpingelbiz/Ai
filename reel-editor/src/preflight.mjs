@@ -438,7 +438,7 @@ export function pacingChecks(plan) {
  * Run every check on `file`. Returns {status: ok|warn|fail, items, measures}. `plan` is the reel's plan.json when
  * available (layout checks and the expected length).
  */
-export async function runPreflight(file, { plan = null, loudnessTarget = -14, loudnessTolerance = 1.5 } = {}) {
+export async function runPreflight(file, { plan = null, loudnessTarget = plan?.style?.audio?.pro ? -16 : -14, loudnessTolerance = plan?.style?.audio?.pro ? 1 : 1.5 } = {}) {
   const items = [];
   const meta = await probe(file);
   const measures = { duration: r3(meta.duration), width: meta.width, height: meta.height };

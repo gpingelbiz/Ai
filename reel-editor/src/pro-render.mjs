@@ -2,7 +2,7 @@ import { PRO_MOTION, proSize } from "./pro.mjs";
 import { CARDS } from "./pro-cards/index.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const copy = (p) => (p.lines || [p.text]).map(esc).join("<br>");
+const copy = (p) => { const t = (p.lines || [p.text]).map(esc).join("<br>"); return p.fontSize ? `<span style="font-size:${p.fontSize}px;line-height:${Math.round(p.fontSize * 1.18)}px">${t}</span>` : t; };
 const js = (s) => JSON.stringify(s);
 const at = (s) => Math.round(s * 1000) / 1000;
 

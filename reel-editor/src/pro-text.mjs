@@ -31,6 +31,6 @@ export function proCSS({ height = 1920, captions = false, hook = false } = {}) {
       #captions .cap-pro .w.k { color: #E2BA64; font-size: inherit; font-weight: 700; background: none; }
       #captions .cap-pro .pro-row { display: block; white-space: nowrap; }` : ""}${hook ? `
       #hook.hook-pro { position: absolute; inset: 0; padding: 0; opacity: 1; pointer-events: none; z-index: 19; }
-      #pro-title { position: absolute; top: ${px(260)}; left: 50%; transform: translateX(-50%); width: max-content; max-width: ${px(768)}; padding: ${px(16)} ${px(24)}; border-radius: ${px(12)}; background: #000000; color: #FFFFFF; font-family: "Anton", sans-serif; font-weight: 400; font-size: ${px(108)}; line-height: ${px(116)}; letter-spacing: 0; text-align: center; text-transform: none; text-shadow: none; -webkit-text-stroke: 0; }
+      #pro-title { position: absolute; top: ${px(176)}; left: 50%; transform: translateX(-50%); width: max-content; max-width: ${px(768)}; padding: ${px(16)} ${px(24)}; border-radius: ${px(12)}; background: #000000; color: #FFFFFF; font-family: "Anton", sans-serif; font-weight: 400; font-size: ${px(100)}; line-height: ${px(106)}; letter-spacing: 0; text-align: center; text-transform: none; text-shadow: none; -webkit-text-stroke: 0; }
       #pro-title .pro-row { display: block; white-space: nowrap; }` : ""}`;
 }

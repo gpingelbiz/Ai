@@ -41,6 +41,18 @@ export function proTextLines(text, { width, size, maxLines = 1 } = {}) {
   return lines.length && lines.length <= maxLines ? lines : null;
 }
 
+
+/** Try the designed size first, then step down (never under 36 px) before giving up on a card. */
+export function fitLines(text, width, size, maxLines = 1) {
+  for (const k of [1, 0.88, 0.76]) {
+    const px = Math.max(Math.min(36, size), Math.round(size * k));
+    const lines = proTextLines(text, { width, size: px, maxLines });
+    if (lines) { if (px !== size) Object.defineProperty(lines, "size", { value: px, enumerable: false }); return lines; }
+    if (px <= 36) break;
+  }
+  return null;
+}
+
 // Repeated phrases belong to the nearest planned beat, never an earlier occurrence in the hook.
 function phraseSpan(value, words, anchor = 0) {
   const needle = tokens(value);
@@ -53,9 +65,28 @@ function phraseSpan(value, words, anchor = 0) {
   return hits.sort((a, b) => Math.abs(words[a.from].start - anchor) - Math.abs(words[b.from].start - anchor))[0] || null;
 }
 
+
+/** Claude sometimes answers in seconds instead of word indexes; map a time to the word spoken at it. */
+export function wordIndexAt(v, words, { end = false } = {}) {
+  if (Number.isInteger(v)) return v;
+  if (!Number.isFinite(v) || !words?.length) return null;
+  if (end) { let k = -1; words.forEach((w, i) => { if (w.start < v - 0.03) k = i; }); return k >= 0 ? k : null; }
+  const k = words.findIndex((w) => w.end > v + 0.02);
+  return k >= 0 ? k : null;
+}
+const normRange = (v, words) => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+  const from = v.from ?? v.word;
+  if (from == null || Number.isInteger(from)) return v;
+  const a = wordIndexAt(from, words), b = wordIndexAt(v.to ?? from, words, { end: true });
+  return a == null || b == null ? v : { ...v, from: a, to: Math.max(a, b), ...(v.word != null ? { word: a } : {}) };
+};
+const normPick = (pick, words) => Object.fromEntries(Object.entries(pick).map(([k, v]) => [k, Array.isArray(v) ? v.map((x) => normRange(x, words)) : typeof v === "object" && v ? normRange(v, words) : (k === "word" && typeof v === "number" ? wordIndexAt(v, words) : v)]));
+
 /** Convert graphics scenes, glow picks or word-range direction into exact spoken phrases and absolute times. */
 export function groundProOverlay(pick, words, { groups = [] } = {}) {
   if (!pick || !words?.length) return null;
+  pick = normPick(pick, words);
   const type = typeFor(pick.type);
   if (CARDS[type]) return groundCard(pick, type, words);
   if (!["correction", "compare", "steps", "stat", "wordMark", "label"].includes(type)) return null;
@@ -81,21 +112,21 @@ export function groundProOverlay(pick, words, { groups = [] } = {}) {
     label = span(pick.labelRange || pick.label || pick.sub);
     if (!label) return null;
   }
-  if (type === "wordMark") parts = [span({ from: pick.word ?? pick.from, to: pick.word ?? pick.from })];
+  if (type === "wordMark") { const wi = pick.word && typeof pick.word === "object" ? pick.word.from : pick.word ?? pick.from; parts = [span({ from: wi, to: wi })]; }
   if (type === "label") parts = [span(pick.text || { from: pick.from, to: pick.to })];
   if (!parts?.length || parts.some((p) => !p) || (type === "steps" && parts.length !== 3)) return null;
   if (["correction", "compare", "steps"].includes(type) && parts.some((p, i) => i > 0 && p.from <= parts[i - 1].to)) return null;
   const phrases = parts.map((p) => ({ ...p, text: textAt(words, p.from, p.to), at: words[p.from].start, end: words[p.to].end }));
   if (phrases.some((p) => !Number.isFinite(p.at) || !Number.isFinite(p.end) || p.end < p.at || p.text.length > (type === "label" ? 26 : 48))) return null;
   if (type === "label" && tokens(phrases[0].text).length > 3) return null;
-  const fit = (p, width, size, maxLines = 1) => proTextLines(p.text, { width, size, maxLines });
+  const fit = (p, width, size, maxLines = 1) => fitLines(p.text, width, size, maxLines);
   const layouts = type === "correction" ? [fit(phrases[0], 656, 52), fit(phrases[1], 656, 64)]
     : type === "compare" ? phrases.map((p) => fit(p, 274, 52, 3))
     : type === "steps" ? phrases.map((p) => fit(p, 208, 40, 2))
     : type === "stat" ? [fit(phrases[0], 656, 128), fit({ text: textAt(words, label.from, label.to) }, 656, 40)]
     : type === "label" ? [fit(phrases[0], 656, 40)] : [[phrases[0].text]];
   if (layouts.some((lines) => !lines)) return null;
-  phrases.forEach((p, i) => { p.lines = layouts[i]; });
+  phrases.forEach((p, i) => { p.lines = layouts[i]; if (layouts[i].size) p.fontSize = layouts[i].size; });
   // A stat must contain a spoken quantity; never turn an arbitrary phrase into a numerical claim.
   if (type === "stat" && !/\d|\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand|million|percent)\b/i.test(phrases[0].text)) return null;
   const start = phrases[0].at;
@@ -137,7 +168,8 @@ export function groundCard(pick, type, words) {
         if (item.text.length > (slot.maxChars || 48)) return null;
         spoken.push(item);
       }
-      item.lines = proTextLines(item.text, { width: slot.width || 656, size: slot.size || 52, maxLines: slot.maxLines || 2 });
+      item.lines = fitLines(item.text, slot.width || 656, slot.size || 52, slot.maxLines || 2);
+      if (item.lines?.size) item.fontSize = item.lines.size;
       if (!item.lines) return null;
       slots[name].push(item);
     }
@@ -203,7 +235,7 @@ export function proPrompt(words, { duration = 0 } = {}) {
   return [
     "Plan teaching cards ON Greg's footage that write in as he speaks (the card rules). At most one full-screen card. No decoration, invented claims or paraphrases in spoken slots.",
     `Duration ${duration}s. About one card per 6-8 s of talk, at most 5 per 30 s, at least 2.5 s apart, never two at once, none before 2.4 s or in the last 3 s. Each type once per reel, never the same family twice in a row. Pick the card whose family fits the words: distinction, procedure, proof, conversation, warning, payoff, emphasis.`,
-    "Use inclusive word ranges {from,to} for every phrase. Types: correction {wrong:{from,to},right:{from,to}} ONLY for an explicit wrong/right correction; compare {left:{from,to},right:{from,to}}; steps {items:[{from,to},{from,to},{from,to}]} exactly three; stat {valueRange:{from,to},labelRange:{from,to}}; wordMark {word} (an underline drawn under one caption word); label {from,to} at most three words.",
+    "Every {from,to} is a pair of WORD INDEXES (the integer at the start of each transcript line below), never seconds. Types: correction {wrong:{from,to},right:{from,to}} ONLY for an explicit wrong/right correction; compare {left:{from,to},right:{from,to}}; steps {items:[{from,to},{from,to},{from,to}]} exactly three; stat {valueRange:{from,to},labelRange:{from,to}}; wordMark {word} (an underline drawn under one caption word); label {from,to} at most three words.",
     ...Object.entries(CARDS).map(([t, d]) => `${t} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : "{from,to}"}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""} [${d.family}]: ${d.hint}`),
     "Use at least three different types in a reel when the words earn it, never the same type twice in a row. Every number on a card must be a number Greg says.",
     "Correction phrases at most 22 characters each; compare phrases at most 18; steps at most 12 each; stat value at most 8 and label at most 26. Keep qualifiers with numbers. Labels last at most 2.5s. No filler graphics to reach a quota.",
@@ -229,7 +261,7 @@ export async function makeProGraphics({ workDir, words, groups = [], duration, h
   let direction = !force && saved?.schema === 2 && saved.key === key && Array.isArray(saved.direction) ? saved.direction : null;
   if (!direction && available()) {
     try {
-      const reply = firstJSON(await ask(proPrompt(words, { duration }), { timeoutMs: 240000 }));
+      const reply = firstJSON(await ask(proPrompt(words, { duration }), { timeoutMs: 420000 }));
       direction = Array.isArray(reply.overlays) ? reply.overlays : [];
     }
     catch (e) { warn(`pro graphics: ${String(e.message).split("\n")[0]}; keeping grounded beats`); }
