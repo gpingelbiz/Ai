@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
-import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking } from "./cuts.mjs";
+import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking, dropInaudibleWords } from "./cuts.mjs";
 import { resolveEndingOverride, endingMetadata } from "./ending.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
@@ -144,6 +144,15 @@ export async function runEdit(input, opts = {}, deps = {}) {
     log(`${words.length} words`);
   }
   if (sourceScenes) words = words.filter((w) => !sceneAt(sourceScenes, w.start)?.silent);
+  // Words nobody can hear (the caller in Greg's earbuds) would keep silent stretches in the reel with captions on them.
+  if (meta.hasAudio && words.length && preset.cuts.audioGuard !== false && preset.cuts.inaudible !== false) {
+    const heard = dropInaudibleWords(words, await early.envelope);
+    if (heard.dropped.length) {
+      const secs = heard.dropped.reduce((a, w) => a + Math.max(0, w.end - w.start), 0);
+      log(`audio check: dropped ${heard.dropped.length} word${heard.dropped.length === 1 ? "" : "s"} too quiet to hear (under ${heard.cutoff} dB, speech is ${heard.speech} dB, ${r3(secs)} s of talking), so that stretch is cut and gets no captions`);
+      words = heard.words;
+    }
+  }
   const heard = words;
   words = applyCorrections(words, dict.corrections);
   // A dictionary fix changes words, so its timing (split evenly across what it replaced) needs the aligner too.
