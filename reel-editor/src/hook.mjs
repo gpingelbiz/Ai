@@ -1,4 +1,45 @@
 import { fitBlockHook, hookBlockHeight, BLOCK_HOOKS } from "./placement.mjs";
+import { proLineBreaks } from "./pro-captions.mjs";
+import { norm } from "./text.mjs";
+
+/** A single readable title; long supplied titles are shortened at word boundaries at the same type size. */
+export function planProHook(words, { text, duration = 2.4, reelDuration, measure } = {}) {
+  const source = pickHook(words, { text, maxWords: 12 });
+  if (!source) return null;
+  const all = source.text.replace(/\*/g, "").split(/\s+/).map((text) => ({ text }));
+  const weak = /^(a|an|the|to|of|in|on|at|for|with|from|by|and|or|but|your|my|our|their|his|her|its|not|never|no|without|\d+)$/i;
+  // Keep the whole title: step the size down (100, 88, 80 px on 1080x1920; measure is at 108) before dropping words.
+  for (const px of [100, 88, 80]) {
+    const lines = proLineBreaks(all, { measure, maxWidth: 768 * 108 / px });
+    if (lines && !weak.test(all.at(-1).text)) return { text: all.map((w) => w.text).join(" "), words: all, lines: lines.map((line) => line.length), fontSize: px, start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
+  }
+  const tokens = [...all];
+  while (tokens.length) {
+    const lines = proLineBreaks(tokens, { measure, maxWidth: 768 * 108 / 80 });
+    if (lines && !weak.test(tokens.at(-1).text)) {
+      return { text: tokens.map((w) => w.text).join(" "), words: tokens, lines: lines.map((line) => line.length), fontSize: 80, start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
+    }
+    tokens.pop();
+  }
+  throw new Error("pro hook cannot fit at 108 px; supply a shorter title");
+}
+
+/** The title itself carries duplicated opening words. Unrelated speech retains its caption. */
+export function proCaptionsUnderHook(groups, hook, { measure } = {}) {
+  if (!hook) return groups;
+  const title = hook.words.map((w) => norm(w.text));
+  const spoken = groups.flatMap((g) => g.words);
+  const offset = spoken.findIndex((word, i) => word.start < hook.duration && title.every((t, j) => norm(spoken[i + j]?.text || "") === t));
+  if (offset < 0) return groups;
+  const hidden = new Set(spoken.slice(offset, offset + title.length).filter((w) => w.start < hook.duration));
+  return groups.flatMap((g) => {
+    const words = g.words.filter((w) => !hidden.has(w) || w.end > hook.duration);
+    if (!words.length) return [];
+    const start = hidden.has(words[0]) ? hook.duration : Math.max(g.start, words[0].start);
+    const lines = proLineBreaks(words, { measure }) || [words];
+    return [{ ...g, words, text: words.map((w) => w.text).join(" "), start, lines: lines.map((line) => line.length), ...(g.end - start < 0.5 ? { flags: ["short-cue"] } : {}) }];
+  });
+}
 
 function cleanHook(s) {
   return s.replace(/[\p{Extended_Pictographic}️]/gu, "").replace(/\s+/g, " ").replace(/[,.;:\-]+$/, "").trim();

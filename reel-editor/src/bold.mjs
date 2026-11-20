@@ -34,6 +34,7 @@ export function boldSettings(preset = {}) { return structuredClone(deepMerge(DEF
 
 /** The mode guard is used before planning, restyling and composing saved plans. Bold wins a mode conflict. */
 export function boldEnabled(preset, plan, env = process.env) {
+  if (preset?.captions?.pro || preset?.hook?.pro) return false;
   return preset?.bold?.enabled === true && GREG_PRESETS.includes(plan?.preset) && !isClientJob(env) && plan?.canvas?.height > plan?.canvas?.width;
 }
 

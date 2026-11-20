@@ -30,6 +30,7 @@ export { pacingReport } from "./glow-pacing.mjs";
 
 /** The glow look runs on Greg's own vertical reels when the preset turns it on; never on a client job or a wide video. */
 export function glowEnabled(preset, plan, env = process.env) {
+  if (preset?.captions?.pro || preset?.hook?.pro) return false;
   return preset?.glow?.enabled === true && GREG_PRESETS.includes(plan?.preset) && !isClientJob(env) && plan.canvas.height > plan.canvas.width;
 }
 

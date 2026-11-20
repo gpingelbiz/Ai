@@ -105,7 +105,8 @@ test("legacy render snapshots: no signature and no house list keep every existin
     vsl: "63024ec2532c5e2298bca4d54fa2e38761ceb4ce024a2e295c2d5db2298dfe57",
     youtube: "1e0120f8f3c4dc3eb9b118ca35c0c75fdda699f6089095cbc22e7ab8baa4278f",
   };
-  for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_") && name !== "broll-shotlist.json").sort()) {
+  // Pro is new; its classes and timing are checked without snapshots in pro-render.test.mjs.
+  for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_") && !["broll-shotlist.json", "pingel-pro.json"].includes(name)).sort()) {
     const name = file.slice(0, -5);
     const style = loadPreset(name);
     // Freeze the legacy still finish; moving presets now omit the focus blur.

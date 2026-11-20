@@ -1,0 +1,85 @@
+{
+  "name": "pingel-pro",
+  "extends": "pingel-brand",
+  "pro": {
+    "enabled": true
+  },
+  "glow": {
+    "enabled": false,
+    "depthHook": false
+  },
+  "bold": {
+    "enabled": false
+  },
+  "graphics": {
+    "enabled": true,
+    "persistent": false,
+    "ladder": false,
+    "placeFull": false
+  },
+  "slams": {
+    "enabled": false,
+    "popout": {
+      "enabled": false
+    }
+  },
+  "icons": {
+    "enabled": false
+  },
+  "coldOpen": {
+    "enabled": false
+  },
+  "broll": {
+    "enabled": false
+  },
+  "houseLooks": {
+    "enabled": false
+  },
+  "premise": {
+    "mode": "off"
+  },
+  "signature": {
+    "enabled": false
+  },
+  "timeLabels": {
+    "enabled": false
+  },
+  "hook": {
+    "duration": 2.4,
+    "push": false,
+    "behind": false,
+    "enabled": true,
+    "pro": true
+  },
+  "captions": {
+    "style": "reveal",
+    "animation": "cut",
+    "uppercase": false,
+    "annotate": false,
+    "autoPlace": false,
+    "position": 0.62,
+    "placeMin": 0.62,
+    "placeMax": 0.62,
+    "enabled": true,
+    "pro": true
+  },
+  "audio": {
+    "soundMarkers": false,
+    "pro": true,
+    "music": null,
+    "musicWant": "",
+    "sounds": true
+  },
+  "motion": {
+    "impact": {
+      "enabled": false
+    },
+    "drift": {
+      "enabled": false
+    }
+  },
+  "zooms": {
+    "enabled": true,
+    "pro": true
+  }
+}

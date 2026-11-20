@@ -1,5 +1,29 @@
 import { r3 } from "./util.mjs";
 
+export function proZoomBudget(duration) {
+  return duration > 2 ? Math.ceil(duration * 2 / 30) : 0;
+}
+
+/** Land on an operative word and finish every move before the final two seconds. */
+export function planProZooms(groups, duration, { busy = [], hook = null } = {}) {
+  const keys = [];
+  const arrivals = [];
+  let available = hook ? hook.start + hook.duration : 0.4;
+  for (const group of groups) {
+    const word = group.words?.find((w) => w.key && Number.isFinite(w.start));
+    if (!word) continue;
+    const at = word.start, start = r3(at - 0.2);
+    if (start < available || at > duration - 2 || arrivals.length >= proZoomBudget(duration)) continue;
+    if (arrivals.filter((t) => t > at - 30).length >= 2 || (arrivals.length && at - arrivals.at(-1) < 8)) continue;
+    const end = Math.min(duration - 2.2, Math.max(at + 1, group.end));
+    if (end < at || busy.some((b) => start < b.start + b.duration + 0.3 && end + 0.2 > b.start - 0.3)) continue;
+    keys.push({ t: start, scale: arrivals.length % 2 ? 1.12 : 1.08, snap: 0.2, ease: "power2.out", onKey: true }, { t: r3(end), scale: 1, snap: 0.2, ease: "power2.out" });
+    arrivals.push(at);
+    available = end + 0.2;
+  }
+  return keys;
+}
+
 /**
  * Punch-ins, used sparingly: on the lines that carry a gold word (the claims), at most one per `minSpacing`
  * seconds, never under a card or a cutaway, and never in the hook or the last second. A tight frame (the head
@@ -9,7 +33,8 @@ import { r3 } from "./util.mjs";
  * Pass transcript words when caption text has had its punctuation stripped.
  * Returns [{t, scale, snap}].
  */
-export function planZooms(groups, duration, { minSpacing = 10, scales = [1.14, 1.22], tightScales = [1.07, 1.1], snap = 0.12, leadIn = 0.4, busy = [], hook = null, tight = false, maxPer30 = 3, onKey = false, words = null } = {}) {
+export function planZooms(groups, duration, { pro = false, minSpacing = 10, scales = [1.14, 1.22], tightScales = [1.07, 1.1], snap = 0.12, leadIn = 0.4, busy = [], hook = null, tight = false, maxPer30 = 3, onKey = false, words = null } = {}) {
+  if (pro) return planProZooms(groups, duration, { busy, hook });
   const from = hook ? hook.start + hook.duration : leadIn;
   const covered = (t) => busy.some((b) => t >= b.start - 0.3 && t < b.start + b.duration + 0.3);
   const use = tight ? tightScales : scales;

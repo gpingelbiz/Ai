@@ -200,7 +200,8 @@ test("audio-only correction leaves every existing preset's picture HTML byte ide
     "vsl.json": "dcb8971978ec67a698d23f1ad8527ab91c8f1e2c232472b1fae395fed7339b4c",
     "youtube.json": "4b0a9797a4f2a72f98cb0ad0615f2ecf96cc1d74ece48ae996105c57b70320d0",
   };
-  const names = fs.readdirSync(path.join(PKG_ROOT, "presets")).filter((name) => name.endsWith(".json") && !["pingel-bold.json", "broll-shotlist.json"].includes(name));
+  // New pro components have snapshot-free timeline checks; these hashes freeze the pre-existing looks.
+  const names = fs.readdirSync(path.join(PKG_ROOT, "presets")).filter((name) => name.endsWith(".json") && !["pingel-bold.json", "pingel-pro.json", "broll-shotlist.json"].includes(name));
   for (const name of names) {
     const plan = fixture(); plan.preset = name.slice(0, -5); plan.style = loadPreset(plan.preset);
     const cues = soundCues({ ...plan, fps: plan.style.render.fps, zoomStyle: plan.style.zooms.style, graphicsMode: plan.style.graphics.mode });

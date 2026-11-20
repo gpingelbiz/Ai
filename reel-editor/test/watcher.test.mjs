@@ -106,7 +106,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, brollNote = null, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null } = {}) {
+function fakeDrops({ brollShots = 2, brollNote = null, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null, env = {} } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -148,7 +148,7 @@ echo '{"performance":{}}' > "$work/analytics-features.json"`);
   for (const m of music) fs.writeFileSync(path.join(musicDir, m), "audio");
   const done = path.join(home, "Done");
   spawnSync("/bin/bash", [new URL("../scripts/watch-folder.sh", import.meta.url).pathname], {
-    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_RAW_LONG: dirs.long, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: caption ? "1" : "0", REEL_HASHTAG_ARM: "3", ...(brollEngine != null ? { REEL_BROLL_ENGINE: brollEngine } : {}) },
+    env: { HOME: home, PATH: "/usr/bin:/bin", REEL_WATCH_ROOT: path.join(home, "Reels"), REEL_WATCH_DONE: done, REEL_WATCH_RAW: dirs.reel, REEL_WATCH_RAW_BROLL: dirs.broll, REEL_WATCH_RAW_CAROUSEL: dirs.carousel, REEL_WATCH_RAW_LONG: dirs.long, REEL_WATCH_MUSIC: musicDir, REEL_WATCH_FAST: "1", REEL_WATCH_PRUNE_DAYS: "0", REEL_WATCH_CAPTION: caption ? "1" : "0", REEL_HASHTAG_ARM: "3", ...(brollEngine != null ? { REEL_BROLL_ENGINE: brollEngine } : {}), ...env },
     stdio: "pipe",
   });
   const day = spawnSync("date", ["+%F"], { encoding: "utf8" }).stdout.trim();
@@ -279,4 +279,14 @@ test("the watcher preserves the editor's per-moment no-broll reasons", () => {
   try {
     assert.equal(fs.readFileSync(path.join(r.home, "Reels", "videos", "clip-broll", "No b-roll this time.txt"), "utf8").trim(), brollNote);
   } finally { fs.rmSync(r.home, { recursive: true, force: true }); }
+});
+
+test("REEL_PRESET=pingel-pro: Greg's reel, b-roll and long-video drops get the pro look, not the old caption styles", () => {
+  const r = fakeDrops({ clips: { reel: ["clip.mov"], broll: ["clip.mov"], long: ["talk.mp4"] }, env: { REEL_PRESET: "pingel-pro" } });
+  const lines = r.calls.trim().split("\n").filter((l) => /^(edit|clips) /.test(l) && !/raw-carousel/.test(l));
+  assert.ok(lines.length >= 3, r.calls);
+  for (const l of lines) {
+    assert.match(l, /--preset pingel-pro --graphics$|--preset pingel-pro --graphics /, l);
+    assert.doesNotMatch(l, /--caption-style|--broll\b|--no-graphics|--no-slams/, l);
+  }
 });
