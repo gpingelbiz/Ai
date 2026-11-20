@@ -237,6 +237,23 @@ case "$MODE" in
     [ -n "$brand_captions" ] || flags+=(--caption-style pop)
     flags+=(--no-slams --no-annotate --no-behind);;
 esac
+# Greg 2026-11-20 "make sure we're building all new reels the new way": with REEL_PRESET=pingel-pro, his own reel,
+# B-roll and long-video clips get the pro look (its own captions, cards and music), never a client's job.
+if [ "${REEL_PRESET:-}" = pingel-pro ] && [ "${REEL_CLIENT_MODE:-0}" != 1 ] && [ -z "${REEL_CLIENT:-}" ]; then
+  case "$MODE" in
+    reel|broll|long)
+      kept=(); skip=0
+      for f in ${flags[@]+"${flags[@]}"}; do
+        if [ "$skip" = 1 ]; then skip=0; continue; fi
+        case "$f" in
+          --caption-style|--broll-engine|--preset) skip=1;;
+          --broll|--no-graphics|--graphics|--no-slams|--no-annotate|--no-behind) ;;
+          *) kept+=("$f");;
+        esac
+      done
+      flags=(${kept[@]+"${kept[@]}"} --preset pingel-pro --graphics);;
+  esac
+fi
 # A carousel needs the transcript and plan, not a render.
 [ "$MODE" = carousel ] && flags+=(--no-render)
 name=$(echo "$stem" | sed -E 's/#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/[^A-Za-z0-9]+/-/g; s/^-+|-+$//g' | tr 'A-Z' 'a-z')
