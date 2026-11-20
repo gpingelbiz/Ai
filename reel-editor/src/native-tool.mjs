@@ -18,7 +18,8 @@ export async function nativeTool(name, { compile, app = PKG_ROOT, platform = pro
   const source = path.join(app, "scripts", `${name}.swift`);
   const dir = path.join(app, "dist", "helpers", `${platform}-${arch}`);
   const bin = path.join(dir, name);
-  try {
+  // REEL_NATIVE_HELPERS=off skips the shipped helpers (tests that stub the face finder must not reach the real one).
+  if (process.env.REEL_NATIVE_HELPERS !== "off") try {
     const record = JSON.parse(fs.readFileSync(path.join(dir, "helpers.json"), "utf8"))[name];
     if (platform === "darwin" && record?.source === sha256(source) && record.sha256 === sha256(bin)) {
       fs.accessSync(bin, fs.constants.X_OK);
