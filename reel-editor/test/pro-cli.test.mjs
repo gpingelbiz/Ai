@@ -27,7 +27,7 @@ test("reel edit --preset pingel-pro builds a fixture project through the real CL
   const claude = executable("claude.mjs", `console.log(JSON.stringify({overlays:[{type:"stat",valueRange:{from:8,to:8},labelRange:{from:9,to:9}}]}));`);
   const platform = path.join(root, "platform.mjs");
   fs.writeFileSync(platform, 'Object.defineProperty(process,"platform",{value:"darwin"});\n');
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TMPDIR: root, REEL_CACHE: path.join(root, "cache"), REEL_CLIENT: "", REEL_CLIENT_MODE: "0", REEL_CLAUDE_BIN: claude };
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TMPDIR: root, REEL_CACHE: path.join(root, "cache"), REEL_CLIENT: "", REEL_CLIENT_MODE: "0", REEL_CLAUDE_BIN: claude, REEL_NATIVE_HELPERS: "off" };
   const result = spawnSync(process.execPath, ["--import", platform, "bin/reel.mjs", "edit", video, "--preset", "pingel-pro", "--transcript", transcript, "--out", work, "--no-render", "--no-hook", "--no-cuts", "--no-zooms", "--no-verify"], { cwd: new URL("..", import.meta.url), env, encoding: "utf8", timeout: 30000 });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const plan = JSON.parse(fs.readFileSync(path.join(work, "plan.json"), "utf8"));
