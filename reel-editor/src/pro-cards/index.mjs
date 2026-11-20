@@ -14,6 +14,11 @@ import { CARDS as distinctionPayoff } from "./distinction-payoff.mjs";
 import { CARDS as procedureProof } from "./procedure-proof.mjs";
 import { CARDS as conversation } from "./conversation.mjs";
 import { CARDS as warningEmphasisFull } from "./warning-emphasis-full.mjs";
+import { CARDS as distinction2 } from "./distinction-2.mjs";
+import { CARDS as procedure2 } from "./procedure-2.mjs";
+import { CARDS as proof2 } from "./proof-2.mjs";
+import { CARDS as conversation2 } from "./conversation-2.mjs";
+import { CARDS as warningPayoff2 } from "./warning-payoff-2.mjs";
 // Batch builders: add one import line and one spread each; nothing else in this file changes.
 
 export const CARDS = Object.freeze({
@@ -22,4 +27,9 @@ export const CARDS = Object.freeze({
   ...procedureProof,
   ...conversation,
   ...warningEmphasisFull,
+  ...distinction2,
+  ...procedure2,
+  ...proof2,
+  ...conversation2,
+  ...warningPayoff2,
 });
