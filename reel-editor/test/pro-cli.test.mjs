@@ -21,7 +21,8 @@ test("reel edit --preset pingel-pro builds a fixture project through the real CL
   };
   executable("ffprobe", `console.log(JSON.stringify({ streams:[{ codec_type:"video",width:1080,height:1920,r_frame_rate:"30/1",color_transfer:"bt709" }],format:{duration:"30"} }));`);
   // Media tools are adapters here: fixture bytes reach the composer, while the actual renderer is never called.
-  executable("ffmpeg", `import fs from 'node:fs'; fs.writeFileSync(process.argv.at(-1),'fixture clean video');`);
+  // "-" is stdout (a pipe), not a file: writing it left a stray file named "-" in the repo after every run.
+  executable("ffmpeg", `import fs from 'node:fs'; const out = process.argv.at(-1); if (out !== '-') fs.writeFileSync(out,'fixture clean video');`);
   const faceTool = `#!${process.execPath}\nconsole.log(JSON.stringify({ frames:process.argv.slice(3).map(Number).map(t=>({t,faces:[{x:.3,y:.65,w:.2,h:.1}],bodies:[]})) }));\n`;
   executable("swiftc", `import fs from 'node:fs'; const args=process.argv.slice(2); fs.writeFileSync(args[args.indexOf('-o')+1],${JSON.stringify(faceTool)},{mode:0o755});`);
   const claude = executable("claude.mjs", `console.log(JSON.stringify({overlays:[{type:"stat",valueRange:{from:8,to:8},labelRange:{from:9,to:9}}]}));`);
