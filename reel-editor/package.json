@@ -18,7 +18,7 @@
     "doctor": "node bin/reel.mjs doctor"
   },
   "dependencies": {
-    "hyperframes": "0.9.25"
+    "hyperframes": "0.9.86"
   },
   "devDependencies": {
     "pixelmatch": "^7.2.0",

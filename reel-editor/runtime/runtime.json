@@ -67,7 +67,7 @@
     "_files": "sha256 of each file the model needs, from Greg's MacBook copy and a fresh download (identical); model.bin also matches HuggingFace's LFS sha256."
   },
   "hyperframes": {
-    "version": "0.9.25",
+    "version": "0.9.86",
     "_note": "pinned in package.json and package-lock.json (0.9 drops only HyperFrames' cloud render protocol, which reel never uses); its render browser comes from `hyperframes browser ensure` for that version"
   },
   "services": {
