@@ -219,3 +219,12 @@ test("Greg 11-24: reels of 20 s or more ask for at least one insert, and stills 
   const style = loadPreset("pingel-pro");
   assert.equal(style.broll.minOneAfter, 20);
 });
+
+test("Greg 11-24: a subject already in 2 of the last 12 scenes is rejected, others pass", async () => {
+  const { repeatedMotif, picksPrompt } = await import("../src/broll.mjs");
+  const recent = ["open notebook with checkmarks on a desk", "headset beside a notebook checklist", "laptop on a desk"];
+  assert.equal(repeatedMotif({ visibleSubject: "a spiral notebook", scene: "pen over a checklist" }, recent), "notebook");
+  assert.equal(repeatedMotif({ visibleSubject: "a laptop on a muted call" }, recent), null);
+  assert.equal(repeatedMotif({ visibleSubject: "car keys on a kitchen counter" }, recent), null);
+  assert.match(picksPrompt({ candidates: [], groups: [], transcript: "", count: 2, recent }), /Do NOT repeat their main subject/);
+});

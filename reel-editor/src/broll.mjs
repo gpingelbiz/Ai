@@ -42,6 +42,26 @@ export function readRecent(file = recentFile()) {
   try { return uniqueScenes(JSON.parse(fs.readFileSync(file, "utf8")).scenes || []); } catch { return []; }
 }
 export const uniqueScenes = (scenes) => [...new Set(scenes.map((s) => String(s).replace(/\s+/g, " ").trim()).filter(Boolean).reverse())].reverse();
+// Greg 11-24 "fix the notebook repeat": subjects the stills keep returning to. A pick whose subject already
+// appears in 2 of the last 12 remembered scenes is rejected, so a week of reels doesn't show the same desk shot.
+export const BROLL_MOTIFS = Object.freeze({
+  notebook: /\b(notebook|notepad|journal|checklist|check boxes|checkboxes|ruled page|legal pad)\b/i,
+  laptop: /\b(laptop|computer screen|monitor)\b/i,
+  headset: /\b(headset|headphones)\b/i,
+  phone: /\b(phone|smartphone)\b/i,
+  pen: /\b(pen|pencil)\b/i,
+  car: /\b(car|sedan|dealership|parking lot)\b/i,
+  coffee: /\b(coffee|mug)\b/i,
+  calendar: /\b(calendar|planner)\b/i,
+});
+export function repeatedMotif(pick, recent = [], { window = 12, limit = 2 } = {}) {
+  const text = [pick.visibleSubject, pick.shows, pick.action, pick.scene].filter(Boolean).join(" ");
+  const last = uniqueScenes(recent).slice(-window);
+  for (const [name, re] of Object.entries(BROLL_MOTIFS)) {
+    if (re.test(text) && last.filter((s) => re.test(s)).length >= limit) return name;
+  }
+  return null;
+}
 export function rememberScenes(scenes, file = recentFile(), keep = 24) {
   const list = uniqueScenes([...readRecent(file), ...scenes]).slice(-keep);
   try { ensureDir(path.dirname(file)); fs.writeFileSync(file, JSON.stringify({ scenes: list }, null, 2) + "\n"); } catch {}
@@ -316,7 +336,7 @@ For each pick supply these fields:
 - camera: "room-24mm" for locations or wide rooms, or "detail-48mm" for desk, phone and hand details. light: one plausible source and its direction. signsOfUse: exactly two short, concrete signs of ordinary use.
 - endsAt and endsBefore: {line, wordIndex, text}, with zero-based indices and exact caption text. endsAt is the last payoff word, inclusive. endsBefore is the first unrelated word, exclusive.
 - duration: optional duration in seconds when the default needs adjusting. Omit file or set it to an empty string.
-${world ? `\nAdditional details about the speaker's world: ${world}\n` : ""}${recent.length ? `\nRecent scenes. Vary the angle, setting or task where useful:\n${uniqueScenes(recent).slice(-12).map((s) => `- ${s}`).join("\n")}\n` : ""}
+${world ? `\nAdditional details about the speaker's world: ${world}\n` : ""}${recent.length ? `\nRecent scenes already posted. Do NOT repeat their main subject (if a notebook, checklist, laptop, headset or phone appears twice below, choose a different object, place or action, for example a car interior, a whiteboard, a gym, a door, a calendar on a wall, keys, a coffee counter, a city street):\n${uniqueScenes(recent).slice(-12).map((s) => `- ${s}`).join("\n")}\n` : ""}
 Hook: ${hook || "(none)"}
 Whole passage: ${transcript || ""}
 
@@ -611,6 +631,14 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
   } catch (e) {
     warn(`b-roll: ${String(e.message).split("\n")[0]}; rendering without it`);
     return finish("Footage planning failed; see the reel log.");
+  }
+  if (!sourcesFirst) {
+    const recentScenes = readRecent(recentFile(deps.env));
+    picks = picks.filter((p) => {
+      const motif = repeatedMotif(p, recentScenes);
+      if (motif) discarded.push({ pick: p, reason: `repeats a recent ${motif} shot` });
+      return !motif;
+    });
   }
   picks.forEach((p, i) => recordPick(p, i + 1));
   const reject = (p, why) => { const r = recordFor(p); if (r) { r.outcome = "rejected"; r.reason = why; } brollStep(p, `dropped: ${why}`, pickDeps(p)); };
