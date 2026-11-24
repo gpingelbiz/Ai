@@ -37,7 +37,8 @@ async function faceRules(file, plan, duration, offset, detect) {
   const captions = plan.bold?.groups || (plan.style?.captions?.enabled === false ? [] : plan.captions || []);
   const capItems = captions.map((group, i) => ({ ...group, box: captionBox(group, plan.style?.captions, canvas), label: `Caption ${i + 1}` }));
   const cardItems = masterIsPro(plan) ? cardsOf(plan).flatMap((card, i) => {
-    if (!card.place) return [];
+    // A full-screen card covers the speaker on purpose (at most one per reel, its own rule).
+    if (!card.place || isFull(card)) return [];
     const size = proSize(card);
     const { x, y, scale = 1, w = size?.w * scale, h = size?.h * scale } = card.place;
     return w > 0 && h > 0 ? [{ ...card, box: { x, y, w, h }, label: `Card ${card.id || i + 1}` }] : [];

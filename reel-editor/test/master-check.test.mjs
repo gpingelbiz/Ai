@@ -335,3 +335,8 @@ test("build repairs a pro plan by forcing fresh card direction and B-roll picks 
   assert.equal(get(result, "broll-present").fixed, true);
   assert.deepEqual([cardCalls, brollCalls, renders], [1, 1, 2]);
 });
+
+test("Greg 11-24: a full-screen card is not a cards-off-face failure (it covers the speaker on purpose)", async () => {
+  const src = (await import("node:fs")).readFileSync(new URL("../src/master-check.mjs", import.meta.url), "utf8");
+  assert.match(src, /if \(!card\.place \|\| isFull\(card\)\) return \[\];/);
+});
