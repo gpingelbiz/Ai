@@ -263,7 +263,7 @@ export async function makeProGraphics({ workDir, words, groups = [], duration, h
   let direction = !force && saved?.schema === 2 && saved.key === key && Array.isArray(saved.direction) ? saved.direction : null;
   if (!direction && available()) {
     try {
-      const reply = firstJSON(await ask(proPrompt(words, { duration }), { timeoutMs: 420000 }));
+      const reply = firstJSON(await ask(proPrompt(words, { duration }), { timeoutMs: 420000 }), { lenient: true });
       direction = Array.isArray(reply.overlays) ? reply.overlays : [];
     }
     catch (e) { warn(`pro graphics: ${String(e.message).split("\n")[0]}; keeping grounded beats`); }

@@ -53,10 +53,27 @@ function claudeRun(args, { timeoutMs, model, cwd, deps }) {
 }
 
 /** The first JSON object in a reply (Claude sometimes wraps it in prose or a code fence). */
-export function firstJSON(text) {
+export function firstJSON(text, { lenient = false } = {}) {
   const s = String(text);
   const a = s.indexOf("{");
   const b = s.lastIndexOf("}");
   if (a < 0 || b <= a) throw new Error("no JSON in the reply");
-  return JSON.parse(s.slice(a, b + 1));
+  try { return JSON.parse(s.slice(a, b + 1)); } catch (whole) {
+    if (!lenient) throw whole;
+    // Greg 11-24: replies with a note or a second object after the JSON ("Unexpected non-whitespace character
+    // after JSON") dropped every pro card. Take the first balanced object that parses instead.
+    for (let start = a; start >= 0; start = s.indexOf("{", start + 1)) {
+      let depth = 0, inStr = false, esc = false;
+      for (let i = start; i < s.length; i++) {
+        const c = s[i];
+        if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+        if (c === '"') inStr = true;
+        else if (c === "{") depth++;
+        else if (c === "}" && --depth === 0) {
+          try { return JSON.parse(s.slice(start, i + 1)); } catch { break; }
+        }
+      }
+    }
+    throw whole;
+  }
 }

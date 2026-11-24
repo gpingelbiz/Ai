@@ -56,3 +56,13 @@ test("text and vision runners spawn the shared fallback with injected dependenci
   assert.equal(calls[0].args[calls[0].args.indexOf("--tools") + 1], "");
   assert.equal(calls[1].args[calls[1].args.indexOf("--tools") + 1], "Read");
 });
+
+test("Greg 11-24: firstJSON reads the first object even with trailing notes or a second object", async () => {
+  const { firstJSON } = await import("../src/claude.mjs");
+  const L = { lenient: true };
+  assert.deepEqual(firstJSON('{"overlays":[{"t":"a}"}]}\n\nNote: {extra}', L), { overlays: [{ t: "a}" }] });
+  assert.deepEqual(firstJSON('Here you go {"a":1} and also {"b":2}', L), { a: 1 });
+  assert.deepEqual(firstJSON('```json\n{"a":{"b":"x\\"}"}}\n```', L), { a: { b: 'x"}' } });
+  assert.throws(() => firstJSON('Here you go {"a":1} and also {"b":2}'), "strict by default");
+  assert.throws(() => firstJSON("no json here"));
+});
