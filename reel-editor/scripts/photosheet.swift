@@ -3,6 +3,8 @@
 // Usage:
 //   photosheet export <image> <out.jpg> [max px, default 2160]       an upright JPEG, never larger than the source
 //   photosheet sheet <out.jpg> <image> [<image> ...]                  a contact sheet, each tile numbered from 1
+//   photosheet label <out.png> <width> <height> <text file> [font]    white words on the dark preview grey, for ffmpeg
+//                                                                     builds without drawtext (Homebrew's ffmpeg 9)
 import AppKit
 import CoreGraphics
 import Foundation
@@ -59,6 +61,27 @@ case "sheet":
   }
   guard let out = ctx.makeImage() else { fail("no image") }
   writeJPEG(out, args[1], quality: 0.85)
+  print(args[1])
+case "label":
+  if args.count < 5 { fail("usage: photosheet label <out.png> <width> <height> <text file> [font file]") }
+  guard let W = Int(args[2]), let H = Int(args[3]), W > 28, H > 16 else { fail("bad label size") }
+  guard let words = try? String(contentsOfFile: args[4], encoding: .utf8) else { fail("cannot read \(args[4])") }
+  var font = NSFont.systemFont(ofSize: 22)
+  if args.count > 5, let found = (CTFontManagerCreateFontDescriptorsFromURL(URL(fileURLWithPath: args[5]) as CFURL) as? [CTFontDescriptor])?.first {
+    font = CTFontCreateWithFontDescriptor(found, 22, nil) as NSFont
+  }
+  // sRGB in and out, so the grey lands as exactly 0x161616 like the ffmpeg pad beside it (device RGB shifted it to 0x1d).
+  guard let srgb = CGColorSpace(name: CGColorSpace.sRGB), let ctx = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: 0, space: srgb, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { fail("no context") }
+  ctx.setFillColor(CGColor(srgbRed: 0x16 / 255.0, green: 0x16 / 255.0, blue: 0x16 / 255.0, alpha: 1))
+  ctx.fill(CGRect(x: 0, y: 0, width: W, height: H))
+  NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+  let style = NSMutableParagraphStyle()
+  style.lineSpacing = 8
+  NSAttributedString(string: words, attributes: [.font: font, .foregroundColor: NSColor.white, .paragraphStyle: style])
+    .draw(in: NSRect(x: 14, y: 0, width: W - 28, height: H - 16))
+  guard let image = ctx.makeImage(), let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: args[1]) as CFURL, UTType.png.identifier as CFString, 1, nil) else { fail("cannot write \(args[1])") }
+  CGImageDestinationAddImage(dest, image, nil)
+  if !CGImageDestinationFinalize(dest) { fail("cannot write \(args[1])") }
   print(args[1])
 default:
   fail("unknown command \(cmd)")

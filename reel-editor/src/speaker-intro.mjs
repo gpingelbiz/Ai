@@ -6,7 +6,7 @@ import { activeBox, sourceCropOptions, prepareGrade } from "./speaker-look.mjs";
 import { SDR_FILTER, SDR_TAGS, rotateFilters, evenFilters, hlgToSdrFilter, hasZscale, toneMapToSdr } from "./hdr.mjs";
 import { personBinary } from "./cover.mjs";
 import { probeSource } from "./speaker-index.mjs";
-import { run, ensureDir } from "./util.mjs";
+import { run, ensureDir, NO_AUTOROTATE } from "./util.mjs";
 import { esc } from "./text.mjs";
 import { identityLeaks } from "./speaker-guard.mjs";
 
@@ -330,7 +330,7 @@ export async function prepareIntroAssets(plan, { manifest, index, clientDir, pro
         const normalized = path.join(dir, `${hash(JSON.stringify([sourceHash, preFilter, grade, "image-v1"]))}.png`);
         if (!fs.existsSync(normalized)) {
           const temp = `${normalized}.tmp.png`;
-          try { await runImpl("ffmpeg", ["-y", "-loglevel", "error", "-noautorotate", "-i", file, "-map", "0:v:0", "-an", "-vf", [preFilter, grade, "format=rgba"].filter(Boolean).join(","), "-frames:v", "1", temp], { capture: true }); fs.renameSync(temp, normalized); }
+          try { await runImpl("ffmpeg", ["-y", "-loglevel", "error", ...NO_AUTOROTATE, "-i", file, "-map", "0:v:0", "-an", "-vf", [preFilter, grade, "format=rgba"].filter(Boolean).join(","), "-frames:v", "1", temp], { capture: true }); fs.renameSync(temp, normalized); }
           finally { fs.rmSync(temp, { force: true }); }
         }
         file = normalized;
@@ -346,7 +346,7 @@ export async function prepareIntroAssets(plan, { manifest, index, clientDir, pro
         if (!fs.existsSync(output)) {
           const temp = `${output}.tmp.mp4`;
           try {
-            await runImpl("ffmpeg", ["-y", "-loglevel", "error", "-noautorotate", "-ss", String(l.in), "-t", String(l.out - l.in + 1 / FPS), "-i", file, "-map", "0:v:0", "-an", "-vf", filter, "-frames:v", String(l.to - l.from), "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", ...SDR_TAGS, "-metadata:s:v:0", "rotate=0", "-movflags", "+faststart", temp], { capture: true });
+            await runImpl("ffmpeg", ["-y", "-loglevel", "error", ...NO_AUTOROTATE, "-ss", String(l.in), "-t", String(l.out - l.in + 1 / FPS), "-i", file, "-map", "0:v:0", "-an", "-vf", filter, "-frames:v", String(l.to - l.from), "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", ...SDR_TAGS, "-metadata:s:v:0", "rotate=0", "-movflags", "+faststart", temp], { capture: true });
             const check = await probeImpl(temp);
             if (check.hasAudio || Math.abs(check.duration - (l.to - l.from) / FPS) > 1 / FPS / 2) throw new Error(`${entry.id}/${l.id}: proxy has wrong duration or audio`);
             fs.renameSync(temp, output);
