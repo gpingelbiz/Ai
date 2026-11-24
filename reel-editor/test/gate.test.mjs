@@ -5,9 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import {
   GATE_RULES, captionProblems, ctaNotes, ctaProblems, gateFixes, gateText, gateTimes, isolationHtml, layerMask, layoutProblems,
-  measureLayers, overlapCount, rootLayers, runGate, safeZoneSpill,
+  contrastProblems, silentCaptions, fillerCard, letterContrast, measureLayers, overlapCount, planFixes, tidyCardText, rootLayers, runGate, safeZoneSpill, spokenNearMiss,
 } from "../src/gate.mjs";
 import { findSignOff } from "../src/cuts.mjs";
+import { autoCta } from "../src/hook.mjs";
 
 const W = 1080, H = 1920;
 /** A black 1080x1920 frame with white rectangles painted on it (pngjs-shaped). */
@@ -245,4 +246,144 @@ test("measureLayers snapshots the empty frame and each text layer alone, only wh
   assert.deepEqual(first.layers[3].box, { x: 228, y: 926, w: 626, h: 150 });
   assert.ok(first.layers[5].count > 0);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("spokenNearMiss swaps a hook word for the near-identical word actually said, and nothing looser", () => {
+  const spoken = new Map(["your", "confidence", "on", "camera", "is", "a", "skill", "experience", "sales"].map((w) => [w, 1]));
+  assert.equal(spokenNearMiss("competence", spoken), null, "said once: not enough to rewrite a same-length word");
+  spoken.set("confidence", 3);
+  assert.equal(spokenNearMiss("competence", spoken), "confidence");
+  assert.equal(spokenNearMiss("persuation", new Map([["persuasion", 1]])), "persuasion", "a one-letter slip");
+  assert.equal(spokenNearMiss("confidence", spoken), null, "said, so it stays");
+  assert.equal(spokenNearMiss("existence", spoken), null, "different start");
+  assert.equal(spokenNearMiss("scale", spoken), null, "different ending");
+  assert.equal(spokenNearMiss("sale", spoken), null, "too short to judge");
+});
+
+test("planFixes merges a flash caption, fixes a near-miss hook word and leaves a clean plan alone", () => {
+  const cap = (text, start, end) => ({ start, end, text, words: text.split(" ").map((t, i, all) => ({ text: t, start: start + ((end - start) * i) / all.length, end: start + ((end - start) * (i + 1)) / all.length })) });
+  const plan = {
+    style: { captions: { maxChars: 22 } },
+    words: "Your confidence on camera is a skill and confidence it was the work".split(" ").map((text, i) => ({ text, start: i * 0.3, end: i * 0.3 + 0.25 })),
+    hook: { text: "Your *Competence,* on camera", words: [{ text: "Your" }, { text: "Competence," , key: true }, { text: "on" }, { text: "camera" }] },
+    captions: [cap("Your confidence", 0, 0.6), cap("on camera", 0.6, 1.2), cap("it was", 1.2, 1.4), cap("the work", 1.45, 2.2)],
+  };
+  const { plan: fixed, applied } = planFixes(plan);
+  assert.equal(fixed.hook.text, "Your *Confidence,* on camera");
+  assert.equal(fixed.hook.words[1].text, "Confidence,");
+  assert.equal(fixed.captions.length, 3);
+  assert.equal(fixed.captions[2].text, "it was the work");
+  assert.equal(fixed.captions[2].start, 1.2);
+  assert.equal(applied.length, 2);
+  assert.equal(plan.captions.length, 4, "the input plan is not changed");
+  const again = planFixes(fixed);
+  assert.deepEqual(again.applied, [], "a fixed plan has nothing left to fix");
+  const cards = planFixes({ graphics: [{ type: "quote", start: 1, duration: 2, text: "" }, { type: "list", start: 4, duration: 2, items: [{ text: "Price the work" }] }, { type: "post", start: 7, duration: 2, image: "a.png" }] });
+  assert.deepEqual(cards.plan.graphics.map((g) => g.type), ["list", "post"]);
+  assert.match(cards.applied[0], /card 1 \(quote\) dropped: it had no words/);
+  const pro = planFixes({ ...plan, style: { captions: { pro: true } }, hook: null });
+  assert.equal(pro.plan.captions.length, 4, "pro captions keep their own layout");
+});
+
+test("autoCta shows the card for the offer the client names last, from when it is named to the end", () => {
+  const words = "I invite you to join me for the Business Builder Bootcamp starting in January with me".split(" ").map((text, i) => ({ text, start: 14 + i * 0.5, end: 14 + i * 0.5 + 0.4 }));
+  const keywords = [{ say: ["retreat"], text: "Comment RETREAT" }, { say: ["bootcamp", "business builder"], text: "Comment BOOTCAMP" }];
+  const cta = autoCta(words, 25.4, { keywords, style: "box", position: 0.3, uppercase: false });
+  assert.equal(cta.text, "Comment BOOTCAMP");
+  assert.equal(cta.start, 19.4, "no earlier than 6 s before the end");
+  assert.equal(cta.duration, 6);
+  assert.equal(cta.style, "box");
+  assert.equal(autoCta(words, 25.4, { keywords: [{ say: ["retreat"], text: "Comment RETREAT" }] }), null, "nothing named, no card");
+  assert.equal(autoCta(words, 25.4, {}), null);
+  const late = autoCta(words.slice(0, 10).map((w) => ({ ...w, start: w.start + 8 })), 25.4, { keywords });
+  assert.equal(late.start, 22.9, "named in the last seconds: still up for 2.5 s");
+});
+
+test("gateFixes moves a CTA card up off the captions instead of dropping it", () => {
+  const layers = [...rootLayers(PAGE), { index: 10, id: "cta", tag: "div", text: true, start: 19, duration: 6 }];
+  const frames = [{ t: 20, layers: { 5: mask([{ x: 215, y: 1250, w: 595, h: 75 }]), 10: mask([{ x: 300, y: 1180, w: 480, h: 100 }]) } }];
+  const problems = layoutProblems(frames, layers);
+  assert.deepEqual(problems[0].kinds, ["captions", "cta"]);
+  const plan = { ...basePlan(), cta: { text: "Comment BOOTCAMP", start: 19, duration: 6, position: 0.62 } };
+  const { plan: fixed, applied } = gateFixes(problems, plan, { frames, layers });
+  const shift = 1250 - GATE_RULES.gap - (1180 + 100);
+  assert.equal(fixed.cta.position, Math.round((0.62 + shift / H) * 1000) / 1000);
+  assert.match(applied[0], /CTA moved up/);
+});
+
+test("card text: transcript spacing is closed up and filler-only cards are dropped", () => {
+  const card = { type: "stat", value: "1 ,000", unit: "clients", sub: "Re -loop .", items: [{ text: "self- made , twice" }] };
+  tidyCardText(card);
+  assert.deepEqual(card, { type: "stat", value: "1,000", unit: "clients", sub: "Re-loop.", items: [{ text: "self-made, twice" }] });
+  assert.equal(fillerCard({ type: "headline", headline: "RIGHT" }), true);
+  assert.equal(fillerCard({ type: "list", items: [{ text: "bat," }, { text: "bat," }, { text: "bat" }] }), true);
+  assert.equal(fillerCard({ type: "stat", value: "10", unit: "%" }), false);
+  assert.equal(fillerCard({ type: "headline", headline: "Price the work" }), false);
+  const { plan, applied } = planFixes({ graphics: [{ type: "headline", headline: "RIGHT", start: 1, duration: 2 }, { type: "stat", value: "1 ,000", unit: "calls", start: 4, duration: 2 }] });
+  assert.deepEqual(plan.graphics.map((g) => g.value || g.headline), ["1,000"]);
+  assert.equal(applied.length, 2);
+});
+
+test("runGate moves captions that sit on a face to just under the chin", async () => {
+  const layersHere = rootLayers(PAGE);
+  const measured = { layers: layersHere, times: [9], frames: [{ t: 9, layers: { 5: mask([{ x: 215, y: 800, w: 595, h: 75 }]) } }] };
+  const textcheck = { verdict: "hold", video: "/tmp/r.mp4", notes: ["text-face at 9.00s: text line \"we hear\" overlaps a face expanded 10% above the forehead"], problems: [{ code: "text-face", sample: "caption-4", at: 9, message: "text line \"we hear\" overlaps a face expanded 10% above the forehead" }] };
+  const dir = workFolder({ ...basePlan(), video: { duration: 25 }, captions: [] }, { "textcheck.json": textcheck });
+  let asked = null;
+  const faces = async (video, times) => { asked = { video, times }; return { frames: [{ faces: [{ x: 0.3, y: 0.2, w: 0.4, h: 0.25 }] }] }; };
+  const result = await runGate(dir, { measure: async () => measured, faces });
+  assert.deepEqual(asked, { video: "/tmp/r.mp4", times: [9] });
+  assert.equal(result.verdict, "fix");
+  const chin = (0.2 + 0.25 * 0.92) * H;
+  assert.equal(result.plan.style.captions.position, Math.round((0.58 + (chin + GATE_RULES.gap - 800) / H) * 1000) / 1000);
+  assert.match(result.fixes[0], /under the face/);
+  assert.ok(!result.problems.some((p) => p.code === "textcheck"), "the face note is the gate's to fix, not a second hold");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("letterContrast reads light captions against the finished frame, and a washed-out run gets the dark box", () => {
+  const letters = [{ x: 300, y: 1200, w: 400, h: 60 }];
+  const layer = frame(letters);
+  const m = layerMask(layer, blank);
+  const paint = (bg) => { const f = frame(letters); for (let i = 0; i < f.data.length; i += 4) if (f.data[i] !== 255) f.data.set([bg, bg, bg], i); return f; };
+  const onWall = letterContrast(layer, paint(235), m);
+  const onJacket = letterContrast(layer, paint(60), m);
+  assert.ok(onWall < 1.2, `white on a white wall reads ${onWall}:1`);
+  assert.ok(onJacket > 3, `white on a dark jacket reads ${onJacket}:1`);
+  assert.equal(letterContrast(layer, paint(60), { count: 0 }), null);
+  const frames = [2, 5, 8, 11].map((t, i) => ({ t, contrast: { captions: i < 2 ? 1.1 : 3.5 } }));
+  const [problem] = contrastProblems(frames);
+  assert.equal(problem.code, "caption-contrast");
+  assert.deepEqual(problem.times, [2, 5]);
+  assert.deepEqual(contrastProblems(frames.slice(1)), [], "one washed-out moment is a note for the eye, not a box");
+  const quiet = { ...basePlan(), style: { ...basePlan().style, captions: { ...basePlan().style.captions, quiet: true } } };
+  const fixed = gateFixes([problem], quiet);
+  assert.equal(fixed.plan.style.captions.plate, 0.62);
+  assert.match(fixed.applied[0], /soft dark box/);
+  assert.deepEqual(gateFixes([problem], basePlan()).unfixable.length, 1, "outlined captions are not boxed");
+});
+
+test("mirrored footage: only flipped frames read as words, so the clip is flipped back", async () => {
+  const { readableLetters, mirrorVerdict, detectMirrored } = await import("../src/mirror.mjs");
+  const ocr = (lines) => JSON.stringify({ width: 1080, height: 1920, lines: lines.map(([text, confidence]) => ({ text, confidence, box: { x: 0.1, y: 0.5, w: 0.8, h: 0.05 } })) });
+  assert.equal(readableLetters(ocr([["ELLIOTT ARMY", 0.9], ["Built to Close", 0.4]])), 11, "low-confidence lines and short words do not count");
+  assert.equal(readableLetters("not json"), 0);
+  assert.equal(mirrorVerdict([{ normal: 0, flipped: 11 }, { normal: 0, flipped: 11 }, { normal: 0, flipped: 0 }]), true);
+  assert.equal(mirrorVerdict([{ normal: 20, flipped: 2 }, { normal: 18, flipped: 0 }]), false, "text that already reads");
+  assert.equal(mirrorVerdict([{ normal: 0, flipped: 0 }]), false, "no text in the shot");
+  assert.equal(mirrorVerdict([{ normal: 6, flipped: 10 }, { normal: 6, flipped: 4 }]), false, "not clearly more");
+  const extract = async (video, t, file, flip) => fs.writeFileSync(file, flip ? "flipped" : "normal");
+  const read = async (file) => fs.readFileSync(file, "utf8") === "flipped" ? ocr([["ELLIOTT ARMY", 0.95]]) : ocr([["YMRA TTOILLE", 0.3]]);
+  const found = await detectMirrored("/x.mp4", 20, { extract, ocr: read });
+  assert.equal(found.mirrored, true);
+  assert.equal(found.scores.length, 3);
+  assert.equal(await detectMirrored("/x.mp4", 20, { extract: async () => { throw new Error("no ffmpeg"); }, ocr: read }), false, "a failure never flips a clip");
+});
+
+test("silentCaptions removes lines that caption silence and keeps lines that are heard", () => {
+  const plan = { captions: [{ start: 1, end: 2, text: "we price" }, { start: 10, end: 11, text: "the leaked" }, { start: 11.5, end: 12.5, text: "half heard" }] };
+  const { plan: fixed, applied } = silentCaptions(plan, [{ start: 9.5, end: 12 }]);
+  assert.deepEqual(fixed.captions.map((c) => c.text), ["we price", "half heard"]);
+  assert.match(applied[0], /"the leaked" at 10.00s removed: nothing is heard there/);
+  assert.deepEqual(silentCaptions(plan, []).applied, []);
 });

@@ -395,6 +395,19 @@ The last check every reel passes before it is delivered, and the one that fixes 
 | a card, slam or icon touching other text, or reaching into the Instagram top bar, button column (x over 946 between 42% and 86%), sides (x 70-1010) or bottom strip (below 83.3%) | that item is dropped |
 | a doubled caption word, or a word followed by its own tail ("Bootcamp Camp") | the repeat is taken out |
 | a spoken ask cut from the ending ("I invite you to join me for...", "comment...", "book a call", "DM me") | the same edit runs again ending after the ask (`--end-after`); the transcript is cached |
+| captions over a face (the text check's face hit) | captions move under the lowest chin Vision sees at those moments |
+| quiet captions washing out (letters vs the pixels around them in the finished frame under 1.8:1 in 30% of the frames looked at) | the soft dark caption box (`captions.plate` 0.62) |
+| a caption line on screen under 0.3 s | joined to the next line (or the one before) |
+| a caption over silence on the voice track (-50 dB, 1 s) | removed: nothing is heard there |
+| a hook word never said but nearly ("competence" on screen, "confidence" said twice) | the word actually said |
+| a card with no words, or only filler ("RIGHT", "bat, bat, bat") | dropped |
+| transcript spacing on a card ("1 ,000", "Re -loop") | closed up ("1,000", "Re-loop") |
+| mirrored selfie footage (Vision reads words in the shot only when the frame is flipped) | flipped back in the clean pass |
+| a CTA card on the captions | moved up clear of them |
+
+The plan-only fixes (caption lines, silence, hook words, cards) go into `plan.json` before the first render, so they cost nothing; the measured ones need one re-render.
+
+**A client's CTA from their own words** (`cta.keywords` in the preset): `[{ "say": ["bootcamp", "business builder"], "text": "Comment BOOTCAMP" }]`. When the client names an offer, its card comes up then (no earlier than 6 s and no later than 2.5 s before the end) and stays to the end; the offer named last wins. A CTA given for the reel (`--cta`, `REEL_WATCH_CTA`) still wins, and `--no-cta` / `#nocta` turns both off.
 
 After a fix the project is rebuilt and checked again, twice at most. Anything still wrong (or a layout that could not be measured) holds the reel: `gate.txt` says why, `gate.json` has the detail, the watcher delivers it with `Why it's held.txt` beside it (a `HELD` line in `~/Reels/watch.log`, a "HELD, not ready to post" notification), and `textcheck.json` turns to `hold`, so the Publish folder and the Content Studio only ever make a draft of it. Full-screen layers (a photo, a full card) are not checked as text. A reel with no spoken ask and no CTA card gets a note, never a hold. Off with `gate.enabled: false` in a preset or `REEL_GATE=0`. `reel gate <workdir>` runs it on an existing work folder (fixes and re-renders; `--no-fix` only reports).
 

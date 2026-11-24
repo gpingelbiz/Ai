@@ -23,8 +23,10 @@ import os from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
-import { textTokens } from "./slide-preflight.mjs";
+import { editDistance, textTokens } from "./slide-preflight.mjs";
 import { readJSON, run, writeJSON } from "./util.mjs";
+import { shownText } from "./textcheck.mjs";
+import { detectFaces } from "./placement.mjs";
 
 // Instagram Reels at 1080x1920: the caption/handle strip at the bottom, the button column on the right, the top bar.
 // Same numbers as the house rules (x 76-1004, 940 beside the buttons, bottom 83.3%), with a few pixels of slack.
@@ -133,6 +135,43 @@ export function layerMask(png, blank, { step = GATE_RULES.step, diff = GATE_RULE
   return { mask, w, h, step, W, H, count, box, coverage: count / (w * h) };
 }
 
+const lum = (d, i) => (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
+/**
+ * How well a light text layer reads in the finished frame: its letter bodies (bright pixels of the layer drawn alone)
+ * against the pixels just around them in the full frame, which include any shadow, outline or plate. Returns a
+ * contrast ratio ((lighter + 0.05) / (darker + 0.05)), or null when the layer has no light letters there.
+ */
+export function letterContrast(layerPng, fullPng, m, { ring = 3, minLetter = 0.6 } = {}) {
+  if (!m?.count) return null;
+  const { w, h, step, W } = m;
+  const fill = new Uint8Array(w * h);
+  let fillSum = 0, fillN = 0;
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+    if (!m.mask[yy * w + xx]) continue;
+    const i = (yy * step * W + xx * step) * 4;
+    if (lum(layerPng.data, i) < minLetter) continue;
+    fill[yy * w + xx] = 1;
+    fillSum += lum(fullPng.data, i);
+    fillN++;
+  }
+  if (fillN < 30) return null;
+  let ringSum = 0, ringN = 0;
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+    if (m.mask[yy * w + xx]) continue;
+    let near = false;
+    for (let dy = -ring; dy <= ring && !near; dy++) for (let dx = -ring; dx <= ring; dx++) {
+      const y2 = yy + dy, x2 = xx + dx;
+      if (y2 >= 0 && y2 < h && x2 >= 0 && x2 < w && fill[y2 * w + x2]) { near = true; break; }
+    }
+    if (!near) continue;
+    ringSum += lum(fullPng.data, (yy * step * W + xx * step) * 4);
+    ringN++;
+  }
+  if (!ringN) return null;
+  const a = fillSum / fillN, b = ringSum / ringN;
+  return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+}
+
 /** Sampled pixels of `a` that have a pixel of `b` within `pad` pixels (summed-area table, so it stays linear). */
 export function overlapCount(a, b, { pad = GATE_RULES.pad } = {}) {
   if (!a.count || !b.count || a.w !== b.w || a.h !== b.h) return 0;
@@ -185,6 +224,7 @@ const kindOf = (layer) => {
   const id = String(layer.id || "");
   if (id === "hook") return "hook";
   if (id === "captions") return "captions";
+  if (id === "cta") return "cta";
   if (/^gfx-\d+$/.test(id)) return "card";
   if (/^slam-\d+$/.test(id)) return "slam";
   if (/^icon-\d+$/.test(id)) return "icon";
@@ -286,11 +326,173 @@ export function ctaProblems(cuts = null, { tailShare = 0.4, tailSeconds = 15 } =
   return problems.slice(-1);
 }
 
+/** Quiet captions that read poorly in at least 30% of the frames looked at (2 at least) hold until boxed. */
+export function contrastProblems(frames = [], { minRatio = 1.8, share = 0.3 } = {}) {
+  const read = frames.filter((f) => Number.isFinite(f.contrast?.captions));
+  const poor = read.filter((f) => f.contrast.captions < minRatio);
+  if (poor.length < 2 || poor.length < share * read.length) return [];
+  return [{ code: "caption-contrast", level: "hold", at: poor[0].t, times: poor.map((f) => f.t), layers: ["captions"], kinds: ["captions"], message: `captions wash out against the picture at ${poor.slice(0, 4).map((f) => `${f.t.toFixed(2)}s (${f.contrast.captions}:1)`).join(", ")}` }];
+}
+
 /** Notes only (never a hold): no spoken ask and no on-screen CTA anywhere. */
 export function ctaNotes(plan = {}) {
   const spoken = (plan.words || []).filter((w) => !w.drop).map((w) => textTokens(w.text).join(" ")).filter(Boolean).join(" ");
   if (plan.cta || CTA_PATTERNS.some((re) => re.test(spoken)) || /\blink in (?:my )?bio\b/.test(spoken)) return [];
   return [{ code: "no-cta", level: "note", message: "nothing in the reel asks the viewer to do anything (no spoken ask, no CTA card); the post caption has to carry it" }];
+}
+
+const CARD_TEXT_FIELDS = new Set(["eyebrow", "headline", "title", "text", "value", "value2", "sub", "label", "note", "unit", "context", "name"]);
+/** Close up transcript spacing in a card's shown text, in place. */
+export function tidyCardText(value) {
+  if (Array.isArray(value)) { value.forEach((item, i) => { if (typeof item === "string") value[i] = tidyText(item); else tidyCardText(item); }); return value; }
+  if (!value || typeof value !== "object") return value;
+  for (const [key, v] of Object.entries(value)) {
+    if (typeof v === "string" && CARD_TEXT_FIELDS.has(key)) value[key] = tidyText(v);
+    else if (v && typeof v === "object") tidyCardText(v);
+  }
+  return value;
+}
+const tidyText = (text) => String(text)
+  .replace(/(\d) ([,.])(\d)/g, "$1$2$3")          // 1 ,000 -> 1,000; 2 .5 -> 2.5
+  .replace(/([\p{L}\p{N}]) ([,.!?;:%])(?=\s|$)/gu, "$1$2") // word , -> word,
+  .replace(/(\p{L}) -(\p{L})/gu, "$1-$2")          // Re -loop -> Re-loop
+  .replace(/(\p{L})- (\p{Ll})/gu, "$1-$2")         // self- made -> self-made
+  .replace(/ {2,}/g, " ");
+
+const FILLER = new Set(["right", "ok", "okay", "so", "um", "uh", "like", "yeah", "yes", "no", "well", "and", "but", "you", "know", "i", "mean", "guys", "alright", "hey", "oh", "wow"]);
+/** A card whose words are only filler, or one word said over and over. */
+export function fillerCard(card) {
+  if (!card || typeof card !== "object") return false;
+  const tokens = textTokens(shownText(card));
+  if (!tokens.length) return false;
+  const unique = new Set(tokens);
+  return tokens.every((t) => FILLER.has(t)) || (unique.size === 1 && tokens.length >= 2 && !/\d/.test(tokens[0]));
+}
+
+/** Same spelling except case and punctuation around it ("Confidence," keeps its comma). */
+const swapWord = (original, replacement) => {
+  const m = String(original).match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}'’]+)([^\p{L}\p{N}]*)$/u);
+  if (!m) return original;
+  const word = m[2] === m[2].toUpperCase() && m[2].length > 1 ? replacement.toUpperCase() : /^\p{Lu}/u.test(m[2]) ? replacement[0].toUpperCase() + replacement.slice(1) : replacement;
+  return `${m[1]}${word}${m[3]}`;
+};
+
+/**
+ * A hook word the speaker never says but nearly does: same start, same ending, about the same length
+ * ("competence" on screen, "confidence" spoken; a Nov 23 clip). Returns the spoken word to use, or null.
+ */
+export function spokenNearMiss(token, spoken = new Map()) {
+  const counts = spoken instanceof Map ? spoken : new Map([...spoken].map((w) => [w, 1]));
+  if (token.length < 5 || !/^[a-z]+$/.test(token) || counts.has(token)) return null;
+  let best = null;
+  for (const [word, count] of counts) {
+    if (!/^[a-z]+$/.test(word) || Math.abs(word.length - token.length) > 2 || word.slice(0, 2) !== token.slice(0, 2) || word.slice(-3) !== token.slice(-3)) continue;
+    const d = editDistance(token, word);
+    // A one- or two-letter slip, or a same-length word the speaker keeps saying (competence / confidence, said twice+).
+    const ok = d <= 2 || (word.length === token.length && d <= 4 && count >= 2);
+    if (ok && (!best || d < best.d)) best = { word, d };
+  }
+  return best?.word || null;
+}
+
+/**
+ * Fixes that need no measuring, made to plan.json before the render so they cost no extra pass: a doubled caption
+ * word, a caption line too short to read (merged into its neighbour), a hook word that is a near miss of the word
+ * actually spoken. Returns { plan, applied }.
+ */
+export function planFixes(plan = {}, { minShow = 0.3 } = {}) {
+  let next = JSON.parse(JSON.stringify(plan));
+  const applied = [];
+  const doubles = captionProblems(next);
+  if (doubles.length) {
+    const fixed = gateFixes(doubles, next);
+    next = fixed.plan;
+    applied.push(...fixed.applied);
+  }
+  // Card text: transcript spacing that leaked onto a card ("1 ,000", "Re -loop.") is closed up, and a card that says
+  // only filler ("RIGHT", "bat, bat, bat"; Nov 19) is dropped.
+  if (Array.isArray(next.graphics)) {
+    next.graphics.forEach((card, i) => {
+      if (!card || typeof card !== "object") return;
+      const before = shownText(card);
+      tidyCardText(card);
+      const after = shownText(card);
+      if (after !== before) applied.push(`card ${i + 1} text tidied: "${before.slice(0, 60)}" -> "${after.slice(0, 60)}"`);
+    });
+    const kept = next.graphics.filter((card, i) => {
+      if (!fillerCard(card)) return true;
+      applied.push(`card ${i + 1} (${card.type || "card"}) dropped: it only said "${shownText(card).slice(0, 40)}"`);
+      return false;
+    });
+    next.graphics = kept;
+  }
+  // A card with no words on it (an empty note card, Oct 29) never reaches the render.
+  if (Array.isArray(next.graphics)) {
+    const keep = next.graphics.filter((card) => !card || typeof card !== "object" || shownText(card) || card.image || card.src || card.photo);
+    if (keep.length < next.graphics.length) {
+      next.graphics.forEach((card, i) => { if (!keep.includes(card)) applied.push(`card ${i + 1} (${card.type || "card"}) dropped: it had no words on it`); });
+      next.graphics = keep;
+    }
+  }
+  // Lines on screen under 0.3 s join the next line when it follows at once (or the one before); pro captions carry
+  // their own layout per line, so they are left to the text check.
+  const caps = next.captions || [];
+  if (!next.style?.captions?.pro && caps.length > 1) {
+    const maxChars = Number(next.style?.captions?.maxChars) || 22;
+    for (let i = 0; i < caps.length; i++) {
+      const cap = caps[i];
+      if (!(n(cap.end, 0) - n(cap.start, 0) < minShow) || !cap.words?.length) continue;
+      const after = caps[i + 1], before = caps[i - 1];
+      const fits = (other) => other?.words?.length && `${other.text || ""} ${cap.text || ""}`.length <= Math.round(maxChars * 1.5);
+      const target = after && fits(after) && n(after.start, 0) - n(cap.end, 0) < 0.25 ? after : before && fits(before) && n(cap.start, 0) - n(before.end, 0) < 0.25 ? before : null;
+      if (!target) continue;
+      if (target === after) { target.words = [...cap.words, ...target.words]; target.start = Math.min(n(target.start, 0), n(cap.start, 0)); }
+      else { target.words = [...target.words, ...cap.words]; target.end = Math.max(n(target.end, 0), n(cap.end, 0)); }
+      target.text = target.words.map((w) => w.text).join(" ");
+      applied.push(`caption "${cap.text}" (${(n(cap.end, 0) - n(cap.start, 0)).toFixed(2)}s, too quick to read) joined to "${target.text}"`);
+      caps.splice(i, 1);
+      i--;
+    }
+  }
+  // Hook words: the on-screen hook says what the speaker says.
+  const spoken = new Map();
+  for (const token of (next.words || []).filter((w) => !w.drop).flatMap((w) => textTokens(w.text))) spoken.set(token, (spoken.get(token) || 0) + 1);
+  if (next.hook && spoken.size) {
+    const words = Array.isArray(next.hook.words) ? next.hook.words : null;
+    const parts = String(next.hook.text || "").split(/(\s+)/);
+    let changed = false;
+    for (let k = 0; k < parts.length; k++) {
+      const token = textTokens(parts[k].replace(/\*/g, ""))[0];
+      const fix = token && textTokens(parts[k]).length === 1 ? spokenNearMiss(token, spoken) : null;
+      if (!fix) continue;
+      const before = parts[k];
+      parts[k] = parts[k].replace(/[\p{L}\p{N}'’]+/u, (m) => swapWord(m, fix));
+      if (words) for (const w of words) if (textTokens(w.text)[0] === token) w.text = swapWord(w.text, fix);
+      applied.push(`hook word "${before.replace(/\*/g, "")}" changed to "${fix}", the word actually said`);
+      changed = true;
+    }
+    if (changed) next.hook.text = parts.join("");
+  }
+  return { plan: next, applied };
+}
+
+/**
+ * Captions over silence: a line whose time is at least 80% inside a stretch of the voice track with nothing heard
+ * captions words nobody can hear (inaudible audio left in, Nov 19: "25 seconds of silence in it"). They go.
+ */
+export function silentCaptions(plan = {}, quiet = [], { share = 0.8 } = {}) {
+  const next = JSON.parse(JSON.stringify(plan));
+  const applied = [];
+  if (!Array.isArray(next.captions) || !quiet.length) return { plan: next, applied };
+  next.captions = next.captions.filter((cap) => {
+    const s0 = n(cap.start, 0), e0 = n(cap.end, s0), d = e0 - s0;
+    if (!(d > 0)) return true;
+    const silent = quiet.reduce((sum, q) => sum + Math.max(0, Math.min(e0, q.end) - Math.max(s0, q.start)), 0);
+    if (silent < share * d) return true;
+    applied.push(`caption "${cap.text}" at ${s0.toFixed(2)}s removed: nothing is heard there`);
+    return false;
+  });
+  return { plan: next, applied };
 }
 
 const unionBox = (boxes) => {
@@ -304,7 +506,7 @@ const unionBox = (boxes) => {
  * Turn problems into plan changes. Returns the changed plan (a copy), what was done, and what could not be fixed.
  * frames/layers are the measured masks, so moves use real pixel extents rather than font estimates.
  */
-export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], rules = GATE_RULES, safe = GATE_SAFE } = {}) {
+export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], faces = [], rules = GATE_RULES, safe = GATE_SAFE } = {}) {
   const next = JSON.parse(JSON.stringify(plan));
   const H = n(plan.canvas?.height, 1920);
   const applied = [], unfixable = [];
@@ -342,6 +544,22 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
       unfixable.push(p);
       continue;
     }
+    if (p.code === "text-overlap" && p.kinds.includes("cta") && (p.kinds.includes("captions") || p.kinds.includes("hook"))) {
+      // The CTA card moves up, clear of the other text; it is the ask, so it is never the one dropped.
+      const other = p.kinds.includes("captions") ? "captions" : "hook";
+      const cta = unionBox(boxesOf("cta", p.times)), below = unionBox(boxesOf(other, p.times));
+      if (cta && below && next.cta) {
+        const shift = below.y - rules.gap - (cta.y + cta.h);
+        const pos = Number(next.cta.position ?? next.style?.cta?.position ?? 0.62);
+        if (shift < 0 && cta.y + shift >= safe.top * H && Number.isFinite(pos)) {
+          next.cta.position = r3(pos + shift / H);
+          applied.push(`CTA moved up ${Math.round(-shift)} px to clear the ${other}`);
+          continue;
+        }
+      }
+      unfixable.push(p);
+      continue;
+    }
     if (p.code === "text-overlap" || p.code === "safe-zone") {
       // Drop the extra (a card, a slam, an icon); the hook and the captions are never the one dropped.
       const names = p.layers.map((name, i) => ({ name, kind: p.kinds[i] }));
@@ -354,6 +572,36 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
           drop[bucket].add(i);
           continue;
         }
+      }
+      unfixable.push(p);
+      continue;
+    }
+    if (p.code === "caption-face" && !movedText) {
+      // Captions over a face go under the chin: below the lowest face the detector saw at those moments.
+      const capsAll = unionBox(boxesOf("captions"));
+      const capStyle = next.style?.captions;
+      const chin = faces.length ? Math.max(...faces.map((f) => f.y + f.h * 0.92)) : null;
+      if (capsAll && chin != null && capStyle && Number.isFinite(Number(capStyle.position))) {
+        const shift = chin + rules.gap - capsAll.y;
+        if (shift > 0 && capsAll.y + capsAll.h + shift <= safe.bottom * H) {
+          const pos = r3(Number(capStyle.position) + shift / H);
+          capStyle.position = pos;
+          if (Number.isFinite(Number(capStyle.placeMin))) capStyle.placeMin = Math.max(Number(capStyle.placeMin), pos);
+          if (Number.isFinite(Number(capStyle.placeMax))) capStyle.placeMax = Math.max(Number(capStyle.placeMax), pos);
+          applied.push(`captions moved down ${Math.round(shift)} px (to ${Math.round(pos * 100)}% of the height), under the face`);
+          movedText = true;
+          continue;
+        }
+      }
+      unfixable.push(p);
+      continue;
+    }
+    if (p.code === "caption-contrast") {
+      const cap = next.style?.captions;
+      if (cap?.quiet && !cap.plate) {
+        cap.plate = 0.62;
+        applied.push(`captions put on a soft dark box (they washed out against the picture at ${p.times.slice(0, 3).map((t) => `${t.toFixed(1)}s`).join(", ")})`);
+        continue;
       }
       unfixable.push(p);
       continue;
@@ -402,18 +650,18 @@ async function snapshotTimes(projectDir, times, outDir) {
 
 /** Copy of the project with one layer visible: every entry symlinked except the page itself. */
 function variantDir(projectDir, html, index, base) {
-  const dir = path.join(base, index == null ? "blank" : `layer-${index}`);
+  const dir = path.join(base, index == null ? "blank" : index === "all" ? "full" : `layer-${index}`);
   fs.mkdirSync(dir, { recursive: true });
   for (const entry of fs.readdirSync(projectDir)) {
     if (entry === "index.html" || entry.startsWith(".")) continue;
     fs.symlinkSync(path.join(projectDir, entry), path.join(dir, entry));
   }
-  fs.writeFileSync(path.join(dir, "index.html"), isolationHtml(html, index));
+  fs.writeFileSync(path.join(dir, "index.html"), index === "all" ? html : isolationHtml(html, index));
   return dir;
 }
 
 /** Real-renderer footprint of every text layer at the chosen moments. */
-export async function measureLayers(projectDir, { duration, rules = GATE_RULES, snapshot = snapshotTimes, readPng = (file) => PNG.sync.read(fs.readFileSync(file)) } = {}) {
+export async function measureLayers(projectDir, { duration, rules = GATE_RULES, contrast = false, snapshot = snapshotTimes, readPng = (file) => PNG.sync.read(fs.readFileSync(file)) } = {}) {
   const html = fs.readFileSync(path.join(projectDir, "index.html"), "utf8");
   const layers = rootLayers(html);
   const textLayers = layers.filter((layer) => layer.text);
@@ -428,11 +676,24 @@ export async function measureLayers(projectDir, { duration, rules = GATE_RULES, 
       const own = times.filter((t) => layerActive(layer, t));
       if (!own.length) continue;
       const shots = await snapshot(variantDir(projectDir, html, layer.index, base), own, path.join(base, `out-${layer.index}`));
+      const captions = contrast && layer.id === "captions";
+      const kept = new Map();
       for (const shot of shots) {
         const empty = blank.get(shot.t);
         const frame = frames.find((f) => Math.abs(f.t - shot.t) < 0.001);
         if (!empty || !frame) continue;
-        frame.layers[layer.index] = layerMask(readPng(shot.path), empty, rules);
+        const png = readPng(shot.path);
+        frame.layers[layer.index] = layerMask(png, empty, rules);
+        if (captions && frame.layers[layer.index].count) kept.set(shot.t, png);
+      }
+      // Quiet captions (no outline) can wash out over a bright wall or shirt: read them against the finished frame.
+      if (captions && kept.size) {
+        const full = await snapshot(variantDir(projectDir, html, "all", base), [...kept.keys()], path.join(base, "out-full"));
+        for (const shot of full) {
+          const frame = frames.find((f) => Math.abs(f.t - shot.t) < 0.001);
+          const ratio = frame && letterContrast(kept.get(shot.t), readPng(shot.path), frame.layers[layer.index]);
+          if (ratio != null) frame.contrast = { ...(frame.contrast || {}), captions: ratio };
+        }
       }
     }
     return { layers, frames, times };
@@ -463,15 +724,18 @@ const brief = (p) => {
  * Run the gate on a rendered work folder. Returns { verdict: "ok" | "fix" | "hold", problems, fixes, plan? }.
  * "fix" carries the changed plan for the caller to rebuild; the caller runs the gate again on the new render.
  */
-export async function runGate(workDir, { round = 0, fixes = [], rules = GATE_RULES, measure = measureLayers } = {}) {
+export async function runGate(workDir, { round = 0, fixes = [], rules = GATE_RULES, measure = measureLayers, faces: findFaces = detectFaces } = {}) {
   const planFile = path.join(workDir, "plan.json");
   const plan = readJSON(planFile);
   const read = (name) => { try { return readJSON(path.join(workDir, name)); } catch { return null; } };
   const problems = [];
+  if (plan.video?.mirrored && !fixes.some((f) => /mirrored/.test(f))) fixes = ["footage flipped: it was mirrored (words in the shot read backwards)", ...fixes];
   let measured = { layers: [], frames: [], times: [] };
   try {
-    measured = await measure(path.join(workDir, "project"), { duration: n(plan.video?.duration, 0), rules });
+    const quiet = !!plan.style?.captions?.quiet && !plan.style?.captions?.plate;
+    measured = await measure(path.join(workDir, "project"), { duration: n(plan.video?.duration, 0), rules, contrast: quiet });
     problems.push(...layoutProblems(measured.frames, measured.layers, rules));
+    if (quiet) problems.push(...contrastProblems(measured.frames));
   } catch (error) {
     problems.push({ code: "gate-unavailable", level: "hold", message: `the layout could not be measured: ${String(error.message).split("\n")[0]}` });
   }
@@ -480,13 +744,31 @@ export async function runGate(workDir, { round = 0, fixes = [], rules = GATE_RUL
   problems.push(...cta);
   problems.push(...ctaNotes(plan));
   const textcheck = read("textcheck.json");
-  if (textcheck?.verdict === "hold") for (const note of textcheck.notes || []) if (!/^gate-/.test(note)) problems.push({ code: "textcheck", level: "hold", message: `text check: ${note}` });
+  // Captions over a face are the gate's to fix; the text check's other holds stand as they are.
+  const onFace = (textcheck?.problems || []).filter((p) => p.code === "text-face" && /^caption-/.test(String(p.sample || "")));
+  if (onFace.length) problems.push({ code: "caption-face", level: "hold", at: onFace[0].at, times: onFace.map((p) => p.at), layers: ["captions"], kinds: ["captions"], message: `captions sit on the face at ${[...new Set(onFace.map((p) => `${Number(p.at).toFixed(2)}s`))].slice(0, 4).join(", ")}` });
+  if (textcheck?.verdict === "hold") {
+    // The text check's own rule: a few quick caption lines are a note; only a systemic run of them holds.
+    const own = (textcheck.problems || []).filter((p) => !onFace.includes(p));
+    const flashes = own.filter((p) => p.code === "text-flash" && /^caption /.test(String(p.message)));
+    for (const p of own) {
+      if (flashes.includes(p) && flashes.length <= 2) continue;
+      problems.push({ code: "textcheck", level: "hold", message: `text check: ${p.code}${Number.isFinite(Number(p.at)) ? ` at ${Number(p.at).toFixed(2)}s` : ""}: ${p.message}` });
+    }
+  }
 
   const holds = problems.filter((p) => p.level === "hold");
-  const fixable = holds.filter((p) => ["text-overlap", "safe-zone", "caption-double"].includes(p.code));
+  const fixable = holds.filter((p) => ["text-overlap", "safe-zone", "caption-double", "caption-face", "caption-contrast"].includes(p.code));
   let result;
   if (holds.length && fixable.length && round < rules.maxRounds) {
-    const fixed = gateFixes(fixable, plan, { frames: measured.frames, layers: measured.layers, rules });
+    let faceBoxes = [];
+    const faceProblem = fixable.find((p) => p.code === "caption-face");
+    if (faceProblem && textcheck?.video) {
+      const det = await findFaces(textcheck.video, faceProblem.times).catch(() => null);
+      const W = n(plan.canvas?.width, 1080), H = n(plan.canvas?.height, 1920);
+      faceBoxes = (det?.frames || []).flatMap((f) => f.faces || []).map((b) => ({ x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H }));
+    }
+    const fixed = gateFixes(fixable, plan, { frames: measured.frames, layers: measured.layers, faces: faceBoxes, rules });
     if (fixed.applied.length) result = { verdict: "fix", round, problems, fixes: [...fixes, ...fixed.applied], plan: fixed.plan };
   }
   if (!result) {

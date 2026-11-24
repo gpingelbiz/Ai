@@ -9,7 +9,8 @@ const VIDEO = /\.(mp4|mov|m4v)$/i;
 const clean = (value) => String(value ?? "").replace(/\*/g, "").replace(/\s+/g, " ").trim();
 const n = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
-function shownText(value) {
+/** Every word a card puts on screen (its fields, list items, both sides of a compare). */
+export function shownText(value) {
   if (!value || typeof value !== "object") return "";
   const fields = ["eyebrow", "headline", "title", "text", "value", "value2", "sub", "label", "note", "unit", "context", "name", "handle"];
   const parts = fields.map((key) => typeof value[key] === "string" ? value[key] : "");

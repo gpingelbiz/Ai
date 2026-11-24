@@ -601,8 +601,8 @@ export async function measureClip(input, { duration = null, preFilter = "", seek
   }
 }
 
-export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN, roomTone = null, finish = null, sourceDuration = null, finishMeasurement = null } = {}) {
-  const baseVideoFilters = [hdr ? SDR_FILTER : null, scaleTo ? `scale=${scaleTo.width}:${scaleTo.height}:force_original_aspect_ratio=increase:force_divisible_by=2` : null].filter(Boolean);
+export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN, roomTone = null, finish = null, sourceDuration = null, finishMeasurement = null, mirror = false } = {}) {
+  const baseVideoFilters = [hdr ? SDR_FILTER : null, mirror ? "hflip" : null, scaleTo ? `scale=${scaleTo.width}:${scaleTo.height}:force_original_aspect_ratio=increase:force_divisible_by=2` : null].filter(Boolean);
   let measured = finishMeasurement;
   if (finish?.enabled && !measured) {
     try {

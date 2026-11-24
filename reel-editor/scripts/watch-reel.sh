@@ -164,7 +164,7 @@ case "$stem" in *__*) hook="${stem#*__}"; stem="${stem%%__*}";; esac
 hook=$(printf '%s' "$hook" | sed -E 's/ *#[a-z]+(:[A-Za-z0-9_-]+)?//g; s/^ +| +$//g')
 flags=()
 [ -n "$hook" ] && flags+=(--hook "$hook")
-case "$base" in *"#nocta"*) ;; *) [ -n "$CTA" ] && flags+=(--cta "$CTA");; esac
+case "$base" in *"#nocta"*) flags+=(--no-cta) ;; *) [ -n "$CTA" ] && flags+=(--cta "$CTA");; esac
 case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 # "#hookreel": the hook stays up the whole reel (one-line reels, podcast and stage clips with a title strip).
 case "$base" in *"#hookreel"*) flags+=(--hook-seconds reel);; esac
@@ -429,9 +429,13 @@ if [ "$MODE" = vsl ]; then
 fi
 
 # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
+# The hook asked for; the one on screen when there was none, or when the master gate corrected a hook word.
 used_hook="$hook"
-[ -n "$used_hook" ] || used_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
-pretty=$(printf '%s' "$used_hook" | sed -E 's/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
+if [ -z "$used_hook" ] || grep -q '"hook word ' "$work/gate.json" 2>/dev/null; then
+  shown_hook=$(node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write((p.hook&&p.hook.text)||"")}catch(e){}' "$work/plan.json" 2>/dev/null || true)
+  [ -n "$shown_hook" ] && used_hook="$shown_hook"
+fi
+pretty=$(printf '%s' "$used_hook" | sed -E 's/\*//g; s/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
 title="${pretty:-$name}"
 mkdir -p "$DONE"
 

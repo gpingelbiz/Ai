@@ -118,6 +118,7 @@ Options (edit / batch)
   --cta "<text>"           pop-up call to action supplied for this reel (brand accent pill at chest level)
   --cta-last <s>           show the CTA for the last N seconds (default 3)   --cta-at <s> --cta-duration <s>
   --cta-style <s>          pill (default) | box | text          --cta-position <0-1>  default 0.62
+  --no-cta                 no call to action, not even one picked from the preset's cta.keywords (#nocta)
   --silence <pace>         off | slow | medium | fast | tight (preset default)
   --no-bad-takes           keep restarted phrases          --no-fillers    keep um/uh
   --no-cuts                keep every frame                --no-zooms      no magic zooms
@@ -221,6 +222,7 @@ const EDIT_OPTIONS = {
   "caption-position": { type: "string" },
   "no-auto-keywords": { type: "boolean" },
   cta: { type: "string" },
+  "no-cta": { type: "boolean" },
   "cta-last": { type: "string" },
   "cta-at": { type: "string" },
   "cta-duration": { type: "string" },

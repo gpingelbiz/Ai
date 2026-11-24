@@ -118,6 +118,33 @@ export function pickHook(words, { text, maxWords = 8, duration = 3, start = 0 } 
   return t ? { text: t, start, duration, auto: true } : null;
 }
 
+/**
+ * The call to action a client's own words ask for. `keywords` maps what they say to what the card says, e.g.
+ * [{ say: ["bootcamp", "business builder"], text: "Comment BOOTCAMP" }] for a ManyChat keyword. The offer named
+ * last wins; the card comes up when it is named (no earlier than 6 s and no later than 2.5 s before the end) and
+ * stays to the end. A reel whose client asked for a CTA and did not get one was a hand edit (Nov 24).
+ */
+export function autoCta(words = [], duration = 0, cta = {}) {
+  const entries = Array.isArray(cta?.keywords) ? cta.keywords.filter((k) => k?.text && Array.isArray(k.say) && k.say.length) : [];
+  if (!entries.length || !(duration > 0)) return null;
+  const spoken = words.filter((w) => !w.drop && Number.isFinite(Number(w.start))).map((w) => ({ tok: norm(String(w.text).replace(/’/g, "'")), start: Number(w.start) })).filter((w) => w.tok);
+  let best = null;
+  for (const entry of entries) {
+    for (const phrase of entry.say) {
+      const want = String(phrase).split(/\s+/).map((t) => norm(t)).filter(Boolean);
+      if (!want.length) continue;
+      for (let i = spoken.length - want.length; i >= 0; i--) {
+        if (!want.every((t, j) => spoken[i + j].tok === t)) continue;
+        if (!best || spoken[i].start > best.at) best = { entry, at: spoken[i].start };
+        break;
+      }
+    }
+  }
+  if (!best) return null;
+  const start = Math.max(0, Math.min(Math.max(best.at, duration - 6), duration - 2.5));
+  return pickCta(duration, { ...cta, text: best.entry.text, start, duration: duration - start, keywords: undefined });
+}
+
 /** Pop-up call to action. Defaults to the last `last` seconds; `start`/`duration` override. */
 export function pickCta(duration, { text, last = 3, start = null, duration: dur = null, style = "pill", position = 0.62, uppercase = true } = {}) {
   if (!text) return null;
