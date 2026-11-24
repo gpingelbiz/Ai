@@ -560,6 +560,28 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
       unfixable.push(p);
       continue;
     }
+    if (p.code === "safe-zone" && p.kinds[0] === "cta" && p.edges.every((e) => ["left", "right", "buttons"].includes(e))) {
+      // A CTA too wide for the frame (a long "Comment KEYWORD" pill under Instagram's buttons, Nov 24) gets smaller
+      // text, sized to fit with room for its 6% pulse. Never dropped: it is the ask.
+      const box = unionBox(boxesOf("cta", p.times));
+      const W = n(plan.canvas?.width, 1080), sx = W / 1080;
+      const style = next.style || (next.style = {});
+      const ct = style.cta || (style.cta = {});
+      if (box) {
+        const c = box.x + box.w / 2;
+        const right = p.edges.includes("buttons") ? safe.iconRight * sx : safe.right * sx;
+        const half = Math.min(c - safe.left * sx, right - c);
+        const factor = Math.min(0.95, (2 * half - 12) / (box.w * 1.06));
+        if (factor > 0.5) {
+          const before = Number(ct.fontSizeFrac) || 0.036;
+          ct.fontSizeFrac = Math.round(before * factor * 10000) / 10000;
+          applied.push(`CTA text made ${Math.round((1 - factor) * 100)}% smaller so it clears Instagram's ${p.edges.includes("buttons") ? "buttons" : "edge"}`);
+          continue;
+        }
+      }
+      unfixable.push(p);
+      continue;
+    }
     if (p.code === "text-overlap" || p.code === "safe-zone") {
       // Drop the extra (a card, a slam, an icon); the hook and the captions are never the one dropped.
       const names = p.layers.map((name, i) => ({ name, kind: p.kinds[i] }));

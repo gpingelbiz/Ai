@@ -387,3 +387,18 @@ test("silentCaptions removes lines that caption silence and keeps lines that are
   assert.match(applied[0], /"the leaked" at 10.00s removed: nothing is heard there/);
   assert.deepEqual(silentCaptions(plan, []).applied, []);
 });
+
+test("a CTA pill too wide for the frame gets smaller text instead of holding the reel", () => {
+  const layers = [...rootLayers(PAGE), { index: 10, id: "cta", tag: "div", text: true, start: 20, duration: 5 }];
+  const frames = [{ t: 21.5, layers: { 10: mask([{ x: 110, y: 860, w: 860, h: 122 }]) } }];
+  const problems = layoutProblems(frames, layers);
+  assert.deepEqual(problems.map((p) => [p.code, p.edges]), [["safe-zone", ["buttons"]]]);
+  const plan = { ...basePlan(), style: { ...basePlan().style, cta: { fontSizeFrac: 0.036 } }, cta: { text: "Comment BOOTCAMP", start: 20, duration: 5, position: 0.48 } };
+  const { plan: fixed, applied, unfixable } = gateFixes(problems, plan, { frames, layers });
+  const factor = (2 * (946 - 540) - 12) / (860 * 1.06);
+  assert.equal(fixed.style.cta.fontSizeFrac, Math.round(0.036 * factor * 10000) / 10000);
+  assert.ok(860 * factor * 1.06 <= 2 * (946 - 540), "the pulsed pill fits left of the buttons");
+  assert.match(applied[0], /CTA text made 12% smaller so it clears Instagram's buttons/);
+  assert.deepEqual(unfixable, []);
+  assert.equal(fixed.cta.text, "Comment BOOTCAMP", "the ask stays");
+});
