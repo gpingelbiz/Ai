@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
-import { runEdit, buildProject, renderProject, batchEdit } from "./pipeline.mjs";
+import { runEdit, buildProject, renderProject, batchEdit, checkProject } from "./pipeline.mjs";
 import { transcribe, applyCorrections } from "./transcribe.mjs";
 import { listPresets, loadPreset, loadDictionary } from "./presets.mjs";
 import { hyperframesBin } from "./render.mjs";
@@ -32,6 +32,7 @@ Usage
                                     ordered clips into one reel, with an order sheet and scene joins
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
   reel ending <workdir> [--json]    check the opening and ending without rendering
+  reel check <workdir> [--fix]     check an existing render and print the master report
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
   reel restyle <workdir> [--icons <dir>] [--out <dir>] [--repick] [--no-render]  the finished reel again in the glow look, in <workdir>-glow
   reel restyle <workdir> --look bold [--repick] [--no-render]  Greg's bold look, in <workdir>-bold
@@ -74,7 +75,7 @@ Usage
   reel textcheck <workdir|render.mp4> [--json]
                                     blocking Vision check for clipped, face-covered or flashed reel text
   reel gate <workdir> [--no-fix] [--json]
-                                    the master check every reel passes before delivery: text overlapping text, the
+                                    checks on-screen text overlaps, the
                                     Instagram safe zone, doubled caption words, a spoken ask cut from the ending.
                                     Fixes what it can (moves captions, drops a card), re-renders, holds the rest
   reel photos | daily | studio ...  the Content Studio (a client's folder that makes and schedules their posts):
@@ -487,6 +488,15 @@ export async function main(argv) {
       log(`restyle: ${picks.features.length} feature lines, ${next.icons.length} icons, ${next.glowOverlays.length} overlays, ${next.glowScenes.length} scenes (${next.glowScenes.map((sc) => sc.type).join(", ")})`);
       const r = await buildProject(dest, { noRender: !!opts.noRender });
       if (r.output) console.log(r.output);
+      return;
+    }
+    case "check": {
+      const { opts, positionals } = parse(rest, { fix: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const { masterCheckText } = await import("./master-check.mjs");
+      const result = await checkProject(positionals[0], { fix: opts.fix });
+      process.stdout.write(masterCheckText(result));
+      if (result.status === "fail") process.exitCode = 1;
       return;
     }
     case "build": {

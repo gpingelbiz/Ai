@@ -26,15 +26,16 @@ export function fitBoldText(words, { size = 84, width = 928, lineHeight = 1.08, 
 }
 
 function rows(plan, item, headline = false) {
-  const ws = plan.words.slice(item.from, item.to + 1);
+  const ws = (headline ? plan.words : plan.bold.displayWords || plan.words).slice(item.from, item.to + 1);
   return item.place.lines.map(({ from, to }) => `<span class="bold-row">${ws.slice(from, to).map((word, i) => {
     const index = item.from + from + i;
     const emphasis = headline ? index === item.emphasis : index === item.emphasis?.word;
     const gold = emphasis && (headline || item.emphasis?.gold);
     const clean = boldText(word.text);
+    if (!clean) return "";
     const text = headline && index === item.from ? clean.replace(/^\p{L}/u, (letter) => letter.toUpperCase()) : clean;
     return `<span class="bold-word${emphasis ? " bold-emphasis" : ""}${gold ? " bold-gold" : ""}${index === item.payoff ? " bold-number" : ""}" data-word-index="${index}">${esc(item.mode === "punch" ? text.toUpperCase() : text)}</span>`;
-  }).join(" ")}</span>`).join("");
+  }).filter(Boolean).join(" ")}</span>`).join("");
 }
 
 export function boldHTML(plan, { settings } = {}) {

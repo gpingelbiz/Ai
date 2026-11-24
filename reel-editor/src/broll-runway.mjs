@@ -862,7 +862,7 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
   try { (deps.recordUsage || recordUsage)({ reel: path.basename(workDir), items: newItems, balance: after }); } catch (e) { warn(`usage ledger: ${e.message}`); }
   fs.writeFileSync(path.join(workDir, "runway usage.txt"), reelUsageNote(items, { balance: after }));
   writeBrollCredits(workDir, shots);
-  if (shots.length) rememberScenes(shots.map((s) => s.scene));
+  if (shots.length) rememberScenes(shots.map((s) => s.scene), undefined, 24, workDir);
   log(`b-roll: ${shots.length} accepted Runway clips, ${spent()} credits`);
   return shots.sort((a, b) => a.start - b.start);
 }

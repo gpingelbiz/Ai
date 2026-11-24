@@ -38,8 +38,16 @@ export function brollStep(pick, message, deps = {}) {
 /** Scenes drawn for recent reels, so the next reel does not get the same empty conference room again. */
 // REEL_CACHE gives a client its own scene history, so its b-roll never steers off (or into) Greg's scenes.
 export const recentFile = (env = process.env) => env.REEL_BROLL_RECENT || path.join(env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT ? brollTestCache() : env.REEL_CACHE || path.join(os.homedir(), ".cache", "reel-editor"), "broll-recent.json");
-export function readRecent(file = recentFile()) {
-  try { return uniqueScenes(JSON.parse(fs.readFileSync(file, "utf8")).scenes || []); } catch { return []; }
+function recentEntries(file) {
+  try {
+    const { entries, scenes = [] } = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Array.isArray(entries) ? entries : uniqueScenes(scenes).map((scene) => ({ scene }));
+  } catch { return []; }
+}
+export function readRecent(file = recentFile(), { excludeReel, ownScenes = new Set() } = {}) {
+  return uniqueScenes(recentEntries(file)
+    .filter(({ scene, reel }) => reel ? reel !== excludeReel : !ownScenes.has(scene))
+    .map(({ scene }) => scene));
 }
 export const uniqueScenes = (scenes) => [...new Set(scenes.map((s) => String(s).replace(/\s+/g, " ").trim()).filter(Boolean).reverse())].reverse();
 // Greg 11-24 "fix the notebook repeat": subjects the stills keep returning to. A pick whose subject already
@@ -62,9 +70,19 @@ export function repeatedMotif(pick, recent = [], { window = 12, limit = 2 } = {}
   }
   return null;
 }
-export function rememberScenes(scenes, file = recentFile(), keep = 24) {
-  const list = uniqueScenes([...readRecent(file), ...scenes]).slice(-keep);
-  try { ensureDir(path.dirname(file)); fs.writeFileSync(file, JSON.stringify({ scenes: list }, null, 2) + "\n"); } catch {}
+export function rememberScenes(scenes, file = recentFile(), keep = 24, workDir) {
+  const reel = workDir && path.resolve(workDir);
+  const entries = recentEntries(file).filter((entry) => !reel || entry.reel !== reel);
+  entries.push(...uniqueScenes(scenes).map((scene) => ({ scene, ...(reel ? { reel } : {}) })));
+  const list = uniqueScenes(entries.map(({ scene }) => scene)).slice(-keep);
+  const keys = new Set();
+  const saved = entries.slice().reverse().filter(({ scene, reel }) => {
+    const key = JSON.stringify([scene, reel]);
+    if (!list.includes(scene) || keys.has(key)) return false;
+    keys.add(key);
+    return true;
+  }).slice(0, keep * 3).reverse();
+  try { writeJSON(file, { scenes: list, entries: saved }); } catch {}
   return list;
 }
 
@@ -574,7 +592,7 @@ export async function makeBroll({ workDir, groups, duration, hook, cta, settings
     writeJSON(planPath, { key, promptVersion: PROMPT_VERSION, stillSource: "codex", groups, picks: records, shots, ...(noPicks ? { noPicks, reason } : {}) });
     writeBrollCredits(workDir, shots);
     writeNoBrollNote(workDir, shots, records, reason);
-    if (shots.length) rememberScenes(shots.map((s) => s.scene), recentFile(deps.env));
+    if (shots.length) rememberScenes(shots.map((s) => s.scene), recentFile(deps.env), 24, workDir);
     log(`b-roll: ${shots.length} shots ready in ${Math.round((Date.now() - t0) / 1000)}s${shots.map((s) => `\n  ${s.start}s "${s.text}": ${s.scene}`).join("")}`);
     return shots;
   };

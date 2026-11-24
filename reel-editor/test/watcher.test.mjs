@@ -106,7 +106,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, brollNote = null, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null, env = {} } = {}) {
+function fakeDrops({ brollShots = 2, brollNote = null, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null, master = {}, env = {} } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -115,6 +115,11 @@ function fakeDrops({ brollShots = 2, brollNote = null, brollEngine, carouselFail
   stub("codex", "exit 0");
   // A stand-in for `claude -p`: the caption writer's reply, as Claude would send it.
   if (caption) stub("claude", `cat <<'JSON'\n${JSON.stringify(caption)}\nJSON`);
+  const verdict = (status) => JSON.stringify({ status, rules: [
+    { id: "banned-words", ok: status !== "fail", severity: "block", detail: "The spoken transcript mentions a banned word." },
+    { id: "private-details", ok: false, severity: "warn", detail: "Greg to review a travel plan." },
+  ] });
+  const writeMaster = (name, target) => master[name] ? `printf '%s\n' '${verdict(master[name])}' > "${target}/master-check.json"` : ":";
   // reel edit <file> --out <work> --title <name> ...  /  reel carousel <work> --out <folder> ...
   stub("reel", `
 echo "$*" >> "$HOME/reel-calls"
@@ -122,6 +127,7 @@ if [ "$1" = carousel ]; then ${carouselFails ? "exit 1" : 'mkdir -p "$4"; echo s
 if [ "$1" = clips ]; then
   work="$4"; name="$6"; list=""
   i=1; while [ $i -le ${longClips} ]; do d="$work/clip-$i/edit"; mkdir -p "$d/renders" "$d/covers"; echo clip$i > "$d/renders/$name-$i.mp4"; echo cover > "$d/covers/Cover.png"; echo "Music: bed.mp3" > "$d/music.txt"
+    if [ "$i" -eq 1 ]; then ${writeMaster("clip-1", "$d")}; else ${writeMaster("clip-2", "$d")}; fi
     list="$list{\\"start\\":$((i*60)),\\"end\\":$((i*60+45)),\\"hook\\":\\"Own it *first*. Clip $i?\\",\\"score\\":$((90-i)),\\"why\\":\\"a stake, a turn\\",\\"output\\":\\"$d/renders/$name-$i.mp4\\"},"; i=$((i + 1)); done
   echo "{\\"clips\\":[\${list%,}]}" > "$work/clips.json"; exit 0
 fi
@@ -134,7 +140,11 @@ case "$*" in *--broll*)
   i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
 esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"style\\":{\\"name\\":\\"pingel-brand\\"},\\"captions\\":[{\\"text\\":\\"Own it first. Nobody is coming.\\"}],\\"cover\\":{\\"frameTimeMs\\":1733},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
-echo '{"performance":{}}' > "$work/analytics-features.json"`);
+echo '{"performance":{}}' > "$work/analytics-features.json"
+case "$name" in
+  failed) ${writeMaster("reel-fail", "$work")};;
+  fixed) ${writeMaster("reel-fixed", "$work")};;
+esac`);
   const dirs = { reel: path.join(home, "raw"), broll: path.join(home, "raw-broll"), carousel: path.join(home, "raw-carousel"), long: path.join(home, "raw-long") };
   for (const [mode, d] of Object.entries(dirs)) {
     fs.mkdirSync(d);
@@ -291,4 +301,23 @@ test("REEL_PRESET=pingel-pro: Greg's reel, b-roll and long-video drops get the p
   }
   // Greg 11-23: every third pro drop gets Runway B-roll, the rest Codex stills.
   assert.equal(lines.filter((l) => /--broll-engine runway/.test(l)).length, Math.floor(lines.length / 3), r.calls);
+});
+
+test("the watcher prefixes failed reels, writes their notes, and keeps passing clip names normal", (t) => {
+  const r = fakeDrops({
+    clips: { reel: ["failed.mov", "fixed.mov"], long: ["training.mov"] },
+    master: { "reel-fail": "fail", "reel-fixed": "fixed", "clip-1": "fail", "clip-2": "pass" },
+  });
+  t.after(() => fs.rmSync(r.home, { recursive: true, force: true }));
+  const failed = `${r.day} Reel 1`, fixed = `${r.day} Reel 2`, clips = `${r.day} Clips 1`;
+  assert.deepEqual(r.list(failed), ["CHECK FAILED - Own it first.mp4", "Check notes.txt", "master-check.json"]);
+  const reasons = r.read(path.join(failed, "Check notes.txt"));
+  assert.match(reasons, /Master check FAILED.*The spoken transcript mentions a banned word/s);
+  assert.doesNotMatch(reasons, /travel plan/);
+  assert.deepEqual(r.list(fixed), ["Own it first.mp4", "master-check.json"]);
+  assert.equal(JSON.parse(r.read(path.join(fixed, "master-check.json"))).status, "fixed");
+  assert.deepEqual(r.list(clips), [
+    "CHECK FAILED - Clip 1 - Own it first. Clip 1.mp4", "Clip 1 - Check notes.txt", "Clip 1 - master-check.json",
+    "Clip 2 - Own it first. Clip 2.mp4", "Clip 2 - master-check.json",
+  ]);
 });

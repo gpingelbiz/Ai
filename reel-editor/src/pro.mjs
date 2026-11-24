@@ -285,7 +285,7 @@ export function proSize(overlay) {
 export function attachProWordMarks(overlays, captions) {
   return overlays.flatMap((o) => {
     if (o.type !== "wordMark") return [o];
-    const caption = captions.findIndex((g) => g.words.some((w) => Math.abs(w.start - o.start) < 0.001));
+    const caption = captions.findIndex((g) => g.words?.some((w) => Math.abs(w.start - o.start) < 0.001));
     if (caption < 0) return [];
     const word = captions[caption].words.findIndex((w) => Math.abs(w.start - o.start) < 0.001);
     const end = Math.min(o.end, captions[caption].end);
@@ -446,7 +446,7 @@ export function proHookBox(hook, { W = 1080, H = 1920 } = {}) {
 }
 const timeHit = (a, b, slack = 0.05) => a.start < b.end - slack && b.start < a.end - slack;
 const boxHit = (a, b, pad = 8) => a && b && a.x < b.x + b.w + pad && a.x + a.w > b.x - pad && a.y < b.y + b.h + pad && a.y + a.h > b.y - pad;
-const cardBox = (o) => o.place && o.type !== "wordMark" ? { x: o.place.x, y: o.place.y - 8 * (o.place.scale || 1), w: o.place.w ?? proSize(o).w * (o.place.scale || 1), h: (o.place.h ?? proSize(o).h * (o.place.scale || 1)) + 24 * (o.place.scale || 1) } : null;
+const cardBox = (o) => o.place && o.type !== "wordMark" ? { x: o.place.x, y: o.place.y - 8 * (o.place.scale || 1), w: o.place.w ?? proSize(o)?.w * (o.place.scale || 1), h: (o.place.h ?? proSize(o)?.h * (o.place.scale || 1)) + 24 * (o.place.scale || 1) } : null;
 
 /** Every pair of on-screen things that share time and space. Full-screen cards hide captions on purpose. */
 export function findProCollisions({ cards = [], captions = [], hook = null, W = 1080, H = 1920 } = {}) {

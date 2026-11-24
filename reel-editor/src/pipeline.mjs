@@ -2,6 +2,7 @@ import { loadStitchScenes, planSceneCuts, remapStitchScenes, measureSceneFaces, 
 import { speakerLoudnessFilter } from "./speaker-normalize.mjs";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
 import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking, dropInaudibleWords } from "./cuts.mjs";
@@ -27,6 +28,8 @@ import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
 import { eventClock, legacyLanding, measureSfxFile } from "./event-clock.mjs";
 import { runTextcheck } from "./textcheck.mjs";
 import { runGate, planFixes, silentCaptions } from "./gate.mjs";
+import { failedMasterRules, runMasterCheck } from "./master-check.mjs";
+import { codexExec, hasCodex } from "./codex.mjs";
 import { detectMirrored } from "./mirror.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
@@ -247,7 +250,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
   if (quiet && !opts.noCuts && endingOverride == null) log(`cuts: only ${words.length} word${words.length === 1 ? "" : "s"} spoken in ${r3(meta.duration)} s, keeping every frame (no talking to cut around)`);
   const cutsOn = endingOverride != null || (!opts.noCuts && !quiet && words.length > 0 && (preset.cuts.silence !== "off" || preset.cuts.badTakes || preset.cuts.fillers));
   let cuts = sourceScenes && cutsOn ? planSceneCuts(words, meta.duration, sourceScenes, { ...preset.cuts, ...(endingOverride != null ? { signOff: false } : {}) }) : cutsOn
-    ? planCuts(words, meta.duration, { ...preset.cuts, endAt: endingOverride })
+    ? planCuts(words, meta.duration, { ...preset.cuts, endAt: endingOverride, ...(opts.clipSource ? { endHold: Math.max(preset.cuts.endHold || 0, 0.5 + 1 / (meta.fps || 30)) } : {}) })
     : { segments: [{ start: 0, end: r3(meta.duration) }], removed: [], originalDuration: r3(meta.duration), keptDuration: r3(meta.duration), words };
   if (cutsOn && meta.hasAudio && preset.cuts.audioGuard !== false) {
     const guarded = guardSilenceCuts(cuts, await early.envelope, meta.duration);
@@ -640,14 +643,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
   const busyBroll = codexCardClearance ? [...cardWindows, ...proGraphics.filter((g) => g.type !== "wordMark")]
     : sharedBrollLayout || duration >= 20 ? cardWindows : evidence;
   const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: busyBroll, tail, footage: videoSrc, caption: { top: preset.captions.position - 0.6 * preset.captions.fontSizeFrac, height: 0.18, fontSizeFrac: preset.captions.fontSizeFrac, uppercase: preset.captions.uppercase } };
-  let broll = preset.broll?.enabled && shownGroups.length
-    ? (preset.broll.engine === "runway" ? await makeRunwayBroll(brollArgs) : await makeBroll(brollArgs))
-    : [];
-  // Greg 11-23: a Runway reel that places nothing falls back to Codex-drawn stills (presets opt in).
-  if (preset.broll?.enabled && preset.broll.engine === "runway" && !broll.length && preset.broll.runwayFallback === "codex" && shownGroups.length) {
-    log("b-roll: Runway placed none; drawing Codex stills instead");
-    broll = await makeBroll({ ...brollArgs, force: true, settings: { ...preset.broll, engine: "codex", library: false, stock: [], stillFallback: true } });
-  }
+  let broll = await planBrollPicks(brollArgs, deps);
   // "full-split": one cutaway with clear time after it is held longer, to become a split once the face is known.
   if (preset.broll?.layout === "full-split" && broll.length) broll = holdForSplit(broll, { duration, cta, busy: brollArgs.busy, tail, gap: preset.broll.gap ?? 4, hold: preset.broll.hold ?? 5, clipSeconds: preset.broll.videoSeconds ?? 5 });
   if (cleanScenes) broll = broll.filter((b) => fitSceneWindow(b, cleanScenes));
@@ -981,6 +977,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     shownGroups = placeProCaptions(shownGroups, heads, { height: canvas0.height });
     if (!heads.length) warn("pro captions: no chin measurements; keeping y=1248 (1080x1920)");
   }
+  const proCaptionSource = proOn && showCaptions ? shownGroups : null;
   if (proOn) {
     proGraphics = attachProWordMarks(proGraphics, showCaptions ? shownGroups : []);
     if (cleanScenes) proGraphics = proGraphics.filter((g) => fitSceneWindow(g, cleanScenes));
@@ -1033,7 +1030,8 @@ export async function runEdit(input, opts = {}, deps = {}) {
     lines: shownGroups,
     zooms,
     graphics: allGraphics,
-    ...(proOn ? { proGraphics } : {}),
+    ...(proOn ? { proGraphics, proCaptionSource } : {}),
+    ...(opts.clipSource ? { clipSource: opts.clipSource } : {}),
     evidence,
     graphicsSchema,
     scenes: { schema: sceneSchema },
@@ -1072,7 +1070,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
   const glowOn = !boldOn && glowEnabled(preset, plan);
   // An earlier run's verdict must never stand in for this one (its retry would re-edit this reel).
   for (const file of ["gate.json", "gate.txt"]) fs.rmSync(path.join(workDir, file), { force: true });
-  let output = await renderProject(workDir, glowOn || boldOn ? { ...opts, noPreflight: true, noReview: true, ...(boldOn ? { boldMeasure: true } : {}) } : opts);
+  let output = await renderProject(workDir, glowOn || boldOn ? { ...opts, masterIntermediate: true, noPreflight: true, noReview: true, ...(boldOn ? { boldMeasure: true } : {}) } : opts, deps);
   // The gate may have changed plan.json (moved captions, dropped a card); later steps write the plan back out.
   const syncPlan = () => { const fresh = readJSONSafe(path.join(workDir, "plan.json")); if (fresh) Object.assign(plan, fresh); };
   syncPlan();
@@ -1085,7 +1083,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     writeFeatures(workDir, plan, { sceneSchema });
     composeProject(plan, projectDir);
     log(`bold look: ${plan.bold.groups.length} phrases, ${plan.bold.overlays.length} overlays`);
-    output = await renderProject(workDir, opts);
+    output = await renderProject(workDir, opts, deps);
     syncPlan();
   }
   if (glowOn) {
@@ -1099,7 +1097,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     } catch (e) {
       warn(`glow look skipped: ${String(e.message).split("\n")[0]}; keeping the standard look`);
     }
-    output = await renderProject(workDir, opts);
+    output = await renderProject(workDir, opts, deps);
     syncPlan();
   }
   // The gate found the spoken ask cut off the ending: edit once more, ending after it (the transcript is cached).
@@ -1311,7 +1309,7 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
   return outs;
 }
 
-export async function buildProject(workDir, opts = {}) {
+export async function buildProject(workDir, opts = {}, deps = {}) {
   workDir = path.resolve(workDir);
   const planPath = path.join(workDir, "plan.json");
   if (!fs.existsSync(planPath)) throw new Error(`no plan.json in ${workDir}`);
@@ -1321,14 +1319,28 @@ export async function buildProject(workDir, opts = {}) {
   composeProject(plan, projectDir);
   log(`project rebuilt from plan.json: ${projectDir}`);
   if (opts.noRender) return { workDir, plan };
-  return { workDir, plan, output: await renderProject(workDir, opts) };
+  const output = await renderProject(workDir, opts, deps);
+  return { workDir, plan: readJSON(planPath), output };
 }
 
-export async function renderProject(workDir, opts = {}) {
+export async function renderProject(workDir, opts = {}, deps = {}) {
   workDir = path.resolve(workDir);
   const plan = readJSON(path.join(workDir, "plan.json"));
   const projectDir = path.join(workDir, "project");
-  const output = path.resolve(opts.output || path.join(workDir, "renders", `${plan.name}.mp4`));
+  const defaultOutput = path.join(workDir, "renders", `${plan.name}.mp4`);
+  const output = path.resolve(opts.output || defaultOutput);
+  const savedOutput = !opts.masterRebuild && output !== defaultOutput ? output : undefined;
+  if (plan.masterTrim || (!opts.masterRebuild && plan.masterOutput !== savedOutput)) {
+    delete plan.masterTrim;
+    if (!opts.masterRebuild) {
+      if (savedOutput) plan.masterOutput = savedOutput;
+      else delete plan.masterOutput;
+    }
+    writeJSON(path.join(workDir, "plan.json"), plan);
+  }
+  if (!opts.masterIntermediate && !opts.boldMeasure && !opts.masterRebuild && !opts.gateRound) {
+    for (const name of ["master-check.json", "master-check.txt"]) fs.rmSync(path.join(workDir, name), { force: true });
+  }
   const gateOn = !opts.noGate && plan.style?.gate?.enabled !== false && process.env.REEL_GATE !== "0";
   // The master gate's plan-only fixes (caption doubles and flashes, a near-miss hook word) go in before the render.
   if (gateOn && !opts.gateRound && !opts.boldMeasure) {
@@ -1351,7 +1363,7 @@ export async function renderProject(workDir, opts = {}) {
   if (opts.check) await check(projectDir);
   log(`rendering → ${output}`);
   const t0 = Date.now();
-  await render(projectDir, output, { quality: opts.quality || plan.style?.render?.quality || "looks", fps: opts.fps || plan.style?.render?.fps });
+  await (deps.render || render)(projectDir, output, { quality: opts.quality || plan.style?.render?.quality || "looks", fps: opts.fps || plan.style?.render?.fps });
   if (plan.style?.audio?.pro && (plan.video.hasAudio || plan.audio?.tracks?.length)) {
     const measured = await normalizeProDelivery(output);
     log(`pro loudness: ${measured.input_i} LUFS, ${measured.input_tp} dBTP (encoded AAC)`);
@@ -1360,21 +1372,21 @@ export async function renderProject(workDir, opts = {}) {
   const outMeta = await probe(output);
   log(`done in ${Math.round((Date.now() - t0) / 1000)}s: ${output} (${outMeta.width}x${outMeta.height}, ${r3(outMeta.duration)}s)`);
   if (!(opts.boldMeasure && boldEnabled(plan.style, plan) && !plan.bold)) {
-    const textcheck = await runTextcheck(workDir, { video: output });
+    const textcheck = await (deps.runTextcheck || runTextcheck)(workDir, { video: output });
     (textcheck.verdict === "hold" ? warn : log)(`text check: ${textcheck.verdict}${textcheck.notes.length ? ` (${textcheck.notes.join("; ")})` : ""}`);
   }
   // The master gate: measured overlap, safe zone, caption text and the spoken ask. It fixes what it can in plan.json,
   // re-renders (at most twice) and holds the rest; gate.txt says what it did. Skipped on the measuring first passes.
-  const intermediate = opts.boldMeasure || (opts.noPreflight && opts.noReview);
+  const intermediate = opts.boldMeasure || opts.masterIntermediate;
   if (!intermediate && gateOn) {
     const round = opts.gateRound || 0, before = opts.gateFixes || [];
-    const gate = await runGate(workDir, { round, fixes: before });
+    const gate = await (deps.runGate || runGate)(workDir, { round, fixes: before });
     if (gate.verdict === "fix") {
       for (const fix of gate.fixes.slice(before.length)) log(`master gate fix: ${fix}`);
       writeJSON(path.join(workDir, "plan.json"), gate.plan);
       writeFeatures(workDir, gate.plan);
       composeProject(gate.plan, path.join(workDir, "project"));
-      return renderProject(workDir, { ...opts, gateRound: round + 1, gateFixes: gate.fixes });
+      return renderProject(workDir, { ...opts, gateRound: round + 1, gateFixes: gate.fixes }, deps);
     }
     const holds = gate.problems.filter((p) => p.level === "hold");
     (gate.verdict === "hold" ? warn : log)(`master gate: ${gate.verdict === "hold" ? `HELD (${holds.map((p) => p.message).join("; ")})` : "ok"}${gate.fixes.length ? `, fixed: ${gate.fixes.join("; ")}` : ""}`);
@@ -1382,9 +1394,10 @@ export async function renderProject(workDir, opts = {}) {
   // Preflight: sound, the open, dead air, length and layout checked on the finished file; preflight.txt sits next
   // to plan.json. With preflight.strict a failing file is kept as <name>.failed.mp4 and the run stops.
   const pf = plan.style?.preflight;
+  let preflight;
   if (pf?.enabled !== false && !opts.noPreflight) {
     try {
-      const res = await runPreflight(output, { plan });
+      const res = preflight = await (deps.runPreflight || runPreflight)(output, { plan });
       // The render reviewer: Claude looks at frames of the finished file; what it sees joins the check note.
       if (plan.style?.review?.watch !== false && !opts.noReview) {
         const seen = await watchRender(output, plan, { workDir, duration: res.measures.duration });
@@ -1395,18 +1408,157 @@ export async function renderProject(workDir, opts = {}) {
       }
       writePreflight(workDir, res);
       (res.status === "fail" ? warn : log)(describePreflight(res));
-      if (res.status === "fail" && pf?.strict) {
-        const failed = output.replace(/\.mp4$/, ".failed.mp4");
-        fs.renameSync(output, failed);
-        throw new Error(`preflight failed (${res.items.filter((i) => i.level === "fail").map((i) => i.message).join("; ")}); the file is at ${failed}`);
-      }
     } catch (e) {
-      if (/^preflight failed/.test(e.message)) throw e;
       warn(`preflight skipped: ${String(e.message).split("\n")[0]}`);
     }
   }
-  if (plan.style?.audio?.pro && plan.audio?.musicPick) recordProMusic(plan.audio.musicPick);
+  if (!intermediate && !opts.masterRebuild) {
+    const master = await checkProject(workDir, { fix: true, video: output, preflight, opts, deps, onPreflight: (result) => {
+      if (result === preflight) return;
+      preflight = result;
+      if (pf?.enabled !== false && !opts.noPreflight && preflight.items) writePreflight(workDir, preflight);
+    } });
+    if (preflight?.status === "fail" && pf?.strict && master.status !== "fail") {
+      const failed = output.replace(/\.mp4$/, ".failed.mp4");
+      fs.renameSync(output, failed);
+      throw new Error(`preflight failed (${preflight.items.filter((i) => i.level === "fail").map((i) => i.message).join("; ")}); the file is at ${failed}`);
+    }
+    if (plan.style?.audio?.pro && plan.audio?.musicPick) recordProMusic(plan.audio.musicPick);
+  }
   return output;
+}
+
+async function planBrollPicks(args, deps) {
+  const { settings, groups } = args;
+  if (!settings?.enabled || !groups.length) return [];
+  const planner = settings.engine === "runway" ? makeRunwayBroll : makeBroll;
+  let shots = await (deps.makeBroll || planner)(args);
+  if (!shots.length && settings.engine === "runway" && settings.runwayFallback === "codex") {
+    log("b-roll: Runway placed none; drawing Codex stills instead");
+    shots = await (deps.makeBroll || makeBroll)({ ...args, force: true, settings: { ...settings, engine: "codex", library: false, stock: [], stillFallback: true } });
+  }
+  return shots;
+}
+
+/** Retry only the missing lanes of a saved plan, including hand-edited build projects. */
+async function replanMaster(workDir, plan, ids, deps) {
+  const { style, video, hook, cta, canvas } = plan;
+  const next = { ...plan };
+  const groups = plan.proCaptionSource || plan.lines || plan.captions || [];
+  const dimensions = { W: canvas.width, H: canvas.height };
+  const footage = path.resolve(workDir, video.src);
+  const sameShape = !video.width || !video.height || Math.abs(video.width / video.height - canvas.width / canvas.height) < 0.02;
+  const detect = async (file, times) => {
+    const detection = await (deps.detectFaces || detectFaces)(file, times);
+    return sameShape ? detection : plan.reframe?.length ? reframeDetection(detection, plan.reframe, video, canvas) : null;
+  };
+  let changed = false;
+  if (ids.includes("card-floor") && plan.words?.length) {
+    const overlays = await makeProGraphics({
+      workDir, words: plan.words, groups, duration: video.duration, hook,
+      available: hasCodex, ask: (prompt, options) => codexExec(prompt, { cwd: workDir, ...options }),
+      ...deps.proDirection, force: true,
+    });
+    const captions = style.captions?.enabled === false ? [] : groups;
+    const marked = attachProWordMarks(overlays, captions);
+    const placed = await placeProGraphics(marked.filter((g) => !plan.stitchScenes || fitSceneWindow(g, plan.stitchScenes)), {
+      ...dimensions, video: footage, detect,
+      framingAt: (t) => sceneAt(plan.stitchFaces || [], t)?.framing || plan.framing,
+      zoomAt: (a, b) => zoomDuring(plan.zooms, a, b) * driftDuring(plan.motion?.drift || [], a, b),
+      ...proCaptionBand(captions, dimensions),
+    });
+    const swap = style.captions?.pro;
+    const kept = resolveProCollisions(placed, { ...dimensions, captions: swap ? applyCaptionSwaps(placed, captions).groups : captions, hook }).kept;
+    const count = (cards) => (cards || []).filter((c) => c.type !== "wordMark").length;
+    if (count(kept) > count(plan.proGraphics)) {
+      const final = swap ? applyCaptionSwaps(kept, captions) : { cards: kept, groups: captions };
+      next.proGraphics = attachProWordMarks(final.cards, final.groups);
+      next.captions = final.groups;
+      changed = true;
+    }
+  }
+  if (ids.includes("broll-present") && groups.length) {
+    const settings = style.broll;
+    const tail = Math.max(1.5, style.youtube?.endSafe || 0);
+    const fontSizeFrac = style.captions?.fontSizeFrac ?? 0.04;
+    const position = style.captions?.position ?? 0.65;
+    const busy = [...(plan.graphics || []).filter((g) => !isPersistentScene(g)), ...(plan.evidence || []), ...(next.proGraphics || []).filter((g) => g.type !== "wordMark")];
+    const args = { workDir, groups, duration: video.duration, hook, cta, settings, force: true, busy, tail, footage, caption: { top: position - 0.6 * fontSizeFrac, height: 0.18, fontSizeFrac, uppercase: style.captions?.uppercase } };
+    let broll = await planBrollPicks(args, deps);
+    if (plan.stitchScenes) broll = broll.filter((shot) => fitSceneWindow(shot, plan.stitchScenes));
+    if (broll.length && ["window", "split", "mix", "full-split"].includes(settings.layout)) {
+      if (settings.layout === "full-split") broll = holdForSplit(broll, { duration: video.duration, cta, busy, tail, gap: settings.gap, hold: settings.hold, clipSeconds: settings.videoSeconds });
+      const perShot = await Promise.all(broll.map(async (shot) => {
+        const detection = await detect(footage, [0.15, 0.5, 0.85].map((f) => r3(shot.start + f * shot.duration)));
+        return { face: faceBox(detection), detection };
+      }));
+      broll = planBrollLayouts(broll, { layout: settings.layout, ...dimensions, captionTop: args.caption.top, face: plan.framing?.face, framing: plan.framing, zooms: plan.zooms, perShot }).shots;
+    }
+    if (broll.length && (brollLayout(settings.layout) === "cutout" || broll.some((shot) => shot.layout === "cutout"))) {
+      broll = (await makeCutoutBroll({ broll, layout: settings.layout, video: footage, fps: style.render?.fps || 30, outDir: workDir })).broll;
+    }
+    if (broll.length) {
+      next.broll = broll;
+      next.coldOpen = planBrollOpen(broll, video.duration, style.coldOpen, settings);
+      changed = true;
+    }
+  }
+  return changed ? next : null;
+}
+
+export async function checkProject(workDir, { fix = false, video, preflight, opts = {}, deps = {}, onPreflight } = {}) {
+  workDir = path.resolve(workDir);
+  const planPath = path.join(workDir, "plan.json");
+  const original = readJSON(planPath);
+  const output = path.resolve(video || original.masterOutput || path.join(workDir, "renders", `${original.name}.mp4`));
+  const projectDir = path.join(workDir, "project");
+  const rebuild = async (plan) => {
+    const before = readJSON(planPath);
+    delete plan.masterTrim;
+    const temporary = path.join(path.dirname(output), `.master-rebuild-${randomUUID()}.mp4`);
+    const files = ["textcheck.json", "textcheck.txt", "gate.json", "gate.txt", "preflight.json", "preflight.txt", "watch.json"];
+    const saved = new Map(files.map((name) => [name, fs.existsSync(path.join(workDir, name)) ? fs.readFileSync(path.join(workDir, name)) : null]));
+    try {
+      const previousCards = new Set((before.proGraphics || []).map((c) => c.id));
+      const remaining = new Set([...(plan.proGraphics || []), ...(plan.graphics || [])].map((c) => c.id));
+      const changedCards = plan.proGraphics?.some((c) => !previousCards.has(c.id));
+      if (plan.audio?.tracks) {
+        const tracks = plan.audio.tracks.filter((t) => !previousCards.has(t.eventId) || (!changedCards && remaining.has(t.eventId)));
+        if (changedCards && plan.style.audio?.sounds) tracks.push(...proSoundCues(plan.proGraphics, { fps: plan.style.render?.fps, level: plan.style.audio.soundsVolume }));
+        if (plan.broll?.length && !before.broll?.length) tracks.push(...brollSoundTracks(plan.broll, ensureDir(path.join(projectDir, "assets")), { volume: plan.style.broll.sfxVolume }));
+        plan.audio = { ...plan.audio, tracks };
+      }
+      writeJSON(planPath, plan);
+      writeFeatures(workDir, plan);
+      composeProject(plan, projectDir);
+      await renderProject(workDir, { ...opts, output: temporary, gateRound: 0, noReview: true, masterRebuild: true }, deps);
+      fs.renameSync(temporary, output);
+      const text = readJSONSafe(path.join(workDir, "textcheck.json"));
+      if (text?.video === temporary) writeJSON(path.join(workDir, "textcheck.json"), { ...text, video: output });
+    } catch (error) {
+      writeJSON(planPath, before);
+      writeFeatures(workDir, before);
+      composeProject(before, projectDir);
+      for (const [name, content] of saved) {
+        const file = path.join(workDir, name);
+        if (content) fs.writeFileSync(file, content);
+        else fs.rmSync(file, { force: true });
+      }
+      throw error;
+    } finally { fs.rmSync(temporary, { force: true }); }
+  };
+  const result = await runMasterCheck(workDir, {
+    video: output, fix, preflight, rebuild, onPreflight,
+    replan: (plan, ids) => {
+      log(`master check: retrying ${ids.join(", ")} once`);
+      return (deps.replanMaster || replanMaster)(workDir, plan, ids, deps);
+    },
+    deps, useGate: !opts.noGate && original.style?.gate?.enabled !== false && process.env.REEL_GATE !== "0",
+  });
+  if (result.status === "fail" && fix) {
+    log(`MASTER CHECK FAILED: ${failedMasterRules(result).map((r) => r.id).join(", ")}`);
+  }
+  return result;
 }
 
 /**

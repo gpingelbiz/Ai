@@ -1,5 +1,5 @@
 // Find faces (and upper bodies, for someone turned away) in a few frames of a video with Apple Vision.
-// Usage: faces <video> <t1> [t2 ...]
+// Usage: faces <video> <t1> [t2 ...] [--landmarks]
 // Prints JSON: {"width":W,"height":H,"frames":[{"t":t,"faces":[box],"bodies":[box]}]}
 // Boxes are fractions of the displayed (upright) frame, origin top-left: {"x","y","w","h"}.
 //
@@ -37,6 +37,7 @@ func box(_ r: CGRect) -> [String: Double] {
   ["x": Double(r.origin.x), "y": Double(1 - r.origin.y - r.size.height), "w": Double(r.size.width), "h": Double(r.size.height)]
 }
 
+let useLandmarks = args.contains("--landmarks")
 var frames: [[String: Any]] = []
 var size = CGSize.zero
 for s in args.dropFirst(2) {
@@ -48,12 +49,22 @@ for s in args.dropFirst(2) {
     continue
   }
   size = CGSize(width: cg.width, height: cg.height)
-  let faceReq = VNDetectFaceRectanglesRequest()
+  let faceReq: VNImageBasedRequest = useLandmarks ? VNDetectFaceLandmarksRequest() : VNDetectFaceRectanglesRequest()
   let bodyReq = VNDetectHumanRectanglesRequest()
   bodyReq.upperBodyOnly = true
   let handler = VNImageRequestHandler(cgImage: cg, options: [:])
   try? handler.perform([faceReq, bodyReq])
-  let faces = (faceReq.results ?? []).filter { $0.confidence > 0.5 }.map { box($0.boundingBox) }
+  let observations = faceReq.results as? [VNFaceObservation] ?? []
+  let faces = observations.filter { $0.confidence > 0.5 }.map { face -> [String: Double] in
+    var result = box(face.boundingBox)
+    let eyes = [face.landmarks?.leftEye, face.landmarks?.rightEye].compactMap { $0 }
+      .flatMap { $0.normalizedPoints.map { $0.y } }
+    if !eyes.isEmpty {
+      let eyeY = eyes.reduce(0, +) / CGFloat(eyes.count)
+      result["eyesY"] = Double(1 - face.boundingBox.minY - eyeY * face.boundingBox.height)
+    }
+    return result
+  }
   let bodies = (bodyReq.results ?? []).filter { $0.confidence > 0.3 }.map { box($0.boundingBox) }
   frames.append(["t": t, "faces": faces, "bodies": bodies])
 }

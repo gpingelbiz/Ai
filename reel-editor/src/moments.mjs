@@ -8,10 +8,10 @@ import { r3 } from "./util.mjs";
  * the thought. A gate then rejects openings that lean on something said before (a dangling "that", "and", "so").
  */
 
-const END_MARK = /[.!?]["')\]]*$/;
-const TRAIL = /(\.\.\.|…)["')\]]*$/;
+const END_MARK = /[.!?]["'”’)\]]*$/;
+const TRAIL = /(\.\.\.|…)["'”’)\]]*$/;
 // A sentence end, not a trail-off ("But it's...").
-const END = { test: (t) => END_MARK.test(t) && !TRAIL.test(t) };
+export const sentenceEnd = (text) => END_MARK.test(String(text).trim()) && !TRAIL.test(String(text).trim());
 
 /** Sentences as addressable lines: [{id:"L000", i0, i1, start, end, text}]. A pause of `pause` s also ends one. */
 export function sentenceLines(words, { pause = 0.9, maxWords = 40 } = {}) {
@@ -20,7 +20,7 @@ export function sentenceLines(words, { pause = 0.9, maxWords = 40 } = {}) {
   for (let i = 0; i < words.length; i++) {
     const w = words[i], next = words[i + 1];
     const gap = next ? next.start - w.end : Infinity;
-    if (END.test(String(w.text).trim()) || gap >= pause || i - i0 + 1 >= maxWords || !next) {
+    if (sentenceEnd(String(w.text).trim()) || gap >= pause || i - i0 + 1 >= maxWords || !next) {
       const ws = words.slice(i0, i + 1);
       out.push({ id: `L${String(out.length).padStart(3, "0")}`, i0, i1: i, start: r3(ws[0].start), end: r3(ws[ws.length - 1].end), text: ws.map((x) => x.text).join(" ") });
       i0 = i + 1;
@@ -63,8 +63,8 @@ export function cutPoints(lines, words) {
     const startAt = prev ? Math.max(prev.end, l.start - 0.15) : Math.max(0, l.start - 0.15);
     const endAt = next ? Math.min(next.start, l.end + 0.25) : l.end + 0.25;
     // A real start follows a finished sentence (the line before ended one), not just any pause.
-    pts.push({ at: r3(startAt), kind: "start", line: l.id, sentence: !prev || END.test(String(prev.text).trim()) });
-    pts.push({ at: r3(endAt), kind: "end", line: l.id, sentence: END.test(l.text.trim()) });
+    pts.push({ at: r3(startAt), kind: "start", line: l.id, sentence: !prev || sentenceEnd(String(prev.text).trim()) });
+    pts.push({ at: r3(endAt), kind: "end", line: l.id, sentence: sentenceEnd(l.text.trim()) });
   }
   return pts;
 }
@@ -167,10 +167,10 @@ export function edgeProblems(clip, lines, words) {
   else if (/[-—]$/.test(String(inside[0].text).trim())) out.push({ code: "leans-back", message: `opens on a false start ("${inside[0].text}")` });
   else if (/^[a-z]/.test(String(inside[0].text).trim()) && !/^i\b/.test(inside[0].text)) {
     const before = words[words.indexOf(inside[0]) - 1];
-    if (before && !END.test(String(before.text).trim())) out.push({ code: "leans-back", message: `opens mid-sentence on "${inside[0].text}"` });
+    if (before && !sentenceEnd(String(before.text).trim())) out.push({ code: "leans-back", message: `opens mid-sentence on "${inside[0].text}"` });
   }
   const lastText = String(inside[inside.length - 1].text).trim();
-  if (!END.test(lastText)) out.push({ code: "mid-sentence-end", message: `ends on "${lastText}", mid-sentence` });
+  if (!sentenceEnd(lastText)) out.push({ code: "mid-sentence-end", message: `ends on "${lastText}", mid-sentence` });
   if (/\?["')]*$/.test(lastText)) out.push({ code: "ends-on-question", message: "ends on a question" });
   const tail = clip.end - inside[inside.length - 1].end;
   if (tail > 0.6) out.push({ code: "dead-air-end", message: `${r3(tail)} s of silence after the last word` });

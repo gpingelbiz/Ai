@@ -49,3 +49,20 @@ test("forward: a dropped reel folder goes as it is; a copy still in progress wai
   assert.ok(fs.existsSync(path.join(root, "Reel B", "Reel B.mp4")), "and it stays here");
   assert.ok(fs.existsSync(path.join(root, "fresh.mp4")), "a file still copying is left alone");
 });
+
+test("forward keeps a loose reel's failed master result and plain-English check note even with a replacement caption", () => {
+  const root = mk("fwd-root"), dest = mk("fwd-dest"), desk = mk("fwd-delivered");
+  const folder = path.join(desk, "2026-11-24 Reel 1");
+  const result = { status: "fail", rules: [{ id: "no-flash", ok: false, severity: "block" }] };
+  write(path.join(folder, "my reel.mp4"), "VIDEO-BYTES");
+  write(path.join(folder, "master-check.json"), JSON.stringify(result));
+  write(path.join(folder, "Check notes.txt"), "Master check FAILED\nThe first frame flashes.\n");
+  write(path.join(root, "my reel.mp4"), "VIDEO-BYTES");
+  write(path.join(root, "my reel.txt"), "A replacement caption.");
+  const sent = runForward({ root, host: "", dest, sourceRoots: [desk], notify: false });
+  assert.equal(sent[0].ok, true);
+  const bundle = path.join(dest, "my reel");
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(bundle, "master-check.json"), "utf8")), result);
+  assert.match(fs.readFileSync(path.join(bundle, "check this reel.txt"), "utf8"), /first frame flashes/);
+  assert.equal(fs.readFileSync(path.join(bundle, "caption.txt"), "utf8"), "A replacement caption.");
+});
