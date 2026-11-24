@@ -627,7 +627,12 @@ export async function runEdit(input, opts = {}, deps = {}) {
   allGraphics.schema = graphicsSchema;
   // Shared-frame layouts never sit under a card. The legacy full cutaway keeps the short-reel exception unchanged.
   const sharedBrollLayout = ["window", "split", "mix", "full-split"].includes(preset.broll?.layout);
-  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: sharedBrollLayout || duration >= 20 ? [...transientCards, ...evidence] : evidence, tail, footage: videoSrc, caption: { top: preset.captions.position - 0.6 * preset.captions.fontSizeFrac, height: 0.18, fontSizeFrac: preset.captions.fontSizeFrac, uppercase: preset.captions.uppercase } };
+  const codexCardClearance = preset.broll?.engine === "codex" && preset.broll?.cardClear != null && preset.broll?.animate !== true;
+  const cardWindows = [...transientCards, ...evidence];
+  // A-roll zooms already depend on the B-roll cuts. Reserve pro card windows before their spatial placement.
+  const busyBroll = codexCardClearance ? [...cardWindows, ...proGraphics.filter((g) => g.type !== "wordMark")]
+    : sharedBrollLayout || duration >= 20 ? cardWindows : evidence;
+  const brollArgs = { workDir, groups: shownGroups, duration, hook, cta, settings: preset.broll, force: !!opts.newBroll, busy: busyBroll, tail, footage: videoSrc, caption: { top: preset.captions.position - 0.6 * preset.captions.fontSizeFrac, height: 0.18, fontSizeFrac: preset.captions.fontSizeFrac, uppercase: preset.captions.uppercase } };
   let broll = preset.broll?.enabled && shownGroups.length
     ? (preset.broll.engine === "runway" ? await makeRunwayBroll(brollArgs) : await makeBroll(brollArgs))
     : [];

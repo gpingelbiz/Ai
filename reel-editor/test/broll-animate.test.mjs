@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { makeBroll, PICKS_SCHEMA, checkPick, picksPrompt, planBrollOpen } from "../src/broll.mjs";
+import { makeBroll, PICKS_SCHEMA, STILL_PICKS_SCHEMA, checkPick, picksPrompt, planBrollOpen } from "../src/broll.mjs";
 import { planShotBudget, runwayPicksPrompt } from "../src/broll-runway.mjs";
 import { DEFECT_QUESTIONS } from "../src/broll-qc.mjs";
 import { loadPreset } from "../src/presets.mjs";
@@ -61,7 +61,7 @@ function fixture({ picks = [pick()], checks = [], videoChecks = [], settings = {
     claudeText: async () => { throw new Error("Codex owns planning"); },
     codexExec: async (prompt, { cwd, schema }) => {
       calls.codex.push(prompt);
-      assert.equal(schema, PICKS_SCHEMA);
+      assert.equal(schema, prompt.startsWith("Choose photographic inserts") ? STILL_PICKS_SCHEMA : PICKS_SCHEMA);
       const redraw = prompt.includes("Redraw only this opening frame:");
       if (redraw) {
         const name = prompt.match(/Save the new image as (.+\.png)\./)[1];
@@ -255,7 +255,7 @@ test("Codex and Runway share rules, noun timing, rank, boundaries, gap and maxim
   for (const line of runway.split("\n").filter((line) => /^(shows:|duration:|kind:|scene:|action:|motion:|sound:|Weapon lines|Every scene|Show named)/.test(line))) assert.ok(prompt.includes(line), line);
   assert.doesNotMatch(prompt, /Reply with JSON only\. Use no tools|muted, desaturated|scuffed|plain and dark/);
   for (const field of ["duration", "kind", "scene", "action", "motion", "sound", "soundRole", "endsAt", "endsBefore"]) assert.ok(PICKS_SCHEMA.properties.picks.items.properties[field]);
-  const world = picksPrompt({ candidates: [], count: 1, world: "CLIENT SETTING" });
+  const world = picksPrompt({ sourcesFirst: true, candidates: [], count: 1, world: "CLIENT SETTING" });
   assert.match(world, /CLIENT SETTING/);
   assert.match(world, /the named thing wins/);
   const adjacent = fixture({ picks: [pick(3), pick()], settings: { gap: 20, sfx: false } });
@@ -265,17 +265,17 @@ test("Codex and Runway share rules, noun timing, rank, boundaries, gap and maxim
   }
 });
 
-test("still mode uses the same picks and daylight, with no Runway or vision calls", async () => {
+test("still mode accepts legacy picks, with no Runway or vision calls", async () => {
   const f = fixture({ settings: { animate: false } });
-  const [shot] = await f.run({ deps: { ...f.args.deps, hasRunway: () => { throw new Error("still-only brand"); } } });
+  const [shot] = await f.run({ footage: undefined, deps: { ...f.args.deps, hasRunway: () => { throw new Error("still-only brand"); } } });
   assert.match(shot.file, /\.png$/);
   assert.equal(shot.motion, "in");
   assert.equal(shot.stillSource, "codex");
   assert.equal(shot.start, 6.4);
   assert.equal(f.calls.look.length, 0);
   assert.equal(f.calls.video.length, 0);
-  assert.match(f.calls.codex[0], /Natural daylight and colour/);
-  assert.deepEqual(await f.run(), [shot]);
+  assert.match(f.calls.codex[0], /Plan only and reply with JSON/);
+  assert.deepEqual(await f.run({ footage: undefined }), [shot]);
   assert.equal(f.calls.codex.length, 1);
   assert.equal((await f.run({ settings: { ...f.args.settings, animate: true } }))[0].video, true, "a still cache cannot bypass animation");
 });

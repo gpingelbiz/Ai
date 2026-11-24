@@ -415,10 +415,10 @@ test("stock logs accepted choices, rejection stages and inspection failures with
   }
 });
 
-test("both picks prompts preserve recent named subjects and vary only their presentation", () => {
+test("both moving-footage prompts preserve recent named subjects and vary only their presentation", () => {
   const recent = ["A green snake on a branch", "A gorilla in ferns", "A coconut in a palm"];
   for (const prompt of [picksPrompt, runwayPicksPrompt]) {
-    const text = prompt({ candidates: [], count: 3, recent });
+    const text = prompt({ sourcesFirst: true, candidates: [], count: 3, recent });
     assert.match(text, /Never skip a named subject because a recent reel showed it/);
     assert.match(text, /same subject from a different angle, setting or action/);
     assert.match(text, /10-reel exclusion applies per clip, never per subject/);
@@ -482,7 +482,7 @@ test("house and client cheap folders enable free footage; explicit brand choices
 });
 
 test("Codex adds a literal stock query while retaining shared subject, weapon and daylight rules", () => {
-  const prompt = picksPrompt({ candidates: [], count: 1 });
+  const prompt = picksPrompt({ sourcesFirst: true, candidates: [], count: 1 });
   assert.match(prompt, /stockQuery: 2-4/); assert.match(prompt, /Weapon lines stay on the speaker/); assert.match(prompt, /A jungle stays a jungle; a snake stays a snake/);
 });
 
@@ -629,8 +629,8 @@ test("default search budget is twenty requests per run and Pexels keeps twenty r
 test("Codex synonym schema is required and bounded, absent synonyms default empty, Runway prompt stays unchanged", () => {
   const schema = PICKS_SCHEMA.properties.picks.items;
   assert.ok(schema.required.includes("stockSynonyms")); assert.equal(schema.properties.stockSynonyms.maxItems, 3);
-  assert.match(picksPrompt({ candidates: [], count: 1 }), /"stockSynonyms":\["serpent"\]/);
-  assert.match(picksPrompt({ candidates: [], count: 1 }), /SAME subject/);
+  assert.match(picksPrompt({ sourcesFirst: true, candidates: [], count: 1 }), /"stockSynonyms":\["serpent"\]/);
+  assert.match(picksPrompt({ sourcesFirst: true, candidates: [], count: 1 }), /SAME subject/);
   assert.doesNotMatch(runwayPicksPrompt({ candidates: [], count: 1 }), /stockSynonyms/);
   assert.deepEqual(normaliseStockPicks([{ ...pick, stockSynonyms: null }])[0].stockSynonyms, []);
   assert.deepEqual(normaliseStockPicks([pick])[0].stockSynonyms, []);
@@ -1138,7 +1138,7 @@ test("place-name stock fallback searches the real setting with matching tags and
   assert.deepEqual(onlyTagged.map((c) => c.id), [1]);
   assert.ok(queries.some((q) => q.mode === "subject" && q.query === "arizona" && q.candidateCount === 0));
   assert.ok(queries.some((q) => q.mode === "setting" && q.query === "desert highway driving" && q.candidateCount === 1));
-  const text = picksPrompt({ candidates: [], count: 5 });
+  const text = picksPrompt({ sourcesFirst: true, candidates: [], count: 5 });
   assert.match(text, /Never use a bare place or person name as shows/); assert.match(text, /at least one kind="ambient"/); assert.match(text, /desert highway driving/);
 });
 

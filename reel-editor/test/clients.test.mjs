@@ -92,7 +92,7 @@ test("the watcher edits Greg's drops as Greg and a client's drops with the clien
 
 test("client b-roll uses its own world for life and work, preserves named images and keeps its own scene history", async () => {
   const { picksPrompt, recentFile } = await import("../src/broll.mjs");
-  const base = { candidates: [{ i: 1, start: 1, text: "x" }], transcript: "x", hook: "", count: 1 };
+  const base = { sourcesFirst: true, candidates: [{ i: 1, start: 1, text: "x" }], transcript: "x", hook: "", count: 1 };
   const greg = picksPrompt(base);
   assert.match(greg, /Every scene comes from this reel's words or its own established setting/);
   const jane = picksPrompt({ ...base, world: "a Tesla interior in Scottsdale" });

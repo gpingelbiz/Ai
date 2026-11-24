@@ -8,15 +8,16 @@ import { log, ensureDir } from "./util.mjs";
  * Codex CLI, headless (`codex exec`): text jobs with a JSON schema, and images from its built-in image tool.
  * Runs on the signed-in ChatGPT plan, so there is no API key and no per-image bill.
  *
- * Model: REEL_CODEX_MODEL when set. Otherwise the Codex config default first, then gpt-5.6-sol: some config
+ * Model: REEL_CODEX_MODEL when set, then the caller's requested model. Otherwise the config default, then gpt-5.6-sol: some config
  * defaults (gpt-6.1-sol) are refused on a ChatGPT login when run headless, and the first model that works is
  * remembered for the rest of the run.
  */
 const FALLBACK_MODELS = [null, "gpt-5.6-sol"];
 let workingModel;
 
-export function codexModels(env = process.env) {
+export function codexModels(env = process.env, model) {
   if (env.REEL_CODEX_MODEL) return [env.REEL_CODEX_MODEL];
+  if (model) return [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
   if (workingModel !== undefined) return [workingModel];
   return FALLBACK_MODELS;
 }
@@ -103,7 +104,7 @@ export function stripOptionalNulls(value, schema) {
   return Object.fromEntries(Object.entries(value).filter(([k, v]) => !(v === null && !required.has(k))).map(([k, v]) => [k, stripOptionalNulls(v, schema.properties[k])]));
 }
 
-export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}) {
+export async function codexExec(prompt, { cwd, schema, model: requestedModel, images = [], timeoutMs = 300000 } = {}) {
   const paused = codexPausedUntil();
   if (paused) throw new CodexLimited(`Codex is paused after a rate limit until ${new Date(paused).toLocaleTimeString()}`);
   ensureDir(cwd);
@@ -115,14 +116,17 @@ export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}
   }
   let lastErr;
   try {
-    for (const model of codexModels()) {
+    const models = codexModels(process.env, requestedModel);
+    for (const model of models) {
       const args = ["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "workspace-write", "--color", "never", "-C", cwd, "-o", last];
       if (model) args.push("-m", model);
       if (schemaFile) args.push("--output-schema", schemaFile);
+      for (const image of images) args.push("--image", image);
+      if (images.length) args.push("--");
       args.push(prompt);
       try {
         await runCodex(args, { timeoutMs });
-        workingModel = model;
+        if (!requestedModel && !process.env.REEL_CODEX_MODEL) workingModel = model;
         const text = fs.existsSync(last) ? fs.readFileSync(last, "utf8") : "";
         if (!schema) return text;
         try { return JSON.stringify(stripOptionalNulls(JSON.parse(text), schema)); } catch { return text; }
@@ -132,7 +136,7 @@ export async function codexExec(prompt, { cwd, schema, timeoutMs = 300000 } = {}
           pauseCodex();
           throw new CodexLimited("Codex hit the ChatGPT plan's rate limit");
         }
-        if (!isModelRefusal(e.output || e.message)) throw e;
+        if (models.length === 1 || !isModelRefusal(e.output || e.message)) throw e;
         log(`codex: model ${model || "(config default)"} refused on this account, trying the next one`);
       }
     }

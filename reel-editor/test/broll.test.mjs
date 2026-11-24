@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { brollCount, brollCandidates, placeBroll, picksPrompt, holdForSplit, checkPick, PICKS_SCHEMA, readRecent, rememberScenes } from "../src/broll.mjs";
+import { brollCount, brollCandidates, placeBroll, picksPrompt, codexStillInstructions, holdForSplit, checkPick, PICKS_SCHEMA, STILL_PICKS_SCHEMA, readRecent, rememberScenes } from "../src/broll.mjs";
 import { PICKS_RULES } from "../src/broll-runway.mjs";
 import { codexModels, isModelRefusal, imageInstructions, savedImage, stripC2pa } from "../src/codex.mjs";
 import { renderHTML } from "../src/compose.mjs";
@@ -56,15 +56,17 @@ test("placement keeps real lines, in order, spaced apart", () => {
   assert.deepEqual(shots.map((s) => s.motion), ["in", "left", "out"]);
 });
 
-test("one prompt picks the lines and draws the stills; faces and text are banned", () => {
+test("the still picker plans eligible lines and the drawing instructions ban faces and text", () => {
   const cands = brollCandidates(groups.slice(0, 6), 14, { hook: { start: 0, duration: 3 } });
   const p = picksPrompt({ candidates: cands, transcript: "x", hook: "Hook", count: 1, spacing: 6.4, style: "moody" });
   assert.match(p, /^2: 4\.0s line 2 \| words:/m);
   assert.doesNotMatch(p, /^0: /m);
   assert.match(p, /6\.4 seconds from one shot's END to the next START/);
-  assert.match(p, /broll-1\.png/);
-  assert.match(p, /vertical 9:16 \(1080x1920\) image/);
-  assert.match(p, /Look for every image: Natural daylight and colour.*moody/);
+  assert.match(p, /Use no tools and draw no images/);
+  const drawing = codexStillInstructions({ style: "moody" });
+  assert.match(drawing, /portrait 9:16 at 1152x2048/);
+  assert.match(drawing, /No faces or readable text/);
+  assert.match(drawing, /Additional style.*moody/);
   assert.match(imageInstructions(), /No people/);
   assert.match(imageInstructions(), /No text, letters/);
   assert.match(imageInstructions(), /Candid documentary photograph/);
@@ -239,8 +241,8 @@ test("ranked placement keeps the best spaced picks, then returns time order", ()
   assert.deepEqual(placeBroll(picks, candidates, { max: 0 }), []);
 });
 
-test("stills prompt requires the named image, permits literal analogies and limits recent scenes", () => {
-  const p = picksPrompt({ candidates: [], count: 2, world: "a garage", recent: [...Array.from({ length: 16 }, (_, i) => `scene-${i}`), "scene-4"] });
+test("sources-first planning requires the named image, permits literal analogies and limits recent scenes", () => {
+  const p = picksPrompt({ sourcesFirst: true, candidates: [], count: 2, world: "a garage", recent: [...Array.from({ length: 16 }, (_, i) => `scene-${i}`), "scene-4"] });
   assert.ok(p.includes(PICKS_RULES.replace("MAX_DURATION", "2.4")));
   assert.match(p, /Show named objects, animals and places literally, including analogies/);
   assert.match(p, /A jungle stays a jungle; a snake stays a snake; a coconut stays a coconut/);
@@ -296,7 +298,7 @@ test("Codex stills validate picks before placement and persist shows", async () 
   const shots = await makeBroll({ workDir, duration: 30, groups: source, settings: { animate: false }, deps: {
     hasCodex: () => true, codexPausedUntil: () => 0,
     codexExec: async (prompt, { cwd, schema }) => {
-      assert.equal(schema, PICKS_SCHEMA);
+      assert.equal(schema, STILL_PICKS_SCHEMA);
       for (const p of picks) fs.writeFileSync(path.join(cwd, p.file), Buffer.alloc(2000));
       return JSON.stringify({ picks });
     },
@@ -336,8 +338,8 @@ test("stills keep world opt-in and never reuse a plan from an older prompt", asy
   }
   await makeBroll({ workDir, duration: 30, groups, force: true, settings: { world: "OPT-IN WORLD", worldInPrompt: true }, deps });
   assert.match(prompts.at(-1), /OPT-IN WORLD/);
-  assert.match(prompts.at(-1), /never use it to replace an image they name/);
-  assert.match(prompts.at(-1), /Natural daylight and colour/);
+  assert.match(prompts.at(-1), /when relevant/);
+  assert.match(prompts.at(-1), /one teachable action, or a visible consequence/);
   assert.doesNotMatch(prompts.at(-1), /Kill test|bottom third stays plain and dark/);
 });
 
