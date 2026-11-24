@@ -39,10 +39,29 @@ export async function detectFaces(video, times) {
   if (!bin) return null;
   try {
     const { out } = await run(bin, [video, ...times.map((t) => String(Math.round(t * 1000) / 1000))], { capture: true });
-    return JSON.parse(out);
+    return dropStrayFaces(JSON.parse(out));
   } catch {
     return null;
   }
+}
+
+/**
+ * Vision now and then calls a podcast mic a face (Greg's Shure MV7+, Nov 23 long video): a box below the speaker's
+ * chin, on the speaker's own body. Its "chin" near the bottom of the frame moved the pro captions up onto the real
+ * face. A face that starts below another face's chin and sits mostly on that person's body box is not a person.
+ */
+export function dropStrayFaces(detection) {
+  if (!detection?.frames) return detection;
+  const area = (b) => b.w * b.h;
+  const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  const holds = (u, b) => { const cx = b.x + b.w / 2, cy = b.y + b.h / 2; return cx >= u.x && cx <= u.x + u.w && cy >= u.y && cy <= u.y + u.h; };
+  const frames = detection.frames.map((f) => {
+    const faces = f.faces || [];
+    if (faces.length < 2 || !(f.bodies || []).length) return f;
+    const kept = faces.filter((b) => !faces.some((g) => g !== b && g.y + g.h <= b.y && (f.bodies || []).some((u) => holds(u, g) && overlap(u, b) >= 0.3 * area(b))));
+    return kept.length === faces.length ? f : { ...f, faces: kept };
+  });
+  return { ...detection, frames };
 }
 
 /** Largest zoom scale active during [t0, t1] (zooms hold until the next one). */
