@@ -147,8 +147,10 @@ test("placement samples the entire held window, follows framing, rejects moving 
   assert.equal(placed.length, 1); assert.ok(calls[0].length >= 12);
   assert.ok(calls[0].every((t) => t >= o.start && t < o.end));
   assert.deepEqual(await placeProGraphics([o], { ...opts, detect: async () => null }), []);
-  const moving = await placeProGraphics([o], { ...opts, detect: async (_, times) => ({ frames: times.map((t, i) => ({ t, faces: [{ x: 0.3, y: i === 5 ? 0.23 : 0.6, w: 0.2, h: 0.1 }] })) }) });
-  assert.deepEqual(moving, []);
+  const movingDetect = async (_, times) => ({ frames: times.map((t, i) => ({ t, faces: [{ x: 0.3, y: i === 5 ? 0.23 : 0.6, w: 0.2, h: 0.1 }] })) });
+  assert.deepEqual(await placeProGraphics([o], { ...opts, minCards: 0, detect: movingDetect }), []);
+  // Below the two-card floor a rescue may place it smaller, but only clear of every position the head took.
+  for (const p of await placeProGraphics([o], { ...opts, detect: movingDetect })) assert.ok(p.place.rescued && p.place.x >= 0.5 * 1080, "beside the moving head, never on it");
   const framed = await placeProGraphics([o], { ...opts, framingAt: () => ({ scale: 2 }), zoomAt: () => 1.2 });
   assert.ok(framed.every((p) => p.place.slot !== "full"));
 });

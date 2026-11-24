@@ -41,3 +41,13 @@ test("no swap cards leaves everything alone", () => {
   const groups = [{ start: 0, end: 1 }];
   assert.equal(applyCaptionSwaps([{ id: "a", type: "quote", start: 0, end: 1, place: { slot: "torso" } }], groups).groups, groups);
 });
+
+test("cards move around: the next card avoids the spot the last one used", () => {
+  const wide = { measured: true, W: 1080, H: 1920, head: { x: 330, y: 520, w: 420, h: 420 }, mic: { x: 0, y: 1400, w: 200, h: 300 }, caption: { x: 0, y: 1248, w: 1080, h: 120 } };
+  const a = placeProOverlay(quote, wide, { recent: [] });
+  const b = placeProOverlay(quote, wide, { recent: [a.spot] });
+  assert.ok(a && b);
+  assert.notEqual(a.spot, b.spot);
+  const c = placeProOverlay(quote, wide, { recent: [a.spot, b.spot] });
+  assert.notEqual(c.spot, b.spot);
+});
