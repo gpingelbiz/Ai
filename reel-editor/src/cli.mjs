@@ -73,6 +73,10 @@ Usage
                                     check the real Instagram 3:4 crop and reject a fourth near-identical grid tile
   reel textcheck <workdir|render.mp4> [--json]
                                     blocking Vision check for clipped, face-covered or flashed reel text
+  reel gate <workdir> [--no-fix] [--json]
+                                    the master check every reel passes before delivery: text overlapping text, the
+                                    Instagram safe zone, doubled caption words, a spoken ask cut from the ending.
+                                    Fixes what it can (moves captions, drops a card), re-renders, holds the rest
   reel photos | daily | studio ...  the Content Studio (a client's folder that makes and schedules their posts):
                                     reel studio help for the commands
   reel brand [preset|brand.json] [--css] [--check]
@@ -114,6 +118,7 @@ Options (edit / batch)
   --cta "<text>"           pop-up call to action supplied for this reel (brand accent pill at chest level)
   --cta-last <s>           show the CTA for the last N seconds (default 3)   --cta-at <s> --cta-duration <s>
   --cta-style <s>          pill (default) | box | text          --cta-position <0-1>  default 0.62
+  --no-cta                 no call to action, not even one picked from the preset's cta.keywords (#nocta)
   --silence <pace>         off | slow | medium | fast | tight (preset default)
   --no-bad-takes           keep restarted phrases          --no-fillers    keep um/uh
   --no-cuts                keep every frame                --no-zooms      no magic zooms
@@ -217,6 +222,7 @@ const EDIT_OPTIONS = {
   "caption-position": { type: "string" },
   "no-auto-keywords": { type: "boolean" },
   cta: { type: "string" },
+  "no-cta": { type: "boolean" },
   "cta-last": { type: "string" },
   "cta-at": { type: "string" },
   "cta-duration": { type: "string" },
@@ -573,6 +579,24 @@ export async function main(argv) {
         console.log(`verdict: ${result.verdict}`);
       }
       if (result.verdict !== "schedule") process.exitCode = 1;
+      return;
+    }
+    case "gate": {
+      const { opts, positionals } = parse(rest, { json: { type: "boolean" }, "no-fix": { type: "boolean" }, help: { type: "boolean", short: "h" } });
+      if (opts.help || !positionals[0]) return console.log(USAGE);
+      const workDir = path.resolve(positionals[0]);
+      const { runTextcheck } = await import("./textcheck.mjs");
+      const { runGate } = await import("./gate.mjs");
+      await runTextcheck(workDir);
+      let result = await runGate(workDir, opts.noFix ? { rules: { ...(await import("./gate.mjs")).GATE_RULES, maxRounds: 0 } } : {});
+      if (result.verdict === "fix") {
+        fs.writeFileSync(path.join(workDir, "plan.json"), JSON.stringify(result.plan, null, 2));
+        await buildProject(workDir, { gateRound: 1, gateFixes: result.fixes });
+        result = JSON.parse(fs.readFileSync(path.join(workDir, "gate.json"), "utf8"));
+      }
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else console.log(fs.readFileSync(path.join(workDir, "gate.txt"), "utf8").trimEnd());
+      if (result.verdict !== "ok") process.exitCode = 1;
       return;
     }
     case "textcheck": {

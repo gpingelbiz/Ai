@@ -15,7 +15,8 @@ export const SIGN_OFFS = ["thanks for watching", "thank you for watching", "see 
 const CONVERSATIONAL_TAILS = ["have a great day", "have a good day", "i just wanted you to have", "talk soon", "see you", "anyway", "that's it", "what's next on my plate", "hey guys", "hey everyone", "hey folks", "hi everyone", "hello everyone", "good morning", "good evening", "goodbye", "bye everyone", "what am i doing next", "what should i do next", "what was i saying", "what do i need to do next", "where was i"];
 const sentenceEnd = (text) => /[.!?][\"”’']*$/.test(String(text).trim());
 const token = (text) => norm(String(text).replace(/’/g, "'"));
-const isCta = (words) => /^(?:please )?(?:dm me|message me|send (?:me|this|it)|share (?:this|it)|comment\b|tell me\b|follow me\b)/.test(words.map((w) => token(w.text)).join(" "));
+// A closing invitation is the point of the reel, never a sign-off ("I invite you to join me for the Bootcamp", Nov 24).
+const isCta = (words) => /^(?:(?:so|and|now|please) )*(?:dm me|message me|text me|send (?:me|this|it)|share (?:this|it)|comment\b|tell me\b|follow me\b|(?:come )?join (?:me|us)\b|(?:i(?:'d)? (?:would )?(?:love to |like to |want to )?)?invite you\b|book (?:a|an|your)\b|sign up\b|register\b|apply\b)/.test(words.map((w) => token(w.text)).join(" "));
 
 /** Index of the first word of a sign-off phrase that starts inside the last `tail` seconds, else -1. */
 export function findSignOff(words, duration, { tail = 10, conversational = true } = {}) {
@@ -600,8 +601,8 @@ export async function measureClip(input, { duration = null, preFilter = "", seek
   }
 }
 
-export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN, roomTone = null, finish = null, sourceDuration = null, finishMeasurement = null } = {}) {
-  const baseVideoFilters = [hdr ? SDR_FILTER : null, scaleTo ? `scale=${scaleTo.width}:${scaleTo.height}:force_original_aspect_ratio=increase:force_divisible_by=2` : null].filter(Boolean);
+export async function applyCuts(input, segments, output, { hasAudio = true, cleanAudio = true, fps = 30, hdr = false, scaleTo = null, encoder = "auto", audioInput = null, voiceChain = VOICE_CHAIN, roomTone = null, finish = null, sourceDuration = null, finishMeasurement = null, mirror = false } = {}) {
+  const baseVideoFilters = [hdr ? SDR_FILTER : null, mirror ? "hflip" : null, scaleTo ? `scale=${scaleTo.width}:${scaleTo.height}:force_original_aspect_ratio=increase:force_divisible_by=2` : null].filter(Boolean);
   let measured = finishMeasurement;
   if (finish?.enabled && !measured) {
     try {

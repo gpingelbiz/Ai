@@ -5,12 +5,12 @@ import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
 import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking, dropInaudibleWords } from "./cuts.mjs";
-import { resolveEndingOverride, endingMetadata } from "./ending.mjs";
+import { resolveEndingOverride, endingMetadata, endAfterPhrase } from "./ending.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
 import { realignWords, describeAlignment, hasAlignment, savedAlignmentFits } from "./align.mjs";
 import { makeCutout, describeCutout } from "./behind.mjs";
-import { runPreflight, writePreflight, describePreflight } from "./preflight.mjs";
+import { runPreflight, writePreflight, describePreflight, silences } from "./preflight.mjs";
 import { writeFeatures } from "./features.mjs";
 import { watchRender, watchItems, describeWatch } from "./watch.mjs";
 import { toneMapToSdr } from "./hdr.mjs";
@@ -18,7 +18,7 @@ import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./
 import { planPlacements, reframeDetection, placeCard } from "./frame-place.mjs";
 import { detectFaces, headExtent, headSpanX, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
-import { pickHook, pickCta, hookSeconds, plaqueLayout, sidePlaqueLayout, planProHook, proCaptionsUnderHook } from "./hook.mjs";
+import { pickHook, pickCta, autoCta, hookSeconds, plaqueLayout, sidePlaqueLayout, planProHook, proCaptionsUnderHook } from "./hook.mjs";
 import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
 import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -26,6 +26,8 @@ import { planBumps, planDrift, driftDuring } from "./motion.mjs";
 import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
 import { eventClock, legacyLanding, measureSfxFile } from "./event-clock.mjs";
 import { runTextcheck } from "./textcheck.mjs";
+import { runGate, planFixes, silentCaptions } from "./gate.mjs";
+import { detectMirrored } from "./mirror.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
@@ -267,7 +269,11 @@ export async function runEdit(input, opts = {}, deps = {}) {
 
   // 3. Clean footage
   const cleanPath = path.join(workDir, "clean.mp4");
-  const needsPass = (cutsOn && cuts.removed.length > 0) || (preset.audio.cleanAudio && meta.hasAudio) || meta.rotation !== 0 || meta.hdr || preset.finish?.enabled;
+  // Mirrored selfie footage (words in the shot read backwards) is flipped back in the clean pass.
+  const mirrorCheck = preset.gate?.enabled !== false && preset.gate?.mirror !== false && process.env.REEL_GATE !== "0" && !sourceScenes && !opts.noMirrorCheck;
+  const mirrored = mirrorCheck ? await (deps.detectMirrored || detectMirrored)(input, meta.duration) : false;
+  if (mirrored) log("master gate fix: the footage is mirrored (words in the shot read backwards); flipping it back");
+  const needsPass = (cutsOn && cuts.removed.length > 0) || (preset.audio.cleanAudio && meta.hasAudio) || meta.rotation !== 0 || meta.hdr || preset.finish?.enabled || !!mirrored;
   let videoSrc = input;
   let cleanMeta = meta;
   let cutInput = input;
@@ -298,7 +304,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
   }
   if (needsPass) {
     log("encoding clean.mp4 (cuts" + (preset.audio.cleanAudio && meta.hasAudio ? (studio ? " + studio sound" : " + clean audio") : "") + (cutHdr ? ` + ${meta.hdrKind} → BT.709 SDR` : "") + (preset.finish?.enabled ? " + finish" : "") + ")…");
-    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined, roomTone, finish: preset.finish, sourceDuration: meta.duration });
+    await applyCuts(cutInput, cuts.segments, cleanPath, { hasAudio: meta.hasAudio, cleanAudio: preset.audio.cleanAudio, fps: preset.render.fps || 30, hdr: cutHdr, scaleTo: canvasFor(preset.canvas, meta), audioInput: studio?.wav || null, voiceChain: studio ? STUDIO_CHAIN : undefined, roomTone, finish: preset.finish, sourceDuration: meta.duration, mirror: !!mirrored });
     videoSrc = cleanPath;
     cleanMeta = await probe(cleanPath);
   }
@@ -321,7 +327,8 @@ export async function runEdit(input, opts = {}, deps = {}) {
   if (hook && !preset.hook.pro) Object.assign(hook, hookWords(hook.text, dict));
   if (hook && cleanScenes) hook.duration = Math.min(hook.duration, cleanScenes[0].end - hook.start);
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
-  const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : null;
+  // A CTA given for this reel wins; otherwise a client's keyword map picks one from what they say (#nocta: none).
+  const cta = preset.cta?.enabled ? pickCta(duration, preset.cta) : !opts.noCta ? autoCta(cleanWords, duration, preset.cta) : null;
   let premise = await makePremise({ workDir, groups, hook, duration, settings: preset.premise, force: !!opts.force });
   let timeLabels = await makeTimeLabels({ workDir, groups, hook, duration, settings: preset.timeLabels, force: !!opts.newGraphics });
 
@@ -1015,7 +1022,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     name,
     preset: preset.name,
     source: input,
-    video: { src: videoSrc, duration, width: cleanMeta.width, height: cleanMeta.height, fps: cleanMeta.fps, hasAudio: cleanMeta.hasAudio },
+    video: { src: videoSrc, duration, width: cleanMeta.width, height: cleanMeta.height, fps: cleanMeta.fps, hasAudio: cleanMeta.hasAudio, ...(mirrored ? { mirrored: true } : {}) },
     canvas: canvasFor(preset.canvas, cleanMeta),
     style: preset,
     hook,
@@ -1063,7 +1070,12 @@ export async function runEdit(input, opts = {}, deps = {}) {
   // every zoom in place, then Claude picks the feature lines, icons and scenes and the final render is checked as usual.
   const boldOn = boldEnabled(preset, plan);
   const glowOn = !boldOn && glowEnabled(preset, plan);
+  // An earlier run's verdict must never stand in for this one (its retry would re-edit this reel).
+  for (const file of ["gate.json", "gate.txt"]) fs.rmSync(path.join(workDir, file), { force: true });
   let output = await renderProject(workDir, glowOn || boldOn ? { ...opts, noPreflight: true, noReview: true, ...(boldOn ? { boldMeasure: true } : {}) } : opts);
+  // The gate may have changed plan.json (moved captions, dropped a card); later steps write the plan back out.
+  const syncPlan = () => { const fresh = readJSONSafe(path.join(workDir, "plan.json")); if (fresh) Object.assign(plan, fresh); };
+  syncPlan();
   if (boldOn) {
     const pickFile = path.join(workDir, "bold-picks.json");
     const result = await restyleBold(plan, { outDir: workDir, protectedPhrases, render: output, picks: !opts.repick ? readJSONSafe(pickFile) : null });
@@ -1074,6 +1086,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     composeProject(plan, projectDir);
     log(`bold look: ${plan.bold.groups.length} phrases, ${plan.bold.overlays.length} overlays`);
     output = await renderProject(workDir, opts);
+    syncPlan();
   }
   if (glowOn) {
     try {
@@ -1087,6 +1100,17 @@ export async function runEdit(input, opts = {}, deps = {}) {
       warn(`glow look skipped: ${String(e.message).split("\n")[0]}; keeping the standard look`);
     }
     output = await renderProject(workDir, opts);
+    syncPlan();
+  }
+  // The gate found the spoken ask cut off the ending: edit once more, ending after it (the transcript is cached).
+  const gateNow = readJSONSafe(path.join(workDir, "gate.json"));
+  if (gateNow?.retry?.endAfter && opts.endAfter == null && opts.endAt == null && !opts.noCuts && !opts.gateRetry) {
+    let found = false;
+    try { endAfterPhrase(words, gateNow.retry.endAfter); found = true; } catch {}
+    if (found) {
+      log(`master gate: the ending cut the spoken ask; editing again to end after "${gateNow.retry.endAfter}"`);
+      return runEdit(input, { ...opts, endAfter: gateNow.retry.endAfter, gateRetry: true }, deps);
+    }
   }
   let cover = null;
   if (preset.cover?.enabled !== false && hook) {
@@ -1305,6 +1329,25 @@ export async function renderProject(workDir, opts = {}) {
   const plan = readJSON(path.join(workDir, "plan.json"));
   const projectDir = path.join(workDir, "project");
   const output = path.resolve(opts.output || path.join(workDir, "renders", `${plan.name}.mp4`));
+  const gateOn = !opts.noGate && plan.style?.gate?.enabled !== false && process.env.REEL_GATE !== "0";
+  // The master gate's plan-only fixes (caption doubles and flashes, a near-miss hook word) go in before the render.
+  if (gateOn && !opts.gateRound && !opts.boldMeasure) {
+    let pre = planFixes(plan);
+    // The voice track alone (no music yet): a caption over silence captions words nobody hears.
+    if (plan.video?.hasAudio && plan.video?.src && fs.existsSync(plan.video.src)) {
+      const quiet = await silences(plan.video.src, { noise: -50, min: 1 }).catch(() => []);
+      const heard = silentCaptions(pre.plan, quiet);
+      pre = { plan: heard.plan, applied: [...pre.applied, ...heard.applied] };
+    }
+    if (pre.applied.length) {
+      for (const fix of pre.applied) log(`master gate fix: ${fix}`);
+      writeJSON(path.join(workDir, "plan.json"), pre.plan);
+      writeFeatures(workDir, pre.plan);
+      composeProject(pre.plan, projectDir);
+      Object.assign(plan, pre.plan);
+      opts = { ...opts, gateFixes: [...(opts.gateFixes || []), ...pre.applied] };
+    }
+  }
   if (opts.check) await check(projectDir);
   log(`rendering → ${output}`);
   const t0 = Date.now();
@@ -1319,6 +1362,22 @@ export async function renderProject(workDir, opts = {}) {
   if (!(opts.boldMeasure && boldEnabled(plan.style, plan) && !plan.bold)) {
     const textcheck = await runTextcheck(workDir, { video: output });
     (textcheck.verdict === "hold" ? warn : log)(`text check: ${textcheck.verdict}${textcheck.notes.length ? ` (${textcheck.notes.join("; ")})` : ""}`);
+  }
+  // The master gate: measured overlap, safe zone, caption text and the spoken ask. It fixes what it can in plan.json,
+  // re-renders (at most twice) and holds the rest; gate.txt says what it did. Skipped on the measuring first passes.
+  const intermediate = opts.boldMeasure || (opts.noPreflight && opts.noReview);
+  if (!intermediate && gateOn) {
+    const round = opts.gateRound || 0, before = opts.gateFixes || [];
+    const gate = await runGate(workDir, { round, fixes: before });
+    if (gate.verdict === "fix") {
+      for (const fix of gate.fixes.slice(before.length)) log(`master gate fix: ${fix}`);
+      writeJSON(path.join(workDir, "plan.json"), gate.plan);
+      writeFeatures(workDir, gate.plan);
+      composeProject(gate.plan, path.join(workDir, "project"));
+      return renderProject(workDir, { ...opts, gateRound: round + 1, gateFixes: gate.fixes });
+    }
+    const holds = gate.problems.filter((p) => p.level === "hold");
+    (gate.verdict === "hold" ? warn : log)(`master gate: ${gate.verdict === "hold" ? `HELD (${holds.map((p) => p.message).join("; ")})` : "ok"}${gate.fixes.length ? `, fixed: ${gate.fixes.join("; ")}` : ""}`);
   }
   // Preflight: sound, the open, dead air, length and layout checked on the finished file; preflight.txt sits next
   // to plan.json. With preflight.strict a failing file is kept as <name>.failed.mp4 and the run stops.
