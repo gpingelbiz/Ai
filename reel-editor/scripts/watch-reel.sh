@@ -251,7 +251,12 @@ if [ "${REEL_PRESET:-}" = pingel-pro ] && [ "${REEL_CLIENT_MODE:-0}" != 1 ] && [
           *) kept+=("$f");;
         esac
       done
-      flags=(${kept[@]+"${kept[@]}"} --preset pingel-pro --graphics);;
+      flags=(${kept[@]+"${kept[@]}"} --preset pingel-pro --graphics)
+      # Greg 11-23 "do every third one for new reels too": every third pro drop gets Runway B-roll (a miss falls back
+      # to Codex stills in the editor); the others keep Codex stills. Counter: ~/Reels/.pro-broll-rotation
+      ROT="${REEL_PRO_ROTATION_FILE:-$HOME/Reels/.pro-broll-rotation}"
+      n=$(( $(cat "$ROT" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$ROT" 2>/dev/null || true
+      [ $((n % 3)) -eq 0 ] && flags+=(--broll-engine runway);;
   esac
 fi
 # A carousel needs the transcript and plan, not a render.

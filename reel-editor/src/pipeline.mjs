@@ -631,6 +631,11 @@ export async function runEdit(input, opts = {}, deps = {}) {
   let broll = preset.broll?.enabled && shownGroups.length
     ? (preset.broll.engine === "runway" ? await makeRunwayBroll(brollArgs) : await makeBroll(brollArgs))
     : [];
+  // Greg 11-23: a Runway reel that places nothing falls back to Codex-drawn stills (presets opt in).
+  if (preset.broll?.enabled && preset.broll.engine === "runway" && !broll.length && preset.broll.runwayFallback === "codex" && shownGroups.length) {
+    log("b-roll: Runway placed none; drawing Codex stills instead");
+    broll = await makeBroll({ ...brollArgs, force: true, settings: { ...preset.broll, engine: "codex", library: false, stock: [], stillFallback: true } });
+  }
   // "full-split": one cutaway with clear time after it is held longer, to become a split once the face is known.
   if (preset.broll?.layout === "full-split" && broll.length) broll = holdForSplit(broll, { duration, cta, busy: brollArgs.busy, tail, gap: preset.broll.gap ?? 4, hold: preset.broll.hold ?? 5, clipSeconds: preset.broll.videoSeconds ?? 5 });
   if (cleanScenes) broll = broll.filter((b) => fitSceneWindow(b, cleanScenes));

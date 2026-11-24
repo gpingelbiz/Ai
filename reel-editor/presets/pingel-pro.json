@@ -36,7 +36,8 @@
     "stock": [],
     "stillFallback": true,
     "max": 2,
-    "maxWithGraphics": 2
+    "maxWithGraphics": 2,
+    "runwayFallback": "codex"
   },
   "houseLooks": {
     "enabled": false
