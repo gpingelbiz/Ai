@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { rotateFilters, SDR_FILTER, SDR_TAGS, toneMapToSdr, hasZscale, hlgToSdrFilter } from "./hdr.mjs";
 import { measureStitchLoudness } from "./stitch-index.mjs";
 import { probeSource } from "./speaker-index.mjs";
-import { run, readJSON, writeJSON } from "./util.mjs";
+import { run, readJSON, writeJSON, NO_AUTOROTATE } from "./util.mjs";
 
 export function stitchAudioFilter(measured, frames) {
   const d = frames / 30;
@@ -37,7 +37,7 @@ export async function compileStitch(timeline, index, dir, { execute = run, loudn
       const measured = meta.hasAudio ? await loudness(input, { start: segment.in, duration: segment.frames / 30, execute }) : null;
       const tmp = output.replace(/\.mov$/, ".tmp.mov");
       try {
-        await execute("ffmpeg", ["-y", "-v", "error", "-noautorotate", "-ss", String(segment.in), "-i", input,
+        await execute("ffmpeg", ["-y", "-v", "error", ...NO_AUTOROTATE, "-ss", String(segment.in), "-i", input,
           ...(!meta.hasAudio ? ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"] : []),
           "-filter_complex", `[0:v]${stitchVideoFilter(normalized, segment.frames, hdrFilter)}[v];[${meta.hasAudio ? "0:a:0" : "1:a:0"}]asetpts=PTS-STARTPTS,${stitchAudioFilter(measured, segment.frames)}[a]`,
           "-map", "[v]", "-map", "[a]", "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "fast", "-crf", "12", "-pix_fmt", "yuv420p", ...SDR_TAGS, "-metadata:s:v:0", "rotate=0", "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", tmp], { capture: true });

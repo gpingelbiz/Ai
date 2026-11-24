@@ -2,7 +2,7 @@ import { SDR_FILTER, SDR_TAGS } from "./hdr.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { run, r3, log, warn } from "./util.mjs";
+import { run, r3, log, warn, NO_AUTOROTATE } from "./util.mjs";
 
 export const PACE = { off: Infinity, slow: 1.0, medium: 0.6, fast: 0.35, tight: 0.2 };
 const FILLERS = new Set(["um", "uh", "uhm", "umm", "uhh", "erm", "hmm", "mm", "ah", "er", "mhm"]);
@@ -536,7 +536,7 @@ export async function measureClip(input, { duration = null, preFilter = "", seek
       "format=rgb24",
     ].filter(Boolean).join(",");
     let result, pixels;
-    const rotation = noAutorotate ? ["-noautorotate"] : [];
+    const rotation = noAutorotate ? NO_AUTOROTATE : [];
     if (seek || sampleTimes) {
       // Long sources (a 30+ minute keynote) are sampled by seeking to the same 12 points instead of decoding every frame.
       const frameVf = [preFilter, "scale=96:96:flags=area", "signalstats", "metadata=print:file=-", "format=rgb24"].filter(Boolean).join(",");

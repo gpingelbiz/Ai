@@ -102,3 +102,19 @@ test("odd-sized sources are trimmed to even before yuv420p conversion; even sour
   assert.deepEqual(evenFilters(3648, 5472), []);
   assert.deepEqual(evenFilters(1920, 1080), []);
 });
+
+test("a phone clip turned upright by hand comes out upright, with no rotation tag left to turn it again", async (t) => {
+  const { NO_AUTOROTATE, run, PKG_ROOT } = await import("../src/util.mjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "upright-")); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const flat = path.join(dir, "flat.mp4"), phone = path.join(dir, "phone.mp4"), out = path.join(dir, "out.mov");
+  await run("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "color=red:s=384x216:r=30:d=0.2", "-c:v", "libx264", "-pix_fmt", "yuv420p", flat], { capture: true });
+  await run("ffmpeg", ["-y", "-v", "error", "-display_rotation", "90", "-i", flat, "-c", "copy", phone], { capture: true });
+  const meta = await probe(phone); assert.equal(meta.rotationCw % 180, 90);
+  await run("ffmpeg", ["-y", "-v", "error", ...NO_AUTOROTATE, "-i", phone, "-vf", rotateFilters(meta.rotationCw).join(","), "-c:v", "libx264", "-pix_fmt", "yuv420p", out], { capture: true });
+  // ffmpeg 9 kept the 90 degree tag on the turned pixels, so this played 384x216 (sideways) on the Mini.
+  const shown = await run("ffmpeg", ["-hide_banner", "-i", out, "-frames:v", "1", "-vf", "showinfo", "-f", "null", "-"], { capture: true, allowFail: true });
+  assert.match(String(shown.err) + String(shown.out), /s:216x384/);
+  // Every hand rotation in the editor goes through NO_AUTOROTATE, so a new one can't bring the sideways bug back.
+  const bare = fs.readdirSync(path.join(PKG_ROOT, "src")).filter((f) => f.endsWith(".mjs") && f !== "util.mjs" && fs.readFileSync(path.join(PKG_ROOT, "src", f), "utf8").includes('"-noautorotate"'));
+  assert.deepEqual(bare, []);
+});

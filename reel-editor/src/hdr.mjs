@@ -1,4 +1,4 @@
-import { run } from "./util.mjs";
+import { run, NO_AUTOROTATE } from "./util.mjs";
 
 /**
  * HDR handling. iPhones record HLG (Dolby Vision 8.4), some Android phones and cameras record PQ (HDR10).
@@ -77,7 +77,7 @@ export function toneMapArgs(input, output, { rotation = 0, hasAudio = true } = {
   ].join(",");
   return [
     "-y", "-loglevel", "error",
-    "-noautorotate", // hardware frames skip autorotate silently, so rotate in software after download
+    ...NO_AUTOROTATE, // hardware frames skip autorotate silently, so rotate in software after download
     "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld",
     "-i", input,
     "-map", "0:v:0", ...(hasAudio ? ["-map", "0:a:0"] : []),

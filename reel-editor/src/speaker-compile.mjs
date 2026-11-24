@@ -8,7 +8,7 @@ import { lookOptions, gradeOverrides, activeBox, defaultFit, fitGraph, foregroun
 import { measureLoudness } from "./preflight.mjs";
 import { repairOptions, prepareRepair, loadRepairReactions } from "./speaker-enhance.mjs";
 import { groupWords } from "./captions.mjs";
-import { readJSON, writeJSON, ensureDir, run, warn, r3 } from "./util.mjs";
+import { readJSON, writeJSON, ensureDir, run, warn, r3, NO_AUTOROTATE } from "./util.mjs";
 
 import { musicProblems } from "./speaker-music.mjs";
 import { motionProblems, validateKeywords } from "./speaker-beats.mjs";
@@ -572,7 +572,7 @@ export async function compileVersion(folder, plan, { manifest, index, preset = n
         if (stable.stabilized) { file = stable.file; seek = stable.in; normalization = ""; }
       }
       if (data.source.kind === "photo") args.push("-loop", "1", "-framerate", "30");
-      args.push("-noautorotate", "-ss", String(seek), "-t", String(frames / 30 + 1 / 30), "-i", file);
+      args.push(...NO_AUTOROTATE, "-ss", String(seek), "-t", String(frames / 30 + 1 / 30), "-i", file);
       const crop = sourceCropOptions(entry.sourceCrop, data.meta);
       const g = fitGeometry(crop?.meta || data.meta, entry.fit);
       if (g.warning) { const message = `${entry.id}: ${g.warning}`; print(message); resolved.problems.push({ level: "warn", id: entry.id, message }); }

@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { measureClip } from "./cuts.mjs";
 import { sourceCacheKey } from "./speaker-index.mjs";
-import { run, ensureDir, readJSON, writeJSON } from "./util.mjs";
+import { run, ensureDir, readJSON, writeJSON, NO_AUTOROTATE } from "./util.mjs";
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const short = (n) => Number(n.toFixed(8));
@@ -249,7 +249,7 @@ export async function prepareGrade(file, { sourceKey, meta, preFilter = "", rang
         try {
           const chunks = [];
           for (let frame = 0; frame < 12; frame++) {
-            await execute("ffmpeg", ["-y", "-loglevel", "error", "-noautorotate", "-ss", String(sampleTimes[frame]), "-i", file, "-an", "-vf", [preFilter, "scale=32:32:flags=area", "format=rgb24"].filter(Boolean).join(","), "-frames:v", "1", "-f", "rawvideo", raw], { capture: true });
+            await execute("ffmpeg", ["-y", "-loglevel", "error", ...NO_AUTOROTATE, "-ss", String(sampleTimes[frame]), "-i", file, "-an", "-vf", [preFilter, "scale=32:32:flags=area", "format=rgb24"].filter(Boolean).join(","), "-frames:v", "1", "-f", "rawvideo", raw], { capture: true });
             chunks.push(fs.readFileSync(raw));
           }
           data = { schemaVersion: 2, measurement, measurementKey, gradeVersion: 3, key: measurementKey, stats, neutral: neutralStats(Buffer.concat(chunks)) };
@@ -283,7 +283,7 @@ export async function stabilizeRange(file, range, { sourceKey, cacheDir, preFilt
   const result = { file: output, in: range.in - start, key, stabilized: true };
   if (fs.existsSync(output)) return result;
   const prefix = [preFilter, "fps=30:start_time=0:round=near"].filter(Boolean).join(",");
-  const common = ["-y", "-loglevel", "error", "-filter_threads", "1", "-noautorotate", "-ss", String(start), "-t", String(duration), "-i", file, "-an"];
+  const common = ["-y", "-loglevel", "error", "-filter_threads", "1", ...NO_AUTOROTATE, "-ss", String(start), "-t", String(duration), "-i", file, "-an"];
   try {
     await execute("ffmpeg", [...common, "-vf", `${prefix},vidstabdetect=shakiness=5:accuracy=9:result=${filterPath(transforms)}`, "-f", "null", "-"], { capture: true });
     const args = [...common, "-vf", `${prefix},vidstabtransform=input=${filterPath(transforms)}:smoothing=15:zoom=3:optzoom=1:interpol=bicubic,format=yuv420p`, "-frames:v", String(Math.round(duration * 30)), "-r", "30", "-fps_mode", "cfr"];
@@ -303,7 +303,7 @@ export async function lookReviewFrames(file, { at = 0, beforeFilter = "", afterF
   try {
     for (const [suffix, filter] of [["before", beforeFilter], ["after", [beforeFilter, afterFilter].filter(Boolean).join(",")]]) {
       const output = path.join(dir, `${name}-${suffix}.jpg`);
-      await execute("ffmpeg", ["-y", "-loglevel", "error", "-noautorotate", "-ss", String(at), "-i", file, "-vf", [filter, "scale=960:540:force_original_aspect_ratio=decrease", "setsar=1"].filter(Boolean).join(","), "-frames:v", "1", output], { capture: true });
+      await execute("ffmpeg", ["-y", "-loglevel", "error", ...NO_AUTOROTATE, "-ss", String(at), "-i", file, "-vf", [filter, "scale=960:540:force_original_aspect_ratio=decrease", "setsar=1"].filter(Boolean).join(","), "-frames:v", "1", output], { capture: true });
       if (!fs.existsSync(output) || !fs.statSync(output).size) throw new Error("no review frame");
     }
     return true;

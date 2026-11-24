@@ -6,6 +6,13 @@ import { fileURLToPath } from "node:url";
 
 export const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * Input flags for reading a phone clip's stored pixels when the code turns it upright by hand. ffmpeg 9 copies the
+ * clip's rotation tag onto the output even after the pixels were turned, so a portrait phone clip came out sideways
+ * (the Mini, since Homebrew's ffmpeg 9.1 on Nov 23 2026). -display_rotation 0 clears the tag; ffmpeg 8 behaves the same.
+ */
+export const NO_AUTOROTATE = Object.freeze(["-noautorotate", "-display_rotation", "0"]);
+
 export function run(cmd, args, { cwd, env, capture = false, quiet = false, allowFail = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
