@@ -30,7 +30,7 @@ import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
 import { boldEnabled, restyleBold } from "./bold.mjs";
-import { proEnabled, makeProGraphics, attachProWordMarks, placeProGraphics, proSoundCues, proCaptionBand, resolveProCollisions } from "./pro.mjs";
+import { proEnabled, makeProGraphics, attachProWordMarks, placeProGraphics, proSoundCues, proCaptionBand, resolveProCollisions, applyCaptionSwaps, PRO_MIN_CARDS } from "./pro.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
@@ -976,10 +976,22 @@ export async function runEdit(input, opts = {}, deps = {}) {
         ? proCaptionBand(shownGroups, { H: canvas0.height })
         : { captionTop, captionBottom: Math.max(1300 / 1920, preset.captions.position + preset.captions.fontSizeFrac * 1.4) }),
     });
+    const noRoom = proGraphics.missed || [];
+    const swapCaps = showCaptions && preset.captions.pro;
+    const capsBeforeSwap = shownGroups;
+    if (swapCaps) shownGroups = applyCaptionSwaps(proGraphics, shownGroups).groups;
+    if (noRoom.length) warn(`pro graphics: ${noRoom.length} planned card${noRoom.length === 1 ? "" : "s"} had no free space beside the face, captions and mic (${noRoom.map((o) => o.type).join(", ")})`);
     // Nothing may cover anything else: cards vs captions, the hook and each other, frame by frame in time.
     const clash = resolveProCollisions(proGraphics, { captions: showCaptions && preset.captions.pro ? shownGroups : [], hook: hook?.pro || preset.hook?.pro ? hook : null, W: canvas0.width, H: canvas0.height });
     proGraphics = clash.kept;
-    if (clash.dropped.length) warn(`pro graphics: dropped ${clash.dropped.length} card${clash.dropped.length === 1 ? "" : "s"} that would cover ${[...new Set(clash.dropped.map((d) => d.with))].join(", ")}`);
+    if (swapCaps) {
+      // Hide captions only under swap cards that survived the overlap check.
+      const swapped = applyCaptionSwaps(proGraphics, capsBeforeSwap);
+      if (swapped.groups.length !== capsBeforeSwap.length) log(`pro graphics: ${proGraphics.filter((c) => c.place?.slot === "caption-swap").length} card(s) stand in for the captions in a tight shot`);
+      shownGroups = swapped.groups; proGraphics = swapped.cards;
+    }
+    if (proGraphics.filter((o) => o.type !== "wordMark").length < PRO_MIN_CARDS) warn(`pro graphics: only ${proGraphics.filter((o) => o.type !== "wordMark").length} card${proGraphics.filter((o) => o.type !== "wordMark").length === 1 ? "" : "s"} placed (floor ${PRO_MIN_CARDS}); try --new-graphics or a wider shot`);
+    if (clash.dropped.length) warn(`pro graphics: dropped ${clash.dropped.length} card${clash.dropped.length === 1 ? "" : "s"} that would cover ${[...new Set(clash.dropped.map((d) => d.with))].join(", ")}${process.env.REEL_PRO_DEBUG ? " " + JSON.stringify(clash.dropped) : ""}`);
     log(`pro graphics: ${proGraphics.length} teaching overlays placed`);
   }
   const audio = await prepareAudio({ workDir, projectDir, preset, opts, duration, hook, zooms, voiceFile: videoSrc, words: cleanWords, envelope: early.envelope, segments: cuts.segments, transcript: preset.audio.pro ? cleanWords.map((w) => w.text).join(" ") : shownGroups.map((g) => g.text).join(" "), cues: { zooms, graphics: allCards, slams, icons, broll, brollCut: preset.broll.cut, coldOpen, captions: shownGroups, annotate: !!preset.captions.annotate, ...(proOn ? { proGraphics } : {}) } });

@@ -30,7 +30,17 @@
     "enabled": false
   },
   "broll": {
-    "enabled": false
+    "enabled": true,
+    "engine": "codex",
+    "library": true,
+    "stock": [
+      "pexels",
+      "pixabay",
+      "wikimedia"
+    ],
+    "stillFallback": false,
+    "max": 2,
+    "maxWithGraphics": 2
   },
   "houseLooks": {
     "enabled": false
