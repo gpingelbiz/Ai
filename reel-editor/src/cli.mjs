@@ -49,7 +49,7 @@ Usage
                                     bank your own footage (keeps an original copy; never moves your file)
   reel broll-shotlist [--missing]   filmable starter actions; --missing skips approved own actions
   reel usage                        what the paid generations (Runway b-roll) cost this month and last, and the balance
-  reel clips <long video> [--count 5] [--plan-only] [--replan] [--no-layout] [edit options]
+  reel clips <long video> [--count N|auto] [--plan-only] [--replan] [--no-layout] [edit options]
                                     one long recording into several reels: Claude picks 30-90 s windows with a
                                     hook and a score, each is cut out and edited (clips.json lists them)
   reel hooks <workdir> "hook A" "hook B"  the first 4 s rendered once per hook, into <workdir>/hooks/
