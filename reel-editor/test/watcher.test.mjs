@@ -287,6 +287,8 @@ test("REEL_PRESET=pingel-pro: Greg's reel, b-roll and long-video drops get the p
   assert.ok(lines.length >= 3, r.calls);
   for (const l of lines) {
     assert.match(l, /--preset pingel-pro --graphics$|--preset pingel-pro --graphics /, l);
-    assert.doesNotMatch(l, /--caption-style|--broll\b|--no-graphics|--no-slams/, l);
+    assert.doesNotMatch(l, /--caption-style|--broll(?!-engine runway)\b|--no-graphics|--no-slams/, l);
   }
+  // Greg 11-23: every third pro drop gets Runway B-roll, the rest Codex stills.
+  assert.equal(lines.filter((l) => /--broll-engine runway/.test(l)).length, Math.floor(lines.length / 3), r.calls);
 });
