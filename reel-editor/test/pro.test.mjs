@@ -22,7 +22,12 @@ test("pro is a Greg-only portrait preset that inherits the brand and disables gl
   assert.equal(proEnabled({ ...p, name: "pingel-brand" }, plan, {}), false);
   assert.equal(proEnabled(p, { ...plan, canvas: { width: 1920, height: 1080 } }, {}), false);
   assert.equal(proEnabled({ ...p, pro: { enabled: false } }, plan, {}), false);
-  for (const key of ["glow", "bold", "icons", "slams", "broll", "coldOpen"]) assert.equal(p[key].enabled, false, key);
+  for (const key of ["glow", "bold", "icons", "slams", "coldOpen"]) assert.equal(p[key].enabled, false, key);
+  // Greg 11-23: B-roll back on, free sources only (own library + stock moving clips), never drawn stills or Runway.
+  assert.equal(p.broll.enabled, true);
+  assert.equal(p.broll.engine, "codex");
+  assert.equal(p.broll.stillFallback, false);
+  assert.equal(p.broll.library, true);
   assert.equal(p.graphics.placeFull, false);
 });
 

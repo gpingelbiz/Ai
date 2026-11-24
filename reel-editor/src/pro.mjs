@@ -297,7 +297,10 @@ export function attachProWordMarks(overlays, captions) {
 /** Cards go where this shot has room: above the head or on the torso below the captions (an opaque card may cover
  * the hoodie print). A card scales down to fit, never under 0.62 so its type stays readable on a phone. */
 export const PRO_MIN_SCALE = 0.62;
-export function placeProOverlay(overlay, frame) {
+/** Fewer real cards than this and missed cards are retried smaller (down to PRO_FLOOR_SCALE) and over the mic. */
+export const PRO_MIN_CARDS = 2;
+export const PRO_FLOOR_SCALE = 0.5;
+export function placeProOverlay(overlay, frame, { minScale = PRO_MIN_SCALE, ignoreMic = false, captionSwap = false } = {}) {
   const size = proSize(overlay);
   if (!frame?.measured || !size) return null;
   const k = frame.W / 1080;
@@ -306,7 +309,7 @@ export function placeProOverlay(overlay, frame) {
   if (overlay.fullscreen) return { slot: "full", x: 0, y: 0, w: frame.W, h: frame.H, scale: k };
   const head = frame.head;
   // Existing face detection has no microphone class. Protect Greg's lower-left mic conservatively when unmeasured.
-  const mic = frame.mic || { x: 0, y: 880 * k, w: 280 * k, h: 480 * k };
+  const mic = ignoreMic ? null : frame.mic || { x: 0, y: 880 * k, w: 280 * k, h: 480 * k };
   const capBox = frame.caption || { x: 0, y: 1080 * k, w: frame.W, h: 220 * k };
   const topSafe = 176 * k, bottomSafe = 1720 * k, side = 80 * k;
   const zones = [];
@@ -315,23 +318,40 @@ export function placeProOverlay(overlay, frame) {
   const micRight = mic ? mic.x + mic.w + 24 * k : side;
   zones.push({ slot: "torso", x: Math.max(side, micRight), y: lowTop, w: frame.W - side - Math.max(side, micRight), h: bottomSafe - lowTop });
   zones.push({ slot: "torso-wide", x: side, y: Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0), w: frame.W - 2 * side, h: bottomSafe - Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0) });
+  // Last resort for tight shots: the card stands in for the captions (they are hidden while it shows the words).
+  if (captionSwap) {
+    const swapTop = Math.max(capBox.y, head ? head.y + head.h + 24 * k : 0);
+    zones.length = 0;
+    zones.push({ slot: "caption-swap", x: side, y: swapTop, w: frame.W - 2 * side, h: bottomSafe - swapTop - 24 * k });
+  }
   let best = null;
   for (const z of zones) {
     if (z.w <= 0 || z.h <= 0) continue;
     const scale = Math.min(1, z.w / (size.w * k), z.h / (size.h * k));
-    if (scale < PRO_MIN_SCALE) continue;
+    if (scale < minScale) continue;
     const w = size.w * k * scale, h = size.h * k * scale;
     const box = { x: z.x + (z.w - w) / 2, y: z.y + 8 * k, w, h };
     const swept = { ...box, y: box.y - 8 * k, h: box.h + 24 * k };
-    if (overlaps(swept, head, 56 * k) || overlaps(swept, mic, 24 * k) || overlaps(swept, capBox)) continue;
+    if (overlaps(swept, head, 56 * k) || (mic && overlaps(swept, mic, 24 * k)) || (!captionSwap && overlaps(swept, capBox))) continue;
     if (!best || scale > best.scale / k + 0.08 || (z.slot === "upper" && scale >= best.scale / k - 0.08)) best = { slot: z.slot, ...box, scale: scale * k };
   }
   return best;
 }
 
+/** Captions hidden while a caption-swap card is up, and word marks that would float without them. */
+export function applyCaptionSwaps(cards, groups) {
+  const swaps = cards.filter((c) => c.place?.slot === "caption-swap");
+  if (!swaps.length) return { cards, groups };
+  const under = (a, b) => swaps.some((c) => a < c.end && b > c.start);
+  return {
+    groups: groups.filter((g) => !under(g.start, g.end)),
+    cards: cards.filter((c) => c.type !== "wordMark" || !under(c.start, c.end)),
+  };
+}
+
 /** Measure the entire overlay window in the same transformed coordinate system as the existing frame placer. */
-export async function placeProGraphics(overlays, { video, detect, W = 1080, H = 1920, framingAt = () => ({}), zoomAt = () => 1, captionTop = 1080 / 1920, captionBottom = 1300 / 1920 } = {}) {
-  const placed = [];
+export async function placeProGraphics(overlays, { video, detect, W = 1080, H = 1920, framingAt = () => ({}), zoomAt = () => 1, captionTop = 1080 / 1920, captionBottom = 1300 / 1920, minCards = PRO_MIN_CARDS } = {}) {
+  const placed = [], missed = [];
   for (const overlay of overlays) {
     const times = Array.from({ length: Math.ceil(overlay.duration * 4) + 1 }, (_, i) => Math.min(overlay.end - 0.001, overlay.start + i * 0.25));
     const det = await detect(video, times);
@@ -351,9 +371,28 @@ export async function placeProGraphics(overlays, { video, detect, W = 1080, H = 
       const x = Math.min(...boxes.map((b) => b.x)), y = Math.min(...boxes.map((b) => b.y));
       return { x, y, w: Math.max(...boxes.map((b) => b.x + b.w)) - x, h: Math.max(...boxes.map((b) => b.y + b.h)) - y };
     };
-    const place = placeProOverlay(overlay, { ...frames[0], head: bounds("head"), mic: bounds("mic") });
+    const frame = { ...frames[0], head: bounds("head"), mic: bounds("mic") };
+    const place = placeProOverlay(overlay, frame);
     if (place) placed.push({ ...overlay, place });
+    else missed.push({ overlay, frame });
   }
+  // Greg 11-23: tight shots left reels with no cards at all. Below the floor, place more of the missed cards
+  // smaller and allowed over the microphone (never the face, the captions or the hook), in the planner's order.
+  const realCards = () => placed.filter((o) => o.type !== "wordMark").length;
+  const rescued = [];
+  for (const { overlay, frame } of missed) {
+    if (realCards() >= minCards || overlay.type === "wordMark") continue;
+    let place = placeProOverlay(overlay, frame, { minScale: PRO_FLOOR_SCALE, ignoreMic: true });
+    let card = overlay;
+    if (!place) {
+      place = placeProOverlay(overlay, frame, { minScale: PRO_MIN_SCALE, ignoreMic: true, captionSwap: true });
+      // A swap card hides the captions, so it only holds a beat past its last spoken word.
+      if (place) { const end = Math.min(overlay.end, (overlay.complete ?? overlay.end) + 0.8); card = { ...overlay, end: Math.round(end * 1000) / 1000, duration: Math.round((end - overlay.start) * 1000) / 1000 }; }
+    }
+    if (place) { placed.push({ ...card, place: { ...place, rescued: true } }); rescued.push(overlay); }
+  }
+  placed.sort((a, b) => a.start - b.start);
+  Object.defineProperty(placed, "missed", { value: missed.filter(({ overlay }) => !rescued.includes(overlay)).map(({ overlay }) => overlay), enumerable: false });
   return placed;
 }
 
