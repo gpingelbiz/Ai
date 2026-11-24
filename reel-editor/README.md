@@ -404,6 +404,7 @@ The last check every reel passes before it is delivered, and the one that fixes 
 | transcript spacing on a card ("1 ,000", "Re -loop") | closed up ("1,000", "Re-loop") |
 | mirrored selfie footage (Vision reads words in the shot only when the frame is flipped) | flipped back in the clean pass |
 | a CTA card on the captions | moved up clear of them |
+| a CTA card too wide for the frame (under Instagram's buttons or off an edge) | its text made smaller to fit, pulse included |
 
 The plan-only fixes (caption lines, silence, hook words, cards) go into `plan.json` before the first render, so they cost nothing; the measured ones need one re-render.
 
