@@ -300,7 +300,7 @@ export const PRO_MIN_SCALE = 0.62;
 /** Fewer real cards than this and missed cards are retried smaller (down to PRO_FLOOR_SCALE) and over the mic. */
 export const PRO_MIN_CARDS = 2;
 export const PRO_FLOOR_SCALE = 0.5;
-export function placeProOverlay(overlay, frame, { minScale = PRO_MIN_SCALE, ignoreMic = false, captionSwap = false } = {}) {
+export function placeProOverlay(overlay, frame, { minScale = PRO_MIN_SCALE, ignoreMic = false, captionSwap = false, recent = [] } = {}) {
   const size = proSize(overlay);
   if (!frame?.measured || !size) return null;
   const k = frame.W / 1080;
@@ -318,23 +318,43 @@ export function placeProOverlay(overlay, frame, { minScale = PRO_MIN_SCALE, igno
   const micRight = mic ? mic.x + mic.w + 24 * k : side;
   zones.push({ slot: "torso", x: Math.max(side, micRight), y: lowTop, w: frame.W - side - Math.max(side, micRight), h: bottomSafe - lowTop });
   zones.push({ slot: "torso-wide", x: side, y: Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0), w: frame.W - 2 * side, h: bottomSafe - Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0) });
+  // Beside the head, when the shot leaves room on either side (wide or off-center framing).
+  if (head) {
+    const bandBottom = capBox.y - 8 * k;
+    zones.push({ slot: "left", x: side, y: topSafe, w: head.x - 56 * k - side, h: bandBottom - topSafe });
+    zones.push({ slot: "right", x: head.x + head.w + 56 * k, y: topSafe, w: frame.W - side - (head.x + head.w + 56 * k), h: bandBottom - topSafe });
+  }
   // Last resort for tight shots: the card stands in for the captions (they are hidden while it shows the words).
   if (captionSwap) {
     const swapTop = Math.max(capBox.y, head ? head.y + head.h + 24 * k : 0);
     zones.length = 0;
     zones.push({ slot: "caption-swap", x: side, y: swapTop, w: frame.W - 2 * side, h: bottomSafe - swapTop - 24 * k });
   }
-  let best = null;
+  // Greg 11-23 "I don't want the card always in the same spot": every zone offers left, centre and right (and, beside
+  // the head, high and low) positions; the pick keeps size first, then moves away from the spots the last cards used.
+  const cands = [];
   for (const z of zones) {
     if (z.w <= 0 || z.h <= 0) continue;
     const scale = Math.min(1, z.w / (size.w * k), z.h / (size.h * k));
     if (scale < minScale) continue;
     const w = size.w * k * scale, h = size.h * k * scale;
-    const box = { x: z.x + (z.w - w) / 2, y: z.y + 8 * k, w, h };
-    const swept = { ...box, y: box.y - 8 * k, h: box.h + 24 * k };
-    if (overlaps(swept, head, 56 * k) || (mic && overlaps(swept, mic, 24 * k)) || (!captionSwap && overlaps(swept, capBox))) continue;
-    if (!best || scale > best.scale / k + 0.08 || (z.slot === "upper" && scale >= best.scale / k - 0.08)) best = { slot: z.slot, ...box, scale: scale * k };
+    const roomX = z.w - w, roomY = z.h - h - 16 * k;
+    const xs = roomX > 40 * k ? [["left", z.x], ["center", z.x + roomX / 2], ["right", z.x + roomX]] : [["center", z.x + roomX / 2]];
+    const ys = (z.slot === "left" || z.slot === "right") && roomY > 120 * k ? [["high", z.y + 8 * k], ["low", z.y + 8 * k + roomY]] : [["", z.y + 8 * k]];
+    for (const [ax, x] of xs) for (const [ay, y] of ys) {
+      const box = { x, y, w, h };
+      const swept = { ...box, y: box.y - 8 * k, h: box.h + 24 * k };
+      if (overlaps(swept, head, 56 * k) || (mic && overlaps(swept, mic, 24 * k)) || (!captionSwap && overlaps(swept, capBox))) continue;
+      cands.push({ slot: z.slot, spot: [z.slot, ax, ay].filter(Boolean).join("-"), ...box, scale: scale * k, s: scale });
+    }
   }
+  if (!cands.length) return null;
+  const top = Math.max(...cands.map((c) => c.s));
+  const last = recent[recent.length - 1];
+  const score = (c) => (c.s >= top - 0.12 ? 1 : 0) * 2 + c.s
+    - (last && c.spot === last ? 1.5 : 0) - (last && c.spot.split("-")[0] === String(last).split("-")[0] ? 0.4 : 0)
+    - (recent.includes(c.spot) ? 0.3 : 0) + (c.slot === "upper" ? 0.05 : 0);
+  const { s: _s, ...best } = cands.reduce((a, b) => (score(b) > score(a) ? b : a));
   return best;
 }
 
@@ -352,6 +372,7 @@ export function applyCaptionSwaps(cards, groups) {
 /** Measure the entire overlay window in the same transformed coordinate system as the existing frame placer. */
 export async function placeProGraphics(overlays, { video, detect, W = 1080, H = 1920, framingAt = () => ({}), zoomAt = () => 1, captionTop = 1080 / 1920, captionBottom = 1300 / 1920, minCards = PRO_MIN_CARDS } = {}) {
   const placed = [], missed = [];
+  const spots = () => placed.filter((o) => o.place?.spot).sort((a, b) => a.start - b.start).map((o) => o.place.spot);
   for (const overlay of overlays) {
     const times = Array.from({ length: Math.ceil(overlay.duration * 4) + 1 }, (_, i) => Math.min(overlay.end - 0.001, overlay.start + i * 0.25));
     const det = await detect(video, times);
@@ -372,7 +393,7 @@ export async function placeProGraphics(overlays, { video, detect, W = 1080, H = 
       return { x, y, w: Math.max(...boxes.map((b) => b.x + b.w)) - x, h: Math.max(...boxes.map((b) => b.y + b.h)) - y };
     };
     const frame = { ...frames[0], head: bounds("head"), mic: bounds("mic") };
-    const place = placeProOverlay(overlay, frame);
+    const place = placeProOverlay(overlay, frame, { recent: spots() });
     if (place) placed.push({ ...overlay, place });
     else missed.push({ overlay, frame });
   }
@@ -382,7 +403,7 @@ export async function placeProGraphics(overlays, { video, detect, W = 1080, H = 
   const rescued = [];
   for (const { overlay, frame } of missed) {
     if (realCards() >= minCards || overlay.type === "wordMark") continue;
-    let place = placeProOverlay(overlay, frame, { minScale: PRO_FLOOR_SCALE, ignoreMic: true });
+    let place = placeProOverlay(overlay, frame, { minScale: PRO_FLOOR_SCALE, ignoreMic: true, recent: spots() });
     let card = overlay;
     if (!place) {
       place = placeProOverlay(overlay, frame, { minScale: PRO_MIN_SCALE, ignoreMic: true, captionSwap: true });
