@@ -406,8 +406,12 @@ function stillTiming(pick, candidate, groups, { len, minDuration, maxDuration, f
     const next = boundary(pick.endsBefore, "start");
     if (!(word.start <= payoff && payoff <= next)) return reject("invalid spoken idea boundaries");
     const wanted = Number.isFinite(pick.duration) ? pick.duration : len;
-    const end = Math.min(word.start + Math.max(minDuration, Math.min(maxDuration, wanted)), next,
-      payoff >= word.start + minDuration - 0.000001 ? payoff : Infinity, until,
+    // Greg 11-24 (master check broll-present failures): short spoken ideas ended before the minimum hold, so every
+    // pick was rejected. The idea's own end still caps the shot when it leaves room for the minimum; otherwise the
+    // still runs on over the next words (voice and captions continue), stopped only by cards, the CTA or the tail.
+    const ideaEnd = Math.min(next, payoff >= word.start + minDuration - 0.000001 ? payoff : Infinity);
+    const end = Math.min(word.start + Math.max(minDuration, Math.min(maxDuration, wanted)),
+      ideaEnd - word.start >= minDuration - 0.000001 ? ideaEnd : Infinity, until,
       ...busy.filter((b) => b.start + b.duration + clear > word.start + 0.000001).map((b) => b.start - clear));
     if (word.start < from || end - word.start < minDuration - 0.000001) return reject("anchor leaves too little room between the hook, cards or next idea");
     return { start: word.start, duration: end - word.start };
