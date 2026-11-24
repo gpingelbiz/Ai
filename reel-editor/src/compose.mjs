@@ -464,7 +464,13 @@ export function renderHTML(plan, footage) {
     zooms: plan.stitchScenes ? [] : plan.zooms || [],
     broll: brollList.map((b, i) => {
       const layout = brollLayout(b);
-      return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY, seamY: b.split.seamY ?? Math.round(H / 2) } : {}) } : {}) };
+      const camera = b.camera ?? b.pick?.camera;
+      const stillMove = !b.video && (camera || (pro && b.stillSource === "codex"))
+        ? camera === "detail-48mm"
+          ? [{ scale: 1.015, x: 0 }, { scale: 1.03, x: 0, ease: "none" }]
+          : [{ scale: 1.0, x: 0 }, { scale: 1.035, x: 6, ease: "none" }]
+        : null;
+      return { start: b.start, duration: b.duration, motion: b.video ? "none" : b.motion || "in", video: !!b.video, ...(stillMove ? { stillMove } : {}), ...(b.cutout?.src ? { cutout: i } : {}), ...(layout !== "full" ? { layout, ...(layout === "split" ? { footageY: b.split.footageY, seamY: b.split.seamY ?? Math.round(H / 2) } : {}) } : {}) };
     }),
     graphics: cardList.map((g) => ({ start: g.start, duration: g.duration, motion: numberMotion(g, { schema: gfxSchema }) || undefined, ...(timed(g) ? { type: g.type, items: (g.type === "ladder" ? g.rungs : g.items).map((it) => ({ at: it.at })) } : {}), ...(isPersistentScene(g) ? { persistent: true, duck: g.duck || [], enterEase: s.brand?.motion?.enterEase || "none", exitEase: s.brand?.motion?.exitEase || "none" } : {}), ...(Number.isFinite(g.pivotAt) ? { pivotAt: g.pivotAt, kind: g.kind || "versus", faceSide } : {}), ...(g.type === "message" && g.mode === "proof" ? { mode: "proof", items: g.items.map((it) => ({ at: it.at, from: it.from })), ...(g.outcome ? { outcome: { at: g.outcome.at } } : {}) } : {}), ...(Number.isFinite(g.headTop) ? { headTop: g.headTop } : {}), ...(g.place ? { place: g.place } : {}), ...(g.evidenceDuck?.length ? { evidenceDuck: g.evidenceDuck } : {}), ...(g.type === "flip" ? { type: "flip" } : {}), ...(g.enter ? { enter: g.enter } : {}), ...(g.mark ? { mark: g.mark } : {}) })),
     ...(cardList.some((g) => g.mark) ? { mixMarks: MIX_MARKS } : {}),
@@ -525,6 +531,8 @@ export function renderHTML(plan, footage) {
       ...behindScenes.map(({ i }) => `#gs-cutout-${i}`),
     ],
   };
+  const customStillMotion = runtimePlan.broll.some((b) => b.stillMove);
+  const brollMoveDuration = customStillMotion ? "moveFor" : "b.duration * 0.92";
   if (iconList.length) runtimePlan.icons = iconList.map((icon) => ({ t: icon.t, end: icon.end, ...(glow && icon.image ? { action: glowIconAction(icon.action) } : {}) }));
   if (progressList.length) runtimePlan.progress = progressList.map((g) => ({ start: g.start, duration: g.duration, hookEnd: g.hookEnd, pulses: g.pulses || [] }));
   if (evidenceList.length) runtimePlan.evidence = evidenceList.map((item) => ({
@@ -960,13 +968,15 @@ ${EVIDENCE_JS}` : ""}
         const MOVES = { none: [{ scale: 1.0 }, { scale: 1.0, ease: "none" }], in: [{ scale: 1.0 }, { scale: 1.06, ease: "power2.out" }], out: [{ scale: 1.06 }, { scale: 1.0, ease: "power2.out" }], left: [{ scale: 1.04, xPercent: 1.6 }, { scale: 1.07, xPercent: -1.6, ease: "none" }], right: [{ scale: 1.04, xPercent: -1.6 }, { scale: 1.07, xPercent: 1.6, ease: "none" }] };
         PLAN.broll.forEach((b, i) => {
           const el = document.getElementById("broll-" + i);
-          const m = MOVES[b.motion] || MOVES.in;
-          const img = el.querySelector(".broll-media");
+${customStillMotion ? `          const m = b.stillMove || MOVES[b.motion] || MOVES.in;
+          const moveFor = b.stillMove ? b.duration : b.duration * 0.92;
+` : `          const m = MOVES[b.motion] || MOVES.in;
+`}          const img = el.querySelector(".broll-media");
           const bEnd = b.start + b.duration;
 ${sharedBroll ? `          if (b.layout === "window") {
             tl.fromTo(el, { opacity: 0, scale: 0.94, y: PLAN.height * 0.0125 }, { opacity: 1, scale: 1, y: 0, duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
             if (PLAN.focusPull) tl.fromTo(img, { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
-            tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: b.duration * 0.92 }, b.start);
+            tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: ${brollMoveDuration} }, b.start);
             tl.to(el, { opacity: 0, scale: 0.98, y: -PLAN.height * 0.006, duration: 5 / 30, ease: "power2.in" }, bEnd - 5 / 30);
             return;
           }
@@ -977,7 +987,7 @@ ${sharedBroll ? `          if (b.layout === "window") {
             tl.fromTo("#footage-layout", { clipPath: "inset(0% 0 0 0)" }, { clipPath: "inset(" + (seam / PLAN.height) * 100 + "% 0 0 0)", duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
             tl.fromTo("#footage-position", { y: 0 }, { y: b.footageY, duration: 8 / 30, ease: "power3.out", immediateRender: false }, b.start);
             if (PLAN.focusPull) tl.fromTo(img, { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
-            tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: b.duration * 0.92 }, b.start);
+            tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: ${brollMoveDuration} }, b.start);
             tl.to(el, { y: -seam, duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
             tl.to("#footage-layout", { clipPath: "inset(0% 0 0 0)", duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
             tl.to("#footage-position", { y: 0, duration: 6 / 30, ease: "power2.in" }, bEnd - 6 / 30);
@@ -1010,7 +1020,7 @@ ${sharedBroll ? `          if (b.layout === "window") {
             if (PLAN.focusPull) tl.fromTo(img, { "--hf-color-grading-blur": PLAN.focusPull }, { "--hf-color-grading-blur": 0, duration: 0.32, ease: "power3.out", immediateRender: false }, b.start);
             tl.set(el, { opacity: 0 }, bEnd);
           }
-          tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: b.duration * 0.92 }, b.start);
+          tl.fromTo(el.querySelector(".broll-move"), m[0], { ...m[1], duration: ${brollMoveDuration} }, b.start);
           if (PLAN.brollCut === "flash") {
             // Flash on both cuts: the wash hits in 0.04 s and clears in 0.18 s; the warm core blooms and drifts out.
             const wash = el.querySelector(".broll-flash"), core = el.querySelector(".broll-flash-core");

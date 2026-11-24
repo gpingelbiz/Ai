@@ -35,9 +35,22 @@
     "library": false,
     "stock": [],
     "stillFallback": true,
+    "stillModel": "gpt-6.2-astra",
+    "duration": 1.6,
+    "minDuration": 1.4,
+    "maxDuration": 2.0,
+    "gap": 6,
+    "clearStart": 2.5,
+    "tail": 3,
+    "cardClear": 0.4,
+    "layout": "full",
+    "hold": 0,
+    "focusPull": 0,
+    "cut": "hard",
     "max": 2,
     "maxWithGraphics": 2,
-    "runwayFallback": "codex"
+    "runwayFallback": "codex",
+    "minOneAfter": 20
   },
   "houseLooks": {
     "enabled": false
