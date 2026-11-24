@@ -976,7 +976,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     const heads = (detection?.frames || []).flatMap((frame) => {
       const t = frame.time ?? frame.t ?? 0;
       const head = zoomedHead({ frames: [frame] }, zoomDuring(zooms, t, t));
-      return head ? [{ t, chin: head.bottom }] : [];
+      return head ? [{ t, chin: head.bottom, top: head.top }] : [];
     });
     shownGroups = placeProCaptions(shownGroups, heads, { height: canvas0.height });
     if (!heads.length) warn("pro captions: no chin measurements; keeping y=1248 (1080x1920)");
