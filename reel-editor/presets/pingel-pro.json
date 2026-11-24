@@ -32,13 +32,9 @@
   "broll": {
     "enabled": true,
     "engine": "codex",
-    "library": true,
-    "stock": [
-      "pexels",
-      "pixabay",
-      "wikimedia"
-    ],
-    "stillFallback": false,
+    "library": false,
+    "stock": [],
+    "stillFallback": true,
     "max": 2,
     "maxWithGraphics": 2
   },

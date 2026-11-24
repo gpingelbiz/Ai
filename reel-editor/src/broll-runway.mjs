@@ -676,7 +676,17 @@ export async function makeRunwayBroll({ workDir, groups, duration, hook, cta, se
     try {
       const request = { candidates, transcript: groups.map((g) => g.text).join(" "), hook: hook?.text, count: max, spacing: gap, style: settings.style || "", recent: readRecent(), duration: len, world: settings.worldInPrompt ? settings.world || "" : "" };
       const planned = deps.planPicks ? await deps.planPicks(request, dir) : firstJSON(await claude(runwayPicksPrompt(request), { timeoutMs: 240000 })).picks || [];
-      picks = validateBrollPicks(planned, candidates, groups, timing, settings);
+      const why = [];
+      picks = validateBrollPicks(planned, candidates, groups, timing, settings, { onReject: (p, reason) => why.push(`line ${p.line}: ${reason}`) });
+      // Greg 11-23: one rejected pick used to leave a reel with no B-roll. Ask once more, saying what failed.
+      if (picks.length < max && why.length && !deps.planPicks) {
+        try {
+          const again = firstJSON(await claude(`${runwayPicksPrompt(request)}\n\nYour previous picks were rejected: ${why.join("; ")}. Each scene must literally name the spoken subject word of its line. Return ${max - picks.length} picks from other lines or with corrected scenes.`, { timeoutMs: 240000 })).picks || [];
+          const more = validateBrollPicks(again.filter((p) => !picks.some((q) => q.line === p.line)), candidates, groups, timing, settings);
+          picks = [...picks, ...more].slice(0, max);
+          log(`b-roll: replanned after ${why.length} rejection${why.length === 1 ? "" : "s"}; ${more.length} more pick${more.length === 1 ? "" : "s"}`);
+        } catch (e) { warn(`b-roll: replan failed (${String(e.message).split("\n")[0]})`); }
+      }
       save();
     } catch (e) { warn(`b-roll: planning failed (${e.message})`); return shots; }
   }
