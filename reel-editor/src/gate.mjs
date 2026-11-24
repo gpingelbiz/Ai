@@ -1,0 +1,506 @@
+/**
+ * The master gate: the last check every edited reel passes before it is delivered, and the one place that fixes what
+ * it finds instead of only writing a note.
+ *
+ * Why it measures instead of predicting: the hook and the captions were placed from font arithmetic (Anton metrics),
+ * so a serif look rendered taller than planned and its hook ran into the captions (a client's women's-event reel, Nov 24),
+ * and the text check passed it because it never compared one piece of text with another. Here the real renderer draws
+ * each text layer alone (every other layer hidden) at the moments that matter; the pixels each layer paints are its
+ * true footprint, so overlap and the Instagram safe zone are read off real frames.
+ *
+ * What it does with a problem:
+ *   hook over captions        captions move down below the measured hook (or the hook moves up when they cannot)
+ *   a card / slam / icon      that item is dropped
+ *   over other text or out
+ *   of the safe zone
+ *   a doubled caption word    the repeat is taken out ("Bootcamp Camp" -> "Bootcamp")
+ *   a spoken ask cut off      the edit is run again ending after the ask (runEdit reads gate.json retry.endAfter)
+ * Then the reel is rebuilt and checked again (at most twice). Anything still wrong holds the reel: gate.json and
+ * gate.txt say why, and textcheck.json turns to "hold" so Publish and the Content Studio only ever make a draft of it.
+ */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { PNG } from "pngjs";
+import { hyperframesBin, renderEnv } from "./render.mjs";
+import { textTokens } from "./slide-preflight.mjs";
+import { readJSON, run, writeJSON } from "./util.mjs";
+
+// Instagram Reels at 1080x1920: the caption/handle strip at the bottom, the button column on the right, the top bar.
+// Same numbers as the house rules (x 76-1004, 940 beside the buttons, bottom 83.3%), with a few pixels of slack.
+export const GATE_SAFE = { left: 70, right: 1010, iconRight: 946, iconFrom: 0.42, iconTo: 0.86, top: 0.07, bottom: 0.833 };
+export const GATE_RULES = {
+  step: 2,           // read every 2nd pixel (2 px precision is plenty for a collision)
+  diff: 90,          // summed RGB change against the empty frame that counts as "this layer painted here"
+  pad: 6,            // text closer than this many pixels to other text counts as touching
+  minOverlap: 12,    // sampled pixels of overlap before it is a collision (ignores a stray anti-aliased edge)
+  full: 0.4,         // a layer covering 40% of the frame is a full-screen card or photo: not checked as text
+  outside: 0.01,     // share of a layer's pixels allowed outside the safe zone (shadows, glow bleed)
+  gap: 40,           // the space a fix leaves between the hook and the captions (about one caption line's padding)
+  maxTimes: 28,
+  maxRounds: 2,
+};
+
+const n = (v, fallback = NaN) => (v != null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : fallback);
+const r3 = (v) => Math.round(v * 1000) / 1000;
+const VOID = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+const attr = (attrs, name) => {
+  const m = String(attrs).match(new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i"));
+  return m ? (m[2] ?? m[3]) : null;
+};
+
+/**
+ * The composition's layers: the element children of #root in order (nth-child numbering), with their id, timing and
+ * whether they hold any visible words. A small tag scanner is enough because compose.mjs writes the markup.
+ */
+export function rootLayers(html) {
+  const s = String(html || "");
+  const rootAt = s.search(/<div\b[^>]*\bid\s*=\s*["']root["']/i);
+  if (rootAt < 0) return [];
+  const re = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][\w-]*)\b([^>]*)>/g;
+  re.lastIndex = rootAt;
+  const layers = [];
+  let depth = 0, cur = null, last = rootAt, skip = null, m;
+  while ((m = re.exec(s))) {
+    const between = s.slice(last, m.index);
+    last = re.lastIndex;
+    if (m[0].startsWith("<!--")) continue;
+    if (!skip && cur && depth >= 2 && /[\p{L}\p{N}]/u.test(between.replace(/&[a-z0-9#]+;/gi, " "))) cur.text = true;
+    const close = m[1] === "/", tag = m[2].toLowerCase(), attrs = m[3] || "";
+    if (skip) { if (close && tag === skip) skip = null; continue; }
+    if (close) {
+      depth--;
+      if (depth <= 1) cur = depth === 1 ? null : cur;
+      if (depth <= 0) break;
+      continue;
+    }
+    const selfClose = VOID.has(tag) || /\/\s*$/.test(attrs);
+    if (depth === 1) {
+      cur = { index: layers.length + 1, tag, id: attr(attrs, "id"), start: n(attr(attrs, "data-start")), duration: n(attr(attrs, "data-duration")), text: false };
+      layers.push(cur);
+    }
+    if (tag === "script" || tag === "style") { if (!selfClose) skip = tag; continue; }
+    if (!selfClose) depth++;
+  }
+  return layers;
+}
+
+/** The moments to look at: inside every timed text layer, and a spread across the reel for the untimed ones. */
+export function gateTimes(layers = [], duration = 0, { max = GATE_RULES.maxTimes } = {}) {
+  const D = n(duration, 0);
+  if (!(D > 0)) return [];
+  const out = [];
+  for (const layer of layers) {
+    if (!layer.text || !(layer.duration > 0)) continue;
+    const s = Math.max(0, n(layer.start, 0)), e = Math.min(D, s + layer.duration), d = e - s;
+    if (d <= 0.05) continue;
+    out.push(s + Math.min(0.6, d / 2), s + d / 2);
+    if (d > 1.4) out.push(e - 0.3);
+  }
+  if (layers.some((layer) => layer.text && !(layer.duration > 0))) for (let k = 1; k <= 6; k++) out.push((D * k) / 7);
+  const sorted = [...new Set(out.map((t) => r3(Math.min(D - 0.05, Math.max(0.05, t)))))].sort((a, b) => a - b);
+  const deduped = sorted.filter((t, i) => i === 0 || t - sorted[i - 1] >= 0.15);
+  if (deduped.length <= max) return deduped;
+  return Array.from({ length: max }, (_, i) => deduped[Math.round((i * (deduped.length - 1)) / (max - 1))]);
+}
+
+/** A layer is drawn at t when it is untimed (captions decide per line) or t falls inside its window. */
+export const layerActive = (layer, t) => !(layer.duration > 0) || (t >= n(layer.start, 0) - 0.01 && t <= n(layer.start, 0) + layer.duration + 0.01);
+
+/** The page with every root layer transparent except one (index), or all of them (index null) for the empty frame. */
+export function isolationHtml(html, index = null) {
+  const css = index == null ? "#root > * { opacity: 0 !important; }" : `#root > *:not(:nth-child(${index})) { opacity: 0 !important; }`;
+  const tag = `<style id="reel-gate-isolate">${css}</style>`;
+  return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${tag}</head>`) : `${tag}${html}`;
+}
+
+/** Pixels a layer painted, against the empty frame, at a coarse grid. */
+export function layerMask(png, blank, { step = GATE_RULES.step, diff = GATE_RULES.diff } = {}) {
+  const W = png.width, H = png.height, w = Math.ceil(W / step), h = Math.ceil(H / step);
+  const mask = new Uint8Array(w * h);
+  let count = 0, x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  for (let y = 0, yy = 0; y < H; y += step, yy++) {
+    for (let x = 0, xx = 0; x < W; x += step, xx++) {
+      const i = (y * W + x) * 4;
+      const d = Math.abs(png.data[i] - blank.data[i]) + Math.abs(png.data[i + 1] - blank.data[i + 1]) + Math.abs(png.data[i + 2] - blank.data[i + 2]);
+      if (d <= diff) continue;
+      mask[yy * w + xx] = 1;
+      count++;
+      if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y;
+    }
+  }
+  const box = count ? { x: x0, y: y0, w: x1 - x0 + step, h: y1 - y0 + step } : null;
+  return { mask, w, h, step, W, H, count, box, coverage: count / (w * h) };
+}
+
+/** Sampled pixels of `a` that have a pixel of `b` within `pad` pixels (summed-area table, so it stays linear). */
+export function overlapCount(a, b, { pad = GATE_RULES.pad } = {}) {
+  if (!a.count || !b.count || a.w !== b.w || a.h !== b.h) return 0;
+  const { w, h } = a, r = Math.max(0, Math.round(pad / a.step));
+  const sum = new Int32Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let row = 0;
+    for (let x = 0; x < w; x++) { row += b.mask[y * w + x]; sum[(y + 1) * (w + 1) + x + 1] = sum[y * (w + 1) + x + 1] + row; }
+  }
+  let hits = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!a.mask[y * w + x]) continue;
+      const xa = Math.max(0, x - r), ya = Math.max(0, y - r), xb = Math.min(w, x + r + 1), yb = Math.min(h, y + r + 1);
+      if (sum[yb * (w + 1) + xb] - sum[ya * (w + 1) + xb] - sum[yb * (w + 1) + xa] + sum[ya * (w + 1) + xa] > 0) hits++;
+    }
+  }
+  return hits;
+}
+
+/** Share of a layer's pixels outside the Instagram safe zone, and which edges it crosses. */
+export function safeZoneSpill(m, safe = GATE_SAFE) {
+  // The zone is Instagram's 9:16 overlay; a landscape render (YouTube, a wide VSL) has none.
+  if (!m.count || m.H / m.W < 1.5) return { share: 0, edges: [] };
+  const { w, h, step, W, H } = m;
+  const sx = W / 1080;
+  safe = { ...safe, left: safe.left * sx, right: safe.right * sx, iconRight: safe.iconRight * sx };
+  const right = Math.min(safe.right, W), top = safe.top * H, bottom = safe.bottom * H;
+  let out = 0;
+  const edges = new Set();
+  for (let yy = 0; yy < h; yy++) {
+    const y = yy * step;
+    const rightHere = y >= safe.iconFrom * H && y <= safe.iconTo * H ? Math.min(right, safe.iconRight) : right;
+    for (let xx = 0; xx < w; xx++) {
+      if (!m.mask[yy * w + xx]) continue;
+      const x = xx * step;
+      let bad = false;
+      if (x < safe.left) { edges.add("left"); bad = true; }
+      if (x > rightHere) { edges.add(rightHere < right ? "buttons" : "right"); bad = true; }
+      if (y < top) { edges.add("top"); bad = true; }
+      if (y > bottom) { edges.add("bottom"); bad = true; }
+      if (bad) out++;
+    }
+  }
+  return { share: out / m.count, edges: [...edges] };
+}
+
+const layerName = (layer) => layer.id || `${layer.tag} #${layer.index}`;
+const kindOf = (layer) => {
+  const id = String(layer.id || "");
+  if (id === "hook") return "hook";
+  if (id === "captions") return "captions";
+  if (/^gfx-\d+$/.test(id)) return "card";
+  if (/^slam-\d+$/.test(id)) return "slam";
+  if (/^icon-\d+$/.test(id)) return "icon";
+  return "other";
+};
+const indexOf = (layer) => Number(String(layer.id || "").match(/-(\d+)$/)?.[1]);
+
+/**
+ * Layout verdict from measured masks: frames = [{ t, layers: { [index]: mask } }]. Only layers that hold words are
+ * compared; full-screen layers (a photo, a full card) are skipped because text over them is the design.
+ */
+export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, safe = GATE_SAFE) {
+  const byIndex = new Map(layers.map((layer) => [layer.index, layer]));
+  const seen = new Map();
+  const add = (problem) => {
+    const key = `${problem.code}|${problem.layers.join("|")}`;
+    const prior = seen.get(key);
+    if (prior) { prior.times.push(problem.at); return; }
+    problem.times = [problem.at];
+    seen.set(key, problem);
+  };
+  for (const frame of frames) {
+    const active = Object.entries(frame.layers || {}).map(([index, mask]) => ({ layer: byIndex.get(Number(index)), mask }))
+      .filter((item) => item.layer && item.mask?.count && item.mask.coverage < rules.full);
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const a = active[i], b = active[j];
+        const hits = Math.min(overlapCount(a.mask, b.mask, rules), overlapCount(b.mask, a.mask, rules));
+        if (hits < rules.minOverlap) continue;
+        add({ code: "text-overlap", level: "hold", at: frame.t, layers: [layerName(a.layer), layerName(b.layer)], kinds: [kindOf(a.layer), kindOf(b.layer)], boxes: [a.mask.box, b.mask.box], message: `${layerName(a.layer)} and ${layerName(b.layer)} touch on screen at ${frame.t.toFixed(2)}s (${hits * a.mask.step * a.mask.step} px)` });
+      }
+      const spill = safeZoneSpill(active[i].mask, safe);
+      if (spill.share > rules.outside) {
+        add({ code: "safe-zone", level: "hold", at: frame.t, layers: [layerName(active[i].layer)], kinds: [kindOf(active[i].layer)], boxes: [active[i].mask.box], edges: spill.edges, message: `${layerName(active[i].layer)} reaches into the Instagram ${spill.edges.join("/")} area at ${frame.t.toFixed(2)}s (${Math.round(spill.share * 100)}% of it)` });
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
+const OK_DOUBLES = new Set(["very", "really", "no", "yes", "yeah", "bye", "ha", "go", "so", "now", "more", "again", "over", "down", "up", "round", "knock", "tick", "chop", "blah", "hey", "na", "la"]);
+
+/** Caption text that cannot be right: the same word twice in a row, or a word followed by its own tail ("Bootcamp Camp"). */
+export function captionProblems(plan = {}) {
+  const items = [];
+  (plan.captions || []).forEach((cap, i) => {
+    const words = cap.words?.length ? cap.words.map((w) => w.text) : String(cap.text || "").split(/\s+/);
+    words.forEach((text, j) => textTokens(text).forEach((token) => items.push({ token, cap: i, word: j, t: n(cap.words?.[j]?.start, n(cap.start, 0)) })));
+  });
+  const problems = [];
+  for (let k = 1; k < items.length; k++) {
+    const a = items[k - 1], b = items[k];
+    if (a.cap === b.cap && a.word === b.word) continue;
+    const same = a.token === b.token && !OK_DOUBLES.has(a.token) && /[a-z]/.test(a.token);
+    const tail = b.token.length >= 3 && a.token.length > b.token.length && a.token.endsWith(b.token);
+    if (!same && !tail) continue;
+    problems.push({ code: "caption-double", level: "hold", at: b.t, cap: b.cap, word: b.word, message: `caption shows "${a.token} ${b.token}" at ${b.t.toFixed(2)}s, a doubled word` });
+  }
+  return problems;
+}
+
+// Spoken asks the ending must keep. "Link in bio" is left out on purpose: cuts.mjs trims it as a sign-off.
+const CTA_PATTERNS = [
+  /\bcomment(?: the word)? [a-z]+/, /\b(?:dm|message|text) me\b/, /\bsend me\b/, /\bjoin (?:me|us)\b/, /\binvite you\b/,
+  /\bbook (?:a|your|an) (?:free )?(?:call|session|spot|seat)\b/, /\bsign up\b/, /\bregister (?:now|today|here|for|at)\b/,
+  /\bapply (?:now|today|here|at|for)\b/, /\b(?:click|tap) (?:on )?the link\b/, /\bfollow me\b/,
+];
+
+/**
+ * A spoken ask that the cut lost: cuts.words (source order, with drop flags) holds the ask late in the clip, every
+ * word of it was dropped, and the same ask is not kept anywhere else. The fix is the same edit ending after it.
+ */
+const sentenceEnd = (text) => /[.!?]["”’']*$/.test(String(text).trim());
+
+export function ctaProblems(cuts = null, { tailShare = 0.4, tailSeconds = 15 } = {}) {
+  const words = (cuts?.words || []).filter((w) => Number.isFinite(Number(w.start)));
+  if (!words.length) return [];
+  const end = n(cuts.originalDuration, n(words.at(-1).end, 0));
+  const toks = words.map((w, i) => ({ i, tok: textTokens(w.text).join(" ") })).filter((x) => x.tok);
+  const kept = toks.filter((x) => !words[x.i].drop).map((x) => x.tok).join(" ");
+  const problems = [];
+  for (let k = 0; k < toks.length; k++) {
+    const w = words[toks[k].i];
+    if (w.start < Math.min(end * (1 - tailShare), end - tailSeconds)) continue;
+    const ahead = toks.slice(k, k + 8).map((x) => x.tok).join(" ");
+    const hit = CTA_PATTERNS.find((re) => { const m = ahead.match(re); return m && m.index === 0; });
+    if (!hit) continue;
+    // The ask runs to the end of its sentence (at most 16 words); the phrase to end after starts with the sentence.
+    let last = k, first = k;
+    while (last < toks.length - 1 && last - k < 15 && !sentenceEnd(words[toks[last].i].text)) last++;
+    while (first > 0 && k - first < 6 && !sentenceEnd(words[toks[first - 1].i].text)) first--;
+    const span = toks.slice(k, last + 1);
+    const phrase = toks.slice(first, last + 1).map((x) => String(words[x.i].text).replace(/[.,!?;:"“”]+/g, "")).join(" ").trim();
+    const allDropped = span.every((x) => words[x.i].drop);
+    const keptElsewhere = ` ${kept} `.includes(` ${span.slice(0, 3).map((x) => x.tok).join(" ")} `);
+    if (allDropped && !keptElsewhere) problems.push({ code: "cta-cut", level: "hold", at: r3(w.start), endAfter: phrase, message: `the spoken ask "${phrase}" (${r3(w.start)}s in the clip) was cut from the ending` });
+    k = last;
+  }
+  return problems.slice(-1);
+}
+
+/** Notes only (never a hold): no spoken ask and no on-screen CTA anywhere. */
+export function ctaNotes(plan = {}) {
+  const spoken = (plan.words || []).filter((w) => !w.drop).map((w) => textTokens(w.text).join(" ")).filter(Boolean).join(" ");
+  if (plan.cta || CTA_PATTERNS.some((re) => re.test(spoken)) || /\blink in (?:my )?bio\b/.test(spoken)) return [];
+  return [{ code: "no-cta", level: "note", message: "nothing in the reel asks the viewer to do anything (no spoken ask, no CTA card); the post caption has to carry it" }];
+}
+
+const unionBox = (boxes) => {
+  const list = boxes.filter(Boolean);
+  if (!list.length) return null;
+  const x = Math.min(...list.map((b) => b.x)), y = Math.min(...list.map((b) => b.y));
+  return { x, y, w: Math.max(...list.map((b) => b.x + b.w)) - x, h: Math.max(...list.map((b) => b.y + b.h)) - y };
+};
+
+/**
+ * Turn problems into plan changes. Returns the changed plan (a copy), what was done, and what could not be fixed.
+ * frames/layers are the measured masks, so moves use real pixel extents rather than font estimates.
+ */
+export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], rules = GATE_RULES, safe = GATE_SAFE } = {}) {
+  const next = JSON.parse(JSON.stringify(plan));
+  const H = n(plan.canvas?.height, 1920);
+  const applied = [], unfixable = [];
+  const drop = { graphics: new Set(), slams: new Set(), icons: new Set() };
+  const boxesOf = (id, times = null) => frames.filter((f) => !times || times.includes(f.t)).flatMap((f) => {
+    const layer = layers.find((l) => l.id === id);
+    const m = layer && f.layers?.[layer.index];
+    return m?.count && m.coverage < rules.full ? [m.box] : [];
+  });
+  let movedText = false;
+  for (const p of problems) {
+    if (p.code === "text-overlap" && p.kinds.includes("hook") && p.kinds.includes("captions") && !movedText) {
+      const hook = unionBox(boxesOf("hook", p.times)), capsAt = unionBox(boxesOf("captions", p.times)), capsAll = unionBox(boxesOf("captions"));
+      const capStyle = next.style?.captions, hookStyle = next.style?.hook;
+      if (hook && capsAt && capsAll && capStyle && Number.isFinite(Number(capStyle.position))) {
+        const shift = hook.y + hook.h + rules.gap - capsAt.y;
+        if (capsAll.y + capsAll.h + shift <= safe.bottom * H) {
+          const pos = r3(Number(capStyle.position) + shift / H);
+          capStyle.position = pos;
+          if (Number.isFinite(Number(capStyle.placeMin))) capStyle.placeMin = Math.max(Number(capStyle.placeMin), pos);
+          if (Number.isFinite(Number(capStyle.placeMax))) capStyle.placeMax = Math.max(Number(capStyle.placeMax), pos);
+          applied.push(`captions moved down ${Math.round(shift)} px (to ${Math.round(pos * 100)}% of the height) to clear the hook`);
+          movedText = true;
+          continue;
+        }
+        const hookShift = capsAt.y - rules.gap - (hook.y + hook.h);
+        if (hookStyle && Number.isFinite(Number(hookStyle.position)) && hook.y + hookShift >= safe.top * H) {
+          const pos = r3(Number(hookStyle.position) + hookShift / H);
+          hookStyle.position = pos;
+          applied.push(`hook moved up ${Math.round(-hookShift)} px (to ${Math.round(pos * 100)}% of the height) to clear the captions`);
+          movedText = true;
+          continue;
+        }
+      }
+      unfixable.push(p);
+      continue;
+    }
+    if (p.code === "text-overlap" || p.code === "safe-zone") {
+      // Drop the extra (a card, a slam, an icon); the hook and the captions are never the one dropped.
+      const names = p.layers.map((name, i) => ({ name, kind: p.kinds[i] }));
+      const extra = names.find((x) => x.kind === "card") || names.find((x) => x.kind === "slam") || names.find((x) => x.kind === "icon");
+      if (extra) {
+        const i = Number(extra.name.match(/-(\d+)$/)?.[1]);
+        const bucket = extra.kind === "card" ? "graphics" : extra.kind === "slam" ? "slams" : "icons";
+        if (Number.isInteger(i) && Array.isArray(next[bucket]) && next[bucket][i]) {
+          if (!drop[bucket].has(i)) applied.push(`${extra.kind} ${i + 1} dropped (${p.code === "safe-zone" ? `it reached the Instagram ${p.edges.join("/")} area` : `it touched ${names.find((x) => x !== extra)?.name}`})`);
+          drop[bucket].add(i);
+          continue;
+        }
+      }
+      unfixable.push(p);
+      continue;
+    }
+    if (p.code === "caption-double") {
+      const cap = next.captions?.[p.cap];
+      if (cap?.words?.[p.word]) {
+        const removed = cap.words.splice(p.word, 1)[0];
+        cap.text = cap.words.map((w) => w.text).join(" ");
+        applied.push(`caption word "${removed.text}" at ${p.at.toFixed(2)}s taken out (it repeated the word before)`);
+        continue;
+      }
+      unfixable.push(p);
+      continue;
+    }
+    unfixable.push(p);
+  }
+  for (const [bucket, set] of Object.entries(drop)) if (set.size) next[bucket] = next[bucket].filter((_, i) => !set.has(i));
+  // A caption emptied by a removal hands its time to the one before it.
+  if (Array.isArray(next.captions)) {
+    const kept = [];
+    for (const cap of next.captions) {
+      if ((cap.words && !cap.words.length) || (!cap.words && !String(cap.text || "").trim())) { if (kept.length) kept.at(-1).end = Math.max(n(kept.at(-1).end, 0), n(cap.end, 0)); continue; }
+      kept.push(cap);
+    }
+    next.captions = kept;
+  }
+  return { plan: next, applied, unfixable };
+}
+
+function firstJSONObject(text) {
+  const s = String(text || "");
+  const at = s.indexOf("{");
+  if (at < 0) return null;
+  try { return JSON.parse(s.slice(at)); } catch { return null; }
+}
+
+/** One hyperframes snapshot run for a page variant: PNG paths keyed by time. */
+async function snapshotTimes(projectDir, times, outDir) {
+  const bin = hyperframesBin();
+  const { out } = await run(bin[0], [...bin.slice(1), "snapshot", projectDir, "--at", times.join(","), "--no-end", "--keep", "-o", outDir, "--json"], { capture: true, env: renderEnv() });
+  const j = firstJSONObject(out);
+  if (!j?.frames?.length) throw new Error("snapshot returned no frames");
+  return j.frames.map((f) => ({ t: r3(Number(f.time)), path: f.path }));
+}
+
+/** Copy of the project with one layer visible: every entry symlinked except the page itself. */
+function variantDir(projectDir, html, index, base) {
+  const dir = path.join(base, index == null ? "blank" : `layer-${index}`);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const entry of fs.readdirSync(projectDir)) {
+    if (entry === "index.html" || entry.startsWith(".")) continue;
+    fs.symlinkSync(path.join(projectDir, entry), path.join(dir, entry));
+  }
+  fs.writeFileSync(path.join(dir, "index.html"), isolationHtml(html, index));
+  return dir;
+}
+
+/** Real-renderer footprint of every text layer at the chosen moments. */
+export async function measureLayers(projectDir, { duration, rules = GATE_RULES, snapshot = snapshotTimes, readPng = (file) => PNG.sync.read(fs.readFileSync(file)) } = {}) {
+  const html = fs.readFileSync(path.join(projectDir, "index.html"), "utf8");
+  const layers = rootLayers(html);
+  const textLayers = layers.filter((layer) => layer.text);
+  const times = gateTimes(textLayers, duration, rules);
+  if (!textLayers.length || !times.length) return { layers, frames: [], times };
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "reel-gate-"));
+  try {
+    const blankShots = await snapshot(variantDir(projectDir, html, null, base), times, path.join(base, "out-blank"));
+    const blank = new Map(blankShots.map((f) => [f.t, readPng(f.path)]));
+    const frames = times.map((t) => ({ t, layers: {} }));
+    for (const layer of textLayers) {
+      const own = times.filter((t) => layerActive(layer, t));
+      if (!own.length) continue;
+      const shots = await snapshot(variantDir(projectDir, html, layer.index, base), own, path.join(base, `out-${layer.index}`));
+      for (const shot of shots) {
+        const empty = blank.get(shot.t);
+        const frame = frames.find((f) => Math.abs(f.t - shot.t) < 0.001);
+        if (!empty || !frame) continue;
+        frame.layers[layer.index] = layerMask(readPng(shot.path), empty, rules);
+      }
+    }
+    return { layers, frames, times };
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+}
+
+/** The human note: what was fixed, what holds the reel, what is only worth knowing. */
+export function gateText(result) {
+  const head = { hold: "HELD, not ready to post", fix: `fixing (round ${(result.round || 0) + 1})`, ok: "OK" }[result.verdict] || result.verdict;
+  const lines = [`Master check: ${head}`, ""];
+  const holds = (result.problems || []).filter((p) => p.level === "hold");
+  if (holds.length) lines.push(result.verdict === "fix" ? "Found:" : "Why it's held:", ...holds.map((p) => `- ${p.message}`), "");
+  if (result.fixes?.length) lines.push("Fixed before delivery:", ...result.fixes.map((f) => `- ${f}`), "");
+  const notes = (result.problems || []).filter((p) => p.level !== "hold");
+  if (notes.length) lines.push("Worth knowing:", ...notes.map((p) => `- ${p.message}`), "");
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+const brief = (p) => {
+  const { mask, ...rest } = p;
+  if (rest.boxes) rest.boxes = rest.boxes.map((b) => (b ? { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h) } : null));
+  return rest;
+};
+
+/**
+ * Run the gate on a rendered work folder. Returns { verdict: "ok" | "fix" | "hold", problems, fixes, plan? }.
+ * "fix" carries the changed plan for the caller to rebuild; the caller runs the gate again on the new render.
+ */
+export async function runGate(workDir, { round = 0, fixes = [], rules = GATE_RULES, measure = measureLayers } = {}) {
+  const planFile = path.join(workDir, "plan.json");
+  const plan = readJSON(planFile);
+  const read = (name) => { try { return readJSON(path.join(workDir, name)); } catch { return null; } };
+  const problems = [];
+  let measured = { layers: [], frames: [], times: [] };
+  try {
+    measured = await measure(path.join(workDir, "project"), { duration: n(plan.video?.duration, 0), rules });
+    problems.push(...layoutProblems(measured.frames, measured.layers, rules));
+  } catch (error) {
+    problems.push({ code: "gate-unavailable", level: "hold", message: `the layout could not be measured: ${String(error.message).split("\n")[0]}` });
+  }
+  problems.push(...captionProblems(plan));
+  const cta = ctaProblems(read("cuts.json"));
+  problems.push(...cta);
+  problems.push(...ctaNotes(plan));
+  const textcheck = read("textcheck.json");
+  if (textcheck?.verdict === "hold") for (const note of textcheck.notes || []) if (!/^gate-/.test(note)) problems.push({ code: "textcheck", level: "hold", message: `text check: ${note}` });
+
+  const holds = problems.filter((p) => p.level === "hold");
+  const fixable = holds.filter((p) => ["text-overlap", "safe-zone", "caption-double"].includes(p.code));
+  let result;
+  if (holds.length && fixable.length && round < rules.maxRounds) {
+    const fixed = gateFixes(fixable, plan, { frames: measured.frames, layers: measured.layers, rules });
+    if (fixed.applied.length) result = { verdict: "fix", round, problems, fixes: [...fixes, ...fixed.applied], plan: fixed.plan };
+  }
+  if (!result) {
+    const retry = cta.find((p) => p.endAfter) ? { endAfter: cta.find((p) => p.endAfter).endAfter } : null;
+    result = { verdict: holds.length ? "hold" : "ok", round, problems, fixes, ...(retry ? { retry } : {}) };
+  }
+  const saved = { verdict: result.verdict, round, fixes: result.fixes, retry: result.retry || null, problems: problems.map(brief), notes: problems.map((p) => `gate-${p.code}: ${p.message}`), times: measured.times };
+  writeJSON(path.join(workDir, "gate.json"), saved);
+  fs.writeFileSync(path.join(workDir, "gate.txt"), gateText(result));
+  // Publish and the Content Studio already draft anything whose text check holds; a gate hold rides the same file.
+  if (result.verdict === "hold") {
+    const tc = textcheck || { verdict: "hold", notes: [], problems: [] };
+    const notes = [...(tc.notes || []).filter((x) => !/^gate-/.test(x)), ...holds.map((p) => `gate-${p.code}: ${p.message}`)];
+    writeJSON(path.join(workDir, "textcheck.json"), { ...tc, verdict: "hold", notes });
+  }
+  return result;
+}

@@ -131,11 +131,15 @@ notify() { local t m; t=$(printf '%s%s' "${REEL_CLIENT:+$REEL_CLIENT: }" "$1" | 
 # Publish metadata next to a delivered reel (read by the Publish folder, src/publish-folder.mjs): whether the reel
 # has AI pictures (Instagram's AI label), the preflight result and anything obvious the reviewer saw.
 reel_meta() { # $1 work dir, $2 output json
-  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{},tc=r("textcheck.json");const hi=(wt.issues||[]).find((i)=>i.severity==="high"),coverMs=Math.round(plan.cover&&Number.isFinite(plan.cover.frameTimeMs)?plan.cover.frameTimeMs:((plan.style&&plan.style.cover&&Number.isFinite(plan.style.cover.at)?plan.style.cover.at:.05)*1000));fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,textcheck:tc?{verdict:tc.verdict,notes:tc.notes||[]}:null,obvious:hi?hi.note:null,coverMs}))' "$1" "$2" 2>/dev/null || true
+  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{},tc=r("textcheck.json"),gt=r("gate.json");const hi=(wt.issues||[]).find((i)=>i.severity==="high"),coverMs=Math.round(plan.cover&&Number.isFinite(plan.cover.frameTimeMs)?plan.cover.frameTimeMs:((plan.style&&plan.style.cover&&Number.isFinite(plan.style.cover.at)?plan.style.cover.at:.05)*1000));fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,textcheck:tc?{verdict:tc.verdict,notes:tc.notes||[]}:null,gate:gt?{verdict:gt.verdict,fixes:gt.fixes||[]}:null,obvious:hi?hi.note:null,coverMs}))' "$1" "$2" 2>/dev/null || true
 }
 
 # Create and print a brand-new "<today> <kind> <n><suffix>" folder under $1 ("2026-10-21 Reel 3",
 # "2026-10-21 Reel 4 with B-roll", "2026-10-21 Carousel 1"), keeping today's count per kind in $2.
+# The master gate's verdict for a work folder (gate.json from gate.mjs): held, and the fixes it made.
+gate_held() { [ -s "$1/gate.json" ] && node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(j.verdict==="hold"?0:1)' "$1/gate.json" 2>/dev/null; }
+gate_fixed() { [ -s "$1/gate.json" ] && node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(!(j.fixes||[]).length)process.exit(1);process.stdout.write(j.fixes.join("; "))' "$1/gate.json" 2>/dev/null; }
+
 # Background jobs cannot list Desktop folders (macOS privacy), so this never globs $1: it starts one past the
 # count it saved, and `mkdir` (no -p) fails on a folder that already exists, so it moves on to the next number.
 # Nothing can ever land in, or overwrite, an existing folder.
@@ -358,6 +362,10 @@ if [ "$MODE" = long ]; then
     reel_meta "$(dirname "$(dirname "$out")")" "$folder/.Clip $k.reel.json"
     cdir="$(dirname "$(dirname "$out")")"
     [ -s "$cdir/analytics-features.json" ] && cp -f "$cdir/analytics-features.json" "$folder/.Clip $k.reel-features.json"
+    if gate_held "$cdir"; then
+      cp -f "$cdir/gate.txt" "$folder/Clip $k - why it's held.txt"
+      echo "$(date '+%F %T') HELD  Clip $k of $base ($(grep -m1 '^- ' "$cdir/gate.txt" | sed 's/^- //'))" >> "$log"
+    fi
     printf 'Clip %s  (%s, score %s)\n  %s\n  %s\n  %s\n  work folder: %s\n\n' "$k" "$range" "$score" "$hooktxt" "$why" "${edges:-}" "$cdir" >> "$work/clips.txt"
     if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
       node "$HERE/write-caption.mjs" "$cdir" "$folder/Clip $k - caption.txt" >> "$log" 2>&1 || true
@@ -388,7 +396,7 @@ if [ -z "$hook" ] && [ "$MODE" != vsl ] && [ "$MODE" != carousel ] && [ "${REEL_
     fi
   fi
 fi
-rm -f "$work/No b-roll this time.txt"
+rm -f "$work/No b-roll this time.txt" "$work/gate.json" "$work/gate.txt"
 # Do not deliver timings from an earlier script/edit of this input.
 [ "$MODE" != vsl ] || rm -f "$work/vsl-sections.json" "$work/chapters.txt"
 run_start=$(( $(wc -l < "$log" 2>/dev/null || echo 0) + 1 ))
@@ -491,8 +499,18 @@ else
   if [ -s "$work/preflight.txt" ] && ! head -1 "$work/preflight.txt" | grep -q "Preflight: OK"; then
     pf_note=" Preflight flagged something: $notes/preflight.txt"
   fi
-  echo "$(date '+%F %T') done  $dest" >> "$log"
-  if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. Words to check: $notes/review.txt.$pf_note"; else notify "$label ready" "$title.$pf_note"; fi
+  # The master gate (gate.mjs) fixed what it could before this; a reel it still holds is delivered with the reason
+  # beside it and is only ever drafted by Publish (its textcheck.json says hold).
+  if gate_held "$work"; then
+    cp -f "$work/gate.txt" "$folder/Why it's held.txt"
+    echo "$(date '+%F %T') HELD  $dest ($(grep -m1 '^- ' "$work/gate.txt" | sed 's/^- //'))" >> "$log"
+    notify "$label HELD, not ready to post" "$title. Why: $(grep -m1 '^- ' "$work/gate.txt" | sed 's/^- //')"
+  else
+    rm -f "$folder/Why it's held.txt"
+    if gate_fixes=$(gate_fixed "$work"); then echo "$(date '+%F %T') gate  $base fixed: $gate_fixes" >> "$log"; fi
+    echo "$(date '+%F %T') done  $dest" >> "$log"
+    if [ -s "$work/review.txt" ]; then notify "$label ready: check a few words" "$title. Words to check: $notes/review.txt.$pf_note"; else notify "$label ready" "$title.$pf_note"; fi
+  fi
 fi
 
 # Proof and receipt images stay in the drop folder next to their clip (the clip stays there too), so the finished

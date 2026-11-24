@@ -5,7 +5,7 @@ import path from "node:path";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
 import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking, dropInaudibleWords } from "./cuts.mjs";
-import { resolveEndingOverride, endingMetadata } from "./ending.mjs";
+import { resolveEndingOverride, endingMetadata, endAfterPhrase } from "./ending.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
 import { realignWords, describeAlignment, hasAlignment, savedAlignmentFits } from "./align.mjs";
@@ -26,6 +26,7 @@ import { planBumps, planDrift, driftDuring } from "./motion.mjs";
 import { soundCues, describeCues, brollSoundTracks } from "./sounds.mjs";
 import { eventClock, legacyLanding, measureSfxFile } from "./event-clock.mjs";
 import { runTextcheck } from "./textcheck.mjs";
+import { runGate } from "./gate.mjs";
 import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
@@ -1063,7 +1064,12 @@ export async function runEdit(input, opts = {}, deps = {}) {
   // every zoom in place, then Claude picks the feature lines, icons and scenes and the final render is checked as usual.
   const boldOn = boldEnabled(preset, plan);
   const glowOn = !boldOn && glowEnabled(preset, plan);
+  // An earlier run's verdict must never stand in for this one (its retry would re-edit this reel).
+  for (const file of ["gate.json", "gate.txt"]) fs.rmSync(path.join(workDir, file), { force: true });
   let output = await renderProject(workDir, glowOn || boldOn ? { ...opts, noPreflight: true, noReview: true, ...(boldOn ? { boldMeasure: true } : {}) } : opts);
+  // The gate may have changed plan.json (moved captions, dropped a card); later steps write the plan back out.
+  const syncPlan = () => { const fresh = readJSONSafe(path.join(workDir, "plan.json")); if (fresh) Object.assign(plan, fresh); };
+  syncPlan();
   if (boldOn) {
     const pickFile = path.join(workDir, "bold-picks.json");
     const result = await restyleBold(plan, { outDir: workDir, protectedPhrases, render: output, picks: !opts.repick ? readJSONSafe(pickFile) : null });
@@ -1074,6 +1080,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
     composeProject(plan, projectDir);
     log(`bold look: ${plan.bold.groups.length} phrases, ${plan.bold.overlays.length} overlays`);
     output = await renderProject(workDir, opts);
+    syncPlan();
   }
   if (glowOn) {
     try {
@@ -1087,6 +1094,17 @@ export async function runEdit(input, opts = {}, deps = {}) {
       warn(`glow look skipped: ${String(e.message).split("\n")[0]}; keeping the standard look`);
     }
     output = await renderProject(workDir, opts);
+    syncPlan();
+  }
+  // The gate found the spoken ask cut off the ending: edit once more, ending after it (the transcript is cached).
+  const gateNow = readJSONSafe(path.join(workDir, "gate.json"));
+  if (gateNow?.retry?.endAfter && opts.endAfter == null && opts.endAt == null && !opts.noCuts && !opts.gateRetry) {
+    let found = false;
+    try { endAfterPhrase(words, gateNow.retry.endAfter); found = true; } catch {}
+    if (found) {
+      log(`master gate: the ending cut the spoken ask; editing again to end after "${gateNow.retry.endAfter}"`);
+      return runEdit(input, { ...opts, endAfter: gateNow.retry.endAfter, gateRetry: true }, deps);
+    }
   }
   let cover = null;
   if (preset.cover?.enabled !== false && hook) {
@@ -1319,6 +1337,22 @@ export async function renderProject(workDir, opts = {}) {
   if (!(opts.boldMeasure && boldEnabled(plan.style, plan) && !plan.bold)) {
     const textcheck = await runTextcheck(workDir, { video: output });
     (textcheck.verdict === "hold" ? warn : log)(`text check: ${textcheck.verdict}${textcheck.notes.length ? ` (${textcheck.notes.join("; ")})` : ""}`);
+  }
+  // The master gate: measured overlap, safe zone, caption text and the spoken ask. It fixes what it can in plan.json,
+  // re-renders (at most twice) and holds the rest; gate.txt says what it did. Skipped on the measuring first passes.
+  const intermediate = opts.boldMeasure || (opts.noPreflight && opts.noReview);
+  if (!intermediate && !opts.noGate && plan.style?.gate?.enabled !== false && process.env.REEL_GATE !== "0") {
+    const round = opts.gateRound || 0, before = opts.gateFixes || [];
+    const gate = await runGate(workDir, { round, fixes: before });
+    if (gate.verdict === "fix") {
+      for (const fix of gate.fixes.slice(before.length)) log(`master gate fix: ${fix}`);
+      writeJSON(path.join(workDir, "plan.json"), gate.plan);
+      writeFeatures(workDir, gate.plan);
+      composeProject(gate.plan, path.join(workDir, "project"));
+      return renderProject(workDir, { ...opts, gateRound: round + 1, gateFixes: gate.fixes });
+    }
+    const holds = gate.problems.filter((p) => p.level === "hold");
+    (gate.verdict === "hold" ? warn : log)(`master gate: ${gate.verdict === "hold" ? `HELD (${holds.map((p) => p.message).join("; ")})` : "ok"}${gate.fixes.length ? `, fixed: ${gate.fixes.join("; ")}` : ""}`);
   }
   // Preflight: sound, the open, dead air, length and layout checked on the finished file; preflight.txt sits next
   // to plan.json. With preflight.strict a failing file is kept as <name>.failed.mp4 and the run stops.
