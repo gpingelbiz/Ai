@@ -22,9 +22,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { failedMasterRules, refreshMasterCaption } from "../src/master-check.mjs";
 import { bannedInCaption } from "../src/publish-folder.mjs";
 import { isClientJob } from "../src/client-mode.mjs";
-import { isMain } from "../src/util.mjs";
+import { isMain, log } from "../src/util.mjs";
 import { addCaptionToFeatures, findAsks } from "../src/features.mjs";
 
 export { findAsks };
@@ -257,6 +258,8 @@ async function main() {
   if (!j.caption) { console.log("caption: nothing left after the voice rules, skipped (see post notes.txt)"); return; }
   const text = formatPostText(j);
   fs.writeFileSync(out, text);
+  const master = refreshMasterCaption(workDir, out);
+  if (master?.status === "fail") log(`MASTER CHECK FAILED: ${failedMasterRules(master).map((rule) => rule.id).join(", ")}`);
   addCaptionToFeatures(workDir, text);
   console.log(`caption: ${out}`);
 }

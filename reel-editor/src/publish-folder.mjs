@@ -103,36 +103,73 @@ export function reelDraftWhy({ text, textcheck, preflight }) {
   return !text ? "there is no caption" : hold ? `its text check is on hold: ${textcheck?.notes?.[0] || "text check reported a hold"}` : preflight === "fail" ? "its check failed" : "";
 }
 
+const clipPrefix = (name) => path.basename(name).match(/^(?:CHECK FAILED - )?(Clip \d+) - /i)?.[1];
+const firstFile = (dir, filenames) => filenames.filter(Boolean).map((name) => path.join(dir, name)).find((file) => fs.existsSync(file)) || null;
+
+function masterSidecars(video) {
+  const dir = path.dirname(video);
+  const clip = clipPrefix(video);
+  const stem = path.basename(video).replace(VIDEO, "");
+  return {
+    master: firstFile(dir, [clip && `${clip} - master-check.json`, `${stem} - master-check.json`, "master-check.json"]),
+    note: firstFile(dir, [clip && `${clip} - Check notes.txt`, `${stem} - Check notes.txt`, "Check notes.txt"]),
+    legacy: firstFile(dir, [clip && `${clip} - check this reel.txt`, "check this reel.txt"]),
+  };
+}
+
+export function publishMasterCheck(video, source = {}) {
+  const local = masterSidecars(video);
+  const files = [...new Set([local.master, source?.master].filter(Boolean))];
+  const notes = [...new Set([local.note, source?.note, local.legacy, source?.check].filter(Boolean))];
+  const noteFailure = notes.find((file) => {
+    try { return /^(?:(?:master check(?: status)?|preflight|status)[ :]+)?fail(?:ed)?\b/im.test(fs.readFileSync(file, "utf8")); }
+    catch { return false; }
+  });
+  let reason = noteFailure ? `${path.basename(noteFailure)} records a failed check` : "";
+  for (const file of files) {
+    try {
+      const check = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (check.status !== "fail") continue;
+      const failures = (check.rules || []).filter((r) => !r.ok && r.severity === "block").map((r) => r.id).join(", ");
+      return { reason: `master check failed${failures ? ` (${failures})` : ""}`, masterFile: file, checkFile: noteFailure || notes[0] || null };
+    } catch { reason ||= `${path.basename(file)} could not be read`; }
+  }
+  if (!reason && /^CHECK FAILED - /i.test(path.basename(video))) reason = "the filename records a failed master check";
+  return { reason, masterFile: files[0] || null, checkFile: noteFailure || notes[0] || null };
+}
+
 /** One dropped item: a folder or a loose video. Returns null when it holds no usable video yet. */
 export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000, sourceRoots = SOURCE_ROOTS, client = false } = {}) {
   const full = path.join(root, entry);
   let st;
   try { st = fs.statSync(full); } catch { return null; }
-  let video = null, captionFile = null, dir = null, metaFrom = null, checkFrom = null, textcheckFrom = null;
+  let video = null, captionFile = null, dir = null, metaFrom = null, textcheckFrom = null, source;
   let metaPath = null;
   if (st.isDirectory()) {
     if (entry === SCHEDULED || entry === FAILED || entry.startsWith(".")) return null;
     dir = full;
     const files = fs.readdirSync(full).filter((f) => !f.startsWith("."));
-    const vids = files.filter((f) => VIDEO.test(f) && !SKIP_VIDEO.test(f));
-    // Several videos (a Clips folder): the first clip; the rest stay for the next runs.
-    video = vids.sort()[0] ? path.join(full, vids.sort()[0]) : null;
+    const videos = files.filter((f) => VIDEO.test(f) && !SKIP_VIDEO.test(f)).sort().map((f) => path.join(full, f));
+    // Failed clips stay in a shared Clips folder without holding up its other videos.
+    video = videos.find((file) => !publishMasterCheck(file).reason) || videos[0] || null;
     // A Clips folder pairs "Clip 2 - caption.txt" with "Clip 2 - <hook>.mp4"; a reel folder has caption.txt.
-    const prefix = video ? path.basename(video).split(" - ")[0] : "";
+    const prefix = video && clipPrefix(video);
     const cap = files.find((f) => prefix && f === `${prefix} - caption.txt`) || files.find((f) => /^caption\.txt$/i.test(f)) || files.find((f) => /caption.*\.txt$/i.test(f));
     captionFile = cap ? path.join(full, cap) : null;
   } else if (VIDEO.test(entry)) {
     video = full;
     const sidecarRoot = path.dirname(full);
     const stem = entry.replace(VIDEO, "");
-    const clip = stem.match(/^(Clip \d+) - /)?.[1];
+    const clip = clipPrefix(full);
     const localStem = path.basename(stem);
     for (const c of [`${localStem}.txt`, `${localStem} - caption.txt`, `${localStem} caption.txt`, clip ? `${clip} - caption.txt` : null].filter(Boolean)) if (!captionFile && fs.existsSync(path.join(sidecarRoot, c))) captionFile = path.join(sidecarRoot, c);
     // A video dragged in on its own: find the delivered folder it came from (same name and size) and take that
     // folder's caption and check results, so a clip dropped without its caption file still posts with its caption.
-    if (!captionFile) {
-      const home = findSource(entry, st.size, { roots: sourceRoots });
-      if (home) { captionFile = home.captionFile; metaFrom = home.meta; checkFrom = home.check; textcheckFrom = home.textcheck; }
+    source = findSource(path.basename(entry), st.size, { roots: sourceRoots });
+    if (source && !captionFile) {
+      captionFile = source.captionFile;
+      metaFrom = source.meta;
+      textcheckFrom = source.textcheck;
     }
   } else return null;
   if (!video) return { entry, dir, video: null, problem: "no video in it" };
@@ -143,18 +180,15 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   const caption = parseCaption(captionRaw);
   let meta = {};
   // The watcher leaves .reel.json in a reel folder and ".Clip 2.reel.json" per clip in a Clips folder.
-  const prefix = path.basename(video).split(" - ")[0];
-  for (const f of [dir && /^Clip \d+$/.test(prefix) ? `.${prefix}.reel.json` : null, ".reel.json"].filter(Boolean)) {
+  const prefix = clipPrefix(video);
+  for (const f of [prefix ? `.${prefix}.reel.json` : null, ".reel.json"].filter(Boolean)) {
     try { meta = JSON.parse(fs.readFileSync(path.join(dir || path.dirname(video), f), "utf8")); metaPath = path.join(dir || path.dirname(video), f); break; } catch {}
   }
   if (metaFrom) { try { meta = JSON.parse(fs.readFileSync(metaFrom, "utf8")); metaPath = metaFrom; } catch {} }
   const files = dir ? fs.readdirSync(dir) : [];
   const ai = meta.isAiGenerated ?? files.some((f) => /^b-roll \d+/i.test(f) || /runway usage/i.test(f));
-  // The gate: a delivered check note with a failure means a draft for Greg to look at, not a post.
-  let draft = false, why = "";
-  const note = dir && files.find((f) => /check this reel\.txt$/i.test(f));
-  const noteFile = note ? path.join(dir, note) : checkFrom;
-  if (noteFile && /^FAIL\b/m.test(fs.readFileSync(noteFile, "utf8"))) { draft = true; why = "its check note shows a failure"; }
+  const master = publishMasterCheck(video, source);
+  let draft = !!master.reason, why = master.reason;
   if (meta.preflight === "fail") { draft = true; why = "its preflight failed"; }
   const textcheckFile = (dir && fs.existsSync(path.join(dir, "textcheck.json")) ? path.join(dir, "textcheck.json") : null) || textcheckFrom;
   let textcheck = meta.textcheck || null;
@@ -175,11 +209,12 @@ export function readItem(entry, { root = ROOT, now = Date.now(), settle = 60000,
   if (client) { why = reelDraftWhy({ text: postText(caption), textcheck, preflight: meta.preflight }); draft = !!why; }
   const banned = client ? null : bannedInCaption(postText(caption));
   if (banned && !draft) { draft = true; why = banned; }
+  if (master.reason) { draft = true; why = master.reason; }
   const trial = trialReel({ entry, dir, video, captionRaw, meta, root });
   const trialCopy = !client && wantsTrialCopy({ draft, trial, skip: !trial && publicReel({ entry, dir, video, captionRaw, meta }) });
   const text = postText(caption);
   const providers = client ? [] : reelProviders({ text, names: [entry, dir && path.basename(dir), video && path.basename(video)] });
-  return { root, entry, dir, video, captionFile, caption, notes, text, isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, trial, trialCopy, instagramType: trial ? "TRIAL_REEL" : "REEL", providers, tiktok: providers.includes("tiktok") ? tiktokData({ isAiGenerated: !!ai }) : null, metaFile: metaPath, checkFile: noteFile || null, textcheckFile: textcheckFile || null, droppedAt: Math.round(st.mtimeMs) };
+  return { root, entry, dir, video, captionFile, caption, notes, text, isAiGenerated: !!ai, coverMs: coverMilliseconds(meta), draft, why, trial, trialCopy, instagramType: trial ? "TRIAL_REEL" : "REEL", providers, tiktok: providers.includes("tiktok") ? tiktokData({ isAiGenerated: !!ai }) : null, metaFile: metaPath, checkFile: master.checkFile, masterFile: master.masterFile, masterFailure: master.reason, textcheckFile: textcheckFile || null, droppedAt: Math.round(st.mtimeMs) };
 }
 
 // Where delivered reels live: the Desktop Reels folder (where the drop folders deliver).
@@ -193,9 +228,10 @@ export function findSource(name, size, { roots = SOURCE_ROOTS } = {}) {
     for (const d of dirs) {
       const f = path.join(d, name);
       try { if (fs.statSync(f).size !== size) continue; } catch { continue; }
-      const clip = name.match(/^(Clip \d+) - /)?.[1];
+      const clip = clipPrefix(name);
       const pick = (...c) => c.map((x) => x && path.join(d, x)).find((x) => x && fs.existsSync(x)) || null;
-      return { dir: d, captionFile: pick(clip ? `${clip} - caption.txt` : null, "caption.txt"), meta: pick(clip ? `.${clip}.reel.json` : null, ".reel.json"), check: pick(clip ? `${clip} - check this reel.txt` : null, "check this reel.txt"), textcheck: pick("textcheck.json") };
+      const { master, note, legacy: check } = masterSidecars(f);
+      return { dir: d, captionFile: pick(clip ? `${clip} - caption.txt` : null, "caption.txt"), meta: pick(clip ? `.${clip}.reel.json` : null, ".reel.json"), check, note, master, textcheck: pick("textcheck.json") };
     }
   }
   return null;
@@ -226,7 +262,7 @@ export function fileItem(item, { status, receipt, root = item.root || ROOT, dest
     if (rest.length) {
       const sub = destination ? uniquePath(path.join(destDir, name || path.basename(item.dir))) : path.join(destDir, `${path.basename(item.dir)} - ${path.basename(item.video).replace(VIDEO, "")}`);
       fs.mkdirSync(sub, { recursive: true });
-      const prefix = path.basename(item.video).split(" - ")[0];
+      const prefix = clipPrefix(item.video);
       for (const f of fs.readdirSync(item.dir)) if (f === path.basename(item.video) || (prefix && f.startsWith(prefix + " "))) fs.renameSync(path.join(item.dir, f), path.join(sub, f));
       fs.writeFileSync(path.join(sub, status === "failed" ? "Why it did not post.txt" : "Scheduled.txt"), receipt);
       return sub;

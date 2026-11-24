@@ -34,11 +34,11 @@ async function facesBinary() {
 }
 
 /** Faces and upper bodies in a few frames of `video`, or null when detection is unavailable. */
-export async function detectFaces(video, times) {
+export async function detectFaces(video, times, { landmarks = false } = {}) {
   const bin = await facesBinary();
   if (!bin) return null;
   try {
-    const { out } = await run(bin, [video, ...times.map((t) => String(Math.round(t * 1000) / 1000))], { capture: true });
+    const { out } = await run(bin, [video, ...times.map((t) => String(Math.round(t * 1000) / 1000)), ...(landmarks ? ["--landmarks"] : [])], { capture: true });
     return dropStrayFaces(JSON.parse(out));
   } catch {
     return null;

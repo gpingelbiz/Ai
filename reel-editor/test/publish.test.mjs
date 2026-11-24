@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 // The delivered-reels lookup must never read the real ~/Desktop/Reels (an iCloud folder can stall the whole run):
 // point it at an empty folder before the module reads REEL_WATCH_DONE.
 process.env.REEL_WATCH_DONE = fs.mkdtempSync(path.join(os.tmpdir(), "reel-desk-"));
@@ -212,4 +213,45 @@ test("caption gate: retired keywords in any ask, the hiring portal, income claim
   const { bannedInCaption: b } = { bannedInCaption };
   for (const t of ["DM GHOST for the breakdown", "Type GHOST below", "comment the word SCALE", "Apply through my hiring portal", "I hit seven figures in 6 months", "She made $40,000 last month", "That's $10k a month", "This is it — the close", "Sell it - then deliver"]) assert.ok(b(t), t);
   for (const t of ["Our ticket is $3,000 a client.", "A 20% close rate and 15 calls a week.", "Follow-up wins. Ten-year-old habits die hard.", "Comment AI if you want it."]) assert.equal(b(t), "", t);
+});
+
+test("the Metricool poster refuses failed JSON and forwarded notes, leaves them in place, and picks a passing sibling clip", (t) => {
+  const root = tmp();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const put = (dir, file, content) => {
+    const p = path.join(root, dir, file);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, content);
+    old(p);
+    return p;
+  };
+  const failed = { status: "fail", rules: [{ id: "banned-words", ok: false, severity: "block" }] };
+  const failedVideo = put("Failed", "reel.mp4", "failed video");
+  put("Failed", "caption.txt", "A clean caption.");
+  put("Failed", "master-check.json", JSON.stringify(failed));
+  put("Forwarded", "reel.mp4", "forwarded video");
+  put("Forwarded", "caption.txt", "Another caption.");
+  put("Forwarded", "check this reel.txt", "Master check FAILED\n\nThe first frame flashes.\n");
+  put("Clips", "CHECK FAILED - Clip 1 - Rejected.mp4", "a failed clip");
+  put("Clips", "Clip 1 - master-check.json", JSON.stringify(failed));
+  const passing = put("Clips", "Clip 2 - Cleared.mp4", "a fixed clip");
+  put("Clips", "Clip 2 - caption.txt", "A passing caption.");
+  put("Clips", "Clip 2 - master-check.json", JSON.stringify({ status: "fixed", rules: [] }));
+  const poster = (...args) => spawnSync(process.execPath, ["scripts/publish-folder.mjs", ...args], {
+    env: { ...process.env, REEL_PUBLISH_DIR: root }, encoding: "utf8",
+  });
+  const scan = poster("scan");
+  assert.equal(scan.status, 0, scan.stderr);
+  const result = JSON.parse(scan.stdout);
+  assert.deepEqual(result.ready.map((item) => item.video), [passing]);
+  assert.match(scan.stderr, /Failed.*master check failed \(banned-words\)/);
+  assert.match(scan.stderr, /Forwarded.*records a failed check/);
+  for (const command of [["done", "Failed"], ["fail", "Failed"], ["serve", failedVideo]]) {
+    const refused = poster(...command);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /master check failed/);
+  }
+  assert.ok(fs.existsSync(failedVideo));
+  assert.equal(fs.existsSync(path.join(root, "Scheduled")), false);
+  assert.equal(fs.existsSync(path.join(root, "Not posted")), false);
 });

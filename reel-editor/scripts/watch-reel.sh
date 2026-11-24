@@ -24,11 +24,11 @@
 # Music: the editor picks a track from REEL_WATCH_MUSIC (default ~/Reels/music; Desktop/Reels/Music is a shortcut) by
 # the mood of what is said, at REEL_WATCH_MUSIC_VOLUME (default 0.10) under the voice. "#music:calm" asks for the track
 # whose name contains "calm"; "#nomusic" skips it. Nothing happens when the folder is empty. music.txt names the track.
-# A finished reel folder holds the reel and caption.txt only (Greg 2026-10-29: "all i want is the video and the
+# A finished reel folder holds the reel and caption.txt (Greg 2026-10-29: "all i want is the video and the
 # captions"): the post caption written from what the reel says, ready to paste into Instagram (write-caption.mjs,
 # needs the Claude Code CLI; REEL_WATCH_CAPTION=0 turns it off), plus the hidden .reel.json / .reel-features.json the
-# Publish folder and the analytics read. Everything else (cover, b-roll stills, music.txt, the words to check, the
-# preflight note, the hook options in "post notes.txt") stays in the work folder ~/Reels/videos/<name>.
+# Publish folder and the analytics read. The master-check result travels with the video. Other items (cover, B-roll stills, music.txt,
+# the words to check, the preflight note and hook options) stay in the work folder ~/Reels/videos/<name>.
 # B-roll and carousels need the Codex CLI signed in.
 # Prints one JSON line on success: {"ok":true,"input":...,"output":...,"name":...}
 set -euo pipefail
@@ -139,6 +139,22 @@ reel_meta() { # $1 work dir, $2 output json
 # The master gate's verdict for a work folder (gate.json from gate.mjs): held, and the fixes it made.
 gate_held() { [ -s "$1/gate.json" ] && node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(j.verdict==="hold"?0:1)' "$1/gate.json" 2>/dev/null; }
 gate_fixed() { [ -s "$1/gate.json" ] && node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(!(j.fixes||[]).length)process.exit(1);process.stdout.write(j.fixes.join("; "))' "$1/gate.json" 2>/dev/null; }
+
+# The video name and its sidecars must agree before the file appears in the delivery folder.
+deliver_master() { # work dir, delivery dir, optional "Clip N" sidecar prefix
+  local stem=""
+  [ -s "$1/master-check.json" ] || return 0
+  [ -z "${3:-}" ] || stem="$3 - "
+  cp -f "$1/master-check.json" "$2/${stem}master-check.json"
+  node -e '
+    const fs = require("node:fs");
+    const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (result.status !== "fail") process.exit(0);
+    const failures = (result.rules || []).filter((rule) => !rule.ok && rule.severity === "block");
+    fs.writeFileSync(process.argv[2], ["Master check FAILED", "", ...failures.map((rule) => rule.detail || rule.id), ""].join("\n"));
+    process.stdout.write("CHECK FAILED - ");
+  ' "$1/master-check.json" "$2/${stem}Check notes.txt"
+}
 
 # Background jobs cannot list Desktop folders (macOS privacy), so this never globs $1: it starts one past the
 # count it saved, and `mkdir` (no -p) fails on a folder that already exists, so it moves on to the next number.
@@ -358,7 +374,6 @@ if [ "$MODE" = long ]; then
   while IFS=$'\t' read -r k out hooktxt score range why edges; do
     [ -f "$out" ] || continue
     pretty=$(printf '%s' "$hooktxt" | sed -E 's/\*//g; s/[?!]+ */ - /g; s#[/:"*<>|\\]##g; s/ +/ /g; s/^ +| +$//g; s/ -$//; s/\.+$//')
-    cp "$out" "$folder/Clip $k - ${pretty:-clip}.mp4"
     reel_meta "$(dirname "$(dirname "$out")")" "$folder/.Clip $k.reel.json"
     cdir="$(dirname "$(dirname "$out")")"
     [ -s "$cdir/analytics-features.json" ] && cp -f "$cdir/analytics-features.json" "$folder/.Clip $k.reel-features.json"
@@ -370,6 +385,9 @@ if [ "$MODE" = long ]; then
     if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
       node "$HERE/write-caption.mjs" "$cdir" "$folder/Clip $k - caption.txt" >> "$log" 2>&1 || true
     fi
+    failed_prefix="$(deliver_master "$cdir" "$folder" "Clip $k")"
+    cp "$out" "$folder/${failed_prefix}Clip $k - ${pretty:-clip}.mp4"
+    [ -z "$failed_prefix" ] || echo "$(date '+%F %T') MASTER CHECK FAILED  Clip $k of $base" >> "$log"
     made=$((made + 1))
   done < <(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const f=(s)=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");(j.clips||[]).forEach((c,i)=>{if(c.output)console.log([i+1,c.output,(c.hook||"").replace(/\t/g," "),c.score,f(c.start)+"-"+f(c.end),(c.why||"").replace(/\t|\n/g," "),c.problems?(c.problems.length?"Edges: "+c.problems.map((p)=>p.message).join("; "):"Edges: clean start and finish"):""].join("\t"))})' "$work/clips.json" 2>/dev/null || true)
   echo "$(date '+%F %T') done  $folder ($made clips)" >> "$log"
@@ -382,9 +400,9 @@ fi
 # the post copy writes three hooks, strongest first, and the finished reel is edited with that one on screen.
 # The opening words are never the hook. Carousels have no on-screen hook.
 written_hook=""
+# The caption from an earlier drop belongs to that drop.
+rm -f "$work/caption.txt" "$work/caption.json"
 if [ -z "$hook" ] && [ "$MODE" != vsl ] && [ "$MODE" != carousel ] && [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
-  # A caption left by an earlier run of this clip must never pass for this run's.
-  rm -f "$work/caption.txt" "$work/caption.json"
   # shellcheck disable=SC2086
   if reel "$EDIT_CMD" "$FILE" --out "$work" --title "$name" ${flags[@]+"${flags[@]}"} --no-render $EXTRA_ARGS >> "$log" 2>&1 \
      && node "$HERE/write-caption.mjs" "$work" "$work/caption.txt" >> "$log" 2>&1 && [ -s "$work/caption.txt" ]; then
@@ -414,7 +432,8 @@ fi
 
 if [ "$MODE" = vsl ]; then
   folder="$(create_reel_folder "$DONE" "$REELS/videos" VSL)"
-  dest="$folder/$name.mp4"
+  failed_prefix="$(deliver_master "$work" "$folder")"
+  dest="$folder/${failed_prefix}$name.mp4"
   cp "$work/renders/$name.mp4" "$dest"
   if [ -z "$vsl_script" ]; then
     printf '%s\n' 'No VSL script found. The video was edited without script cards.' '' 'Put the VSL project id in the video filename, for example:' '2026-sample-offer.mov or take-1 #vsl-2026-sample-offer.mov' '' 'Scripts are looked up in ${REEL_VSL_PROJECTS:-~/Clients}/*/vsl/projects/<project-id>/04-script/.' 'The newest final_script approval wins, otherwise the highest script.vNNN.md.' 'If the id exists for more than one client, use a unique project id.' > "$folder/No script found.txt"
@@ -427,6 +446,23 @@ if [ "$MODE" = vsl ]; then
   printf '{"ok":true,"input":"%s","output":"%s","name":"%s"}\n' "$FILE" "$dest" "$name"
   exit 0
 fi
+
+# The post caption, written from what the reel says (write-caption.mjs; hook options and the Sandcastles notes go to
+# "$work/post notes.txt"). Written in the first pass when the hook came from it; otherwise written now. Never holds
+# up delivery when no caption can be written.
+deliver_caption() {
+  if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
+    if [ -n "$written_hook" ] && [ -s "$work/caption.txt" ]; then
+      cp -f "$work/caption.txt" "$folder/caption.txt"
+    else
+      rm -f "$work/caption.txt"
+      if node "$HERE/write-caption.mjs" "$work" "$work/caption.txt" >> "$log" 2>&1 && [ -s "$work/caption.txt" ]; then
+        cp -f "$work/caption.txt" "$folder/caption.txt"
+        notify "$label caption ready" "$title"
+      fi
+    fi
+  fi
+}
 
 # Readable name from the hook ("Running late - Stay out of the meeting.mp4"), else the slug.
 # The hook asked for; the one on screen when there was none, or when the master gate corrected a hook word.
@@ -462,7 +498,9 @@ else
     if [ "$MODE" = stitch ]; then folder="$(create_reel_folder "$DONE" "$REELS/videos" Stitch)"; else folder="$(create_reel_folder "$DONE" "$REELS/videos" Reel)"; fi
   fi
   label="$(basename "$folder")"
-  dest="$folder/$title.mp4"
+  deliver_caption
+  failed_prefix="$(deliver_master "$work" "$folder")"
+  dest="$folder/${failed_prefix}$title.mp4"
   cp "$work/renders/$name.mp4" "$dest"
   if [ "$MODE" = stitch ]; then
     cp "$FILE/Order - check this.jpg" "$folder/Order - check this.jpg"
@@ -505,7 +543,10 @@ else
   fi
   # The master gate (gate.mjs) fixed what it could before this; a reel it still holds is delivered with the reason
   # beside it and is only ever drafted by Publish (its textcheck.json says hold).
-  if gate_held "$work"; then
+  if [ -n "$failed_prefix" ]; then
+    echo "$(date '+%F %T') MASTER CHECK FAILED  $dest" >> "$log"
+    notify "$label check failed" "$title. See Check notes.txt."
+  elif gate_held "$work"; then
     cp -f "$work/gate.txt" "$folder/Why it's held.txt"
     echo "$(date '+%F %T') HELD  $dest ($(grep -m1 '^- ' "$work/gate.txt" | sed 's/^- //'))" >> "$log"
     notify "$label HELD, not ready to post" "$title. Why: $(grep -m1 '^- ' "$work/gate.txt" | sed 's/^- //')"
@@ -517,21 +558,7 @@ else
   fi
 fi
 
-# Proof and receipt images stay in the drop folder next to their clip (the clip stays there too), so the finished
-# folder holds only the reel and its caption.
+# Proof and receipt images stay in the drop folder next to their source clip.
 
-# The post caption, written from what the reel says (write-caption.mjs; hook options and the Sandcastles notes go to
-# "$work/post notes.txt"). Written in the first pass when the hook came from it; otherwise written now. Never holds
-# up the delivery.
-if [ "${REEL_WATCH_CAPTION:-1}" != 0 ] && command -v claude >/dev/null 2>&1; then
-  if [ -n "$written_hook" ] && [ -s "$work/caption.txt" ]; then
-    cp -f "$work/caption.txt" "$folder/caption.txt"
-  else
-    rm -f "$work/caption.txt"
-    if node "$HERE/write-caption.mjs" "$work" "$work/caption.txt" >> "$log" 2>&1 && [ -s "$work/caption.txt" ]; then
-      cp -f "$work/caption.txt" "$folder/caption.txt"
-      notify "$label caption ready" "$title"
-    fi
-  fi
-fi
+if [ "$MODE" = carousel ]; then deliver_caption; fi
 printf '{"ok":true,"input":"%s","output":"%s","name":"%s","hook":"%s"}\n' "$FILE" "$dest" "$name" "$hook"

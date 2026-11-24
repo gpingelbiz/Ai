@@ -10,6 +10,7 @@ import { runEdit } from "./pipeline.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, run, r3, slug } from "./util.mjs";
 import { reframeClip, describeLayout } from "./speakers.mjs";
 import { audioEnvelope } from "./cuts.mjs";
+import { snapClipWindows } from "./reel-edges.mjs";
 import { sentenceLines, lineEnergy, cutPoints, momentsPrompt, region, askEdges, resolveClips, describeEdges } from "./moments.mjs";
 
 /**
@@ -115,9 +116,10 @@ export async function makeClips(input, opts = {}) {
       const reply = await claudeText(clipsPrompt({ words, duration: meta.duration, count, voice }), { timeoutMs: 300000 });
       clips = tidyWindows(firstJSON(reply).clips, words, meta.duration);
     } else clips = await pickCleanEdges({ input, words, duration: meta.duration, count, voice, workDir });
-    writeJSON(clipsPath, { source: input, clips });
   }
-  if (!clips.length) throw new Error("no usable windows were found");
+  clips = snapClipWindows(clips, words, meta.duration);
+  if (!clips.length) throw new Error("no usable windows with complete sentence edges were found");
+  writeJSON(clipsPath, { source: input, clips });
   log(`clips: ${clips.length} window${clips.length === 1 ? "" : "s"}${clips.map((c) => `\n  ${c.score}  ${fmt(c.start)}-${fmt(c.end)}  "${c.hook}"  ${c.why}${c.problems ? `\n       ${describeEdges(c)}` : ""}`).join("")}`);
   if (opts.planOnly) return { workDir, clips };
 
@@ -127,9 +129,18 @@ export async function makeClips(input, opts = {}) {
     const c = clips[i];
     const dir = ensureDir(path.join(workDir, `clip-${i + 1}`));
     const src = path.join(dir, "source.mp4");
-    if (!fs.existsSync(src) || opts.force) {
+    const cutPath = path.join(dir, "source-window.json");
+    const sourceStat = fs.statSync(input);
+    const cut = { input, size: sourceStat.size, mtime: sourceStat.mtimeMs, start: c.start, end: c.end };
+    let previous;
+    try { previous = readJSON(cutPath); } catch {}
+    const recut = !fs.existsSync(src) || opts.force || JSON.stringify(cut) !== JSON.stringify(previous);
+    if (recut) {
+      fs.rmSync(cutPath, { force: true });
+      fs.rmSync(path.join(dir, "source-portrait.mp4"), { force: true });
       log(`clip ${i + 1}: cutting ${fmt(c.start)}-${fmt(c.end)}…`);
       await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(c.start), "-to", String(c.end), "-i", input, "-c:v", process.platform === "darwin" ? "h264_videotoolbox" : "libx264", ...(process.platform === "darwin" ? ["-q:v", "75"] : ["-preset", "veryfast", "-crf", "16"]), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", src], { quiet: true });
+      writeJSON(cutPath, cut);
     }
     const clipWords = sliceWords(words, c.start, c.end);
     // Wide footage (a podcast, an interview, a screen recording) becomes a portrait source that follows whoever is
@@ -152,7 +163,7 @@ export async function makeClips(input, opts = {}) {
     const tPath = path.join(dir, "transcript.json");
     writeJSON(tPath, { source: editSrc, words: clipWords });
     try {
-      const r = await runEdit(editSrc, { ...opts, out: path.join(dir, "edit"), title: `${name}-${i + 1}`, transcript: tPath, hook: opts.autoHook ? undefined : c.hook || undefined, force: false, count: undefined, planOnly: undefined });
+      const r = await runEdit(editSrc, { ...opts, out: path.join(dir, "edit"), title: `${name}-${i + 1}`, transcript: tPath, clipSource: { input, start: c.start, end: c.end, snapped: !!c.snapped }, hook: opts.autoHook ? undefined : c.hook || undefined, force: false, count: undefined, planOnly: undefined });
       results.push({ ...c, output: r.output, workDir: r.workDir });
     } catch (e) {
       warn(`clip ${i + 1} failed: ${String(e.message).split("\n")[0]}`);

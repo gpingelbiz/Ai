@@ -78,6 +78,7 @@ export function stageItem(item) {
   put(item.captionFile, "caption.txt");
   put(item.metaFile, ".reel.json");
   put(item.checkFile, "check this reel.txt");
+  put(item.masterFile, "master-check.json");
   return { dir: temp, name: stem, temp };
 }
 
