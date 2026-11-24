@@ -127,17 +127,30 @@ export function markProKeywords(groups, duration, dict = {}) {
 
 /** A thought has one anchor, even when its cues wrap differently. The plate's bottom can only move upward. */
 export function placeProCaptions(groups, heads = [], { height = 1920 } = {}) {
+  // Greg 11-24 "Why are the captions over my face": the old rule lifted a thought's captions above the chin whenever
+  // any sampled chin dipped below the plate, which put them on the face. Now a thought keeps y=1248 when every
+  // sampled face clears it; otherwise it drops below the lowest chin if that still fits above the bottom safe line,
+  // else it goes above the highest head top; if neither fits it sits as low as allowed, never between top and chin.
   const scale = height / 1920;
   const positions = new Map();
+  const base = 1248 * scale, bottomSafe = 1720 * scale, topSafe = 420 * scale, gap = 56 * scale;
   for (const g of groups) {
+    if (positions.has(g.thought)) continue;
     const related = groups.filter((other) => other.thought === g.thought);
     const start = related[0].start, end = related.at(-1).end;
-    const tops = heads.filter((h) => h.t >= start && h.t <= end && Number.isFinite(h.chin)).map((h) => h.chin * height);
-    const chin = tops.length ? Math.min(...tops) : null;
-    // If the default plate overlaps the chin, reserve the whole two-line plate above it.
+    const faces = heads.filter((h) => h.t >= start && h.t <= end && Number.isFinite(h.chin))
+      .map((h) => ({ chin: h.chin * height, top: Number.isFinite(h.top) ? h.top * height : (h.chin - 0.2) * height }));
     const plateHeight = Math.max(...related.map((h) => h.lines?.length || 1)) * 92 * scale + 24 * scale;
-    const needsMove = tops.some((top) => top + 56 * scale > 1248 * scale);
-    const y = needsMove ? Math.min(1248 * scale, chin - 56 * scale - plateHeight) : 1248 * scale;
+    let y = base;
+    if (faces.length) {
+      const lowestChin = Math.max(...faces.map((f) => f.chin)), highestTop = Math.min(...faces.map((f) => f.top));
+      if (base < lowestChin + gap) {
+        const below = lowestChin + gap, above = highestTop - gap - plateHeight;
+        if (below + plateHeight <= bottomSafe) y = below;
+        else if (above >= topSafe) y = above;
+        else y = bottomSafe - plateHeight;
+      }
+    }
     positions.set(g.thought, r3(Math.max(0, y)));
   }
   return groups.map((g) => ({ ...g, y: positions.get(g.thought) }));

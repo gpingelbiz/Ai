@@ -86,19 +86,24 @@ test("pro gold budget is five per 30 s, capped at eight and one operative word p
   assert.ok(markProKeywords(diverse, 90).flatMap((g) => g.words).filter((w) => w.key).length <= 8);
 });
 
-test("pro captions hold one upward-only anchor per thought, clearing all sampled chins by 56 px", () => {
+test("pro captions never sit on the face: below the lowest chin, else above the head, one anchor per thought", () => {
   const groups = [cue("first thought", 0), { ...cue("wrap this thought", 1), lines: [1, 2] }, cue("next thought", 3, 1)];
   const before = structuredClone(groups);
-  const placed = placeProCaptions(groups, [{ t: 0.2, chin: 1200 / 1920 }, { t: 1.5, chin: 1300 / 1920 }, { t: 3.5, chin: 900 / 1920 }]);
-  assert.equal(placed[0].y, placed[1].y);
-  assert.ok(placed[0].y + 208 <= 1200 - 56);
-  assert.equal(placed[2].y, 1248);
-  assert.ok(placed.every((g) => g.y <= 1248));
+  const f = (t, top, chin) => ({ t, top: top / 1920, chin: chin / 1920 });
+  // Faces well above the plate keep the default line.
+  assert.ok(placeProCaptions(groups, [f(0.2, 500, 900), f(1.5, 520, 950), f(3.5, 500, 900)]).every((g) => g.y === 1248));
+  // A chin dipping to 1230 moves the thought BELOW it (1230 + 56), still inside the safe line; others stay put.
+  const dip = placeProCaptions(groups, [f(0.2, 800, 1200), f(1.5, 830, 1230), f(3.5, 500, 900)]);
+  assert.equal(dip[0].y, dip[1].y);
+  assert.equal(dip[0].y, 1286);
+  assert.ok(dip[0].y + 208 <= 1720);
+  assert.equal(dip[2].y, 1248);
+  // No room below a very low face: above the highest head top instead, never between top and chin.
+  const low = placeProCaptions(groups, [f(0.2, 1000, 1500), f(1.5, 1010, 1520)]);
+  assert.ok(low[0].y + 208 <= 1000 - 56);
+  assert.ok(low[0].y + 208 <= 1000 || low[0].y >= 1520, "plate clear of the low face");
   assert.equal(placeProCaptions(groups)[0].y, 1248);
   assert.equal(placeProCaptions(groups, [], { height: 960 })[0].y, 624);
-  const moving = placeProCaptions(groups, [{ t: 0.2, chin: 900 / 1920 }, { t: 1.5, chin: 1300 / 1920 }]);
-  assert.equal(moving[0].y, moving[1].y);
-  assert.ok(moving[0].y + 208 <= 900 - 56);
   assert.deepEqual(groups, before);
 });
 

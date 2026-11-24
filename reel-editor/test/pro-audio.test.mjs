@@ -217,8 +217,8 @@ test("pro pipeline writes a complete project without browser, models, or a new p
   const { plan } = result;
   assert.equal(plan.hook.start, 0);
   assert.equal(plan.hook.duration, 2.4);
-  assert.ok(plan.captions.every((g) => g.y <= 1248 && g.lines.length <= 2 && g.words.length <= 6));
-  assert.ok(plan.captions.some((g) => g.y < 1248), "chin measurement reaches the saved pro anchor");
+  assert.ok(plan.captions.every((g) => g.y + g.lines.length * 92 + 24 <= 1720 && g.lines.length <= 2 && g.words.length <= 6));
+  assert.ok(plan.captions.some((g) => g.y !== 1248), "chin measurement reaches the saved pro anchor (11-24: a low face moves captions below the chin, never onto it)");
   const captioned = new Set(plan.captions.flatMap((g) => g.words.map((w) => w.start)));
   const titled = new Set(plan.hook.words.map((w) => norm(w.text)));
   for (const word of plan.words) assert.ok(captioned.has(word.start) || (word.start < plan.hook.duration && titled.has(norm(word.text))), `uncovered word: ${word.text}`);
