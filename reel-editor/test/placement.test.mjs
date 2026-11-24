@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { headExtent, placeHook, zoomDuring, hookBlockHeight, captionsRepeatingHook, cardHeadTop, headBoxFor, placeProgressRail } from "../src/placement.mjs";
+import { headExtent, placeHook, zoomDuring, hookBlockHeight, captionsRepeatingHook, cardHeadTop, headBoxFor, placeProgressRail, dropStrayFaces } from "../src/placement.mjs";
 import { cleanText } from "../src/captions.mjs";
 
 const words = (s) => s.split(" ").map((text) => ({ text, key: text.startsWith("*") }));
@@ -161,4 +161,21 @@ test("sidePlaqueLayout: a wide frame puts the plaque on the wall beside the head
   const long = "Nobody tells you the money makes it harder to walk away from a job that is costing you everything".split(" ").map((text) => ({ text }));
   const tall = sidePlaqueLayout(long, { headLeft: 0.36, headRight: 0.57, headTop: 0.03, headBottom: 0.15, fontSizeFrac: 0.041, W: 1920, H: 1080 });
   assert.equal(tall, null, "a long hook with no height above the chin keeps the old placement");
+});
+
+test("a mic read as a face below the speaker's chin is dropped; a second person beside the speaker is kept", () => {
+  // Real Vision boxes from Greg's Nov 23 long video (Clip 5 at 6.7 s, Clip 3 at 1.18 s): the Shure mic bottom left.
+  const clip5 = { frames: [{ t: 6.7, faces: [{ x: 0.368, y: 0.344, w: 0.268, h: 0.151 }, { x: 0.008, y: 0.692, w: 0.372, h: 0.209 }], bodies: [{ x: 0.168, y: 0.312, w: 0.771, h: 0.683 }] }] };
+  const clip3 = { frames: [{ t: 1.18, faces: [{ x: 0.481, y: 0.405, w: 0.246, h: 0.138 }, { x: 0.109, y: 0.688, w: 0.359, h: 0.202 }], bodies: [{ x: 0.279, y: 0.376, w: 0.682, h: 0.62 }] }] };
+  for (const det of [clip5, clip3]) {
+    const clean = dropStrayFaces(det);
+    assert.equal(clean.frames[0].faces.length, 1);
+    assert.equal(clean.frames[0].faces[0], det.frames[0].faces[0]);
+    assert.ok(headExtent(clean).bottom < 0.6, "the chin is the speaker's, not the mic's");
+  }
+  assert.ok(headExtent(clip5).bottom > 0.9, "before the fix the mic set the chin");
+  const two = { frames: [{ faces: [{ x: 0.12, y: 0.3, w: 0.2, h: 0.12 }, { x: 0.6, y: 0.33, w: 0.2, h: 0.12 }], bodies: [{ x: 0.02, y: 0.25, w: 0.42, h: 0.75 }, { x: 0.5, y: 0.28, w: 0.42, h: 0.72 }] }] };
+  assert.equal(dropStrayFaces(two).frames[0].faces.length, 2);
+  assert.deepEqual(dropStrayFaces(selfie).frames, selfie.frames);
+  assert.equal(dropStrayFaces(null), null);
 });
