@@ -21,3 +21,12 @@ test("windows snap to words, respect length limits and never overlap; best score
   assert.match(p, /^\[0\.0\] w0 w1/m);
   assert.match(p, /up to 3 windows of 30 to 90 seconds/);
 });
+
+test("Greg 11-24: long videos are not capped at 5 clips: about one per 3 minutes, 5 to 25", async () => {
+  const { clipCount } = await import("../src/clips.mjs");
+  assert.equal(clipCount("auto", 52 * 60), 17);
+  assert.equal(clipCount(undefined, 8 * 60), 5);
+  assert.equal(clipCount("auto", 3 * 3600), 25);
+  assert.equal(clipCount("8", 52 * 60), 8);
+  assert.equal(clipCount("40", 52 * 60), 25);
+});

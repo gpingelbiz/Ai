@@ -340,7 +340,7 @@ fi
 # Its cover, music and words to check stay in the clip's own work folder; clips.txt (the moments) in this one.
 if [ "$MODE" = long ]; then
   # shellcheck disable=SC2086
-  if ! reel clips "$FILE" --out "$work" --title "$name" --count "${REEL_WATCH_CLIPS:-5}" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
+  if ! reel clips "$FILE" --out "$work" --title "$name" --count "${REEL_WATCH_CLIPS:-auto}" ${flags[@]+"${flags[@]}"} $EXTRA_ARGS >> "$log" 2>&1; then
     echo "$(date '+%F %T') FAIL  $base clips (see above)" >> "$log"
     notify "Clips failed" "$base. Rename it to retry; details in ~/Reels/watch.log"
     printf '{"ok":false,"input":"%s","name":"%s","log":"%s"}\n' "$FILE" "$name" "$log"

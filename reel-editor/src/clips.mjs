@@ -20,6 +20,15 @@ import { sentenceLines, lineEnergy, cutPoints, momentsPrompt, region, askEdges, 
 
 export const CLIPS_SCHEMA_HINT = '{"clips":[{"start":<seconds>,"end":<seconds>,"hook":"4-8 words, with the key phrase in *asterisks*","why":"...","score":<0-100>}]}';
 
+// Greg 11-24 "make that a rule that we don't limit long form to only 5 things": a long recording gets about one reel
+// per 3 minutes (a 52 min call -> 17), at least 5 and at most 25, unless --count gives a number.
+export const CLIPS_PER_SECONDS = 180, CLIPS_MIN = 5, CLIPS_MAX = 25;
+export function clipCount(requested, duration) {
+  const n = parseInt(requested, 10);
+  if (Number.isFinite(n) && n > 0) return Math.min(CLIPS_MAX, n);
+  return Math.max(CLIPS_MIN, Math.min(CLIPS_MAX, Math.round((duration || 0) / CLIPS_PER_SECONDS)));
+}
+
 export function clipsPrompt({ words, duration, count, voice = "" }) {
   // Timestamped lines every ~8 words so Claude can point at real moments.
   const lines = [];
@@ -73,7 +82,7 @@ export async function makeClips(input, opts = {}) {
   const preset = loadPreset(opts.preset);
   const dict = loadDictionary(opts.dictionary);
   const meta = await probe(input);
-  const count = Math.max(1, Math.min(12, parseInt(opts.count || 5, 10)));
+  const count = clipCount(opts.count, meta.duration);
   log(`clips: ${r3(meta.duration)}s source, up to ${count} reels → ${workDir}`);
 
   // 1. One transcript for the whole recording.
