@@ -152,6 +152,38 @@ test("master filters lock samples and frames, rotate upright and never dissolve 
   assert.match(vf, /transpose=clock/); assert.match(vf, /trim=end_frame=60/); assert.match(vf, /crop=1080:1920/); assert.doesNotMatch(vf, /xfade/);
 });
 
+test("the order preview keeps its words when ffmpeg has no drawtext, and is still made when nothing can draw words", async (t) => {
+  const dir = temp(t), folder = path.join(dir, "in"), file = path.join(folder, "1 grey.mov"); fs.mkdirSync(folder);
+  await run("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "color=0x404040:s=90x160:r=30:d=1.2", "-c:v", "libx264", "-pix_fmt", "yuv420p", file], { capture: true });
+  const index = [clip("hello from here", 1, { file, duration: 1.2, words: words("hello from here", 0.2, 0.2) })], plan = planStitch(index);
+  // Bright pixels in the band under the frame, where the words go (the band is the 0x161616 pad otherwise).
+  const wordPixels = async (work) => {
+    const raw = path.join(work, "band.raw");
+    await run("ffmpeg", ["-y", "-v", "error", "-i", path.join(work, "preview/tile-1.png"), "-vf", "crop=332:150:14:556,format=gray", "-f", "rawvideo", raw], { capture: true });
+    return [...fs.readFileSync(raw)].filter((v) => v > 128).length;
+  };
+  const ffmpeg9 = (calls) => async (cmd, args, opts) => { calls.push([path.basename(cmd), ...args].join(" ")); return args.includes("-filters") ? { out: " T.. drawbox  V->V  Draw a colored box" } : run(cmd, args, opts); };
+
+  const drawn = [], helped = path.join(dir, "helped");
+  await writeStitchPreview(index, plan, folder, helped, { execute: ffmpeg9(drawn) });
+  assert.ok(!drawn.some((c) => c.includes("drawtext")), "never asks this ffmpeg for drawtext");
+  if (process.platform === "darwin") {
+    assert.ok(drawn.some((c) => c.startsWith("photosheet") && c.includes(" label ")), "the photo helper draws the words");
+    assert.ok(await wordPixels(helped) > 200, "the words are on the tile");
+  }
+  assert.ok(fs.statSync(path.join(folder, "Order - check this.jpg")).size > 100);
+
+  const bare = [], plain = path.join(dir, "plain");
+  fs.rmSync(path.join(folder, "Order - check this.jpg"));
+  await writeStitchPreview(index, plan, folder, plain, { execute: ffmpeg9(bare), swift: async () => null });
+  assert.ok(!bare.some((c) => c.includes("drawtext") || c.startsWith("photosheet")));
+  assert.equal(await wordPixels(plain), 0); assert.ok(fs.statSync(path.join(folder, "Order - check this.jpg")).size > 100);
+
+  const full = [];
+  await writeStitchPreview(index, plan, folder, path.join(dir, "full"), { execute: async (cmd, args) => { full.push([cmd, ...args].join(" ")); return { out: " T.. drawtext  V->V  Draw text" }; }, swift: async () => assert.fail("drawtext builds keep the ffmpeg words") });
+  assert.ok(full.some((c) => c.includes("drawtext=fontfile=font.ttf:textfile=tile-1.txt")));
+});
+
 test("the complete stitch path writes preview before edit, compiles real mixed clips and caches the master", async (t) => {
   const dir = temp(t), inputs = path.join(dir, "input"), work = path.join(dir, "work"); fs.mkdirSync(inputs);
   const a = path.join(inputs, "1 red.mov"), b = path.join(inputs, "2 blue.mov"), c = path.join(inputs, "3 silent.mov");
