@@ -27,6 +27,8 @@ const LIMITS = { hookWords: 12, setupWords: 16, quoteMin: 2, quoteMax: 24 }; // 
 const KILL = [/\bunlock/i, /\bunleash/i, /game ?changer/i, /\belevate/i, /\bdive in\b/i, /\bdelve/i, /\bleverag/i, /\bsynergy/i, /\b10x\b/i, /\bgrind/i, /\bhacks?\b/i, /\bmanifest/i, /passive income/i, /autopilot/i, /set it and forget it/i, /while you sleep/i, /24\/7/, /effortless/i, /done for you/i, /here's the thing/i, /the truth is/i, /let's be honest/i, /3 to 5x/i, /\bA to Z\b/i, /runs without you/i, /never misses/i, /\btransform/i, /\bjourney\b/i, /\bempower/i, /\bseamless/i, /\belite\b/i, /\bcrush/i, /level up/i, /hiring portal/i, /\bghost\b/i, /biggest leak/i];
 // The audience is coaches: never salespeople, and AI is never the point.
 const NOT_COACH = [/\bsales ?(?:people|person|rep|reps|man|men)\b/i, /\breps?\b/i, /\bAI\b/];
+// Greg 2026-11-25: "Remove I coached a coach that sounds dumb… we need it to sound professional and like my voice".
+const CLUMSY = [/\bcoach(?:ed|es|ing)?\s+(?:a|another|the|this)\s+coach/i, /\bcoach\b[^.!?]*\bcoach\b/i];
 const NAME_OK = new Set(["I", "I'm", "I've", "I'd", "I'll", "Greg", "DM", "DMs", "CRM", "VSL"]);
 
 const home = (env = process.env) => env.HOME || os.homedir();
@@ -103,7 +105,7 @@ export function loadList(file, { from, specs = null } = {}) {
   try { j = readJSON(file); } catch { return null; }
   const root = from ? path.resolve(from) : null;
   const entries = (Array.isArray(j.cards) ? j.cards : []).filter((e) => e && (e.card || (e.id && Array.isArray(e.messages)))).map((e) => {
-    const base = { context: String(e.context || "").trim(), client: String(e.client || ""), business: String(e.business || e.client || "") };
+    const base = { context: String(e.context || "").trim(), client: String(e.client || ""), business: String(e.business || e.client || ""), pronoun: String(e.pronoun || "").trim() };
     if (!e.card) {
       // A text carried on the list itself (verified word for word from the Messages database, trims marked "…"):
       // the strong coach texts the card library never made a card for, or filed under a held folder by mistake.
@@ -170,7 +172,7 @@ export async function readCards(files, deps = {}, { from = null, specs = null, l
     const rel = file.startsWith(INLINE) ? file : from ? path.relative(path.resolve(from), file).split(path.sep).join("/") : null;
     const listed = rel ? notes.get(rel) : null;
     const spec = listed?.spec || (rel && specs?.get(rel) ? cleanSpec(specs.get(rel)) : null);
-    if (spec) { cards.push({ file, text: specText(spec), spec, ...(listed?.context ? { context: listed.context } : {}), ...(listed?.business ? { business: listed.business } : {}) }); continue; }
+    if (spec) { cards.push({ file, text: specText(spec), spec, ...(listed?.context ? { context: listed.context } : {}), ...(listed?.business ? { business: listed.business } : {}), ...(listed?.pronoun ? { pronoun: listed.pronoun } : {}) }); continue; }
     if (file.startsWith(INLINE)) throw new Error(`${file} is not on the coach list any more (its words live only there)`);
     const o = await ocr(file, deps);
     const text = o.lines.map((line) => line.text).join("\n").trim();
@@ -196,6 +198,7 @@ function voiceProblems(text, where) {
   if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(s)) out.push(`${where} has an emoji`);
   for (const re of KILL) { const m = s.match(re); if (m) out.push(`${where} uses "${m[0]}" (Brand Guide v11 kill list)`); }
   for (const re of NOT_COACH) { const m = s.match(re); if (m) out.push(`${where} says "${m[0]}"; this reel is for coaches (never salespeople or reps, never AI)`); }
+  for (const re of CLUMSY) { const m = s.match(re); if (m) out.push(`${where} says "${m[0]}"; that sounds clumsy, say it the way Greg would tell a peer`); }
   return out;
 }
 
@@ -249,7 +252,7 @@ export function scriptPrompt(cards, { close = DEFAULT_CLOSE, errors = [] } = {})
     "Return JSON only, no prose: {\"hook\": \"...\", \"items\": [{\"card\": 1, \"setup\": \"...\", \"quote\": \"...\"}], \"close\": \"...\"}",
     "Rules:",
     `- hook: at most ${LIMITS.hookWords} words, said first. Open on the coach's situation, never on a result or a brag, the way \"Your coaching offer sells. Every sales call still needs you.\" does. Write a new one that fits these texts. Plain words, no question bait.`,
-    `- One item per card, in the order given. setup: at most ${LIMITS.setupWords} words. A full sentence Greg says out loud, first person (I fixed, I built, we set up), saying what was built or fixed in plain words, from that card's note and nothing else. Call the sender a coaching client, a coach or a peer; never a name, niche, offer, keyword, tool, platform or place. The verb matches the note: built, fixed, set up, ran, checked. Never grew, doubled or scaled.`,
+    `- One item per card, in the order given. setup: at most ${LIMITS.setupWords} words, one or two short sentences Greg says out loud the way he tells a peer what happened on a call: professional, plain, confident. Start from their situation or from what was done, in his words (we or I): \"She'd [their situation]. We [what we did].\", \"We [what we did]. [What happened next].\" Every fact in a setup is in that card's note: no needs, motives, steps or timing the note does not say. Refer to the sender only as that card's sender line says (she, he or they); never \"I coached a coach\", never the word coach twice in one line, and never \"a coaching client\" in more than one setup. Never a name, niche, offer, keyword, tool, platform or place. The verb matches the note: built, fixed, set up, ran, worked on, checked. Never grew, doubled or scaled.`,
     `- quote: copied word for word from that card's text, one continuous stretch of ${LIMITS.quoteMin} to ${LIMITS.quoteMax} words. Pick the stretch that shows the build working or how it landed. A short card can be quoted whole. Never change, add, drop or reorder words inside a quote.`,
     "- The hook and every setup add no fact that the card notes and texts do not show: no results, numbers, timelines, times of day or \"unprompted\" beyond them.",
     "- Vary the setups: no two start with the same words, and they read as one story from the first card to the last.",
@@ -260,7 +263,7 @@ export function scriptPrompt(cards, { close = DEFAULT_CLOSE, errors = [] } = {})
     `- close: exactly ${JSON.stringify(close)}`,
     ...(errors.length ? ["", "Your last attempt broke these rules; fix every one:", ...errors.map((e) => `- ${e}`)] : []),
     "",
-    ...cards.flatMap((card, i) => [`Card ${i + 1} note (what was built or fixed): ${card.context || "none on file; say only that a coaching client sent it"}`, `Card ${i + 1} text:`, card.text, ""]),
+    ...cards.flatMap((card, i) => [`Card ${i + 1} note (what was built or fixed): ${card.context || "none on file; say only that a coaching client sent it"}`, `Card ${i + 1} sender: ${card.pronoun || "they"}`, `Card ${i + 1} text:`, card.text, ""]),
   ].join("\n");
 }
 
