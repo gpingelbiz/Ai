@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import os from "node:os";
-import { firstJSON } from "./claude.mjs";
+import { firstJSON, stopHard } from "./claude.mjs";
 
 /**
  * The client's Metricool, reached through the Metricool connector on the client's own claude.ai account (their
@@ -33,7 +33,7 @@ function runClaude(args, { timeoutMs = 300000 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.env.REEL_CLAUDE_BIN || "claude", args, { stdio: ["ignore", "pipe", "pipe"], cwd: os.tmpdir() });
     let out = "", err = "";
-    const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error(`claude timed out after ${Math.round(timeoutMs / 1000)}s`)); }, timeoutMs);
+    const timer = setTimeout(() => { stopHard(child); reject(new Error(`claude timed out after ${Math.round(timeoutMs / 1000)}s`)); }, timeoutMs);
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
     child.on("error", (e) => { clearTimeout(timer); reject(e); });

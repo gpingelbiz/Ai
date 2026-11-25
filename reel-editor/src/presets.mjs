@@ -162,6 +162,22 @@ export function mergeOverrides(preset, o = {}) {
   if (o.noSlams) p.slams.enabled = false;
   if (o.annotate) p.captions.annotate = true;
   if (o.noAnnotate) p.captions.annotate = false;
+  // reel proof: the real texts are the only cards. No pro/graphic cards, slams or markers repeating them, captions low,
+  // each text whole above the captions (quote highlighted, not zoomed past the caption band)
+  // and up only while its quote is read; a match needs five words in a row so a common phrase does not light up
+  // another card's line.
+  if (o.proofReel) {
+    p.graphics.enabled = false;
+    p.broll.enabled = false;
+    p.slams.enabled = false;
+    p.captions.annotate = false;
+    // Captions low (inside the Instagram safe area) so the texts get the room above and the hook fits under the chin
+    // of the photo; the hook placer still picks above or below the head itself.
+    if (num(o.captionPosition) == null) { p.captions.position = 0.72; p.captions.proBase = 0.72; }
+    // The pro hook normally sits at 260 px, over the head of a photo framed this way: put it between chin and captions.
+    if (num(o.hookPosition) == null) p.hook.proPosition = 0.5;
+    p.evidence = { ...(p.evidence || {}), layout: "focus", zoom: false, until: "quote", minQuoteWords: 5 };
+  }
   if (o.zoomStyle) p.zooms.style = o.zoomStyle;
   if (o.brollCut) p.broll.cut = o.brollCut;
   if (o.brollEngine) {

@@ -163,6 +163,14 @@ The clean pass sums the phone's stereo to mono, then denoises, de-esses, levels,
 
 Sign-offs ("thanks for watching", "see you in the next one", "link in bio"...) inside the last 10 s are cut, so a reel ends on its last point.
 
+## Proof reels in your cloned voice (`reel proof`)
+
+A narrated proof reel with no filming. `reel proof` picks the next unused testimonial cards (strongest folder first; never `not-using/`, `with-dollar-amounts/`, `check-flags/` or split `-p1/-p2` cards; `~/Reels/proof/used.json` remembers what ran), reads each card with Apple Vision and has headless Claude write a hook, one setup line and one quote per card, and Greg's approved closer. Every quote must be copied word for word from its own card, setups stay anonymous and add nothing the card does not say, and the voice rules hold (no dashes, no "Yo"); a script that breaks a rule is rewritten up to three times, then the run stops. The script lands in `~/Reels/proof/<name>/script.json` (`--dry-run` stops there; `--script <file>` uses an edited one).
+
+The lines are spoken in Greg's cloned voice through VoiceStudio (`src/voicestudio.mjs`, the saved voice `Greg`, CosyVoice3 engine; the app's default OmniVoice is non-commercial and refused), joined with short pauses over a slow push on a real photo of Greg (`--photo`, or the least recently used one in `REEL_PROOF_PHOTOS`, default `~/Reels/proof/photos`; solo real-camera shots only). The clip and its cards go into Raw - Reel as `<name>__<hook> #aivoice.mp4` plus `<name> proof N - Real text.png`, so the normal watcher edits, gates and delivers it: each card shows when its quote is spoken (focus layout, the quoted line zoomed and highlighted). `#aivoice` turns on `--ai-voice`, which marks the delivered `.reel.json` `isAiGenerated` so Publish labels the post AI-made on Instagram and TikTok.
+
+`reel say "<text>" -o line.wav [--voice vs:Greg]` speaks one line; `reel edit ... --voiceover script.txt --voice vs:Greg` narrates in the clone instead of an ElevenLabs voice (`vs:Greg@voxcpm2` picks the other cleared engine). VoiceStudio runs only where it is installed and set up (Greg's MacBook); the app is started in the background when its backend is not answering.
+
 ## Publishing
 
 `scripts/publish.mjs <work dir> --media-url <public link> [--trial] [--date <iso>] [--reviewer you@x.com]` writes `post.json` (caption and 5 hashtags from `caption.json`, the scored cover-frame time, `isAiGenerated` when the reel has AI stills, as Instagram requires) and sends the reel to Metricool for your approval through headless Claude with only the Metricool review tool allowed. Metricool needs the video as a public link (Dropbox or Google Drive links are uploaded by it), so upload the MP4 first. It never auto-posts: a reviewer approves in Metricool.
@@ -534,6 +542,8 @@ The log line `encoding clean.mp4 (... + hlg → BT.709 SDR)` confirms it ran.
 | `REEL_SFX_CACHE` | where generated sound effects are cached (default `~/.cache/reel-editor/sfx`) |
 | `REEL_DICTIONARY` | alternate dictionary file |
 | `REEL_DEBUG=1` | stack traces and every check finding |
+| `REEL_PROOF_CARDS` / `REEL_PROOF_PHOTOS` / `REEL_PROOF_VOICE` | `reel proof` defaults: the testimonial card folder, the photo folder, the voice (`vs:Greg`) |
+| `REEL_VOICESTUDIO_BIN` / `REEL_VOICESTUDIO_URL` | VoiceStudio CLI (default `~/.local/bin/voicestudio`) and backend (default `http://127.0.0.1:3900`) |
 | `REEL_GATE=0` | skip the master gate (measured text overlap, safe zone, caption and ending checks before delivery) |
 
 ## Tests

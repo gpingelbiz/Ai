@@ -150,14 +150,14 @@ function indexed(lines = []) {
   return lines.map((line, i) => ({ ...line, i: Number.isInteger(line?.i) ? line.i : i }));
 }
 
-function quotedMatches(ocrLines, transcript) {
+function quotedMatches(ocrLines, transcript, minWords = 3) {
   const matched = [];
   for (let i = 0; i < ocrLines.length; i++) {
     const text = ocrLines[i].text;
-    let line = firstExactLine(transcript, text);
+    let line = words(text).length >= Math.min(3, minWords) ? firstExactLine(transcript, text) : null;
     if (line == null) {
       const tokens = words(text);
-      outer: for (let size = Math.min(12, tokens.length); size >= 3; size--) {
+      outer: for (let size = Math.min(12, tokens.length); size >= minWords; size--) {
         for (let start = 0; start <= tokens.length - size; start++) {
           line = firstExactLine(transcript, tokens.slice(start, start + size).join(" "));
           if (line != null) break outer;
@@ -169,12 +169,62 @@ function quotedMatches(ocrLines, transcript) {
   return matched;
 }
 
-export function evidenceTiming({ ocrLines = [], transcript = [], at = null, duration = Infinity, fps = 30 } = {}) {
+const spanTokens = (s) => String(s || "").toLowerCase().replace(/’/g, "'").match(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu) || [];
+
+/**
+ * The longest stretch of the card's text that is read out, as transcript lines: exact runs of 3+ words shared by the
+ * card and the transcript, joined across a slip of up to 2 words on either side ("8%" heard another way). For reel
+ * proof, where a quote is read word for word and the card stays up from its first word to its last.
+ */
+export function quoteSpan(ocrLines = [], lines = [], minWords = 5) {
+  const owner = ocrLines.flatMap((line, i) => spanTokens(line.text).map(() => i));
+  const card = ocrLines.flatMap((line) => spanTokens(line.text));
+  const said = lines.flatMap((line) => spanTokens(line.text).map((word) => ({ word, line: line.i })));
+  if (!card.length || !said.length) return null;
+  const runs = [];
+  const prev = new Array(said.length + 1).fill(0);
+  for (let i = 1; i <= card.length; i++) {
+    const row = new Array(said.length + 1).fill(0);
+    for (let j = 1; j <= said.length; j++) {
+      if (card[i - 1] !== said[j - 1].word) continue;
+      row[j] = prev[j - 1] + 1;
+      const ends = i === card.length || j === said.length || card[i] !== said[j].word;
+      if (ends && row[j] >= 3) runs.push({ c0: i - row[j], c1: i - 1, s0: j - row[j], s1: j - 1, n: row[j] });
+    }
+    prev.splice(0, prev.length, ...row);
+  }
+  if (!runs.length) return null;
+  runs.sort((a, b) => a.s0 - b.s0 || a.c0 - b.c0);
+  let best = null;
+  for (const seed of runs) {
+    let group = { ...seed };
+    for (const next of runs) {
+      const dc = next.c0 - group.c1, ds = next.s0 - group.s1;
+      if (dc >= 1 && dc <= 3 && ds >= 1 && ds <= 3) group = { c0: group.c0, c1: next.c1, s0: group.s0, s1: next.s1, n: group.n + next.n };
+    }
+    if (!best || group.n > best.n) best = group;
+  }
+  if (best.n < minWords) return null;
+  return { startLine: said[best.s0].line, endLine: said[best.s1].line, words: best.n, ocr: [...new Set(owner.slice(best.c0, best.c1 + 1))] };
+}
+
+export function evidenceTiming({ ocrLines = [], transcript = [], at = null, duration = Infinity, fps = 30, until = "hold", minQuoteWords = 3 } = {}) {
   const lines = indexed(transcript);
   const byLine = new Map(lines.map((line) => [line.i, line]));
-  const quoted = quotedMatches(ocrLines, lines).filter((match) => byLine.has(match.line));
+  let quoted = quotedMatches(ocrLines, lines, minQuoteWords).filter((match) => byLine.has(match.line));
   let start = quoted.length ? Math.min(...quoted.map((match) => Number(byLine.get(match.line).start))) : null;
   let reason = quoted.length ? "quoted text" : "";
+  // until "quote" (reel proof): up from the quote's first word to its last, gone before the next line starts.
+  let spanEnd = null;
+  if (until === "quote") {
+    const span = quoteSpan(ocrLines, lines, minQuoteWords);
+    const a = span && byLine.get(span.startLine), b = span && byLine.get(span.endLine);
+    if (a && b && Number.isFinite(Number(a.start)) && Number.isFinite(Number(b.end))) {
+      start = Number(a.start); spanEnd = Number(b.end); reason = "quoted text";
+      // The highlight covers exactly the card lines that are read out.
+      quoted = span.ocr.map((ocr) => ({ ocr, line: span.startLine }));
+    }
+  }
   if (!Number.isFinite(start)) {
     const points = POINTING_PHRASES.map((phrase) => firstExactLine(lines, phrase)).filter((line) => line != null && byLine.has(line));
     if (points.length) { start = Number(byLine.get(Math.min(...points)).start); reason = "pointing phrase"; }
@@ -182,7 +232,8 @@ export function evidenceTiming({ ocrLines = [], transcript = [], at = null, dura
   if (!Number.isFinite(start) && Number.isFinite(at)) { start = at; reason = "supplied time"; }
   if (!Number.isFinite(start)) return { skip: true, reason: "no OCR text matched the transcript, no pointing phrase was spoken, and no @seconds was supplied" };
   const readable = quoted.length ? quoted.map((match) => ocrLines[match.ocr]?.text).join(" ") : ocrLines.map((line) => line.text).join(" ");
-  const hold = frame(clamp(3.5 + words(readable).length / 8, 3.5, 6), fps);
+  let hold = frame(clamp(3.5 + words(readable).length / 8, 3.5, 6), fps);
+  if (spanEnd != null) hold = frame(Math.max(2.5, spanEnd + 0.35 - start), fps);
   start = frame(Math.max(0, start), fps);
   const end = frame(Math.min(duration, start + hold), fps);
   if (end - start < 1) return { skip: true, reason: "its grounded time is outside the reel" };
@@ -240,10 +291,12 @@ async function pngSource(source, dir, index) {
   return out;
 }
 
-function focusGeometry(item, media, target, tokens) {
+function focusGeometry(item, media, target, tokens, { zoom: zoomOn = true } = {}) {
   const imageBox = containBox(item.ocr, media);
   const quotedBoxes = item.timing.quoted.map((match) => item.ocr.lines[match.ocr]?.box).filter(Boolean);
   const quote = unionBoxes(quotedBoxes);
+  // zoom false (reel proof): the whole text above the captions; the quoted lines are still highlighted.
+  if (!zoomOn) return { imageBox: containBox(item.ocr, target), zoom: 1, x: 0, y: 0, quote: null };
   // Nothing quoted: the whole screenshot sits between its label and the caption band, so captions never land on
   // the screenshot's own text.
   if (!quote) return { imageBox: containBox(item.ocr, target), zoom: 1, x: 0, y: 0, quote: null };
@@ -257,7 +310,7 @@ function focusGeometry(item, media, target, tokens) {
   return { imageBox, zoom, x, y, quote: q };
 }
 
-export function layoutGeometry(item, { W, H, captionTop, tokens, face, detection, framing, zoomScale }) {
+export function layoutGeometry(item, { W, H, captionTop, tokens, face, detection, framing, zoomScale, zoom = true }) {
   const plate = titlePlate(tokens, { format: "reel", width: W });
   const labelH = Math.max(48, Number(tokens.typeScale?.lg) || 48) + 2 * plate.paddingY + (["top", "bottom"].includes(plate.rulePosition) ? plate.ruleThickness : 0);
   if (item.layout === "card") {
@@ -272,7 +325,7 @@ export function layoutGeometry(item, { W, H, captionTop, tokens, face, detection
   const media = { ...box };
   const labelBox = { x: 76, y: 200, w: Math.min(864, W - 152), h: labelH };
   const target = { x: 76, y: labelBox.y + labelBox.h + (Number(tokens.spacing?.sm) || 0), w: labelBox.w, h: Math.max(1, captionTop - labelBox.y - labelBox.h - (Number(tokens.spacing?.sm) || 0)) };
-  const focus = focusGeometry(item, media, target, tokens);
+  const focus = focusGeometry(item, media, target, tokens, { zoom });
   return { box, media, labelBox, plate, ...focus };
 }
 
@@ -305,7 +358,7 @@ export async function makeEvidence({ specs = [], workDir, transcript = [], durat
       } else if (path.extname(analyzable).toLowerCase() === ".png") fs.copyFileSync(analyzable, cleanedFile);
       else await run("sips", ["-s", "format", "png", analyzable, "--out", cleanedFile], { capture: true });
 
-      const timing = evidenceTiming({ ocrLines: ocr.lines, transcript, at: input.at, duration, fps });
+      const timing = evidenceTiming({ ocrLines: ocr.lines, transcript, at: input.at, duration, fps, until: settings.until, minQuoteWords: Number(settings.minQuoteWords) || 3 });
       const recordFile = path.join(dir, `${n}.json`);
       const longDigitRuns = ocr.lines.some((line) => ranges(DIGITS, line.text, "digits").length > 0);
       const record = { schema: 1, source: sourceFile, cleaned: cleanedFile, width: ocr.width, height: ocr.height, ocr: ocr.lines, faces: ocr.faces, redactions, redactionDisabled: settings.redact === false, longDigitRuns };
@@ -327,15 +380,15 @@ export async function makeEvidence({ specs = [], workDir, transcript = [], durat
       }
       let layout = chooseEvidenceLayout({ requested, quoted: timing.quoted, cutoutAvailable: !!cutout, talkingHead });
       let item = { id: n, sourceFile, cleanedFile, recordFile, sourceName: path.basename(input.file), label: input.label || path.basename(input.file), ocr, timing, start: timing.start, duration: timing.duration, layout, cutout };
-      let geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: Math.max(1, ...(settings.zoomScales || [1])) });
-      if (geometry.skip && timing.quoted.length) { layout = "focus"; item.layout = layout; item.cutout = null; geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: 1 }); }
+      let geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, zoom: settings.zoom !== false, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: Math.max(1, ...(settings.zoomScales || [1])) });
+      if (geometry.skip && timing.quoted.length) { layout = "focus"; item.layout = layout; item.cutout = null; geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, zoom: settings.zoom !== false, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: 1 }); }
       if (geometry.skip) { log(`evidence ${n}: skipped ${path.basename(input.file)} (${geometry.reason})`); continue; }
       const quotedLines = timing.quoted.map((match) => ocr.lines[match.ocr]).filter(Boolean);
       const legibilityLines = quotedLines.length ? quotedLines : ocr.lines;
       let textPx = renderedEvidenceTextPx(legibilityLines, geometry.imageBox, layout === "focus" ? geometry.zoom : 1);
       if (textPx != null && textPx < 32 && layout !== "focus" && timing.quoted.length) {
         item.layout = layout = "focus"; item.cutout = null;
-        geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: 1 });
+        geometry = layoutGeometry(item, { W: canvas.width, H: canvas.height, captionTop, tokens, zoom: settings.zoom !== false, face: itemFace, detection: itemDetection, framing: itemFraming, zoomScale: 1 });
         textPx = renderedEvidenceTextPx(quotedLines, geometry.imageBox, geometry.zoom);
       }
       if (textPx != null && textPx < 32) { log(`evidence ${n}: skipped ${path.basename(input.file)} (source text would render at ${Math.round(textPx)}px, below 32px)`); continue; }

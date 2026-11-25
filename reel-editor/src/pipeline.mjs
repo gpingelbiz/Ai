@@ -56,6 +56,7 @@ import { makeCover, makeFrameCover, scoreCoverFrames } from "./cover.mjs";
 import { check, render, hyperframesBin } from "./render.mjs";
 import { loadPreset, mergeOverrides, loadDictionary } from "./presets.mjs";
 import * as eleven from "./elevenlabs.mjs";
+import * as voicestudio from "./voicestudio.mjs";
 import { log, warn, readJSON, writeJSON, ensureDir, r3, slug, run, sha1, VIDEO_EXTS, fontFile, PKG_ROOT } from "./util.mjs";
 import { loadProMeasure, splitProPhrases, markProKeywords, placeProCaptions } from "./pro-captions.mjs";
 import { readMusicHistory, pickProTrack, recordProMusic, proMoodChoice, proMusicGain, proDuckingLane, limitProSfx, measureProLoudness, normalizeProDelivery } from "./pro-audio.mjs";
@@ -90,7 +91,8 @@ export async function runEdit(input, opts = {}, deps = {}) {
   ensureDir(workDir);
   const preset = mergeOverrides(loadPreset(opts.preset), opts);
   if (preset.captions.pro) Object.assign(preset.captions, { fontSizeFrac: 80 / 1920, position: 0.65, style: "pro", animation: "cut", uppercase: false, annotate: false, activeWord: false });
-  if (preset.hook.pro) Object.assign(preset.hook, { fontSizeFrac: 108 / 1920, position: 260 / 1920, autoPlace: false, plaque: false, behind: false, push: false });
+  // proPosition (reel proof): the photo's head sits high, so the hook goes under the chin instead of at 260 px.
+  if (preset.hook.pro) Object.assign(preset.hook, { fontSizeFrac: 108 / 1920, position: Number.isFinite(preset.hook.proPosition) ? preset.hook.proPosition : 260 / 1920, autoPlace: false, plaque: false, behind: false, push: false });
   const scriptPath = opts.script ? path.resolve(opts.script) : null;
   if (scriptPath && !fs.existsSync(scriptPath)) throw new Error(`no such VSL script: ${scriptPath}`);
   if (scriptPath) preset.graphics = { ...preset.graphics, enabled: true };
@@ -974,7 +976,7 @@ export async function runEdit(input, opts = {}, deps = {}) {
       const head = zoomedHead({ frames: [frame] }, zoomDuring(zooms, t, t));
       return head ? [{ t, chin: head.bottom, top: head.top }] : [];
     });
-    shownGroups = placeProCaptions(shownGroups, heads, { height: canvas0.height });
+    shownGroups = placeProCaptions(shownGroups, heads, { height: canvas0.height, ...(Number.isFinite(preset.captions.proBase) ? { base: preset.captions.proBase } : {}) });
     if (!heads.length) warn("pro captions: no chin measurements; keeping y=1248 (1080x1920)");
   }
   const proCaptionSource = proOn && showCaptions ? shownGroups : null;
@@ -1032,6 +1034,9 @@ export async function runEdit(input, opts = {}, deps = {}) {
     graphics: allGraphics,
     ...(proOn ? { proGraphics, proCaptionSource } : {}),
     ...(opts.clipSource ? { clipSource: opts.clipSource } : {}),
+    // The voice track is a clone (reel proof): Publish labels the post as AI-made, as Instagram and TikTok ask.
+    ...(opts.aiVoice ? { aiVoice: true } : {}),
+    ...(opts.proofReel ? { proofReel: true } : {}),
     evidence,
     graphicsSchema,
     scenes: { schema: sceneSchema },
@@ -1208,8 +1213,14 @@ export async function prepareAudio({ workDir, projectDir, preset, opts, duration
   if (opts.voiceover) {
     const text = fs.readFileSync(path.resolve(opts.voiceover), "utf8").trim();
     const dst = path.join(assets, "narration.mp3");
-    log("voiceover: generating with ElevenLabs…");
-    await eleven.tts({ text, voiceId: opts.voice || preset.audio.voiceId || undefined, out: dst });
+    const voiceId = opts.voice || preset.audio.voiceId || undefined;
+    if (voicestudio.isVoiceStudioVoice(voiceId)) {
+      log(`voiceover: generating in the cloned voice ${voiceId} (VoiceStudio)…`);
+      await voicestudio.speak({ text, voice: voiceId, out: dst });
+    } else {
+      log("voiceover: generating with ElevenLabs…");
+      await eleven.tts({ text, voiceId, out: dst });
+    }
     audio.tracks.push({ id: "narration", src: "assets/narration.mp3", start: 0, volume: 1, track: 7 });
     if (audio.replaceAudio) log("voiceover replaces the footage audio");
   }

@@ -81,8 +81,9 @@ async function faceRules(file, plan, duration, offset, detect) {
 export function masterPlanningRules(plan, duration = plan.video?.duration || 0) {
   const pro = masterIsPro(plan);
   const cards = cardsOf(plan);
-  const needsCards = pro && duration >= 15;
-  const needsBroll = pro && plan.style?.broll?.enabled && duration >= 20;
+  // A reel proof (plan.proofReel) is made of real client texts: those are its cards, and it has no B-roll by design.
+  const needsCards = pro && duration >= 15 && !plan.proofReel;
+  const needsBroll = pro && plan.style?.broll?.enabled && duration >= 20 && !plan.proofReel;
   const count = plan.broll?.length || 0;
   const full = cards.filter(isFull);
   return [

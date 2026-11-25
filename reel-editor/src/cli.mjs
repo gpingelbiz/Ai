@@ -13,6 +13,8 @@ import { readJSON } from "./util.mjs";
 import { renderHookVariants } from "./pipeline.mjs";
 import { writeJSON, log } from "./util.mjs";
 import { resolveBrandTokens, tokensCSS, validateBrand } from "./brandtokens.mjs";
+import { runProof } from "./proof.mjs";
+import { speak } from "./voicestudio.mjs";
 
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
 
@@ -31,6 +33,11 @@ Usage
   reel stitch <folder|clips...> [--order file] [--preset ...] [edit options]
                                     ordered clips into one reel, with an order sheet and scene joins
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
+  reel proof [cards...] [--from <cards folder>] [--count 3] [--photo <file>|--photos <folder>] [--voice vs:Greg]
+             [--script <script.json>] [--name <stem>] [--drop <raw folder>] [--no-drop] [--dry-run]
+                                    narrated proof reel, no filming: your cloned voice reads real client texts that sit
+                                    on screen; dropped in Raw - Reel for the normal edit, gate and delivery (AI-labelled)
+  reel say "<text>" -o <file> [--voice vs:Greg]   one line in your cloned voice (VoiceStudio)
   reel ending <workdir> [--json]    check the opening and ending without rendering
   reel check <workdir> [--fix]     check an existing render and print the master report
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
@@ -133,7 +140,11 @@ Options (edit / batch)
   --no-clean-audio         skip noise reduction + loudness normalization
   --no-room-tone           fade jump cuts to silence instead of laying a quiet room bed underneath them
   --sfx                    ElevenLabs whoosh on zoom-ins and pop on the hook (needs ELEVENLABS_API_KEY)
-  --voiceover <script.txt> ElevenLabs narration track      --voice <id>    --replace-audio (mute footage)
+  --voiceover <script.txt> narration track: --voice <ElevenLabs id> or --voice vs:Greg (your cloned voice in
+                           VoiceStudio, cosyvoice engine; vs:Greg@voxcpm2 picks the other)   --replace-audio (mute footage)
+  --ai-voice               the voice track is a clone: Publish marks the post AI-made (#aivoice in a dropped file)
+  --proof-reel             reel proof layout: the supplied texts are the only cards, shown whole above the captions
+                           while their quote is read; no pro cards, slams or markers; hook up top (#proof)
   --quality <q>            draft | looks (default) | delivery        --fps <n>  default 30
   --check                  run the HyperFrames lint/layout check before rendering (off by default; slow)
   --broll                  Codex b-roll: 1-3 generated stills cut in after the hook, slow push-in, voice and captions
@@ -194,6 +205,14 @@ Environment
   REEL_BROWSER_PATH (Chrome/Chromium binary for rendering), REEL_SFX_CACHE, REEL_DEBUG=1
 `;
 
+const PROOF_OPTIONS = {
+  from: { type: "string" }, count: { type: "string" }, photo: { type: "string" }, photos: { type: "string" },
+  voice: { type: "string" }, script: { type: "string" }, name: { type: "string" }, drop: { type: "string" },
+  "no-drop": { type: "boolean" }, "dry-run": { type: "boolean" }, close: { type: "string" }, label: { type: "string" },
+  help: { type: "boolean", short: "h" },
+};
+const SAY_OPTIONS = { voice: { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" } };
+
 const EDIT_OPTIONS = {
   out: { type: "string" },
   preset: { type: "string" }, // no default here: loadPreset falls back to REEL_PRESET, then pingel-brand
@@ -251,6 +270,8 @@ const EDIT_OPTIONS = {
   voiceover: { type: "string" },
   voice: { type: "string" },
   "replace-audio": { type: "boolean" },
+  "ai-voice": { type: "boolean" },
+  "proof-reel": { type: "boolean" },
   "room-tone": { type: "boolean" },
   "no-room-tone": { type: "boolean" },
   quality: { type: "string" },
@@ -386,6 +407,20 @@ export async function main(argv) {
         if (!["STITCH_HELD", "STITCH_CHANGED"].includes(error.code)) throw error;
         console.error(error.message); process.exitCode = error.code === "STITCH_CHANGED" ? 75 : 76;
       }
+      return;
+    }
+    case "proof": {
+      const { opts, positionals } = parse(rest, PROOF_OPTIONS);
+      if (opts.help) return console.log(USAGE);
+      const r = await runProof({ ...opts, cards: positionals });
+      if (opts.dryRun) return console.log(JSON.stringify(r.script, null, 2));
+      console.log(r.dropped || r.footage);
+      return;
+    }
+    case "say": {
+      const { opts, positionals } = parse(rest, SAY_OPTIONS);
+      if (opts.help || !positionals.length || !opts.output) return console.log(USAGE);
+      console.log(await speak({ text: positionals.join(" "), voice: opts.voice || process.env.REEL_PROOF_VOICE || "vs:Greg", out: path.resolve(opts.output) }));
       return;
     }
     case "edit": {
