@@ -423,7 +423,9 @@ export function pacingChecks(plan) {
   for (const [a, b] of away) { if (run && a <= run[1] + 0.05) run[1] = Math.max(run[1], b); else { if (run) maxAway = Math.max(maxAway, run[1] - run[0]); run = [a, b]; } }
   if (run) maxAway = Math.max(maxAway, run[1] - run[0]);
   // Reading speed per caption line, over the time it is on screen.
-  const cps = (plan.captions || []).map((g) => ({ start: g.start, text: g.text || "", dur: g.end - g.start, cps: String(g.text || "").replace(/\s+/g, "").length / Math.max(0.1, g.end - g.start) }));
+  // The receipts look (reel proof) never draws plan.captions; its own setup lines are timed in src/receipts.mjs.
+  const shownCaptions = plan.proofReel && plan.proofData?.items?.length ? [] : plan.captions || [];
+  const cps = shownCaptions.map((g) => ({ start: g.start, text: g.text || "", dur: g.end - g.start, cps: String(g.text || "").replace(/\s+/g, "").length / Math.max(0.1, g.end - g.start) }));
   const fast = cps.filter((c) => c.cps > 17);
   const missed = cps.filter((c) => c.dur < 0.28 || c.cps > 30).sort((a, b) => a.dur - b.dur);
   const stats = { shots: shots.length, avgShot: r3(avgShot), maxShot: r3(longest.len), maxShotAt: r3(longest.start), firstCut: r3(firstCut), maxAway: r3(maxAway), captionsOver17: fast.length, captionLines: cps.length };
