@@ -61,6 +61,17 @@ test("proof reels are for coaches and follow Brand Guide v11: no reps, no AI, no
   const short = [{ file: "/c/9.png", text: "First purchase!!" }];
   assert.deepEqual(validateScript({ hook: good.hook, items: [{ card: 1, setup: "I built a coach's launch and run her reels.", quote: "First purchase" }], close: DEFAULT_CLOSE }, short), [], "a two-word text is a whole quote");
   assert.match(validateScript({ hook: good.hook, items: [{ card: 1, setup: "I built a coach's launch.", quote: "Purchase" }], close: DEFAULT_CLOSE }, short).join("|"), /quote has 1 words \(2 to 24\)/);
+  const clumsy = structuredClone(good); clumsy.items[0].setup = "I coached a coach on how to close and engage on her own launch.";
+  assert.match(validateScript(clumsy, cards).join("|"), /"coached a coach"; that sounds clumsy/);
+  const twice = structuredClone(good); twice.items[0].setup = "Another coach told me his coach never followed up.";
+  assert.match(validateScript(twice, cards).join("|"), /sounds clumsy/);
+  const greg = structuredClone(good); greg.items[0].setup = "She'd done hundreds of webinars and never pitched on one. We worked on her close.";
+  assert.deepEqual(validateScript(greg, cards).filter((e) => /clumsy/.test(e)), []);
+  assert.match(scriptPrompt(cards), /never \\"I coached a coach\\"|never "I coached a coach"/);
+  const withPronoun = scriptPrompt([{ ...cards[0], context: "Greg built a content system.", pronoun: "he" }, cards[1]]);
+  assert.match(withPronoun, /Card 1 sender: he\n/);
+  assert.match(withPronoun, /Card 2 sender: they\n/);
+  assert.match(withPronoun, /no needs, motives, steps or timing the note does not say/);
   const crm = structuredClone(good); crm.items[1].setup = "I built a DM flow that puts every reply in her CRM.";
   assert.deepEqual(validateScript(crm, cards), [], "DM and CRM are plain words, not names");
   const az = structuredClone(good); az.close = "I build it A to Z so it runs without you.";
