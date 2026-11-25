@@ -90,6 +90,15 @@
       ],
       "slides": false,
       "source": "Greg's voice: no dashes in copy written as him (slides have their own copy-dash check)"
+    },
+    {
+      "id": "coached-a-coach",
+      "reason": "it says \"coached a coach\" (Greg 2026-11-25: \"that sounds dumb\")",
+      "patterns": [
+        "\\bcoach(?:ed|es|ing)?\\s+(?:a|another|the|this)\\s+coach\\b"
+      ],
+      "slides": true,
+      "source": "Greg 2026-11-25 'Remove I coached a coach that sounds dumb. Like we need it to sound professional and like my voice'"
     }
   ],
   "standing": [

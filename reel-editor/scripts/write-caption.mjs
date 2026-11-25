@@ -59,6 +59,8 @@ export function proofBlock(items) {
     "- Never say when anything happened (no \"this week\", \"today\", \"yesterday\", \"just\") unless the facts below say it.",
     "- Keep every client separate and in the third person (a coach, a coaching client, the same client). A client's result is theirs: never \"we\" or \"our\" for it, and never merge two clients or split one client into two.",
     "- Say what the speaker built, fixed or coached (I built, I fixed, I coached), then what the client said happened, in the order the reel shows them. Only facts and numbers from the list below, never a dollar amount, and no before state the list does not give (no \"from nothing\", \"from zero\", \"doubled\").",
+    "- Sound like the speaker telling a peer what happened: professional and plain, reusing his setup lines from the transcript where you can. Never \"I coached a coach\" or the word coach twice in a line.",
+    "- Never join two facts with a cause the list does not state (\"turned into\", \"led to\", \"because of that\").",
     "- A proof post asks for nothing: no send line, no DM, follow, save or comment ask.",
     "",
     "The texts, in the order the reel shows them:",

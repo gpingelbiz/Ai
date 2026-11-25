@@ -210,9 +210,18 @@ test("a reel proof caption gets each text's facts and the rules that keep it tru
   assert.match(p, /What the client wrote: averaging 3-5M views\n/, "Greg's own replies are not the client's words");
   assert.match(p, /No ask of any kind: a proof post/);
   assert.match(p, /no before state the list does not give/);
+  assert.match(p, /Never \\?"I coached a coach\\?"/);
+  assert.match(p, /Never join two facts with a cause the list does not state/);
   assert.doesNotMatch(p, /send this reel to a specific person/);
   assert.deepEqual(proofBlock(null), []);
   const plain = buildPrompt({ transcript: "x", hook: "h", voice: "v", cta: "", greg: true });
   assert.doesNotMatch(plain, /This is a proof reel/);
   assert.match(plain, /send this reel to a specific person/);
+});
+
+test("the content policy holds any caption or slide that says 'coached a coach'", async () => {
+  const { policyProblems } = await import("../src/policy.mjs");
+  assert.equal(policyProblems("I coached a coach who had done hundreds of webinars.")[0]?.id, "coached-a-coach");
+  assert.equal(policyProblems("Coaching another coach on her close.")[0]?.id, "coached-a-coach");
+  assert.deepEqual(policyProblems("One coach had done hundreds of webinars. We worked on her close."), []);
 });
