@@ -51,6 +51,17 @@ export function captionAccess(env = process.env) {
  * sent at different times. Two captions in a row invented "this week", said "we" and "our first sale" for a client's
  * result and merged two clients, so the writer gets the facts behind each text and the rules that keep it true.
  */
+/**
+ * A proof reel's post caption is the narration itself (Greg 2026-11-25: "we need to make sure the voice is right to
+ * the captions"): the hook, each setup line with the client's words it introduces, and the closer, exactly as the
+ * voice says them. The writer still picks the hashtags and hook options; it never rewrites what the voice says.
+ */
+export function proofCaption(data) {
+  const one = (t) => String(t || "").replace(/\s+/g, " ").trim();
+  const quote = (q) => `\u201c${one(q).replace(/[\s.,;:!?\u2026]+$/, "")}\u201d`;
+  return [one(data.hook), ...(data.items || []).map((it) => `${one(it.setup)} ${quote(it.quote)}`), one(data.close)].filter(Boolean).join("\n");
+}
+
 export function proofBlock(items) {
   if (!Array.isArray(items) || !items.length) return [];
   const sameAs = (i) => items.findIndex((x, k) => k < i && x.business && x.business === items[i].business);
@@ -281,6 +292,7 @@ async function main() {
     j.hashtagArm = hashtagArm(path.basename(path.resolve(workDir)));
     if (!j.hashtagArm) j.hashtags = [];
   }
+  if (proof) j.caption = proofCaption(plan.proofData);
   j.caption = oneAsk(j.caption, { greg, cta });
   j.caption = cleanCaption(j.caption, { greg: path.basename(voicePath) === "greg.md" });
   if (greg && !cta && !findAsks(j.caption.split("\n").at(-1)).includes("send")) console.log("caption: no send line");

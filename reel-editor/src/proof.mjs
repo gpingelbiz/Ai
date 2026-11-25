@@ -11,7 +11,8 @@ import os from "node:os";
 import path from "node:path";
 import { claudeText, firstJSON } from "./claude.mjs";
 import { ocrBinary, parseOcrJSON } from "./evidence.mjs";
-import { parseVoice, speak } from "./voicestudio.mjs";
+import { DEFAULT_SEED, parseVoice, speak } from "./voicestudio.mjs";
+import { checkLines } from "./voicecheck.mjs";
 import { ensureDir, log, r3, readJSON, run, writeJSON } from "./util.mjs";
 
 const IMAGE = /\.(png|jpe?g)$/i;
@@ -307,26 +308,56 @@ async function durationOf(file, deps) {
   return d;
 }
 
-export async function renderNarration(script, { voice, dir, deps = {} }) {
+/**
+ * The narration: each line spoken in the clone (one seed for every line), trimmed, laid out with its pause and
+ * loudness-matched. Then it is heard back (Greg 2026-11-25: "we need to make sure the voice is right to the
+ * captions"): the whole track is transcribed and lined up with the script, and every line where the voice dropped,
+ * swapped or added a real word is re-recorded with another take, up to `tries` rounds. A line still wrong after that
+ * stops the run with what was heard, so a reel never shows words the voice did not say.
+ */
+export async function renderNarration(script, { voice, dir, deps = {}, check = true, tries = 3, env = process.env } = {}) {
   const lines = narrationLines(script);
   const parts = ensureDir(path.join(dir, "voice"));
   const files = [], durations = [];
-  for (let i = 0; i < lines.length; i++) {
+  const base = Number(env.REEL_VOICE_SEED);
+  const seeds = lines.map(() => (Number.isFinite(base) ? base : DEFAULT_SEED));
+  const take = async (i) => {
     const raw = path.join(parts, `${String(i + 1).padStart(2, "0")}-${lines[i].kind}.wav`);
-    await (deps.speak || speak)({ text: lines[i].text, voice, out: raw });
+    await (deps.speak || speak)({ text: lines[i].text, voice, out: raw, seed: seeds[i], env });
     const clean = raw.replace(/\.wav$/, "-48k.wav");
     await (deps.run || run)("ffmpeg", ["-y", "-v", "error", "-i", raw, "-af", "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05,areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08,areverse", "-ac", "1", "-ar", "48000", clean], { capture: true });
-    files.push(clean);
-    durations.push(await durationOf(clean, deps));
-  }
-  const timed = lineTimes(lines, durations);
-  const total = r3(timed.at(-1).start + timed.at(-1).duration + timed.at(-1).gap);
-  const inputs = files.flatMap((f) => ["-i", f]);
-  const delays = timed.map((line, i) => `[${i}:a]adelay=${Math.round(line.start * 1000)}:all=1[a${i}]`).join(";");
-  const mix = `${delays};${timed.map((_, i) => `[a${i}]`).join("")}amix=inputs=${timed.length}:normalize=0,apad=whole_dur=${total},atrim=0:${total},loudnorm=I=-16:TP=-1.5:LRA=11[out]`;
+    files[i] = clean;
+    durations[i] = await durationOf(clean, deps);
+  };
   const out = path.join(dir, "narration.wav");
-  await (deps.run || run)("ffmpeg", ["-y", "-v", "error", ...inputs, "-filter_complex", mix, "-map", "[out]", "-ac", "1", "-ar", "48000", out], { capture: true });
-  writeJSON(path.join(dir, "narration.json"), { voice, total, lines: timed });
+  const mixAll = async () => {
+    const timed = lineTimes(lines, durations);
+    const total = r3(timed.at(-1).start + timed.at(-1).duration + timed.at(-1).gap);
+    const inputs = files.flatMap((f) => ["-i", f]);
+    const delays = timed.map((line, i) => `[${i}:a]adelay=${Math.round(line.start * 1000)}:all=1[a${i}]`).join(";");
+    const mix = `${delays};${timed.map((_, i) => `[a${i}]`).join("")}amix=inputs=${timed.length}:normalize=0,apad=whole_dur=${total},atrim=0:${total},loudnorm=I=-16:TP=-1.5:LRA=11[out]`;
+    await (deps.run || run)("ffmpeg", ["-y", "-v", "error", ...inputs, "-filter_complex", mix, "-map", "[out]", "-ac", "1", "-ar", "48000", out], { capture: true });
+    return { timed, total };
+  };
+  for (let i = 0; i < lines.length; i++) await take(i);
+  let { timed, total } = await mixAll();
+  let heardBack = null;
+  if (check) {
+    const transcribeImpl = deps.transcribe || (async (file, o) => (await import("./transcribe.mjs")).transcribe(file, { engine: "faster-whisper", ...o }));
+    for (let round = 1; round <= tries; round++) {
+      const heard = await transcribeImpl(out, { out: path.join(dir, `heard-${round}.json`) });
+      const result = checkLines(timed, heard);
+      heardBack = { round, lines: result.map((r, i) => ({ ...r, seed: seeds[i] })) };
+      writeJSON(path.join(dir, "voicecheck.json"), heardBack);
+      const bad = result.map((r, i) => (r.ok ? -1 : i)).filter((i) => i >= 0);
+      if (!bad.length) { log(`proof: voice check ok (round ${round}, every word as written)`); break; }
+      log(`proof: voice check round ${round}: ${bad.map((i) => `${lines[i].kind} "${lines[i].text.slice(0, 40)}" ${result[i].problems.join(", ")}`).join("; ")}`);
+      if (round === tries) throw new Error(`proof: the voice still does not say the script after ${tries} takes: ${bad.map((i) => `${lines[i].kind} "${lines[i].text}" (${result[i].problems.join(", ")})`).join("; ")}. Reword that line or pass --no-voice-check after listening to it.`);
+      for (const i of bad) { seeds[i] += 101 * round; await take(i); }
+      ({ timed, total } = await mixAll());
+    }
+  }
+  writeJSON(path.join(dir, "narration.json"), { voice, total, lines: timed.map((line, i) => ({ ...line, seed: seeds[i] })), ...(heardBack ? { voiceCheck: { ok: heardBack.lines.every((l) => l.ok), round: heardBack.round } } : {}) });
   return { file: out, total, lines: timed };
 }
 
@@ -461,7 +492,7 @@ export async function runProof(opts = {}, deps = {}) {
 
   const photo = opts.photo ? path.resolve(opts.photo) : pickPhoto({ dir: opts.photos || env.REEL_PROOF_PHOTOS || path.join(root, "photos"), ledger });
   if (!photo || !fs.existsSync(photo)) throw new Error("no photo of Greg: pass --photo, --photos <folder> or put photos in ~/Reels/proof/photos");
-  const narration = await renderNarration(script, { voice, dir, deps });
+  const narration = await renderNarration(script, { voice, dir, deps, env, check: !opts.noVoiceCheck });
   const names = dropNames({ stem, hook: script.hook, count: receipts ? 0 : files.length, label: opts.label || CARD_LABEL });
   if (receipts) {
     writeJSON(path.join(dir, "proof.json"), proofData({ stem, script, cards, specs, list, label: opts.label || CARD_LABEL }));
