@@ -147,6 +147,10 @@ Per-brand options in the brand file's `look` (left out = Greg's behaviour): `hoo
 
 The shared schema is in `docs/brand-tokens.md`; Greg's v2 source is `brands/pingel.json`. Inspect what any renderer receives with `reel brand [preset-or-brand.json]`, emit its CSS variables with `--css`, or list validation problems with `--check`. Old `kit/brand-template.json` files are upgraded in memory, so existing client kits keep working.
 
+## Proof reels (cloned voice, no filming)
+
+`reel proof [--count 3]` (README "Proof reels") picks unused testimonial cards, writes a script whose quotes are word for word from the cards, speaks it in Greg's VoiceStudio clone over a real photo of him and drops it in Raw - Reel with the cards paired, tagged `#aivoice` (Publish labels it AI-made). Read `~/Reels/proof/<name>/script.json` before calling it done; `--dry-run` writes only the script, `--script` reuses an edited one. Never pick family photos or photos with other people for `REEL_PROOF_PHOTOS`, never let a setup add a result the card does not show, never a client name. MacBook only (VoiceStudio).
+
 ## Publish
 
 `Desktop/Reels/Publish` -> `~/Reels/publish`: whatever Greg drops there posts to Instagram through Metricool, one reel a day at the best time, via the scheduled task `reel-publish` (hourly :45) and `scripts/publish-folder.mjs` (scan, slot, serve/stop a Cloudflare quick-tunnel link, done/fail). The caption posts exactly as written in caption.txt. A reel with a failed check, an obvious reviewer finding or no caption becomes a Metricool draft. Never schedule from anywhere else, never edit the caption, never use the review tool.

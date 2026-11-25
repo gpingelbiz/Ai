@@ -126,14 +126,15 @@ export function markProKeywords(groups, duration, dict = {}) {
 }
 
 /** A thought has one anchor, even when its cues wrap differently. The plate's bottom can only move upward. */
-export function placeProCaptions(groups, heads = [], { height = 1920 } = {}) {
+export function placeProCaptions(groups, heads = [], { height = 1920, base: baseFraction = 1248 / 1920 } = {}) {
   // Greg 11-24 "Why are the captions over my face": the old rule lifted a thought's captions above the chin whenever
   // any sampled chin dipped below the plate, which put them on the face. Now a thought keeps y=1248 when every
   // sampled face clears it; otherwise it drops below the lowest chin if that still fits above the bottom safe line,
   // else it goes above the highest head top; if neither fits it sits as low as allowed, never between top and chin.
   const scale = height / 1920;
   const positions = new Map();
-  const base = 1248 * scale, bottomSafe = 1720 * scale, topSafe = 420 * scale, gap = 56 * scale;
+  // base: the usual plate height (y=1248); reel proof sets it lower so the supplied texts get the room above.
+  const base = baseFraction * height, bottomSafe = 1720 * scale, topSafe = 420 * scale, gap = 56 * scale;
   for (const g of groups) {
     if (positions.has(g.thought)) continue;
     const related = groups.filter((other) => other.thought === g.thought);

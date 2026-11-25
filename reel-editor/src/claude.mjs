@@ -44,12 +44,26 @@ function claudeRun(args, { timeoutMs, model, cwd, deps }) {
     if (model || env.REEL_CLAUDE_MODEL) args.push("--model", model || env.REEL_CLAUDE_MODEL);
     const child = (deps.spawn || spawn)(claudeBinary(env, deps), args, { stdio: ["ignore", "pipe", "pipe"], cwd, env });
     let out = "", err = "";
-    const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error(`claude timed out after ${Math.round(timeoutMs / 1000)}s`)); }, timeoutMs);
+    const timer = setTimeout(() => { stopHard(child); reject(new Error(`claude timed out after ${Math.round(timeoutMs / 1000)}s`)); }, timeoutMs);
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
     child.on("error", (e) => { clearTimeout(timer); reject(e); });
     child.on("close", (code) => { clearTimeout(timer); code === 0 ? resolve(out) : reject(new Error(`claude exited ${code}: ${(err || out).trim().slice(-300)}`)); });
   });
+}
+
+/**
+ * Stops a timed-out claude for good. A hung `claude -p` can ignore SIGTERM (a render review sat 47 minutes on
+ * 2026-11-25 and held the whole edit open), so SIGKILL follows after a grace period and the pipes are let go so
+ * the editor can finish without it.
+ */
+export function stopHard(child, { graceMs = 5000 } = {}) {
+  try { child.kill("SIGTERM"); } catch {}
+  const t = setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) { try { child.kill("SIGKILL"); } catch {} }
+    child.stdout?.destroy?.(); child.stderr?.destroy?.();
+  }, graceMs);
+  t.unref?.();
 }
 
 /** The first JSON object in a reply (Claude sometimes wraps it in prose or a code fence). */

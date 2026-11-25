@@ -20,7 +20,7 @@ export function proHookHTML(hook) {
   return `      <div id="hook" class="clip hook-pro" data-start="0" data-duration="${hook.duration}" data-track-index="3" data-layout-allow-overflow><div id="pro-title"${hook.fontSize ? ` style="font-size:${hook.fontSize}px;line-height:${Math.round(hook.fontSize * 1.06)}px"` : ""}>${spans}</div></div>`;
 }
 
-export function proCSS({ height = 1920, captions = false, hook = false } = {}) {
+export function proCSS({ height = 1920, captions = false, hook = false, hookTop = 176 } = {}) {
   const px = (n) => `${n * height / 1920}px`;
   return `${captions ? `
       #captions { z-index: 20; }
@@ -31,6 +31,6 @@ export function proCSS({ height = 1920, captions = false, hook = false } = {}) {
       #captions .cap-pro .w.k { color: #E2BA64; font-size: inherit; font-weight: 700; background: none; }
       #captions .cap-pro .pro-row { display: block; white-space: nowrap; }` : ""}${hook ? `
       #hook.hook-pro { position: absolute; inset: 0; padding: 0; opacity: 1; pointer-events: none; z-index: 19; }
-      #pro-title { position: absolute; top: ${px(176)}; left: 50%; transform: translateX(-50%); width: max-content; max-width: ${px(768)}; padding: ${px(16)} ${px(24)}; border-radius: ${px(12)}; background: #000000; color: #FFFFFF; font-family: "Anton", sans-serif; font-weight: 400; font-size: ${px(100)}; line-height: ${px(106)}; letter-spacing: 0; text-align: center; text-transform: none; text-shadow: none; -webkit-text-stroke: 0; }
+      #pro-title { position: absolute; top: ${px(hookTop)}; left: 50%; transform: translateX(-50%); width: max-content; max-width: ${px(768)}; padding: ${px(16)} ${px(24)}; border-radius: ${px(12)}; background: #000000; color: #FFFFFF; font-family: "Anton", sans-serif; font-weight: 400; font-size: ${px(100)}; line-height: ${px(106)}; letter-spacing: 0; text-align: center; text-transform: none; text-shadow: none; -webkit-text-stroke: 0; }
       #pro-title .pro-row { display: block; white-space: nowrap; }` : ""}`;
 }

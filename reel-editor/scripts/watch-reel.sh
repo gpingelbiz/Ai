@@ -131,7 +131,7 @@ notify() { local t m; t=$(printf '%s%s' "${REEL_CLIENT:+$REEL_CLIENT: }" "$1" | 
 # Publish metadata next to a delivered reel (read by the Publish folder, src/publish-folder.mjs): whether the reel
 # has AI pictures (Instagram's AI label), the preflight result and anything obvious the reviewer saw.
 reel_meta() { # $1 work dir, $2 output json
-  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{},tc=r("textcheck.json"),gt=r("gate.json");const hi=(wt.issues||[]).find((i)=>i.severity==="high"),coverMs=Math.round(plan.cover&&Number.isFinite(plan.cover.frameTimeMs)?plan.cover.frameTimeMs:((plan.style&&plan.style.cover&&Number.isFinite(plan.style.cover.at)?plan.style.cover.at:.05)*1000));fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length),preflight:pf.status||null,textcheck:tc?{verdict:tc.verdict,notes:tc.notes||[]}:null,gate:gt?{verdict:gt.verdict,fixes:gt.fixes||[]}:null,obvious:hi?hi.note:null,coverMs}))' "$1" "$2" 2>/dev/null || true
+  node -e 'const fs=require("fs"),p=require("path"),w=process.argv[1];const r=(f)=>{try{return JSON.parse(fs.readFileSync(p.join(w,f),"utf8"))}catch(e){return null}};const plan=r("plan.json")||{},pf=r("preflight.json")||{},wt=r("watch.json")||{},tc=r("textcheck.json"),gt=r("gate.json");const hi=(wt.issues||[]).find((i)=>i.severity==="high"),coverMs=Math.round(plan.cover&&Number.isFinite(plan.cover.frameTimeMs)?plan.cover.frameTimeMs:((plan.style&&plan.style.cover&&Number.isFinite(plan.style.cover.at)?plan.style.cover.at:.05)*1000));fs.writeFileSync(process.argv[2],JSON.stringify({isAiGenerated:!!(plan.broll&&plan.broll.length)||!!plan.aiVoice,preflight:pf.status||null,textcheck:tc?{verdict:tc.verdict,notes:tc.notes||[]}:null,gate:gt?{verdict:gt.verdict,fixes:gt.fixes||[]}:null,obvious:hi?hi.note:null,coverMs}))' "$1" "$2" 2>/dev/null || true
 }
 
 # Create and print a brand-new "<today> <kind> <n><suffix>" folder under $1 ("2026-10-21 Reel 3",
@@ -186,6 +186,10 @@ case "$base" in *"#nozoom"*) flags+=(--no-zooms);; esac
 case "$base" in *"#hookreel"*) flags+=(--hook-seconds reel);; esac
 case "$base" in *"#credit"*) flags+=(--credit-self);; esac
 case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
+# "#aivoice": the voice is a clone (reel proof). Publish labels the post AI-made; nothing to denoise or re-take.
+case "$base" in *"#aivoice"*) flags+=(--ai-voice --no-studio --no-bad-takes);; esac
+# "#proof": reel proof layout (the supplied texts are the only cards, whole above the captions while read).
+case "$base" in *"#proof"*) flags+=(--proof-reel);; esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
 case "$base" in *"#fast"*) flags+=(--pace fast);; esac
@@ -313,7 +317,11 @@ for image in "$(dirname "$FILE")/$pair_key proof"*.{png,jpg,jpeg,heic} "$(dirnam
       continue
     fi
   fi
-  [ "$MODE" = vsl ] || flags+=(--evidence "$supplied")
+  # "<clip> proof 1 - Sales coaching.png": the words after " - " are the label shown on the card.
+  ev_stem="$(basename "${image%.*}")"
+  ev_spec="$supplied"
+  case "$ev_stem" in *" - "*) ev_spec="$supplied|${ev_stem#* - }";; esac
+  [ "$MODE" = vsl ] || flags+=(--evidence "$ev_spec")
 done
 # Housekeeping: keep the log under 5 MB and drop work folders (intermediates, not the delivered reels) older than
 # REEL_WATCH_PRUNE_DAYS (default 30; 0 turns it off).

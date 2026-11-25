@@ -256,6 +256,19 @@ test("drop-folder proof and receipt images pair to the clip, wait as inputs, sta
   assert.equal(r.seen.length, 1, "only the video gets a watcher marker");
 });
 
+test("a reel proof drop: #aivoice flags the cloned voice and the card label after ' - ' goes on the card", () => {
+  const r = fakeDrops({
+    brollShots: 0,
+    clips: { reel: ["proof-2026-11-25-1__Three texts from people I coach #aivoice #proof.mp4"], broll: [], carousel: [] },
+    evidence: { reel: ["proof-2026-11-25-1 proof 1 - Real text.png", "proof-2026-11-25-1 proof 2 - Real text.png"] },
+  });
+  const call = r.calls.trim().split("\n").find((line) => line.includes("#aivoice #proof.mp4"));
+  assert.match(call, /--hook Three texts from people I coach /);
+  assert.match(call, /--ai-voice --no-studio --no-bad-takes --proof-reel/);
+  assert.match(call, /--evidence \S*proof-2026-11-25-1 proof 1 - Real text\.png\|Real text/);
+  assert.match(call, /--evidence \S*proof-2026-11-25-1 proof 2 - Real text\.png\|Real text/);
+});
+
 test("an empty CTA with a trailing comment in .zshrc still means no CTA; a command substitution is skipped", () => {
   const r = fakeDrops({ brollShots: 0 });
   assert.doesNotMatch(r.calls, /--cta/, "no Comment GHOST pill when REEL_WATCH_CTA is set empty in .zshrc");

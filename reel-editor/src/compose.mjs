@@ -726,7 +726,7 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
       #hook.hook-plaque #hook-lines::before, #hook.hook-plaque #hook-lines::after { display: none; }
       #hook.hook-plaque #hook-lines .hw, #hook.hook-plaque #hook-lines .hw.k { color: ${c.text}; background: none; transform: none; font-style: normal; font-size: 1em; text-decoration: none; text-shadow: none; }
       #hook.hook-plaque #hook-lines .hw.k { color: ${c.accent}; }
-` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}${bold ? boldCSS(boldStyle, plan) : ""}${pro ? proCSS() : ""}${cap.pro || hk.pro ? proTextCSS({ height: H, captions: cap.pro, hook: hk.pro }) : ""}
+` : ""}${brandQuiet ? brandQuietCSS({ H, colors: c }) : ""}${signatureStyle}${bold ? boldCSS(boldStyle, plan) : ""}${pro ? proCSS() : ""}${cap.pro || hk.pro ? proTextCSS({ height: H, captions: cap.pro, hook: hk.pro, ...(Number.isFinite(s.hook.proPosition) ? { hookTop: Math.round(s.hook.proPosition * 1920) } : {}) }) : ""}
     </style>
   </head>
   <body>
