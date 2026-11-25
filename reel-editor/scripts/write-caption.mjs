@@ -46,8 +46,33 @@ export function captionAccess(env = process.env) {
 }
 
 /** The prompt Claude gets. Pure, so it can be tested. */
-export function buildPrompt({ transcript, hook, voice, cta, greg = false, auto = false, watchlist = true, sandcastles = true }) {
-  if (!sandcastles) return buildPrompt({ transcript, hook, voice, cta, greg, auto, watchlist })
+/**
+ * A reel proof caption (src/proof.mjs, Greg 2026-11-25): the reel reads real texts that different coaching clients
+ * sent at different times. Two captions in a row invented "this week", said "we" and "our first sale" for a client's
+ * result and merged two clients, so the writer gets the facts behind each text and the rules that keep it true.
+ */
+export function proofBlock(items) {
+  if (!Array.isArray(items) || !items.length) return [];
+  const sameAs = (i) => items.findIndex((x, k) => k < i && x.business && x.business === items[i].business);
+  return [
+    "This is a proof reel. The speaker reads real texts that coaching clients sent him, each at a different time. Caption rules for it:",
+    "- Never say when anything happened (no \"this week\", \"today\", \"yesterday\", \"just\") unless the facts below say it.",
+    "- Keep every client separate and in the third person (a coach, a coaching client, the same client). A client's result is theirs: never \"we\" or \"our\" for it, and never merge two clients or split one client into two.",
+    "- Say what the speaker built, fixed or coached (I built, I fixed, I coached), then what the client said happened, in the order the reel shows them. Only facts and numbers from the list below, never a dollar amount, and no before state the list does not give (no \"from nothing\", \"from zero\", \"doubled\").",
+    "- A proof post asks for nothing: no send line, no DM, follow, save or comment ask.",
+    "",
+    "The texts, in the order the reel shows them:",
+    ...items.flatMap((it, i) => [
+      `Text ${i + 1}${sameAs(i) >= 0 ? ` (the same client as text ${sameAs(i) + 1})` : ""}.`,
+      `  What the speaker did: ${it.context || it.setup || "(not given; say only that a coaching client sent it)"}`,
+      `  What the client wrote: ${(it.messages || []).filter((m) => m.who !== "greg").map((m) => m.text).join(" / ")}`,
+    ]),
+    "",
+  ];
+}
+
+export function buildPrompt({ transcript, hook, voice, cta, greg = false, auto = false, watchlist = true, sandcastles = true, proof = null }) {
+  if (!sandcastles) return buildPrompt({ transcript, hook, voice, cta, greg, auto, watchlist, proof })
     .replace(/\n1\. Call the sandcastles[^\n]*\n2\. [^\n]*\n3\. /, "\n")
     .replace(/, each tied to a pattern[^\n]*/g, "")
     .replace(/ Each option models a different winning pattern; never copy another creator's wording\./, " Each option takes a different angle.")
@@ -72,6 +97,8 @@ export function buildPrompt({ transcript, hook, voice, cta, greg = false, auto =
     greg
       ? cta
         ? `- End the caption with ONE DM offer built around this call to action: ${cta}. Make clear what the reader gets. This is the only ask. No send line and no save, share, comment, follow or link asks. Never use AI as the ask or keyword.`
+        : proof?.length
+        ? "- No ask of any kind: a proof post (Brand Guide v11) ends on what happened, with no send line and no save, share, comment, DM, follow or link asks."
         : '- End the caption with ONE line asking the reader to send this reel to a specific person they can picture, built from what THIS reel says, normally a coach or offer owner rather than a rep. Example for a reel about discounts: "Send this to the coach who still approves every discount." Do not reuse that recipient for an unrelated reel. No other save, send, share, comment, DM, follow or link asks. Never use AI as the ask or keyword.'
       : cta
       ? `- End the caption with an offer built around this call to action: ${cta}. Phrase it as something the reader gets ("Want the exact words? ${cta} and I'll send them."), never as a bare instruction on its own: Instagram does not recommend posts that only ask people to comment a word.`
@@ -88,6 +115,7 @@ export function buildPrompt({ transcript, hook, voice, cta, greg = false, auto =
     "",
     auto ? `The reel has no written hook yet; it opens on the speaker's first words: ${hook}` : `Hook in the reel: ${hook || "(none)"}`,
     "",
+    ...proofBlock(proof),
     "Transcript of the finished reel:",
     transcript,
     "",
@@ -224,7 +252,8 @@ async function main() {
   const voicePath = voiceFile(plan);
   const greg = !isClientJob() && fs.realpathSync(voicePath) === fs.realpathSync(path.join(ROOT, "voice/greg.md"));
   const { sandcastles, watchlist } = captionAccess();
-  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voicePath, "utf8"), cta, greg, auto, watchlist, sandcastles });
+  const proof = plan.proofReel && plan.proofData?.items?.length ? plan.proofData.items : null;
+  const prompt = buildPrompt({ transcript, hook, voice: fs.readFileSync(voicePath, "utf8"), cta: proof ? "" : cta, greg, auto, watchlist, sandcastles, proof });
   let reply;
   try {
     reply = await runClaude(prompt, { sandcastles });
