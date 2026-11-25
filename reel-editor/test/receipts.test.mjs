@@ -355,3 +355,16 @@ test("an added word is blamed on the line that was playing when it was heard", a
   assert.equal(checkLines(lines, heard.filter((w) => w.text !== "All")).every((x) => x.ok), true);
   assert.equal(checkLines(lines, [...heard.slice(0, 3), { text: "All", start: 1.7 }, { text: "right,", start: 1.9 }, ...heard.slice(5)].filter((w) => w.text !== "All" || w.start === 1.7)).every((x) => x.ok), true, "'all right' is how a transcriber writes 'alright'");
 });
+
+test("the transcriber watchdog takes a written result from a process that never exits, and stops one that takes too long", async () => {
+  const { runWatched } = await import("../src/transcribe.mjs");
+  const dir = tmp();
+  const out = path.join(dir, "heard.json");
+  const t0 = Date.now();
+  const r = await runWatched("/bin/bash", ["-c", `echo '{"words":[]}' > '${out}'; sleep 60`], { out, settleMs: 300, timeoutMs: 20000 });
+  assert.equal(r.watched, true);
+  assert.ok(Date.now() - t0 < 10000, "it did not wait for the process to exit");
+  await assert.rejects(runWatched("/bin/bash", ["-c", "sleep 60"], { out: path.join(dir, "never.json"), timeoutMs: 800 }), /took over 1 s and was stopped/);
+  const ok = await runWatched("/bin/bash", ["-c", `echo '{}' > '${path.join(dir, "fast.json")}'`], { out: path.join(dir, "fast.json"), settleMs: 5000 });
+  assert.equal(ok.code, 0, "a normal exit resolves as before");
+});

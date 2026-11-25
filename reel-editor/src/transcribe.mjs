@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { run, writeJSON, r3, PKG_ROOT } from "./util.mjs";
@@ -103,7 +104,35 @@ export function applyCorrections(words, corrections = []) {
  * Transcribe to word timestamps.
  * engine: faster-whisper (local python, default) | elevenlabs (Scribe API) | hyperframes (whisper.cpp via the CLI)
  */
-export async function transcribe(input, { engine = "auto", model = "large-v3-turbo", language = "en", prompt = "", out, hyperframesBin } = {}) {
+/**
+ * Run the local transcriber and take its result as soon as it is written: on 2026-11-25 faster-whisper wrote its
+ * words, then spun at 100% CPU for 10 minutes without exiting and held a reel proof run. Once the output file has
+ * parsed and stopped changing for settleMs the process is stopped; past timeoutMs it is killed and the call fails.
+ */
+export function runWatched(cmd, args, { out, timeoutMs = 300000, settleMs = 3000, spawnImpl = spawn } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawnImpl(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "", done = false, seenAt = 0, seenSize = -1;
+    child.stderr?.on("data", (d) => { err = (err + d).slice(-4000); });
+    const finish = (fn, arg) => { if (done) return; done = true; clearInterval(poll); clearTimeout(limit); fn(arg); };
+    const stop = () => { try { child.kill("SIGTERM"); } catch {} setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 2000).unref?.(); };
+    const ready = () => {
+      try {
+        const size = fs.statSync(out).size;
+        if (size !== seenSize) { seenSize = size; seenAt = Date.now(); return false; }
+        if (Date.now() - seenAt < settleMs) return false;
+        JSON.parse(fs.readFileSync(out, "utf8"));
+        return true;
+      } catch { return false; }
+    };
+    const poll = setInterval(() => { if (out && ready()) { stop(); finish(resolve, { code: null, watched: true }); } }, 500);
+    const limit = setTimeout(() => { stop(); finish(reject, new Error(`${cmd} ${args.join(" ")} took over ${Math.round(timeoutMs / 1000)} s and was stopped`)); }, timeoutMs);
+    child.on("error", (e) => finish(reject, e));
+    child.on("close", (code) => (code === 0 ? finish(resolve, { code }) : finish(reject, new Error(`${cmd} ${args.join(" ")} exited ${code}${err ? "\n" + err : ""}`))));
+  });
+}
+
+export async function transcribe(input, { engine = "auto", model = "large-v3-turbo", language = "en", prompt = "", out, hyperframesBin, watch = false, timeoutMs = 300000 } = {}) {
   const { resolveEngine } = await import("./review.mjs");
   const wanted = engine;
   engine = resolveEngine(engine);
@@ -120,7 +149,9 @@ export async function transcribe(input, { engine = "auto", model = "large-v3-tur
     const python = process.env.REEL_PYTHON || "python3";
     const pin = whisperPin();
     if (pin) model = pin.model;
-    await run(python, [PY_SCRIPT, input, "-o", out, "--model", model, "--lang", language, "--prompt", prompt, ...(pin ? ["--revision", pin.revision] : [])]);
+    const pyArgs = [PY_SCRIPT, input, "-o", out, "--model", model, "--lang", language, "--prompt", prompt, ...(pin ? ["--revision", pin.revision] : [])];
+    if (watch && out) { fs.rmSync(out, { force: true }); await runWatched(python, pyArgs, { out, timeoutMs }); }
+    else await run(python, pyArgs);
     words = normalizeWords(JSON.parse(fs.readFileSync(out, "utf8")));
   } else if (engine === "elevenlabs") {
     const { scribe } = await import("./elevenlabs.mjs");
