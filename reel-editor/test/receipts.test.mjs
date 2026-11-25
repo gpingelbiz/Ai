@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { RECEIPTS, alignTokens, cover, lineTimings, receiptsHTML, receiptsTimeline, splitSentences, statSlam, threadMarkup, tokenSpans } from "../src/receipts.mjs";
-import { DEFAULT_CLOSE, loadSpecs, pickCards, proofData, runProof, specText, specsFile, validateScript, wallSpecs } from "../src/proof.mjs";
+import { DEFAULT_CLOSE, loadList, loadSpecs, pickCards, pickFromList, proofData, runProof, specText, specsFile, validateScript, wallSpecs } from "../src/proof.mjs";
 import { GATE_SAFE, rootLayers } from "../src/gate.mjs";
 import { projectHTML } from "../src/compose.mjs";
 import { layoutChecks } from "../src/preflight.mjs";
@@ -57,14 +57,14 @@ test("the number slam uses only the two numbers the quote says, never money and 
 test("a thread marks each quoted word for the marker and covers names with pills", () => {
   const { bubbles, marked } = threadMarkup(DATA.items[1].messages, DATA.items[1].quote, ["Andy"], "t1");
   assert.equal(marked, 11);
-  assert.match(bubbles[0].html, /^<span class="qw" id="t1-q0"><i class="hl"><\/i>I<\/span> <span class="qw" id="t1-q1">/);
-  assert.match(bubbles[0].html, /id="t1-q10"><i class="hl"><\/i>time<\/span>! That&#39;s|id="t1-q10"><i class="hl"><\/i>time<\/span>! That's/);
+  assert.match(bubbles[0].html, /^<span class="qw" id="t1-q0">I<span class="ink" aria-hidden="true">I<\/span><\/span> <span class="qw" id="t1-q1">/);
+  assert.match(bubbles[0].html, /id="t1-q10">time<span class="ink" aria-hidden="true">time<\/span><\/span>! That/);
   assert.doesNotMatch(bubbles.map((b) => b.html).join(""), /Andy/);
   assert.equal((bubbles[1].html.match(/class="red"/g) || []).length, 1);
   // A quote that runs from one bubble into the next is marked in both.
   const two = threadMarkup([{ who: "them", text: "Best week ever." }, { who: "them", text: "Closed three deals today." }], "best week ever closed three deals", [], "x");
   assert.equal(two.marked, 6);
-  assert.match(two.bubbles[1].html, /id="x-q3"><i class="hl"><\/i>Closed/);
+  assert.match(two.bubbles[1].html, /id="x-q3">Closed<span class="ink"/);
   assert.equal(cover("ANDY and andyman", ["Andy"]), '<span class="red"></span> and andyman');
   assert.deepEqual(splitSentences("These aren't my wins. They're theirs.").map((s) => s.first), [0, 4]);
 });
@@ -222,4 +222,56 @@ test("runProof picks from the coach list: notes reach the writer, one card per f
   // No list at all: the run stops rather than fall back to sales rep cards.
   fs.rmSync(path.join(proofHome, "coach-cards.json"));
   await assert.rejects(runProof({ drop: dropDir, dryRun: true }, deps), /no coach card list/);
+});
+
+test("the coach list can carry a verified text itself, and a reel spreads across clients", async () => {
+  const home = tmp();
+  const from = path.join(home, "Testimonials", "Cards");
+  touch(path.join(from, "3-solid", "547-julee-s3.png"));
+  touch(path.join(home, "photos", "p.jpg"));
+  fs.mkdirSync(path.join(home, "Testimonials", "Social"), { recursive: true });
+  fs.writeFileSync(path.join(home, "Testimonials", "Social", "lib-specs.json"), JSON.stringify([
+    { out: "/x/Testimonials/Cards.new/3-solid/547-julee-s3.png", label: "Build feedback", redact: [], messages: [{ who: "them", text: "Got my first DM from it" }] },
+  ]));
+  const proofHome = path.join(home, "Reels", "proof");
+  fs.mkdirSync(proofHome, { recursive: true });
+  fs.writeFileSync(path.join(proofHome, "coach-cards.json"), JSON.stringify({ cards: [
+    { id: "john-month", client: "john", event: "A", messages: [{ who: "them", text: "I've shortened my content creation time down by 30 percent" }], context: "Greg built a content system." },
+    { id: "john-post", client: "john", event: "B", messages: [{ who: "them", text: "One simple post, with your model and help" }], context: "A post model." },
+    { id: "katt-sale", client: "katt", event: "C9", messages: [{ who: "them", text: "Might of just had our first sale..?" }, { who: "them", text: "From you making DisciplinedDads.com live" }], redact: ["DisciplinedDads.com"], context: "Their first sale came in before they promoted." },
+    { card: "3-solid/547-julee-s3.png", client: "julee", event: "D", context: "One reel took off." },
+  ] }));
+  const list = loadList(path.join(proofHome, "coach-cards.json"), { from, specs: loadSpecs(path.join(home, "Testimonials", "Social", "lib-specs.json")) });
+  assert.deepEqual(pickFromList({ list, count: 3 }).map((e) => e.rel), ["list:john-month", "list:katt-sale", "3-solid/547-julee-s3.png"], "a different client each time while the list allows it");
+  assert.deepEqual(pickFromList({ list, count: 4 }).map((e) => e.rel), ["list:john-month", "list:john-post", "list:katt-sale", "3-solid/547-julee-s3.png"], "then the rest, in list order");
+  const deps = {
+    env: { HOME: home, REEL_PROOF_CARDS: from, REEL_PROOF_PHOTOS: path.join(home, "photos") },
+    now: () => new Date("2026-11-25T17:00:00Z"),
+    ocrBinary: async () => "ocr",
+    run: async (cmd, args) => { if (cmd === "ocr") return { out: JSON.stringify({ width: 100, height: 100, lines: [], faces: [] }) }; if (cmd === "ffmpeg") touch(args.at(-1)); return { out: "" }; },
+    probe: async () => ({ duration: 2 }),
+    speak: async ({ out }) => { touch(out); return out; },
+    claudeText: async (prompt) => {
+      assert.match(prompt, /From you making \[name\] live/);
+      return JSON.stringify({ hook: "Your coaching offer sells. Here's what changed.", items: [
+        { card: 1, setup: "I built a coaching client a content system.", quote: "I've shortened my content creation time down by 30 percent" },
+        { card: 2, setup: "I rebuilt another coaching client's site.", quote: "Might of just had our first sale" },
+        { card: 3, setup: "One of her reels took off.", quote: "Got my first DM from it" },
+      ] });
+    },
+  };
+  const r = await runProof({ drop: path.join(home, "drop") }, deps);
+  assert.deepEqual(r.script.cards.slice(0, 2), ["list:john-month", "list:katt-sale"]);
+  const data = JSON.parse(fs.readFileSync(path.join(proofHome, r.stem, "proof.json"), "utf8"));
+  assert.deepEqual(data.items[1].redact, ["DisciplinedDads.com"]);
+  assert.ok(data.wall.length === 4);
+  const ledger = JSON.parse(fs.readFileSync(path.join(proofHome, "used.json"), "utf8"));
+  assert.deepEqual(Object.keys(ledger.cards).sort(), ["3-solid/547-julee-s3.png", "list:john-month", "list:katt-sale"]);
+  // A reused script still finds a list text by its id; one taken off the list stops the run with a clear message.
+  const again = await runProof({ drop: path.join(home, "drop"), script: path.join(proofHome, r.stem, "script.json"), name: "again" }, deps);
+  assert.equal(again.receipts, true);
+  const j = JSON.parse(fs.readFileSync(path.join(proofHome, "coach-cards.json"), "utf8"));
+  j.cards = j.cards.filter((c) => c.id !== "katt-sale");
+  fs.writeFileSync(path.join(proofHome, "coach-cards.json"), JSON.stringify(j));
+  await assert.rejects(runProof({ drop: path.join(home, "drop"), script: path.join(proofHome, r.stem, "script.json"), name: "gone", dryRun: true }, deps), /list:katt-sale is not on the coach list any more/);
 });
