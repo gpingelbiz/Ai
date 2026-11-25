@@ -22,7 +22,7 @@ export const SKIP_DIRS = Object.freeze(["not-using", "with-dollar-amounts", "che
 export const DEFAULT_CLOSE = "I build the sales system under the offer you already have.";
 export const CARD_LABEL = "Real text";
 export const GAPS = Object.freeze({ hook: 0.45, setup: 0.3, quote: 0.65, close: 0.8, lead: 0.15 });
-const LIMITS = { hookWords: 12, setupWords: 16, quoteMin: 3, quoteMax: 24 };
+const LIMITS = { hookWords: 12, setupWords: 16, quoteMin: 2, quoteMax: 24 }; // "First purchase!!" is a whole text (11-25)
 // Brand Guide v11 Part 4 kill list (Greg's own lines only; a client's quote stays word for word).
 const KILL = [/\bunlock/i, /\bunleash/i, /game ?changer/i, /\belevate/i, /\bdive in\b/i, /\bdelve/i, /\bleverag/i, /\bsynergy/i, /\b10x\b/i, /\bgrind/i, /\bhacks?\b/i, /\bmanifest/i, /passive income/i, /autopilot/i, /set it and forget it/i, /while you sleep/i, /24\/7/, /effortless/i, /done for you/i, /here's the thing/i, /the truth is/i, /let's be honest/i, /3 to 5x/i, /\bA to Z\b/i, /runs without you/i, /never misses/i, /\btransform/i, /\bjourney\b/i, /\bempower/i, /\bseamless/i, /\belite\b/i, /\bcrush/i, /level up/i, /hiring portal/i, /\bghost\b/i, /biggest leak/i];
 // The audience is coaches: never salespeople, and AI is never the point.
