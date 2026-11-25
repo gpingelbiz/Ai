@@ -98,6 +98,9 @@ export async function silences(file, { noise = -45, min = 1.5 } = {}) {
 export function layoutChecks(plan) {
   const items = [];
   if (!plan) return items;
+  // The reel proof receipts look (src/receipts.mjs) draws its own layout with the photo hidden: the plan's caption and
+  // hook positions and the photo's face do not apply. The master gate measures that page on real frames instead.
+  if (plan.proofReel && plan.proofData?.items?.length) return items;
   const st = plan.style || {};
   const W = plan.canvas?.width || 1080, H = plan.canvas?.height || 1920;
   const portrait = H > W;

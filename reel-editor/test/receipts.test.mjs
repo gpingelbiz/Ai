@@ -7,6 +7,7 @@ import { RECEIPTS, alignTokens, cover, lineTimings, receiptsHTML, receiptsTimeli
 import { DEFAULT_CLOSE, loadSpecs, pickCards, proofData, runProof, specText, specsFile, validateScript, wallSpecs } from "../src/proof.mjs";
 import { GATE_SAFE, rootLayers } from "../src/gate.mjs";
 import { projectHTML } from "../src/compose.mjs";
+import { layoutChecks } from "../src/preflight.mjs";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "receipts-test-"));
 const touch = (file) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, "x"); return file; };
@@ -112,6 +113,10 @@ test("compose draws the receipts look only for a proof plan that carries proof d
   assert.match(html, /<audio id="music" src="assets\/music\.m4a"/);
   assert.match(html, /data-fx-chain=/);
   assert.match(html, /<video id="footage" src="assets\/footage\.mp4"/);
+  // Preflight's plan layout checks are about the photo's face, which this look hides.
+  const facePlan = { ...plan, captions: [{ start: 0, end: 1, words: [] }], hook: { text: "Salespeople send me texts" }, head: { top: 0.08, bottom: 0.88 }, canvas: { width: 1080, height: 1920 }, style: { captions: { position: 0.65, fontSizeFrac: 0.04 }, hook: { position: 0.5 } } };
+  assert.deepEqual(layoutChecks(facePlan), []);
+  assert.ok(layoutChecks({ ...facePlan, proofData: null }).some((x) => x.code === "captions-face"));
 });
 
 test("card specs: names become [name], quotes never run over one, the wall skips held and split cards", () => {
