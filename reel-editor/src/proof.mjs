@@ -27,7 +27,7 @@ const LIMITS = { hookWords: 12, setupWords: 16, quoteMin: 3, quoteMax: 24 };
 const KILL = [/\bunlock/i, /\bunleash/i, /game ?changer/i, /\belevate/i, /\bdive in\b/i, /\bdelve/i, /\bleverag/i, /\bsynergy/i, /\b10x\b/i, /\bgrind/i, /\bhacks?\b/i, /\bmanifest/i, /passive income/i, /autopilot/i, /set it and forget it/i, /while you sleep/i, /24\/7/, /effortless/i, /done for you/i, /here's the thing/i, /the truth is/i, /let's be honest/i, /3 to 5x/i, /\bA to Z\b/i, /runs without you/i, /never misses/i, /\btransform/i, /\bjourney\b/i, /\bempower/i, /\bseamless/i, /\belite\b/i, /\bcrush/i, /level up/i, /hiring portal/i, /\bghost\b/i, /biggest leak/i];
 // The audience is coaches: never salespeople, and AI is never the point.
 const NOT_COACH = [/\bsales ?(?:people|person|rep|reps|man|men)\b/i, /\breps?\b/i, /\bAI\b/];
-const NAME_OK = new Set(["I", "I'm", "I've", "I'd", "I'll", "Greg"]);
+const NAME_OK = new Set(["I", "I'm", "I've", "I'd", "I'll", "Greg", "DM", "DMs", "CRM", "VSL"]);
 
 const home = (env = process.env) => env.HOME || os.homedir();
 export const proofHome = (env = process.env) => env.REEL_PROOF_HOME || path.join(home(env), "Reels", "proof");
@@ -234,7 +234,7 @@ export function scriptPrompt(cards, { close = DEFAULT_CLOSE, errors = [] } = {})
     "Return JSON only, no prose: {\"hook\": \"...\", \"items\": [{\"card\": 1, \"setup\": \"...\", \"quote\": \"...\"}], \"close\": \"...\"}",
     "Rules:",
     `- hook: at most ${LIMITS.hookWords} words, said first. Open on the coach's situation, never on a result or a brag, the way \"Your coaching offer sells. Every sales call still needs you.\" does. Write a new one that fits these texts. Plain words, no question bait.`,
-    `- One item per card, in the order given. setup: at most ${LIMITS.setupWords} words. Say what was built or fixed, in plain words, from that card's note and nothing else. Call the sender a coaching client, a coach or a peer; never a name, niche, offer, keyword, tool, platform or place. The verb matches the note: built, fixed, set up, ran, checked. Never grew, doubled or scaled.`,
+    `- One item per card, in the order given. setup: at most ${LIMITS.setupWords} words. A full sentence Greg says out loud, first person (I fixed, I built, we set up), saying what was built or fixed in plain words, from that card's note and nothing else. Call the sender a coaching client, a coach or a peer; never a name, niche, offer, keyword, tool, platform or place. The verb matches the note: built, fixed, set up, ran, checked. Never grew, doubled or scaled.`,
     `- quote: copied word for word from that card's text, one continuous stretch of ${LIMITS.quoteMin} to ${LIMITS.quoteMax} words. Pick the stretch that shows the build working or how it landed. A short card can be quoted whole. Never change, add, drop or reorder words inside a quote.`,
     "- The hook and every setup add no fact that the card notes and texts do not show: no results, numbers, timelines, times of day or \"unprompted\" beyond them.",
     "- Vary the setups: no two start with the same words, and they read as one story from the first card to the last.",

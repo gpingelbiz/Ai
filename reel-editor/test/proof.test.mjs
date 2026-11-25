@@ -58,6 +58,8 @@ test("proof reels are for coaches and follow Brand Guide v11: no reps, no AI, no
   assert.match(validateScript(ai, cards).join("|"), /says "AI"/);
   const hype = structuredClone(good); hype.items[1].setup = "This fix was a game changer for her.";
   assert.match(validateScript(hype, cards).join("|"), /"game changer" \(Brand Guide v11 kill list\)/);
+  const crm = structuredClone(good); crm.items[1].setup = "I built a DM flow that puts every reply in her CRM.";
+  assert.deepEqual(validateScript(crm, cards), [], "DM and CRM are plain words, not names");
   const az = structuredClone(good); az.close = "I build it A to Z so it runs without you.";
   assert.match(validateScript(az, cards).join("|"), /"A to Z"/);
   // A client's own words stay word for word, even a word Greg would never write.
