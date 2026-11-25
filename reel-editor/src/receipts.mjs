@@ -261,9 +261,13 @@ export function receiptsHTML({ data, heard, duration, footageMarkup, audioMarkup
   const D = r3(duration);
   const wall = data.wall || [];
   const cards = wall.map(miniCard);
+  // Each column repeats its texts until it is long enough to keep scrolling the whole reel (a short coach list too).
   const cols = [0, 1, 2].map((c) => {
-    const mine = cards.filter((_, i) => i % 3 === c).join("");
-    return `<div class="col" id="col${c}" style="left:${18 + c * 354}px;top:${-120 * c}px">${mine}${mine}${mine}</div>`;
+    let mine = cards.filter((_, i) => i % 3 === c);
+    if (!mine.length) mine = cards.slice(0, 1);
+    const reps = mine.length ? Math.max(3, Math.ceil(24 / mine.length)) : 0;
+    const html = Array.from({ length: reps }, (_, r) => mine.slice(r % mine.length).concat(mine.slice(0, r % mine.length)).join("")).join("");
+    return `<div class="col" id="col${c}" style="left:${18 + c * 354}px;top:${-120 * c}px">${html}</div>`;
   }).join("");
   const win = (a, b) => `data-start="${r3(Math.max(0, a))}" data-duration="${r3(Math.max(0.1, Math.min(D, b) - Math.max(0, a)))}"`;
   // The hook and the setup captions drop sentence periods (captions never carry them); ? and ! stay.
@@ -274,7 +278,8 @@ export function receiptsHTML({ data, heard, duration, footageMarkup, audioMarkup
     const th = T.threads[i];
     const { bubbles } = threadMarkup(it.messages || [], it.quote, it.redact || [], `t${i}`);
     const chars = (it.messages || []).reduce((n, m) => n + String(m.text || "").length, 0);
-    const font = chars > 520 ? 40 : chars > 380 ? 46 : 52;
+    // Short texts (most coach texts are a line or two) read big; long ones step down so the thread fits.
+    const font = chars > 520 ? 40 : chars > 380 ? 46 : chars > 140 ? 52 : chars > 60 ? 62 : 72;
     const bs = bubbles.map((b, k) => `<div class="b ${b.who}${k === bubbles.length - 1 || bubbles[k + 1].who !== b.who ? " last" : ""}" id="t${i}-b${k}" style="font-size:${font}px">${b.html}</div>`).join("");
     const typing = th.typing != null ? `<div class="typing" id="t${i}-typing"><i></i><i></i><i></i></div>` : "";
     return `<div class="thread" id="t${i}" ${win(th.into, th.gone)}><div class="push" id="t${i}-push"><div class="meta">${esc(data.label || "Real text")}</div>${typing}${bs}</div></div>`;
@@ -291,7 +296,8 @@ export function receiptsHTML({ data, heard, duration, footageMarkup, audioMarkup
     hookGold: (T.hook.words[goldFrom] || [null, null])[1],
     out: OUT, in: IN,
     threads: T.threads.map((t) => ({ into: t.into, out: t.out, gone: t.gone, typing: t.typing, pops: t.pops, quote: t.quote, qa: t.qa, qb: t.qb, last: t.last, slam: t.slam ? { at: t.slam.at } : null })),
-    caps: T.setups.map((s) => ({ show: s.show, b: s.b, words: s.words.map(([, t]) => t) })),
+    // A setup caption leaves as its text's quote starts, so the marker is never under a different line.
+    caps: T.setups.map((s, i) => ({ show: s.show, hide: Math.max(s.b + 0.05, Math.min(s.b + 0.45, (T.threads[i]?.qa ?? s.b + 1) - 0.05)), words: s.words.map(([, t]) => t) })),
     close: { start: T.close.start, at: T.close.sentences.map((s) => s.at) },
   };
   return `<!doctype html>
@@ -368,7 +374,7 @@ ${audioMarkup}
           tl.to("#c" + i + "-" + j, { opacity: 1, color: "${GOLD}", duration: 0.05 }, t0);
           tl.to("#c" + i + "-" + j, { color: "${BONE}", duration: 0.12 }, t0 + 0.25);
         });
-        tl.to("#cap" + i, { opacity: 0, duration: 0.2 }, c.b + 0.45);
+        tl.to("#cap" + i, { opacity: 0, duration: 0.2 }, c.hide);
       });
       // Close: back out to the wall of receipts, the closer built line by line.
       tl.to("#wall", { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.6, ease: "power3.out" }, P.close.start - 0.15);

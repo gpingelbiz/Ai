@@ -11,32 +11,32 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "proof-test-"));
 const touch = (file) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, "x"); return file; };
 
 const cards = [
-  { file: "/c/1.png", text: "Sales coaching\nJust thank you a thousand\ntimes. My sales percentage went from 8% to\na little over 35% I just found out." },
-  { file: "/c/2.png", text: "I just led the company in\ngross for the first time! That's\nbecause of you" },
+  { file: "/c/1.png", text: "Build feedback\nThe confirmation emails ended up in my main\ninbox and not in the promo folder or spam" },
+  { file: "/c/2.png", text: "Phase 4 now. This whole thing is a little crazy..\nI don't know how you learned all this so fast!!" },
 ];
 const good = {
-  hook: "Read the texts my clients sent me.",
+  hook: "Your coaching offer sells. Here's what the fixes look like.",
   items: [
-    { card: 1, setup: "A rep I coach sent me this after week one.", quote: "my sales percentage went from 8% to a little over 35%" },
-    { card: 2, setup: "Another rep texted me this.", quote: "I just led the company in gross for the first time" },
+    { card: 1, setup: "A coaching client's launch emails were landing in spam. We fixed that.", quote: "The confirmation emails ended up in my main inbox" },
+    { card: 2, setup: "Another coaching client, four phases into the fixes.", quote: "This whole thing is a little crazy" },
   ],
   close: DEFAULT_CLOSE,
 };
 
 test("a script passes only when every quote is copied word for word from its own card", () => {
   assert.deepEqual(validateScript(good, cards), []);
-  const changed = structuredClone(good); changed.items[0].quote = "my sales went from 8% to 35%";
+  const changed = structuredClone(good); changed.items[0].quote = "The confirmation emails went to my main inbox";
   assert.match(validateScript(changed, cards).join("|"), /item 1: quote is not copied word for word/);
   const swapped = structuredClone(good); swapped.items.reverse(); swapped.items.forEach((item, i) => { item.card = i + 1; });
   assert.match(validateScript(swapped, cards).join("|"), /quote is not copied word for word from card 1/);
-  const curly = structuredClone(good); curly.items[1].quote = "I just led the company in gross for the first time! That’s because of you";
+  const curly = structuredClone(good); curly.items[1].quote = "I don’t know how you learned all this so fast";
   assert.deepEqual(validateScript(curly, cards), []);
 });
 
 test("scripts stay anonymous, in Greg's voice and short", () => {
   const named = structuredClone(good); named.items[0].setup = "Jason from Phoenix Motors sent me this.";
   assert.match(validateScript(named, cards).join("|"), /may name someone or something \("Phoenix"\)/);
-  const dashed = structuredClone(good); dashed.hook = "Real texts — from real reps.";
+  const dashed = structuredClone(good); dashed.hook = "Real texts — from real coaches.";
   assert.match(validateScript(dashed, cards).join("|"), /hook uses a dash/);
   const yo = structuredClone(good); yo.items[1].setup = "Yo, look at this one.";
   assert.match(validateScript(yo, cards).join("|"), /says "Yo"/);
@@ -44,8 +44,33 @@ test("scripts stay anonymous, in Greg's voice and short", () => {
   assert.match(validateScript(long, cards).join("|"), /hook has 13 words/);
   const missing = structuredClone(good); missing.items.pop();
   assert.match(validateScript(missing, cards).join("|"), /2 items? for 2 cards|1 items for 2 cards/);
-  const greg = structuredClone(good); greg.items[0].setup = "A rep told me I changed how he sells.";
+  const greg = structuredClone(good); greg.items[0].setup = "A coach told me we fixed how her launch sells.";
   assert.deepEqual(validateScript(greg, cards), []);
+});
+
+test("proof reels are for coaches and follow Brand Guide v11: no reps, no AI, no kill-list words, the v11 closer", () => {
+  assert.equal(DEFAULT_CLOSE, "I build the sales system under the offer you already have.");
+  const rep = structuredClone(good); rep.items[0].setup = "A rep I coach sent me this after week one.";
+  assert.match(validateScript(rep, cards).join("|"), /says "rep"; this reel is for coaches/);
+  const sales = structuredClone(good); sales.hook = "Salespeople send me texts like this.";
+  assert.match(validateScript(sales, cards).join("|"), /hook says "Salespeople"/);
+  const ai = structuredClone(good); ai.items[1].setup = "Our AI fixed her whole funnel.";
+  assert.match(validateScript(ai, cards).join("|"), /says "AI"/);
+  const hype = structuredClone(good); hype.items[1].setup = "This fix was a game changer for her.";
+  assert.match(validateScript(hype, cards).join("|"), /"game changer" \(Brand Guide v11 kill list\)/);
+  const crm = structuredClone(good); crm.items[1].setup = "I built a DM flow that puts every reply in her CRM.";
+  assert.deepEqual(validateScript(crm, cards), [], "DM and CRM are plain words, not names");
+  const az = structuredClone(good); az.close = "I build it A to Z so it runs without you.";
+  assert.match(validateScript(az, cards).join("|"), /"A to Z"/);
+  // A client's own words stay word for word, even a word Greg would never write.
+  const theirWords = [{ file: "/c/3.png", text: "This is a game changer for my coaching business" }];
+  assert.deepEqual(validateScript({ hook: good.hook, items: [{ card: 1, setup: "A coach ran the scorecard we built.", quote: "This is a game changer" }], close: DEFAULT_CLOSE }, theirWords), []);
+  const prompt = scriptPrompt([{ ...cards[0], context: "Greg set up a coaching client's launch emails." }, cards[1]]);
+  assert.match(prompt, /for coaches/);
+  assert.match(prompt, /Card 1 note \(what was built or fixed\): Greg set up a coaching client's launch emails\./);
+  assert.match(prompt, /Card 2 note \(what was built or fixed\): none on file/);
+  assert.match(prompt, /never the words salespeople, salesperson, sales reps or reps, and never AI/);
+  assert.doesNotMatch(prompt, /salesperson stop scrolling/);
 });
 
 test("the writer retries with the broken rules and always keeps Greg's closer", async () => {
@@ -58,7 +83,7 @@ test("the writer retries with the broken rules and always keeps Greg's closer", 
   assert.equal(script.close, DEFAULT_CLOSE);
   assert.equal(prompts.length, 2);
   assert.match(prompts[1], /item 1: quote is not copied word for word/);
-  assert.match(scriptPrompt(cards), /Card 2 text:\nI just led the company/);
+  assert.match(scriptPrompt(cards), /Card 2 text:\nPhase 4 now/);
   await assert.rejects(writeScript(cards, { attempts: 1, deps: { claudeText: async () => "no json" } }), /no script passed/);
 });
 
@@ -146,19 +171,19 @@ test("runProof writes the script, renders through the voice and drops cards befo
     claudeText: async () => JSON.stringify(good),
   };
   const dropDir = path.join(home, "drop");
-  const r = await runProof({ drop: dropDir }, { ...deps, run: async (...a) => { order.push(a[0]); return deps.run(...a); } });
+  const r = await runProof({ drop: dropDir, from }, { ...deps, run: async (...a) => { order.push(a[0]); return deps.run(...a); } });
   assert.equal(r.stem, "proof-2026-11-25-1");
   assert.equal(fs.readdirSync(dropDir).filter((f) => f.endsWith(".png")).length, 2);
   const trim = calls.find((c) => c[0] === "ffmpeg" && c.some((a) => String(a).startsWith("crop='")));
   assert.match(trim.join(" "), /crop='min\(968,iw\)':'min\(1204,ih\)':'max\(56,0\)':'max\(98,0\)'/, "cards lose their empty border, 16 px kept");
   assert.ok(fs.existsSync(r.dropped));
-  assert.match(path.basename(r.dropped), /__Read the texts my clients sent me #aivoice #proof\.mp4$/);
+  assert.match(path.basename(r.dropped), /__Your coaching offer sells\. Here's what the fixes look like #aivoice #proof\.mp4$/);
   const ledger = JSON.parse(fs.readFileSync(path.join(home, "Reels", "proof", "used.json"), "utf8"));
   assert.deepEqual(Object.keys(ledger.cards).sort(), ["1-strongest/004-jason.png", "1-strongest/005-sam.png"]);
   assert.equal(ledger.photos["p.jpg"], "2026-11-25T17:00:00.000Z");
   const footage = calls.find((c) => c[0] === "ffmpeg" && c.includes("-loop"));
   assert.match(footage.join(" "), /zoompan=z='1\+0\.10\*\(1-exp\(-on\/36\)\)\+0\.04\*on\/\d+'/);
-  const again = await runProof({ drop: dropDir, dryRun: true }, deps).catch((e) => e);
+  const again = await runProof({ drop: dropDir, dryRun: true, from }, deps).catch((e) => e);
   assert.match(String(again.message || again), /no unused cards left/);
 });
 
@@ -279,6 +304,9 @@ test("the render reviewer knows a proof reel's still photo is the design", async
   const proof = watchPrompt({ ...base, proof: true });
   assert.match(proof, /narrated proof reel/);
   assert.match(proof, /the still photo of the speaker is the design, never a dead frame/);
+  const receipts = watchPrompt({ ...base, proof: true, receipts: true });
+  assert.match(receipts, /the caption and the text above it belong together/);
+  assert.doesNotMatch(receipts, /still photo/);
 });
 
 test("the pro hook moves to proPosition (reel proof) and stays at 176 px otherwise", async () => {
