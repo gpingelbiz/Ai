@@ -69,6 +69,13 @@ function readJSONSafe(p) {
   try { return readJSON(p); } catch { return null; }
 }
 
+/** reel proof's proof.json; a missing or broken one leaves the reel in the older proof layout. */
+function readProofData(file) {
+  const data = readJSONSafe(file);
+  if (!data?.items?.length) { warn(`proof data not usable: ${file} (the reel keeps the older proof layout)`); return null; }
+  return data;
+}
+
 function sameSource(saved, input) {
   if (!saved?.source || path.resolve(saved.source) !== input) {
     if (saved?.source) log(`saved transcript is for ${saved.source}; transcribing this file fresh`);
@@ -1037,6 +1044,8 @@ export async function runEdit(input, opts = {}, deps = {}) {
     // The voice track is a clone (reel proof): Publish labels the post as AI-made, as Instagram and TikTok ask.
     ...(opts.aiVoice ? { aiVoice: true } : {}),
     ...(opts.proofReel ? { proofReel: true } : {}),
+    // reel proof's texts, quotes and wall: compose.mjs draws the receipts look from them (no photo on screen).
+    ...(opts.proofReel && opts.proofData ? { proofData: readProofData(opts.proofData) } : {}),
     evidence,
     graphicsSchema,
     scenes: { schema: sceneSchema },
@@ -1310,7 +1319,7 @@ export async function renderHookVariants(workDir, hooks, { seconds = 4, quality 
     ensureDir(projectDir);
     const mainAssets = path.join(workDir, "project", "assets");
     if (fs.existsSync(mainAssets)) { fs.rmSync(path.join(projectDir, "assets"), { recursive: true, force: true }); fs.symlinkSync(mainAssets, path.join(projectDir, "assets")); }
-    fs.writeFileSync(path.join(projectDir, "index.html"), (await import("./compose.mjs")).renderHTML(plan, `assets/footage${path.extname(plan.video.src) || ".mp4"}`));
+    fs.writeFileSync(path.join(projectDir, "index.html"), (await import("./compose.mjs")).projectHTML(plan, `assets/footage${path.extname(plan.video.src) || ".mp4"}`));
     const output = path.join(outDir, `Hook ${i + 1} - ${text.replace(/\*/g, "").replace(/[/:"*?<>|\\]/g, "").replace(/[.\s]+$/, "")}.mp4`);
     log(`hook ${i + 1}: "${text}" → ${path.basename(output)}`);
     await (deps.render || render)(projectDir, output, { quality });

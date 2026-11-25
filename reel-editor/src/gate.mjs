@@ -78,7 +78,8 @@ export function rootLayers(html) {
     }
     const selfClose = VOID.has(tag) || /\/\s*$/.test(attrs);
     if (depth === 1) {
-      cur = { index: layers.length + 1, tag, id: attr(attrs, "id"), start: n(attr(attrs, "data-start")), duration: n(attr(attrs, "data-duration")), text: false };
+      // data-gate="backdrop": a picture made of words (reel proof's wall of texts), read like a photo, never as text.
+      cur = { index: layers.length + 1, tag, id: attr(attrs, "id"), start: n(attr(attrs, "data-start")), duration: n(attr(attrs, "data-duration")), text: false, ...(attr(attrs, "data-gate") === "backdrop" ? { backdrop: true } : {}) };
       layers.push(cur);
     }
     if (tag === "script" || tag === "style") { if (!selfClose) skip = tag; continue; }
@@ -686,7 +687,7 @@ function variantDir(projectDir, html, index, base) {
 export async function measureLayers(projectDir, { duration, rules = GATE_RULES, contrast = false, snapshot = snapshotTimes, readPng = (file) => PNG.sync.read(fs.readFileSync(file)) } = {}) {
   const html = fs.readFileSync(path.join(projectDir, "index.html"), "utf8");
   const layers = rootLayers(html);
-  const textLayers = layers.filter((layer) => layer.text);
+  const textLayers = layers.filter((layer) => layer.text && !layer.backdrop);
   const times = gateTimes(textLayers, duration, rules);
   if (!textLayers.length || !times.length) return { layers, frames: [], times };
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "reel-gate-"));

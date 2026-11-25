@@ -189,7 +189,13 @@ case "$base" in *"#landscape"*) flags+=(--canvas landscape);; esac
 # "#aivoice": the voice is a clone (reel proof). Publish labels the post AI-made; nothing to denoise or re-take.
 case "$base" in *"#aivoice"*) flags+=(--ai-voice --no-studio --no-bad-takes);; esac
 # "#proof": reel proof layout (the supplied texts are the only cards, whole above the captions while read).
-case "$base" in *"#proof"*) flags+=(--proof-reel);; esac
+# reel proof writes the texts, quotes and wall to ~/Reels/proof/<clip>/proof.json: the reel is drawn in the receipts
+# look from it (no photo on screen). Without it the older proof layout stays.
+case "$base" in *"#proof"*)
+  flags+=(--proof-reel)
+  proof_data="${REEL_PROOF_HOME:-$HOME/Reels/proof}/$stem/proof.json"
+  [ -f "$proof_data" ] && flags+=(--proof-data "$proof_data");;
+esac
 case "$base" in *"#low"*) flags+=(--hook-position 0.40);; esac
 case "$base" in *"#top"*) flags+=(--hook-position 0.08);; esac
 case "$base" in *"#fast"*) flags+=(--pace fast);; esac

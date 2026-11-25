@@ -53,6 +53,7 @@ function hexA(hex, a) {
 import { esc } from "./text.mjs";
 import { proEnabled } from "./pro.mjs";
 import { renderProOverlay, proCSS, proTimeline } from "./pro-render.mjs";
+import { receiptsHTML } from "./receipts.mjs";
 
 function fadePoints(t) {
   const v = t.volume ?? 1;
@@ -156,8 +157,49 @@ export function composeProject(plan, projectDir) {
     else if (!b.video) plan.coldOpen.src = b.src;
     else plan.coldOpen.src = null;
   }
-  fs.writeFileSync(path.join(projectDir, "index.html"), renderHTML(plan, footage));
+  fs.writeFileSync(path.join(projectDir, "index.html"), projectHTML(plan, footage));
   return projectDir;
+}
+
+/** The music and sound tracks as <audio> elements (shared by the normal reel and the reel proof receipts look). */
+export function audioTracksHTML(plan) {
+  return (plan.audio?.tracks || [])
+    .map((t) => {
+      const dur = t.duration ? ` data-duration="${t.duration}"` : "";
+      // A lane (ducking: swell in the pauses) is in reel time; fades are relative to the clip start.
+      const points = t.lane ? t.lane.map((p) => ({ t: r3(p.t - t.start), v: p.v })).filter((p) => p.t >= 0) : null;
+      const vol =
+        points || t.fadeIn || t.fadeOut
+          ? ` data-automation="${esc(JSON.stringify({ version: 1, lanes: [{ target: "volume", points: points || fadePoints(t) }] }))}"`
+          : ` data-volume="${t.volume ?? 1}"`;
+      return `      <audio id="${esc(t.id)}" src="${esc(t.src)}" data-start="${t.start}"${dur} data-track-index="${t.track ?? 6}"${vol}></audio>`;
+    })
+    .join("\n");
+}
+
+/** The delivery true-peak ceiling on the root, whenever the reel has sound. */
+export function deliveryFxAttr(plan) {
+  return plan.video.hasAudio || (plan.audio?.tracks || []).length ? ` data-fx-chain="${esc(JSON.stringify({ version: 1, nodes: [{ type: "truepeak", id: "ceiling", label: "Delivery ceiling", params: { ceiling: -1.5, lookahead: 3, release: 80 } }] }))}"` : "";
+}
+
+/**
+ * The page for a plan: the reel proof receipts look when the plan carries proof data (reel proof, #proof), the
+ * normal reel otherwise.
+ */
+export function projectHTML(plan, footage) {
+  if (plan.proofReel && plan.proofData?.items?.length) {
+    const videoAudio = plan.audio?.replaceAudio || !plan.video.hasAudio ? " muted" : ' data-has-audio="true"';
+    return receiptsHTML({
+      data: plan.proofData,
+      heard: plan.words || [],
+      duration: plan.video.duration,
+      footageMarkup: `<video id="footage" src="${footage}" data-start="0" data-duration="${plan.video.duration}" data-track-index="0"${videoAudio} playsinline></video>`,
+      audioMarkup: audioTracksHTML(plan),
+      fxChain: deliveryFxAttr(plan),
+      fps: plan.style?.render?.fps || 30,
+    });
+  }
+  return renderHTML(plan, footage);
 }
 
 export function renderHTML(plan, footage) {
@@ -434,19 +476,7 @@ export function renderHTML(plan, footage) {
   const signatureLayerHTML = s.signature?.enabled === false ? "" : signatureHTML(signatureTokens, { format: W > H ? "thumbnail" : "reel", width: W, height: H, captionTop: cap.position * H, headBox: plan.framing?.headBox });
   const signatureStyle = signatureLayerHTML ? signatureCSS(signatureTokens) : "";
 
-  const tracks = plan.audio?.tracks || [];
-  const audioHTML = tracks
-    .map((t) => {
-      const dur = t.duration ? ` data-duration="${t.duration}"` : "";
-      // A lane (ducking: swell in the pauses) is in reel time; fades are relative to the clip start.
-      const points = t.lane ? t.lane.map((p) => ({ t: r3(p.t - t.start), v: p.v })).filter((p) => p.t >= 0) : null;
-      const vol =
-        points || t.fadeIn || t.fadeOut
-          ? ` data-automation="${esc(JSON.stringify({ version: 1, lanes: [{ target: "volume", points: points || fadePoints(t) }] }))}"`
-          : ` data-volume="${t.volume ?? 1}"`;
-      return `      <audio id="${esc(t.id)}" src="${esc(t.src)}" data-start="${t.start}"${dur} data-track-index="${t.track ?? 6}"${vol}></audio>`;
-    })
-    .join("\n");
+  const audioHTML = audioTracksHTML(plan);
 
   const videoAudio = plan.audio?.replaceAudio || !plan.video.hasAudio ? " muted" : ' data-has-audio="true"';
   const footageMedia = `<video id="footage" src="${footage}" data-start="0" data-duration="${D}" data-track-index="0"${videoAudio} playsinline></video>`;
@@ -730,7 +760,7 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
     </style>
   </head>
   <body>
-    <div id="root"${bold ? ' class="bold-root"' : ""} data-composition-id="reel" data-start="0" data-width="${W}" data-height="${H}" data-duration="${D}" data-fps="${s.render?.fps || 30}"${plan.video.hasAudio || tracks.length ? ` data-fx-chain="${esc(JSON.stringify({ version: 1, nodes: [{ type: "truepeak", id: "ceiling", label: "Delivery ceiling", params: { ceiling: -1.5, lookahead: 3, release: 80 } }] }))}"` : ""}>
+    <div id="root"${bold ? ' class="bold-root"' : ""} data-composition-id="reel" data-start="0" data-width="${W}" data-height="${H}" data-duration="${D}" data-fps="${s.render?.fps || 30}"${deliveryFxAttr(plan)}>
 ${whipFiltersHTML}${videoLayerHTML}
 ${runtimePlan.zoomStyle === "camera" && (runtimePlan.zooms.length || (plan.stitchScenes && (plan.zooms || []).some((z) => !z.stitch))) ? `      <div id="defocus"></div>` : ""}
 ${openHTML}

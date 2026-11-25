@@ -35,8 +35,10 @@ Usage
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
   reel proof [cards...] [--from <cards folder>] [--count 3] [--photo <file>|--photos <folder>] [--voice vs:Greg]
              [--script <script.json>] [--name <stem>] [--drop <raw folder>] [--no-drop] [--dry-run]
-                                    narrated proof reel, no filming: your cloned voice reads real client texts that sit
-                                    on screen; dropped in Raw - Reel for the normal edit, gate and delivery (AI-labelled)
+             [--specs <lib-specs.json>] [--no-specs]
+                                    narrated proof reel, no filming: your cloned voice reads real client texts, drawn
+                                    full screen in the receipts look (texts from the card library's specs, names covered,
+                                    no dates); dropped in Raw - Reel for the normal edit, gate and delivery (AI-labelled)
   reel say "<text>" -o <file> [--voice vs:Greg]   one line in your cloned voice (VoiceStudio)
   reel ending <workdir> [--json]    check the opening and ending without rendering
   reel check <workdir> [--fix]     check an existing render and print the master report
@@ -144,6 +146,7 @@ Options (edit / batch)
                            VoiceStudio, cosyvoice engine; vs:Greg@voxcpm2 picks the other)   --replace-audio (mute footage)
   --ai-voice               the voice track is a clone: Publish marks the post AI-made (#aivoice in a dropped file)
   --proof-reel             reel proof layout: the supplied texts are the only cards, shown whole above the captions
+  --proof-data <json>      reel proof's proof.json (texts, quotes, wall): the reel is drawn in the receipts look
                            while their quote is read; no pro cards, slams or markers; hook up top (#proof)
   --quality <q>            draft | looks (default) | delivery        --fps <n>  default 30
   --check                  run the HyperFrames lint/layout check before rendering (off by default; slow)
@@ -209,6 +212,7 @@ const PROOF_OPTIONS = {
   from: { type: "string" }, count: { type: "string" }, photo: { type: "string" }, photos: { type: "string" },
   voice: { type: "string" }, script: { type: "string" }, name: { type: "string" }, drop: { type: "string" },
   "no-drop": { type: "boolean" }, "dry-run": { type: "boolean" }, close: { type: "string" }, label: { type: "string" },
+  specs: { type: "string" }, "no-specs": { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
 const SAY_OPTIONS = { voice: { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" } };
@@ -272,6 +276,7 @@ const EDIT_OPTIONS = {
   "replace-audio": { type: "boolean" },
   "ai-voice": { type: "boolean" },
   "proof-reel": { type: "boolean" },
+  "proof-data": { type: "string" },
   "room-tone": { type: "boolean" },
   "no-room-tone": { type: "boolean" },
   quality: { type: "string" },

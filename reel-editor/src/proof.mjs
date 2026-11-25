@@ -1,7 +1,11 @@
 // reel proof: a narrated proof reel with no filming. Greg's cloned voice (VoiceStudio, src/voicestudio.mjs) reads
-// real client texts that sit on screen as supplied evidence. Nothing new is rendered here: the narration goes over a
-// slow push on a real photo of Greg, the cards are dropped beside it as "<clip> proof N - <label>.png", and the normal
-// drop-folder watcher edits, gates and delivers it like any other reel (#aivoice marks it AI-made for Publish).
+// real client texts. The narration goes over a slow push on a real photo of Greg (it carries the voice and makes the
+// cover) and the normal drop-folder watcher edits, gates and delivers it like any other reel (#aivoice marks it
+// AI-made for Publish).
+// With the card library's specs (Testimonials/Social/lib-specs.json) the texts are read exactly as sent, names still
+// covered, and written to <proof home>/<clip>/proof.json; the editor draws the receipts look from it (src/receipts.mjs:
+// the texts full screen, no photo on screen, no dates). Without specs the cards are OCR'd and dropped beside the
+// clip as "<clip> proof N - <label>.png" for the older layout.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -40,12 +44,54 @@ export function readLedger(file) {
   try { const j = readJSON(file); return { cards: j.cards || {}, photos: j.photos || {}, reels: j.reels || [] }; } catch { return { cards: {}, photos: {}, reels: [] }; }
 }
 
+/** Where the card library keeps its specs: beside the Cards folder, in Social/lib-specs.json. */
+export function specsFile({ from, specs, env = process.env } = {}) {
+  if (specs) return path.resolve(specs);
+  if (env.REEL_PROOF_SPECS) return path.resolve(env.REEL_PROOF_SPECS);
+  return from ? path.join(path.dirname(path.resolve(from)), "Social", "lib-specs.json") : null;
+}
+
+/** The library's card specs keyed by their path inside the Cards folder ("1-strongest/004-jason-s5.png"). */
+export function loadSpecs(file) {
+  if (!file || !fs.existsSync(file)) return null;
+  let list;
+  try { list = readJSON(file); } catch { return null; }
+  const map = new Map();
+  for (const spec of Array.isArray(list) ? list : []) {
+    const m = String(spec.out || "").match(/\/Cards(?:\.new)?\/(.+)$/);
+    if (m && Array.isArray(spec.messages) && spec.messages.length) map.set(m[1], spec);
+  }
+  return map.size ? map : null;
+}
+
+/** The strongest library texts for the wall behind the hook and the closer (never a held folder or a split card). */
+export function wallSpecs(specs, count = 30) {
+  if (!specs) return [];
+  return [...specs.entries()]
+    .filter(([rel]) => !rel.split("/").some((part) => SKIP_DIRS.includes(part)) && !/-p\d+\.(png|jpe?g)$/i.test(rel))
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .slice(0, count)
+    .map(([, spec]) => ({ label: spec.label || "", messages: spec.messages.map((m) => ({ who: m.who === "greg" ? "greg" : "them", text: String(m.text || "") })), redact: spec.redact || [] }));
+}
+
+const NAME = "[name]";
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** A card's words as the script writer sees them: every covered name is "[name]". */
+export function specText(spec) {
+  return spec.messages.map((m) => {
+    let t = String(m.text || "").trim();
+    for (const w of [...(spec.redact || [])].filter(Boolean).sort((a, b) => b.length - a.length)) t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escRe(w)}(?![\\p{L}\\p{N}])`, "giu"), NAME);
+    return t;
+  }).join("\n");
+}
+
 /** The next unused cards, strongest folder first. Split cards (-p1/-p2) are long threads and stay out. */
-export function pickCards({ from, count = 3, ledger = { cards: {} } }) {
+export function pickCards({ from, count = 3, ledger = { cards: {} }, specs = null }) {
   const root = path.resolve(from);
   return walk(root)
     .filter((file) => !/-p\d+\.(png|jpe?g)$/i.test(file))
     .filter((file) => !ledger.cards[path.relative(root, file)])
+    .filter((file) => !specs || specs.has(path.relative(root, file).split(path.sep).join("/")))
     .slice(0, count);
 }
 
@@ -63,9 +109,12 @@ async function ocr(file, deps = {}) {
   return parseOcrJSON(out);
 }
 
-export async function readCards(files, deps = {}) {
+export async function readCards(files, deps = {}, { from = null, specs = null } = {}) {
   const cards = [];
   for (const file of files) {
+    const rel = from ? path.relative(path.resolve(from), file).split(path.sep).join("/") : null;
+    const spec = rel && specs ? specs.get(rel) : null;
+    if (spec) { cards.push({ file, text: specText(spec), spec: { label: spec.label || "", messages: spec.messages.map((m) => ({ who: m.who === "greg" ? "greg" : "them", text: String(m.text || "") })), redact: spec.redact || [] } }); continue; }
     const o = await ocr(file, deps);
     const text = o.lines.map((line) => line.text).join("\n").trim();
     cards.push({ file, text });
@@ -122,7 +171,11 @@ export function validateScript(script, cards) {
     errors.push(...voiceProblems(item.setup, `item ${n} setup`), ...nameProblems(item.setup, `item ${n} setup`));
     const q = tokens(item.quote);
     if (q.length < LIMITS.quoteMin || q.length > LIMITS.quoteMax) errors.push(`item ${n}: quote has ${q.length} words (${LIMITS.quoteMin} to ${LIMITS.quoteMax})`);
-    if (!card || !isContiguous(q, tokens(card.text))) errors.push(`item ${n}: quote is not copied word for word from card ${n}`);
+    // A covered name breaks the card into stretches: a quote never runs over one (it would be spoken out loud).
+    const cardTokens = card ? tokens(card.text.split(NAME).join(" qqcoveredqq ")) : [];
+    if (!card || !isContiguous(q, cardTokens)) errors.push(isContiguous(q, tokens(card?.text || "")) || /\[name\]/i.test(String(item.quote || ""))
+      ? `item ${n}: quote runs over a covered name; quote a stretch without [name]`
+      : `item ${n}: quote is not copied word for word from card ${n}`);
     if (/[$€£]|\b\d{2,}k\b/i.test(String(item.quote || "")) && !/[$€£]/.test(card?.text || "")) errors.push(`item ${n}: quote adds a money amount`);
   });
   if (!String(script.close || "").trim()) errors.push("close is empty");
@@ -137,9 +190,10 @@ export function scriptPrompt(cards, { close = DEFAULT_CLOSE, errors = [] } = {})
     "Rules:",
     `- hook: at most ${LIMITS.hookWords} words, said first, makes a salesperson stop scrolling. Plain words, no question bait.`,
     `- One item per card, in the order given. setup: at most ${LIMITS.setupWords} words, says who sent it with no name, company, dealership, city or program, for example "A rep I coach sent me this after week one." quote: copied word for word from that card's text, one continuous stretch of ${LIMITS.quoteMin} to ${LIMITS.quoteMax} words. Pick the strongest stretch on the card: a concrete result, a number that moved, or how it changed them. Skip thank yous, plans to meet up and small talk when the card has something stronger. Never change, add, drop or reorder words inside a quote.`,
-    "- A setup adds no fact the card does not show: no records, timelines, amounts or results that are not written on it.",
+    "- The hook and every setup add no fact the cards do not show: no records, timelines, times of day, \"unprompted\", amounts or results that are not written on them.",
     "- Vary the setups: no two start with the same words, and they read as one story from the first card to the last.",
     "- No names of people, companies, places or programs anywhere. No money amounts or income claims outside a quote.",
+    "- [name] in a card marks a name that is covered on screen. A quote never includes [name] or runs across it.",
     "- Sound like Greg talking: short, direct, plain, warm. Never use dashes of any kind, semicolons, emojis or the word \"Yo\". No hype words such as game changer, unlock, level up, crush.",
     `- close: exactly ${JSON.stringify(close)}`,
     ...(errors.length ? ["", "Your last attempt broke these rules; fix every one:", ...errors.map((e) => `- ${e}`)] : []),
@@ -278,6 +332,19 @@ async function toPng(src, dst, deps) {
   await runImpl("sips", ["-s", "format", "png", src, "--out", dst], { capture: true });
 }
 
+/** What the editor needs to draw the receipts look: the script, each text exactly as sent with its covered names, the wall. */
+export function proofData({ stem, script, cards, specs, label = CARD_LABEL }) {
+  return {
+    version: 1,
+    name: stem,
+    label,
+    hook: script.hook,
+    close: script.close,
+    items: script.items.map((item, i) => ({ setup: item.setup, quote: item.quote, messages: cards[i].spec.messages, redact: cards[i].spec.redact })),
+    wall: wallSpecs(specs),
+  };
+}
+
 export async function runProof(opts = {}, deps = {}) {
   const env = deps.env || process.env;
   const voice = opts.voice || env.REEL_PROOF_VOICE || "vs:Greg";
@@ -286,12 +353,13 @@ export async function runProof(opts = {}, deps = {}) {
   const ledgerFile = opts.ledger || path.join(root, "used.json");
   const ledger = readLedger(ledgerFile);
   const from = opts.from || env.REEL_PROOF_CARDS;
+  const specs = opts.noSpecs ? null : loadSpecs(specsFile({ from, specs: opts.specs, env }));
   let files = (opts.cards || []).map((f) => path.resolve(f));
   let script = opts.script ? readJSON(path.resolve(opts.script)) : null;
   if (script?.cards?.length) files = script.cards.map((f) => path.resolve(f));
   if (!files.length) {
     if (!from) throw new Error("no cards: pass card images, --from <folder of cards> or set REEL_PROOF_CARDS");
-    files = pickCards({ from, count: Number(opts.count) || 3, ledger });
+    files = pickCards({ from, count: Number(opts.count) || 3, ledger, specs });
     if (!files.length) throw new Error(`no unused cards left in ${from}`);
   }
   for (const f of files) if (!fs.existsSync(f)) throw new Error(`card not found: ${f}`);
@@ -299,7 +367,9 @@ export async function runProof(opts = {}, deps = {}) {
   const n = ledger.reels.filter((r) => r.day === day).length + 1;
   const stem = opts.name || `proof-${day}-${n}`;
   const dir = ensureDir(path.join(root, stem));
-  const cards = await readCards(files, deps);
+  const cards = await readCards(files, deps, { from, specs });
+  // Every card known to the library: the editor draws the receipts look (texts full screen, no photo on screen).
+  const receipts = cards.length > 0 && cards.every((c) => c.spec);
   writeJSON(path.join(dir, "cards.json"), cards);
   if (script) {
     const errors = validateScript(script, cards);
@@ -315,7 +385,11 @@ export async function runProof(opts = {}, deps = {}) {
   const photo = opts.photo ? path.resolve(opts.photo) : pickPhoto({ dir: opts.photos || env.REEL_PROOF_PHOTOS || path.join(root, "photos"), ledger });
   if (!photo || !fs.existsSync(photo)) throw new Error("no photo of Greg: pass --photo, --photos <folder> or put photos in ~/Reels/proof/photos");
   const narration = await renderNarration(script, { voice, dir, deps });
-  const names = dropNames({ stem, hook: script.hook, count: files.length, label: opts.label || CARD_LABEL });
+  const names = dropNames({ stem, hook: script.hook, count: receipts ? 0 : files.length, label: opts.label || CARD_LABEL });
+  if (receipts) {
+    writeJSON(path.join(dir, "proof.json"), proofData({ stem, script, cards, specs, label: opts.label || CARD_LABEL }));
+    log(`proof: receipts look (${path.join(dir, "proof.json")})`);
+  }
   const footage = await makeFootage({ photo, narration: narration.file, total: narration.total, out: path.join(dir, names.clip), deps });
   log(`proof: ${narration.total}s narration over ${path.basename(photo)}`);
 
@@ -323,18 +397,18 @@ export async function runProof(opts = {}, deps = {}) {
   if (!opts.noDrop) {
     const drop = path.resolve(opts.drop || env.REEL_PROOF_DROP || path.join(home(env), "Reels", "raw"));
     ensureDir(drop);
-    // Cards first: the watcher pairs them when it picks the clip up.
-    for (let i = 0; i < files.length; i++) await toPng(files[i], path.join(drop, names.cards[i]), deps);
+    // Cards first: the watcher pairs them when it picks the clip up (the receipts look reads proof.json instead).
+    for (let i = 0; i < names.cards.length; i++) await toPng(files[i], path.join(drop, names.cards[i]), deps);
     const tmp = path.join(drop, `.${names.clip}.part`);
     fs.copyFileSync(footage.file, tmp);
     fs.renameSync(tmp, path.join(drop, names.clip));
     dropped = path.join(drop, names.clip);
-    log(`proof: dropped ${names.clip} with ${files.length} card${files.length === 1 ? "" : "s"} in ${drop}`);
+    log(`proof: dropped ${names.clip}${names.cards.length ? ` with ${names.cards.length} card${names.cards.length === 1 ? "" : "s"}` : ""} in ${drop}`);
   }
   const at = (deps.now || (() => new Date()))().toISOString();
   if (from) for (const f of files) { const rel = path.relative(path.resolve(from), f); if (!rel.startsWith("..")) ledger.cards[rel] = { at, reel: stem }; }
   ledger.photos[path.basename(photo)] = at;
   ledger.reels.push({ day, stem, at, hook: script.hook, cards: files, photo, dropped });
   writeJSON(ledgerFile, ledger);
-  return { dir, script, stem, footage: footage.file, dropped, narration };
+  return { dir, script, stem, footage: footage.file, dropped, narration, receipts };
 }
