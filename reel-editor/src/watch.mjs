@@ -56,18 +56,18 @@ export function expectations(plan) {
   return { plan: lines, said: said.slice(0, 220) };
 }
 
-export function watchPrompt({ sheets, exp, name, format = "reel", proof = false }) {
+export function watchPrompt({ sheets, exp, name, format = "reel", proof = false, receipts = false }) {
   // A VSL is a 16:9 sales video on an offer page: no Instagram strip, and the viewer chose to press play.
   const vsl = format === "vsl";
   return [
-    `${vsl ? "You are the last check on a 16:9 talking-head sales video (a VSL that plays on an offer page) before it is delivered, and also a viewer who just pressed play on that page." : (proof ? "You are the last check on a narrated proof reel before it is posted (a real still photo of the speaker with a slow push-in, the speaker's voice over it, and real text messages shown whole while they are read), and also a cold viewer scrolling Instagram." : "You are the last check on a talking-head reel before it is posted, and also a cold viewer scrolling Instagram.")} Look at every contact sheet below with the Read tool. Each sheet is a grid of frames read left to right, top to bottom; the times of its frames, in that order, are listed next to it. An empty slot at the end of the last sheet is padding.`,
+    `${vsl ? "You are the last check on a 16:9 talking-head sales video (a VSL that plays on an offer page) before it is delivered, and also a viewer who just pressed play on that page." : (proof ? (receipts ? "You are the last check on a narrated proof reel before it is posted (the speaker's voice over real text messages: a moving wall of texts under the hook, then each text full screen with a gold marker filling its words as they are read, a number card when a text says a number moved, and the wall again under the closer; there is no photo or face on purpose), and also a cold viewer scrolling Instagram." : "You are the last check on a narrated proof reel before it is posted (a real still photo of the speaker with a slow push-in, the speaker's voice over it, and real text messages shown whole while they are read), and also a cold viewer scrolling Instagram.") : "You are the last check on a talking-head reel before it is posted, and also a cold viewer scrolling Instagram.")} Look at every contact sheet below with the Read tool. Each sheet is a grid of frames read left to right, top to bottom; the times of its frames, in that order, are listed next to it. An empty slot at the end of the last sheet is padding.`,
     "Report ONLY problems you can see in a specific frame, with that frame's time. Do not guess about audio or motion you cannot see. Problem kinds:",
     "- face-covered: text or a graphic over the speaker's mouth, chin or eyes (the hook running behind the top of the head on purpose is fine)",
     "- subject-cut: a person cropped awkwardly, half out of frame, or the wrong person on screen",
     "- text-error: on-screen text misspelled, garbled, cut off at an edge, or saying something the transcript does not",
     "- wrong-picture: a cutaway or card that does not fit what is being said at that time",
     vsl ? "- collision: two overlays on top of each other, or a card over the captions" : "- collision: two overlays on top of each other, or text where Instagram puts its caption and buttons (bottom sixth, right edge)",
-    proof ? "- dead-frame: black or blank frames (the still photo of the speaker is the design, never a dead frame)" : "- dead-frame: black, blank, frozen-looking, or a still that reads as a mistake",
+    proof ? (receipts ? "- dead-frame: black or blank frames (the dark ground behind a text and the dimmed, blurred wall of texts are the design, never a dead frame)" : "- dead-frame: black or blank frames (the still photo of the speaker is the design, never a dead frame)") : "- dead-frame: black, blank, frozen-looking, or a still that reads as a mistake",
     "Severity: high only when a viewer would notice it in one watch. When unsure, leave it out.",
     vsl
       ? "Then judge as that viewer: after the first 3 seconds (the first sheet), keep watching or leave the page (answer keep or swipe), and why; and the one moment you would most likely stop watching, if any. One steady shot of the speaker with no cuts or effects is normal for a VSL."
@@ -148,7 +148,7 @@ export async function watchRender(video, plan, { workDir, duration }) {
   try {
     const times = sampleTimes(plan, duration);
     const sheets = await contactSheets(video, times, dir);
-    const reply = await claudeLook(watchPrompt({ sheets, exp: expectations(plan), name: plan.name, format: plan.style?.review?.format, proof: !!plan.proofReel }), { cwd: dir });
+    const reply = await claudeLook(watchPrompt({ sheets, exp: expectations(plan), name: plan.name, format: plan.style?.review?.format, proof: !!plan.proofReel, receipts: !!(plan.proofReel && plan.proofData?.items?.length) }), { cwd: dir });
     const res = { ...cleanFindings(firstJSON(reply), duration), sheets: sheets.map((x) => x.file), frames: times.length };
     fs.writeFileSync(path.join(workDir, "watch.json"), JSON.stringify(res, null, 2));
     return res;

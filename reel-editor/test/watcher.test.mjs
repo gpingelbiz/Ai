@@ -267,6 +267,22 @@ test("a reel proof drop: #aivoice flags the cloned voice and the card label afte
   assert.match(call, /--ai-voice --no-studio --no-bad-takes --proof-reel/);
   assert.match(call, /--evidence \S*proof-2026-11-25-1 proof 1 - Real text\.png\|Real text/);
   assert.match(call, /--evidence \S*proof-2026-11-25-1 proof 2 - Real text\.png\|Real text/);
+  assert.doesNotMatch(call, /--proof-data/, "no proof.json: the older proof layout");
+});
+
+test("a reel proof drop with its proof.json is drawn in the receipts look", () => {
+  const proofHome = fs.mkdtempSync(path.join(os.tmpdir(), "proof-home-"));
+  const data = path.join(proofHome, "proof-2026-11-25-2", "proof.json");
+  fs.mkdirSync(path.dirname(data), { recursive: true });
+  fs.writeFileSync(data, JSON.stringify({ version: 1, items: [{ setup: "s", quote: "q", messages: [] }] }));
+  const r = fakeDrops({
+    brollShots: 0,
+    clips: { reel: ["proof-2026-11-25-2__Salespeople I coach send me texts like this #aivoice #proof.mp4"], broll: [], carousel: [] },
+    env: { REEL_PROOF_HOME: proofHome },
+  });
+  const call = r.calls.trim().split("\n").find((line) => line.includes("#aivoice #proof.mp4"));
+  assert.ok(call.includes(`--proof-reel --proof-data ${data}`), call);
+  assert.doesNotMatch(call, /--evidence/);
 });
 
 test("an empty CTA with a trailing comment in .zshrc still means no CTA; a command substitution is skipped", () => {
