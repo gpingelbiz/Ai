@@ -10,6 +10,9 @@ import { projectHTML } from "../src/compose.mjs";
 import { layoutChecks } from "../src/preflight.mjs";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "receipts-test-"));
+// A stand-in for the transcriber: it "hears" each spoken line exactly (lines in file order: 01-hook, 02-setup...).
+const heardBack = (said) => async () => [...said.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([, t], i) => String(t).split(/\s+/).map((w, k) => ({ text: w, start: i * 3 + k * 0.2, end: i * 3 + k * 0.2 + 0.15 })));
+
 const touch = (file) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, "x"); return file; };
 
 // Reel 1 (2026-11-25): the script and the voice as the editor heard it (reel time, after the pause cuts).
@@ -176,7 +179,7 @@ test("runProof picks from the coach list: notes reach the writer, one card per f
     { card: "2-strong/539-john-s4.png", event: "C7", context: "Same fix, the owner's text." },
     { card: "2-strong/542-julee-s4.png", event: "emails", context: "Greg set up a coaching client's launch emails." },
   ] }));
-  const ocrCalls = [];
+  const ocrCalls = [], said = new Map();
   const deps = {
     env: { HOME: home, REEL_PROOF_CARDS: from, REEL_PROOF_PHOTOS: path.join(home, "photos") },
     now: () => new Date("2026-11-25T17:00:00Z"),
@@ -187,7 +190,8 @@ test("runProof picks from the coach list: notes reach the writer, one card per f
       return { out: "" };
     },
     probe: async () => ({ duration: 2 }),
-    speak: async ({ out }) => { touch(out); return out; },
+    speak: async ({ out, text }) => { said.set(path.basename(out), text); touch(out); return out; },
+    transcribe: heardBack(said),
     claudeText: async (prompt) => {
       assert.match(prompt, /Card 1 note \(what was built or fixed\): A coaching client's free download sent nothing\. Greg fixed it\./);
       assert.match(prompt, /Card 2 note \(what was built or fixed\): Greg set up a coaching client's launch emails\./);
@@ -243,6 +247,7 @@ test("the coach list can carry a verified text itself, and a reel spreads across
     { card: "3-solid/547-julee-s3.png", client: "julee", event: "D", context: "One reel took off." },
   ] }));
   const list = loadList(path.join(proofHome, "coach-cards.json"), { from, specs: loadSpecs(path.join(home, "Testimonials", "Social", "lib-specs.json")) });
+  const said = new Map();
   assert.deepEqual(pickFromList({ list, count: 3 }).map((e) => e.rel), ["list:john-month", "list:katt-sale", "3-solid/547-julee-s3.png"], "a different client each time while the list allows it");
   assert.deepEqual(pickFromList({ list, count: 4 }).map((e) => e.rel), ["list:john-month", "list:john-post", "list:katt-sale", "3-solid/547-julee-s3.png"], "then the rest, in list order");
   const deps = {
@@ -251,7 +256,8 @@ test("the coach list can carry a verified text itself, and a reel spreads across
     ocrBinary: async () => "ocr",
     run: async (cmd, args) => { if (cmd === "ocr") return { out: JSON.stringify({ width: 100, height: 100, lines: [], faces: [] }) }; if (cmd === "ffmpeg") touch(args.at(-1)); return { out: "" }; },
     probe: async () => ({ duration: 2 }),
-    speak: async ({ out }) => { touch(out); return out; },
+    speak: async ({ out, text }) => { said.set(path.basename(out), text); touch(out); return out; },
+    transcribe: heardBack(said),
     claudeText: async (prompt) => {
       assert.match(prompt, /From you making \[name\] live/);
       return JSON.stringify({ hook: "Your coaching offer sells. Here's what changed.", items: [
@@ -302,4 +308,50 @@ test("text checks skip the plan's captions and hook in the receipts look (it dra
   const base = { video: { duration: 20 }, hook: { text: "Your offer sells", start: 0, duration: 2 }, captions: [{ text: "closing", start: 2.4, end: 2.54 }] };
   assert.equal(textSamples(base).filter((x) => x.kind === "caption" || x.kind === "hook").length, 2);
   assert.equal(textSamples({ ...base, proofReel: true, proofData: { items: [{}] } }).filter((x) => x.kind === "caption" || x.kind === "hook").length, 0);
+});
+
+test("the voice is heard back: a line that drops or swaps a word is re-recorded with a new seed, and a line still wrong stops the run", async () => {
+  const { renderNarration } = await import("../src/proof.mjs");
+  const dir = tmp();
+  const script = { hook: "Your offer sells.", items: [{ setup: "We worked on her close.", quote: "We got 41 lives committed" }], close: "I build the sales system under the offer you already have." };
+  const said = new Map(), seeds = [];
+  let round = 0;
+  const deps = {
+    run: async (cmd, args) => { if (cmd === "ffmpeg") touch(args.at(-1)); return { out: "" }; },
+    probe: async () => ({ duration: 1.5 }),
+    speak: async ({ out, text, seed }) => { said.set(path.basename(out), text); seeds.push([path.basename(out), seed]); touch(out); return out; },
+    transcribe: async () => { round++; const words = await heardBack(said)(); return round === 1 ? words.map((w) => (w.text === "lives" ? { ...w, text: "lies" } : w)) : words; },
+  };
+  const r = await renderNarration(script, { voice: "vs:Greg", dir, deps, env: {} });
+  assert.equal(round, 2);
+  const quoteTakes = seeds.filter(([f]) => f === "03-quote.wav").map(([, s]) => s);
+  assert.equal(quoteTakes.length, 2, "only the wrong line is recorded again");
+  assert.notEqual(quoteTakes[0], quoteTakes[1], "with another seed");
+  assert.equal(seeds.filter(([f]) => f === "01-hook.wav").length, 1);
+  const vc = JSON.parse(fs.readFileSync(path.join(dir, "voicecheck.json"), "utf8"));
+  assert.equal(vc.round, 2);
+  assert.ok(vc.lines.every((l) => l.ok));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "narration.json"), "utf8")).voiceCheck.ok, true);
+  assert.ok(r.total > 0);
+  const always = { ...deps, transcribe: async () => (await heardBack(said)()).filter((w) => w.text !== "close.") };
+  await assert.rejects(renderNarration(script, { voice: "vs:Greg", dir: tmp(), deps: always, env: {}, tries: 2 }), /the voice still does not say the script after 2 takes: setup "We worked on her close\." \(dropped "close"\)/);
+  const skip = await renderNarration(script, { voice: "vs:Greg", dir: tmp(), deps: { ...always }, env: {}, check: false });
+  assert.ok(skip.total > 0, "--no-voice-check records without hearing it back");
+});
+
+test("a proof reel's post caption is the narration word for word", async () => {
+  const { proofCaption } = await import("../scripts/write-caption.mjs");
+  const cap = proofCaption({ hook: "Your offer sells.", items: [{ setup: "We worked on her close.", quote: "We got 41 lives committed to the offer" }, { setup: "That night, this.", quote: "Alright, call booked." }], close: "I build the sales system under the offer you already have." });
+  assert.equal(cap, "Your offer sells.\nWe worked on her close. \u201cWe got 41 lives committed to the offer\u201d\nThat night, this. \u201cAlright, call booked\u201d\nI build the sales system under the offer you already have.");
+});
+
+test("an added word is blamed on the line that was playing when it was heard", async () => {
+  const { checkLines } = await import("../src/voicecheck.mjs");
+  const lines = [{ kind: "setup", text: "That night, this.", start: 0, duration: 1 }, { kind: "quote", text: "Alright, call booked", start: 1.6, duration: 1.2 }];
+  const heard = [{ text: "That", start: 0 }, { text: "night,", start: 0.2 }, { text: "this.", start: 0.5 }, { text: "All", start: 1.6 }, { text: "Alright,", start: 1.8 }, { text: "call", start: 2.2 }, { text: "booked.", start: 2.4 }];
+  const r = checkLines(lines, heard);
+  assert.equal(r[0].ok, true);
+  assert.deepEqual(r[1].problems, ['added "all"']);
+  assert.equal(checkLines(lines, heard.filter((w) => w.text !== "All")).every((x) => x.ok), true);
+  assert.equal(checkLines(lines, [...heard.slice(0, 3), { text: "All", start: 1.7 }, { text: "right,", start: 1.9 }, ...heard.slice(5)].filter((w) => w.text !== "All" || w.start === 1.7)).every((x) => x.ok), true, "'all right' is how a transcriber writes 'alright'");
 });

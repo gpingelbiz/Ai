@@ -8,6 +8,9 @@ import { pairEvidenceFiles, parseEvidenceSpec } from "../src/evidence.mjs";
 import { isVoiceStudioVoice, parseVoice, speak } from "../src/voicestudio.mjs";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "proof-test-"));
+// A stand-in for the transcriber: it "hears" each spoken line exactly (lines in file order: 01-hook, 02-setup...).
+const heardBack = (said) => async () => [...said.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([, t], i) => String(t).split(/\s+/).map((w, k) => ({ text: w, start: i * 3 + k * 0.2, end: i * 3 + k * 0.2 + 0.15 })));
+
 const touch = (file) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, "x"); return file; };
 
 const cards = [
@@ -165,7 +168,7 @@ test("runProof writes the script, renders through the voice and drops cards befo
   const c2 = touch(path.join(from, "1-strongest", "005-sam.png"));
   const photo = touch(path.join(home, "photos", "p.jpg"));
   const texts = { [c1]: cards[0].text, [c2]: cards[1].text };
-  const calls = [], order = [];
+  const calls = [], order = [], said = new Map();
   const deps = {
     env: { HOME: home, REEL_PROOF_CARDS: from, REEL_PROOF_PHOTOS: path.join(home, "photos") },
     now: () => new Date("2026-11-25T17:00:00Z"),
@@ -181,7 +184,8 @@ test("runProof writes the script, renders through the voice and drops cards befo
       return { out: "" };
     },
     probe: async () => ({ duration: 2 }),
-    speak: async ({ voice, out }) => { assert.equal(voice, "vs:Greg"); touch(out); return out; },
+    speak: async ({ voice, out, text }) => { assert.equal(voice, "vs:Greg"); said.set(path.basename(out), text); touch(out); return out; },
+    transcribe: heardBack(said),
     claudeText: async () => JSON.stringify(good),
   };
   const dropDir = path.join(home, "drop");

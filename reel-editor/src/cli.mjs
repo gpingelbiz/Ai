@@ -35,7 +35,7 @@ Usage
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
   reel proof [cards...] [--from <cards folder>] [--count 3] [--photo <file>|--photos <folder>] [--voice vs:Greg]
              [--script <script.json>] [--name <stem>] [--drop <raw folder>] [--no-drop] [--dry-run]
-             [--specs <lib-specs.json>] [--no-specs] [--list <coach-cards.json>]
+             [--specs <lib-specs.json>] [--no-specs] [--list <coach-cards.json>] [--no-voice-check]
                                     narrated proof reel for coaches, no filming: cards come from the coach list
                                     (~/Reels/proof/coach-cards.json, each with the build or fix behind it; --from
                                     <folder> picks from a folder instead); your cloned voice reads real client texts, drawn
@@ -214,7 +214,7 @@ const PROOF_OPTIONS = {
   from: { type: "string" }, count: { type: "string" }, photo: { type: "string" }, photos: { type: "string" },
   voice: { type: "string" }, script: { type: "string" }, name: { type: "string" }, drop: { type: "string" },
   "no-drop": { type: "boolean" }, "dry-run": { type: "boolean" }, close: { type: "string" }, label: { type: "string" },
-  specs: { type: "string" }, "no-specs": { type: "boolean" }, list: { type: "string" },
+  specs: { type: "string" }, "no-specs": { type: "boolean" }, list: { type: "string" }, "no-voice-check": { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
 const SAY_OPTIONS = { voice: { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" } };
