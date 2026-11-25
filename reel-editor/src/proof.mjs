@@ -343,7 +343,7 @@ export async function renderNarration(script, { voice, dir, deps = {}, check = t
   let { timed, total } = await mixAll();
   let heardBack = null;
   if (check) {
-    const transcribeImpl = deps.transcribe || (async (file, o) => (await import("./transcribe.mjs")).transcribe(file, { engine: "faster-whisper", ...o }));
+    const transcribeImpl = deps.transcribe || (async (file, o) => (await import("./transcribe.mjs")).transcribe(file, { engine: "faster-whisper", watch: true, timeoutMs: 300000, ...o }));
     for (let round = 1; round <= tries; round++) {
       const heard = await transcribeImpl(out, { out: path.join(dir, `heard-${round}.json`) });
       const result = checkLines(timed, heard);
