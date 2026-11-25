@@ -123,7 +123,10 @@ export function threadMarkup(messages, quote, redact = [], id = "t") {
     for (const t of tokenSpans(text)) {
       const j = marked.get(`${mi}:${t.start}`);
       if (j === undefined) continue;
-      html += cover(text.slice(at, t.start), redact) + `<span class="qw" id="${id}-q${j}"><i class="hl"></i>${esc(text.slice(t.start, t.end))}</span>`;
+      // The word stays white underneath; a dark-on-gold copy on top is uncovered left to right as it is said, so
+      // every letter reads at every frame (a color switch before the marker got there hid the rest of the word).
+      const word = esc(text.slice(t.start, t.end));
+      html += cover(text.slice(at, t.start), redact) + `<span class="qw" id="${id}-q${j}">${word}<span class="ink" aria-hidden="true">${word}</span></span>`;
       at = t.end;
     }
     html += cover(text.slice(at), redact);
@@ -235,8 +238,8 @@ html,body{margin:0;background:${INK}}
 .b.last.them{border-bottom-left-radius:10px}.b.last.greg{border-bottom-right-radius:10px}
 .typing{display:flex;gap:12px;width:fit-content;padding:28px 32px;border-radius:34px;background:#26252A;opacity:0;margin-top:14px}
 .typing i{width:20px;height:20px;border-radius:50%;background:#8E8A84;display:block}
-.qw{position:relative;z-index:0}
-.qw .hl{position:absolute;left:-5px;right:-14px;top:8px;bottom:2px;background:${GOLD};border-radius:6px;transform:scaleX(0);transform-origin:0 50%;z-index:-1}
+.qw{position:relative}
+.qw .ink{position:absolute;left:-5px;right:-14px;top:0;bottom:0;padding-left:5px;line-height:normal;white-space:nowrap;color:${INK};background:linear-gradient(to bottom,transparent 8px,${GOLD} 8px,${GOLD} calc(100% - 2px),transparent calc(100% - 2px));border-radius:6px;clip-path:inset(0% 100% 0% 0%)}
 .red{display:inline-block;width:2.4em;height:.9em;background:#4A4950;border-radius:.3em;vertical-align:-.08em}
 .cap{position:absolute;left:${R.capLeft}px;width:${R.capWidth}px;top:${R.capTop}px;text-align:center;font-weight:800;font-size:60px;line-height:1.18;color:${BONE};opacity:0;text-shadow:0 4px 18px rgba(0,0,0,.8)}
 .cw{opacity:.28}
@@ -353,8 +356,7 @@ ${audioMarkup}
         t.quote.forEach((q, j) => {
           const next = j + 1 < t.quote.length ? t.quote[j + 1][0] : q[1];
           const d = Math.max(0.08, Math.min(0.28, next - q[0]));
-          tl.to(el + "-q" + j + " .hl", { scaleX: 1, duration: d, ease: "none" }, q[0]);
-          tl.to(el + "-q" + j, { color: "${INK}", duration: 0.05 }, q[0] + d * 0.4);
+          tl.fromTo(el + "-q" + j + " .ink", { clipPath: "inset(0% 100% 0% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", duration: d, ease: "none", immediateRender: false }, q[0]);
         });
         tl.fromTo(el + "-push", { scale: 1 }, { scale: P.push, duration: Math.max(0.5, t.qb - t.qa), ease: "sine.inOut" }, t.qa);
         if (t.slam) {

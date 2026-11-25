@@ -80,6 +80,8 @@ export function wallSpecs(specs, count = 30) {
 }
 
 const NAME = "[name]";
+// A coach list text with no card file is named "list:<id>" wherever a card path would go (script, ledger).
+export const INLINE = "list:";
 const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A card's words as the script writer sees them: every covered name is "[name]". */
 export function specText(spec) {
@@ -100,24 +102,36 @@ export function loadList(file, { from, specs = null } = {}) {
   let j;
   try { j = readJSON(file); } catch { return null; }
   const root = from ? path.resolve(from) : null;
-  const entries = (Array.isArray(j.cards) ? j.cards : []).filter((e) => e && e.card).map((e) => {
+  const entries = (Array.isArray(j.cards) ? j.cards : []).filter((e) => e && (e.card || (e.id && Array.isArray(e.messages)))).map((e) => {
+    const base = { context: String(e.context || "").trim(), client: String(e.client || "") };
+    if (!e.card) {
+      // A text carried on the list itself (verified word for word from the Messages database, trims marked "…"):
+      // the strong coach texts the card library never made a card for, or filed under a held folder by mistake.
+      const rel = `${INLINE}${e.id}`;
+      return { ...base, rel, file: rel, inline: true, spec: cleanSpec({ label: e.label || "Build feedback", messages: e.messages, redact: e.redact || [] }, { dropGreg: !!e.drop_greg }), event: String(e.event || rel) };
+    }
     const rel = String(e.card).split(path.sep).join("/");
     const spec = specs?.get(rel) || null;
-    return { rel, file: root ? path.join(root, rel) : null, spec: spec ? cleanSpec(spec, { dropGreg: !!e.drop_greg }) : null, context: String(e.context || "").trim(), event: String(e.event || rel) };
+    return { ...base, rel, file: root ? path.join(root, rel) : null, spec: spec ? cleanSpec(spec, { dropGreg: !!e.drop_greg }) : null, event: String(e.event || rel) };
   });
   return { file, entries };
 }
 
-/** The next unused cards from the list, in its order, one per proof event, each with a spec and a file on disk. */
+/**
+ * The next unused cards from the list, in its order: one per proof event, a different client each time while the
+ * list allows it, each with a spec (and, for a library card, its file on disk).
+ */
 export function pickFromList({ list, count = 3, ledger = { cards: {} } }) {
-  const out = [], events = new Set();
-  for (const e of list.entries) {
-    if (out.length >= count) break;
-    if (ledger.cards[e.rel] || events.has(e.event) || !e.spec || !e.file || !fs.existsSync(e.file)) continue;
-    if (e.rel.split("/").some((part) => SKIP_DIRS.includes(part))) continue;
-    out.push(e); events.add(e.event);
+  const usable = list.entries.filter((e) => !ledger.cards[e.rel] && e.spec && (e.inline || (e.file && fs.existsSync(e.file) && !e.rel.split("/").some((part) => SKIP_DIRS.includes(part)))));
+  const out = [], events = new Set(), clients = new Set();
+  for (const pass of [true, false]) {
+    for (const e of usable) {
+      if (out.length >= count) break;
+      if (out.includes(e) || events.has(e.event) || (pass && e.client && clients.has(e.client))) continue;
+      out.push(e); events.add(e.event); if (e.client) clients.add(e.client);
+    }
   }
-  return out;
+  return list.entries.filter((e) => out.includes(e));
 }
 
 function cleanSpec(spec, { dropGreg = false } = {}) {
@@ -153,10 +167,11 @@ export async function readCards(files, deps = {}, { from = null, specs = null, l
   const cards = [];
   const notes = new Map((list?.entries || []).map((e) => [e.rel, e]));
   for (const file of files) {
-    const rel = from ? path.relative(path.resolve(from), file).split(path.sep).join("/") : null;
+    const rel = file.startsWith(INLINE) ? file : from ? path.relative(path.resolve(from), file).split(path.sep).join("/") : null;
     const listed = rel ? notes.get(rel) : null;
     const spec = listed?.spec || (rel && specs?.get(rel) ? cleanSpec(specs.get(rel)) : null);
     if (spec) { cards.push({ file, text: specText(spec), spec, ...(listed?.context ? { context: listed.context } : {}) }); continue; }
+    if (file.startsWith(INLINE)) throw new Error(`${file} is not on the coach list any more (its words live only there)`);
     const o = await ocr(file, deps);
     const text = o.lines.map((line) => line.text).join("\n").trim();
     cards.push({ file, text, ...(listed?.context ? { context: listed.context } : {}) });
@@ -404,9 +419,10 @@ export async function runProof(opts = {}, deps = {}) {
   const specs = opts.noSpecs ? null : loadSpecs(specsFile({ from, specs: opts.specs, env }));
   const listFile = path.resolve(opts.list || env.REEL_PROOF_LIST || path.join(root, "coach-cards.json"));
   const list = specs ? loadList(listFile, { from, specs }) : null;
-  let files = (opts.cards || []).map((f) => path.resolve(f));
+  const resolveCard = (f) => (String(f).startsWith(INLINE) ? String(f) : path.resolve(f));
+  let files = (opts.cards || []).map(resolveCard);
   let script = opts.script ? readJSON(path.resolve(opts.script)) : null;
-  if (script?.cards?.length) files = script.cards.map((f) => path.resolve(f));
+  if (script?.cards?.length) files = script.cards.map(resolveCard);
   if (!files.length) {
     if (!from) throw new Error("no cards: pass card images, --from <folder of cards> or set REEL_PROOF_CARDS");
     if (opts.from || !list) {
@@ -419,7 +435,7 @@ export async function runProof(opts = {}, deps = {}) {
       if (!files.length) throw new Error(`no unused cards left on the coach list (${listFile}); add texts to it`);
     }
   }
-  for (const f of files) if (!fs.existsSync(f)) throw new Error(`card not found: ${f}`);
+  for (const f of files) if (!f.startsWith(INLINE) && !fs.existsSync(f)) throw new Error(`card not found: ${f}`);
   const day = (deps.now || (() => new Date()))().toISOString().slice(0, 10);
   const n = ledger.reels.filter((r) => r.day === day).length + 1;
   const stem = opts.name || `proof-${day}-${n}`;
@@ -463,7 +479,10 @@ export async function runProof(opts = {}, deps = {}) {
     log(`proof: dropped ${names.clip}${names.cards.length ? ` with ${names.cards.length} card${names.cards.length === 1 ? "" : "s"}` : ""} in ${drop}`);
   }
   const at = (deps.now || (() => new Date()))().toISOString();
-  if (from) for (const f of files) { const rel = path.relative(path.resolve(from), f); if (!rel.startsWith("..")) ledger.cards[rel] = { at, reel: stem }; }
+  for (const f of files) {
+    const rel = f.startsWith(INLINE) ? f : from ? path.relative(path.resolve(from), f) : "..";
+    if (!rel.startsWith("..")) ledger.cards[rel] = { at, reel: stem };
+  }
   ledger.photos[path.basename(photo)] = at;
   ledger.reels.push({ day, stem, at, hook: script.hook, cards: files, photo, dropped });
   writeJSON(ledgerFile, ledger);
