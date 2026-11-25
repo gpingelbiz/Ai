@@ -193,3 +193,26 @@ test("hashtagArm splits reels into 0 and 3 hashtags by folder name, stable, with
   assert.equal(hashtagArm("clip-1", { REEL_HASHTAG_ARM: "3" }), 3);
   assert.equal(formatPostText({ caption: "Line one", hashtags: [] }), "Line one\n");
 });
+
+test("a reel proof caption gets each text's facts and the rules that keep it true (no 'this week', no 'we', no merged clients)", async () => {
+  const { buildPrompt, proofBlock } = await import("../scripts/write-caption.mjs");
+  const proof = [
+    { setup: "I coached a coach on her launch.", context: "Greg coached her on how to close on her own launch webinar.", business: "casey", messages: [{ who: "them", text: "We got 41 lives committed to the offer …" }] },
+    { setup: "I built a content system.", context: "Greg built a content system for a coaching client.", business: "dd", messages: [{ who: "them", text: "averaging 3-5M views" }, { who: "greg", text: "Dude thats awesome" }] },
+    { setup: "I rebuilt a site.", context: "Greg rebuilt their site; first sale before promoting.", business: "dd", messages: [{ who: "them", text: "Might of just had our first sale..?" }] },
+  ];
+  const p = buildPrompt({ transcript: "x", hook: "h", voice: "v", cta: "", greg: true, proof });
+  assert.match(p, /This is a proof reel/);
+  assert.match(p, /no \"this week\"|no "this week"/);
+  assert.match(p, /never "we" or "our" for it/);
+  assert.match(p, /Text 3 \(the same client as text 2\)\./);
+  assert.match(p, /What the speaker did: Greg coached her on how to close on her own launch webinar\./);
+  assert.match(p, /What the client wrote: averaging 3-5M views\n/, "Greg's own replies are not the client's words");
+  assert.match(p, /No ask of any kind: a proof post/);
+  assert.match(p, /no before state the list does not give/);
+  assert.doesNotMatch(p, /send this reel to a specific person/);
+  assert.deepEqual(proofBlock(null), []);
+  const plain = buildPrompt({ transcript: "x", hook: "h", voice: "v", cta: "", greg: true });
+  assert.doesNotMatch(plain, /This is a proof reel/);
+  assert.match(plain, /send this reel to a specific person/);
+});

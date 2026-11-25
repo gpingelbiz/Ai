@@ -208,6 +208,7 @@ test("runProof picks from the coach list: notes reach the writer, one card per f
   const data = JSON.parse(fs.readFileSync(path.join(proofHome, r.stem, "proof.json"), "utf8"));
   assert.equal(data.close, DEFAULT_CLOSE);
   assert.deepEqual(data.items[0].messages, [{ who: "them", text: "Freaking insane. Thank you!!!" }], "drop_greg leaves Greg's reply off");
+  assert.equal(data.items[0].context, "A coaching client's free download sent nothing. Greg fixed it.", "the note goes along for the caption writer");
   assert.deepEqual(data.items[1].redact, ["Julee"]);
   assert.equal(data.wall.length, 3, "the wall is the coach list's texts");
   assert.doesNotMatch(JSON.stringify(data), /8%|2025-10-01|"date"/, "no sales rep texts and no dates travel to the reel");

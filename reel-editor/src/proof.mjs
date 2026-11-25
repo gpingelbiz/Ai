@@ -103,7 +103,7 @@ export function loadList(file, { from, specs = null } = {}) {
   try { j = readJSON(file); } catch { return null; }
   const root = from ? path.resolve(from) : null;
   const entries = (Array.isArray(j.cards) ? j.cards : []).filter((e) => e && (e.card || (e.id && Array.isArray(e.messages)))).map((e) => {
-    const base = { context: String(e.context || "").trim(), client: String(e.client || "") };
+    const base = { context: String(e.context || "").trim(), client: String(e.client || ""), business: String(e.business || e.client || "") };
     if (!e.card) {
       // A text carried on the list itself (verified word for word from the Messages database, trims marked "…"):
       // the strong coach texts the card library never made a card for, or filed under a held folder by mistake.
@@ -170,7 +170,7 @@ export async function readCards(files, deps = {}, { from = null, specs = null, l
     const rel = file.startsWith(INLINE) ? file : from ? path.relative(path.resolve(from), file).split(path.sep).join("/") : null;
     const listed = rel ? notes.get(rel) : null;
     const spec = listed?.spec || (rel && specs?.get(rel) ? cleanSpec(specs.get(rel)) : null);
-    if (spec) { cards.push({ file, text: specText(spec), spec, ...(listed?.context ? { context: listed.context } : {}) }); continue; }
+    if (spec) { cards.push({ file, text: specText(spec), spec, ...(listed?.context ? { context: listed.context } : {}), ...(listed?.business ? { business: listed.business } : {}) }); continue; }
     if (file.startsWith(INLINE)) throw new Error(`${file} is not on the coach list any more (its words live only there)`);
     const o = await ocr(file, deps);
     const text = o.lines.map((line) => line.text).join("\n").trim();
@@ -402,7 +402,8 @@ export function proofData({ stem, script, cards, specs, list = null, label = CAR
     label,
     hook: script.hook,
     close: script.close,
-    items: script.items.map((item, i) => ({ setup: item.setup, quote: item.quote, messages: cards[i].spec.messages, redact: cards[i].spec.redact })),
+    // The note behind each text and its business go along for the caption writer (scripts/write-caption.mjs).
+    items: script.items.map((item, i) => ({ setup: item.setup, quote: item.quote, messages: cards[i].spec.messages, redact: cards[i].spec.redact, ...(cards[i].context ? { context: cards[i].context } : {}), ...(cards[i].business ? { business: cards[i].business } : {}) })),
     // The wall behind the hook and the closer: the coach list's texts when there is one (never sales reps' texts).
     wall: list?.entries?.some((e) => e.spec) ? list.entries.filter((e) => e.spec).map((e) => e.spec) : wallSpecs(specs),
   };
