@@ -304,6 +304,9 @@ test("the render reviewer knows a proof reel's still photo is the design", async
   const proof = watchPrompt({ ...base, proof: true });
   assert.match(proof, /narrated proof reel/);
   assert.match(proof, /the still photo of the speaker is the design, never a dead frame/);
+  const receipts = watchPrompt({ ...base, proof: true, receipts: true });
+  assert.match(receipts, /the caption and the text above it belong together/);
+  assert.doesNotMatch(receipts, /still photo/);
 });
 
 test("the pro hook moves to proPosition (reel proof) and stays at 176 px otherwise", async () => {

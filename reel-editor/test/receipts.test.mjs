@@ -103,6 +103,10 @@ test("receipts page: no dates, wall marked as a backdrop, layers inside the Inst
   assert.ok(R.textLeft >= GATE_SAFE.left && R.textLeft + R.textWidth <= GATE_SAFE.iconRight);
   assert.ok(R.capTop + 2 * 60 * 1.18 <= GATE_SAFE.bottom * H && R.threadTop >= GATE_SAFE.top * H && W === 1080);
   // The photo footage only carries the voice.
+  assert.match(html, /id="t0-b0" style="font-size:62px"/, "a two-line text reads bigger than a long one");
+  assert.match(html, /id="t2-b0" style="font-size:62px"/);
+  const short = receiptsHTML({ data: { ...DATA, items: [{ ...DATA.items[0], messages: [{ who: "them", text: "Yes finally working" }], quote: "Yes finally working" }, DATA.items[1], DATA.items[2]] }, heard: HEARD, duration: 29.4, footageMarkup: "" });
+  assert.match(short, /id="t0-b0" style="font-size:72px"/);
   assert.ok(html.includes("#video-wrap{position:absolute;inset:0;opacity:0}") && html.includes('data-has-audio="true"'), "the footage is hidden and carries the voice");
 });
 

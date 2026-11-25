@@ -278,7 +278,8 @@ export function receiptsHTML({ data, heard, duration, footageMarkup, audioMarkup
     const th = T.threads[i];
     const { bubbles } = threadMarkup(it.messages || [], it.quote, it.redact || [], `t${i}`);
     const chars = (it.messages || []).reduce((n, m) => n + String(m.text || "").length, 0);
-    const font = chars > 520 ? 40 : chars > 380 ? 46 : 52;
+    // Short texts (most coach texts are a line or two) read big; long ones step down so the thread fits.
+    const font = chars > 520 ? 40 : chars > 380 ? 46 : chars > 140 ? 52 : chars > 60 ? 62 : 72;
     const bs = bubbles.map((b, k) => `<div class="b ${b.who}${k === bubbles.length - 1 || bubbles[k + 1].who !== b.who ? " last" : ""}" id="t${i}-b${k}" style="font-size:${font}px">${b.html}</div>`).join("");
     const typing = th.typing != null ? `<div class="typing" id="t${i}-typing"><i></i><i></i><i></i></div>` : "";
     return `<div class="thread" id="t${i}" ${win(th.into, th.gone)}><div class="push" id="t${i}-push"><div class="meta">${esc(data.label || "Real text")}</div>${typing}${bs}</div></div>`;
@@ -295,7 +296,8 @@ export function receiptsHTML({ data, heard, duration, footageMarkup, audioMarkup
     hookGold: (T.hook.words[goldFrom] || [null, null])[1],
     out: OUT, in: IN,
     threads: T.threads.map((t) => ({ into: t.into, out: t.out, gone: t.gone, typing: t.typing, pops: t.pops, quote: t.quote, qa: t.qa, qb: t.qb, last: t.last, slam: t.slam ? { at: t.slam.at } : null })),
-    caps: T.setups.map((s) => ({ show: s.show, b: s.b, words: s.words.map(([, t]) => t) })),
+    // A setup caption leaves as its text's quote starts, so the marker is never under a different line.
+    caps: T.setups.map((s, i) => ({ show: s.show, hide: Math.max(s.b + 0.05, Math.min(s.b + 0.45, (T.threads[i]?.qa ?? s.b + 1) - 0.05)), words: s.words.map(([, t]) => t) })),
     close: { start: T.close.start, at: T.close.sentences.map((s) => s.at) },
   };
   return `<!doctype html>
@@ -372,7 +374,7 @@ ${audioMarkup}
           tl.to("#c" + i + "-" + j, { opacity: 1, color: "${GOLD}", duration: 0.05 }, t0);
           tl.to("#c" + i + "-" + j, { color: "${BONE}", duration: 0.12 }, t0 + 0.25);
         });
-        tl.to("#cap" + i, { opacity: 0, duration: 0.2 }, c.b + 0.45);
+        tl.to("#cap" + i, { opacity: 0, duration: 0.2 }, c.hide);
       });
       // Close: back out to the wall of receipts, the closer built line by line.
       tl.to("#wall", { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.6, ease: "power3.out" }, P.close.start - 0.15);
