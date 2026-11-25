@@ -16,7 +16,7 @@ const touch = (file) => { fs.mkdirSync(path.dirname(file), { recursive: true });
 const DATA = {
   version: 1, name: "proof-test", label: "Real text",
   hook: "Salespeople send me messages like this every week.",
-  close: DEFAULT_CLOSE,
+  close: "These aren't my wins. They're theirs. I gave them the plays. They put in the reps.",
   items: [
     { setup: "A client sent me this months after we first talked.", quote: "my sales percentage went from 8% to a little over 35%",
       messages: [{ who: "them", text: "Just thank you a thousand times. In the time since I bought this, my sales percentage went from 8% to a little over 35% I just found out." }], redact: [] },
@@ -138,7 +138,7 @@ test("card specs: names become [name], quotes never run over one, the wall skips
   assert.equal(specText(specs.get("1-strongest/005-sam-s5.png")), "I just led the company in gross for the first time! That's because of you and [name]!");
   assert.deepEqual(wallSpecs(specs).map((w) => w.messages[0].text), ["I just led the company in gross for the first time! That's because of you and Andy!", "Best month yet"]);
   const card = { file: "/c/5.png", text: specText(specs.get("1-strongest/005-sam-s5.png")) };
-  const script = (quote) => ({ hook: "Salespeople send me texts like this.", items: [{ card: 1, setup: "A rep sent me this one.", quote }], close: DEFAULT_CLOSE });
+  const script = (quote) => ({ hook: "Your coaching offer sells. Here's a text I got.", items: [{ card: 1, setup: "A coaching client sent me this one.", quote }], close: DEFAULT_CLOSE });
   assert.deepEqual(validateScript(script("I just led the company in gross for the first time"), [card]), []);
   assert.match(validateScript(script("That's because of you and name"), [card]).join(" "), /runs over a covered name/);
   assert.match(validateScript(script("because of you and [name]"), [card]).join(" "), /covered name/);
@@ -149,15 +149,29 @@ test("card specs: names become [name], quotes never run over one, the wall skips
   assert.deepEqual(pickCards({ from, count: 3, specs }).map((f) => path.basename(f)), ["005-sam-s5.png"]);
 });
 
-test("runProof with the card library: proof.json for the receipts look, no card images dropped", async () => {
+test("runProof picks from the coach list: notes reach the writer, one card per fix, the wall is coach texts", async () => {
   const home = tmp();
   const from = path.join(home, "Testimonials", "Cards");
-  const c1 = touch(path.join(from, "1-strongest", "005-sam-s5.png"));
+  const katt = touch(path.join(from, "2-strong", "540-katt-s4.png"));
+  touch(path.join(from, "2-strong", "539-john-s4.png"));
+  const julee = touch(path.join(from, "2-strong", "542-julee-s4.png"));
+  touch(path.join(from, "1-strongest", "004-jason-s5.png"));
   const photo = touch(path.join(home, "photos", "p.jpg"));
   fs.mkdirSync(path.join(home, "Testimonials", "Social"), { recursive: true });
+  const spec = (rel, label, messages, redact = []) => ({ out: `/old/Testimonials/Cards.new/${rel}`, label, date: "2025-10-01", redact, messages });
   fs.writeFileSync(path.join(home, "Testimonials", "Social", "lib-specs.json"), JSON.stringify([
-    { out: "/old/Testimonials/Cards.new/1-strongest/005-sam-s5.png", label: "Sales coaching", date: "2025-10-01", redact: ["Andy"], messages: [{ who: "them", text: "I just led the company in gross for the first time! That's because of you and Andy!" }] },
+    spec("1-strongest/004-jason-s5.png", "Sales coaching", [{ who: "them", text: "my sales percentage went from 8% to a little over 35%" }]),
+    spec("2-strong/540-katt-s4.png", "Build feedback", [{ who: "them", text: "Freaking insane. Thank you!!!" }, { who: "greg", text: "odd reply" }]),
+    spec("2-strong/539-john-s4.png", "Build feedback", [{ who: "them", text: "Yes finally working" }]),
+    spec("2-strong/542-julee-s4.png", "Build feedback", [{ who: "them", text: "The confirmation emails ended up in my main inbox, thanks Julee" }], ["Julee"]),
   ]));
+  const proofHome = path.join(home, "Reels", "proof");
+  fs.mkdirSync(proofHome, { recursive: true });
+  fs.writeFileSync(path.join(proofHome, "coach-cards.json"), JSON.stringify({ cards: [
+    { card: "2-strong/540-katt-s4.png", event: "C7", drop_greg: true, context: "A coaching client's free download sent nothing. Greg fixed it." },
+    { card: "2-strong/539-john-s4.png", event: "C7", context: "Same fix, the owner's text." },
+    { card: "2-strong/542-julee-s4.png", event: "emails", context: "Greg set up a coaching client's launch emails." },
+  ] }));
   const ocrCalls = [];
   const deps = {
     env: { HOME: home, REEL_PROOF_CARDS: from, REEL_PROOF_PHOTOS: path.join(home, "photos") },
@@ -171,22 +185,37 @@ test("runProof with the card library: proof.json for the receipts look, no card 
     probe: async () => ({ duration: 2 }),
     speak: async ({ out }) => { touch(out); return out; },
     claudeText: async (prompt) => {
-      assert.match(prompt, /\[name\] in a card marks a name that is covered/);
-      assert.match(prompt, /because of you and \[name\]!/);
-      return JSON.stringify({ hook: "Salespeople send me texts like this.", items: [{ card: 1, setup: "A rep sent me this one.", quote: "I just led the company in gross for the first time" }] });
+      assert.match(prompt, /Card 1 note \(what was built or fixed\): A coaching client's free download sent nothing\. Greg fixed it\./);
+      assert.match(prompt, /Card 2 note \(what was built or fixed\): Greg set up a coaching client's launch emails\./);
+      assert.match(prompt, /ended up in my main inbox, thanks \[name\]/);
+      assert.doesNotMatch(prompt, /odd reply|8%/);
+      return JSON.stringify({ hook: "Your coaching offer sells. Here's what fixed looks like.", items: [
+        { card: 1, setup: "A coaching client's free download sent nothing. We fixed it.", quote: "Freaking insane. Thank you" },
+        { card: 2, setup: "Another set up her launch emails with us.", quote: "The confirmation emails ended up in my main inbox" },
+      ] });
     },
   };
   const dropDir = path.join(home, "drop");
   const r = await runProof({ drop: dropDir }, deps);
   assert.equal(r.receipts, true);
-  assert.deepEqual(ocrCalls, [photo], "the card is read from the library, only the photo goes through OCR (for the face)");
+  assert.deepEqual(r.script.cards, [katt, julee], "the list's order, and only one card for the same fix (C7)");
+  assert.deepEqual(ocrCalls, [photo], "cards come from the library; only the photo goes through OCR (for the face)");
   assert.deepEqual(fs.readdirSync(dropDir).filter((f) => !f.startsWith(".")), [path.basename(r.dropped)], "only the clip is dropped");
-  const data = JSON.parse(fs.readFileSync(path.join(home, "Reels", "proof", r.stem, "proof.json"), "utf8"));
-  assert.equal(data.items[0].messages[0].text, "I just led the company in gross for the first time! That's because of you and Andy!");
-  assert.deepEqual(data.items[0].redact, ["Andy"]);
+  const data = JSON.parse(fs.readFileSync(path.join(proofHome, r.stem, "proof.json"), "utf8"));
   assert.equal(data.close, DEFAULT_CLOSE);
-  assert.equal(data.wall.length, 1);
-  assert.doesNotMatch(JSON.stringify(data), /2025-10-01|"date"/, "no dates travel to the reel");
-  assert.equal(c1, r.script.cards[0]);
-  assert.deepEqual(proofData({ stem: "s", script: { hook: "h", close: "c", items: [{ setup: "s", quote: "q" }] }, cards: [{ spec: { messages: [], redact: [] } }], specs: null }).wall, []);
+  assert.deepEqual(data.items[0].messages, [{ who: "them", text: "Freaking insane. Thank you!!!" }], "drop_greg leaves Greg's reply off");
+  assert.deepEqual(data.items[1].redact, ["Julee"]);
+  assert.equal(data.wall.length, 3, "the wall is the coach list's texts");
+  assert.doesNotMatch(JSON.stringify(data), /8%|2025-10-01|"date"/, "no sales rep texts and no dates travel to the reel");
+  // Next reel: the other C7 text is still there; with the rest used, the list runs out with a clear message.
+  const next = await runProof({ drop: dropDir, dryRun: true, name: "next" }, { ...deps, claudeText: async () => JSON.stringify({ hook: "Your coaching offer sells. Here's what fixed looks like.", items: [{ card: 1, setup: "The owner sent this when it worked.", quote: "Yes finally working" }] }) });
+  assert.match(next.script.cards[0], /539-john-s4\.png$/);
+  const ledgerPath = path.join(proofHome, "used.json");
+  const ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf8"));
+  ledger.cards["2-strong/539-john-s4.png"] = { at: "x" };
+  fs.writeFileSync(ledgerPath, JSON.stringify(ledger));
+  await assert.rejects(runProof({ drop: dropDir, dryRun: true }, deps), /no unused cards left on the coach list/);
+  // No list at all: the run stops rather than fall back to sales rep cards.
+  fs.rmSync(path.join(proofHome, "coach-cards.json"));
+  await assert.rejects(runProof({ drop: dropDir, dryRun: true }, deps), /no coach card list/);
 });

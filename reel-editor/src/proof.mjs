@@ -17,11 +17,16 @@ import { ensureDir, log, r3, readJSON, run, writeJSON } from "./util.mjs";
 const IMAGE = /\.(png|jpe?g)$/i;
 // Folders a card is never picked from: criticism Greg set aside, money screenshots, texts still waiting on a check.
 export const SKIP_DIRS = Object.freeze(["not-using", "with-dollar-amounts", "check-flags"]);
-// Greg's approved closer for proof posts (2026-11-15). Never "shared with permission".
-export const DEFAULT_CLOSE = "These aren't my wins. They're theirs. I gave them the plays. They put in the reps.";
+// Proof reels are for coaches (Greg 2026-11-25: "I wanted this focused on coaches with coaching offers not sales
+// people", "follow the brand guides"). The closer is Brand Guide v11's one-liner, the same words as the bio.
+export const DEFAULT_CLOSE = "I build the sales system under the offer you already have.";
 export const CARD_LABEL = "Real text";
 export const GAPS = Object.freeze({ hook: 0.45, setup: 0.3, quote: 0.65, close: 0.8, lead: 0.15 });
-const LIMITS = { hookWords: 12, setupWords: 16, quoteMin: 4, quoteMax: 24 };
+const LIMITS = { hookWords: 12, setupWords: 16, quoteMin: 3, quoteMax: 24 };
+// Brand Guide v11 Part 4 kill list (Greg's own lines only; a client's quote stays word for word).
+const KILL = [/\bunlock/i, /\bunleash/i, /game ?changer/i, /\belevate/i, /\bdive in\b/i, /\bdelve/i, /\bleverag/i, /\bsynergy/i, /\b10x\b/i, /\bgrind/i, /\bhacks?\b/i, /\bmanifest/i, /passive income/i, /autopilot/i, /set it and forget it/i, /while you sleep/i, /24\/7/, /effortless/i, /done for you/i, /here's the thing/i, /the truth is/i, /let's be honest/i, /3 to 5x/i, /\bA to Z\b/i, /runs without you/i, /never misses/i, /\btransform/i, /\bjourney\b/i, /\bempower/i, /\bseamless/i, /\belite\b/i, /\bcrush/i, /level up/i, /hiring portal/i, /\bghost\b/i, /biggest leak/i];
+// The audience is coaches: never salespeople, and AI is never the point.
+const NOT_COACH = [/\bsales ?(?:people|person|rep|reps|man|men)\b/i, /\breps?\b/i, /\bAI\b/];
 const NAME_OK = new Set(["I", "I'm", "I've", "I'd", "I'll", "Greg"]);
 
 const home = (env = process.env) => env.HOME || os.homedir();
@@ -85,6 +90,41 @@ export function specText(spec) {
   }).join("\n");
 }
 
+/**
+ * The coach card list (~/Reels/proof/coach-cards.json, or REEL_PROOF_LIST / --list): the only cards a proof reel
+ * picks from by default. Each entry names a card inside the Cards folder, the build or fix behind it (the note the
+ * script writer may use, nothing beyond it) and its proof event, so one reel never shows the same fix twice.
+ */
+export function loadList(file, { from, specs = null } = {}) {
+  if (!file || !fs.existsSync(file)) return null;
+  let j;
+  try { j = readJSON(file); } catch { return null; }
+  const root = from ? path.resolve(from) : null;
+  const entries = (Array.isArray(j.cards) ? j.cards : []).filter((e) => e && e.card).map((e) => {
+    const rel = String(e.card).split(path.sep).join("/");
+    const spec = specs?.get(rel) || null;
+    return { rel, file: root ? path.join(root, rel) : null, spec: spec ? cleanSpec(spec, { dropGreg: !!e.drop_greg }) : null, context: String(e.context || "").trim(), event: String(e.event || rel) };
+  });
+  return { file, entries };
+}
+
+/** The next unused cards from the list, in its order, one per proof event, each with a spec and a file on disk. */
+export function pickFromList({ list, count = 3, ledger = { cards: {} } }) {
+  const out = [], events = new Set();
+  for (const e of list.entries) {
+    if (out.length >= count) break;
+    if (ledger.cards[e.rel] || events.has(e.event) || !e.spec || !e.file || !fs.existsSync(e.file)) continue;
+    if (e.rel.split("/").some((part) => SKIP_DIRS.includes(part))) continue;
+    out.push(e); events.add(e.event);
+  }
+  return out;
+}
+
+function cleanSpec(spec, { dropGreg = false } = {}) {
+  const messages = spec.messages.filter((m) => !(dropGreg && m.who === "greg")).map((m) => ({ who: m.who === "greg" ? "greg" : "them", text: String(m.text || "") }));
+  return { label: spec.label || "", messages, redact: spec.redact || [] };
+}
+
 /** The next unused cards, strongest folder first. Split cards (-p1/-p2) are long threads and stay out. */
 export function pickCards({ from, count = 3, ledger = { cards: {} }, specs = null }) {
   const root = path.resolve(from);
@@ -109,15 +149,17 @@ async function ocr(file, deps = {}) {
   return parseOcrJSON(out);
 }
 
-export async function readCards(files, deps = {}, { from = null, specs = null } = {}) {
+export async function readCards(files, deps = {}, { from = null, specs = null, list = null } = {}) {
   const cards = [];
+  const notes = new Map((list?.entries || []).map((e) => [e.rel, e]));
   for (const file of files) {
     const rel = from ? path.relative(path.resolve(from), file).split(path.sep).join("/") : null;
-    const spec = rel && specs ? specs.get(rel) : null;
-    if (spec) { cards.push({ file, text: specText(spec), spec: { label: spec.label || "", messages: spec.messages.map((m) => ({ who: m.who === "greg" ? "greg" : "them", text: String(m.text || "") })), redact: spec.redact || [] } }); continue; }
+    const listed = rel ? notes.get(rel) : null;
+    const spec = listed?.spec || (rel && specs?.get(rel) ? cleanSpec(specs.get(rel)) : null);
+    if (spec) { cards.push({ file, text: specText(spec), spec, ...(listed?.context ? { context: listed.context } : {}) }); continue; }
     const o = await ocr(file, deps);
     const text = o.lines.map((line) => line.text).join("\n").trim();
-    cards.push({ file, text });
+    cards.push({ file, text, ...(listed?.context ? { context: listed.context } : {}) });
   }
   return cards;
 }
@@ -137,6 +179,8 @@ function voiceProblems(text, where) {
   if (/[—–]| - |;/.test(s)) out.push(`${where} uses a dash or semicolon (Greg never writes them)`);
   if (/\byo\b/i.test(s)) out.push(`${where} says "Yo"`);
   if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(s)) out.push(`${where} has an emoji`);
+  for (const re of KILL) { const m = s.match(re); if (m) out.push(`${where} uses "${m[0]}" (Brand Guide v11 kill list)`); }
+  for (const re of NOT_COACH) { const m = s.match(re); if (m) out.push(`${where} says "${m[0]}"; this reel is for coaches (never salespeople or reps, never AI)`); }
   return out;
 }
 
@@ -185,20 +229,23 @@ export function validateScript(script, cards) {
 
 export function scriptPrompt(cards, { close = DEFAULT_CLOSE, errors = [] } = {}) {
   return [
-    "Write a short narrated Instagram reel. Greg Pingel, a sales coach, reads it in his own voice. On screen are real text messages that salespeople and clients sent him; names are already covered.",
+    "Write a short narrated Instagram reel for coaches. Greg Pingel reads it in his own voice. Greg builds the sales system under the offer a coach already has: closer and setter scripts, lead flow, follow up, booking and show up, nurture and the CRM. On screen are real texts that coaches and coaching clients sent him after a build or a fix; names are covered.",
+    "Who it must stop: coaches whose offer already sells and who are still on every sales call. It is a Proof reel under Greg's Brand Guide v11: each text is one real build or fix, named for what it is. It asks for nothing.",
     "Return JSON only, no prose: {\"hook\": \"...\", \"items\": [{\"card\": 1, \"setup\": \"...\", \"quote\": \"...\"}], \"close\": \"...\"}",
     "Rules:",
-    `- hook: at most ${LIMITS.hookWords} words, said first, makes a salesperson stop scrolling. Plain words, no question bait.`,
-    `- One item per card, in the order given. setup: at most ${LIMITS.setupWords} words, says who sent it with no name, company, dealership, city or program, for example "A rep I coach sent me this after week one." quote: copied word for word from that card's text, one continuous stretch of ${LIMITS.quoteMin} to ${LIMITS.quoteMax} words. Pick the strongest stretch on the card: a concrete result, a number that moved, or how it changed them. Skip thank yous, plans to meet up and small talk when the card has something stronger. Never change, add, drop or reorder words inside a quote.`,
-    "- The hook and every setup add no fact the cards do not show: no records, timelines, times of day, \"unprompted\", amounts or results that are not written on them.",
+    `- hook: at most ${LIMITS.hookWords} words, said first. Open on the coach's situation, never on a result or a brag, the way \"Your coaching offer sells. Every sales call still needs you.\" does. Write a new one that fits these texts. Plain words, no question bait.`,
+    `- One item per card, in the order given. setup: at most ${LIMITS.setupWords} words. Say what was built or fixed, in plain words, from that card's note and nothing else. Call the sender a coaching client, a coach or a peer; never a name, niche, offer, keyword, tool, platform or place. The verb matches the note: built, fixed, set up, ran, checked. Never grew, doubled or scaled.`,
+    `- quote: copied word for word from that card's text, one continuous stretch of ${LIMITS.quoteMin} to ${LIMITS.quoteMax} words. Pick the stretch that shows the build working or how it landed. A short card can be quoted whole. Never change, add, drop or reorder words inside a quote.`,
+    "- The hook and every setup add no fact that the card notes and texts do not show: no results, numbers, timelines, times of day or \"unprompted\" beyond them.",
     "- Vary the setups: no two start with the same words, and they read as one story from the first card to the last.",
-    "- No names of people, companies, places or programs anywhere. No money amounts or income claims outside a quote.",
+    "- No names of people, companies, places or programs anywhere. No money amounts or income claims anywhere.",
     "- [name] in a card marks a name that is covered on screen. A quote never includes [name] or runs across it.",
-    "- Sound like Greg talking: short, direct, plain, warm. Never use dashes of any kind, semicolons, emojis or the word \"Yo\". No hype words such as game changer, unlock, level up, crush.",
+    "- This reel is for coaches: never the words salespeople, salesperson, sales reps or reps, and never AI.",
+    "- Sound like Greg talking: a peer, not a professor. Short, direct, plain. Never dashes of any kind, semicolons, emojis or the word \"Yo\". Never: unlock, game changer, elevate, leverage, 10x, grind, hack, autopilot, effortless, done for you, transform, journey, A to Z, runs without you, never misses, 3 to 5x.",
     `- close: exactly ${JSON.stringify(close)}`,
     ...(errors.length ? ["", "Your last attempt broke these rules; fix every one:", ...errors.map((e) => `- ${e}`)] : []),
     "",
-    ...cards.flatMap((card, i) => [`Card ${i + 1} text:`, card.text, ""]),
+    ...cards.flatMap((card, i) => [`Card ${i + 1} note (what was built or fixed): ${card.context || "none on file; say only that a coaching client sent it"}`, `Card ${i + 1} text:`, card.text, ""]),
   ].join("\n");
 }
 
@@ -333,7 +380,7 @@ async function toPng(src, dst, deps) {
 }
 
 /** What the editor needs to draw the receipts look: the script, each text exactly as sent with its covered names, the wall. */
-export function proofData({ stem, script, cards, specs, label = CARD_LABEL }) {
+export function proofData({ stem, script, cards, specs, list = null, label = CARD_LABEL }) {
   return {
     version: 1,
     name: stem,
@@ -341,7 +388,8 @@ export function proofData({ stem, script, cards, specs, label = CARD_LABEL }) {
     hook: script.hook,
     close: script.close,
     items: script.items.map((item, i) => ({ setup: item.setup, quote: item.quote, messages: cards[i].spec.messages, redact: cards[i].spec.redact })),
-    wall: wallSpecs(specs),
+    // The wall behind the hook and the closer: the coach list's texts when there is one (never sales reps' texts).
+    wall: list?.entries?.some((e) => e.spec) ? list.entries.filter((e) => e.spec).map((e) => e.spec) : wallSpecs(specs),
   };
 }
 
@@ -354,20 +402,29 @@ export async function runProof(opts = {}, deps = {}) {
   const ledger = readLedger(ledgerFile);
   const from = opts.from || env.REEL_PROOF_CARDS;
   const specs = opts.noSpecs ? null : loadSpecs(specsFile({ from, specs: opts.specs, env }));
+  const listFile = path.resolve(opts.list || env.REEL_PROOF_LIST || path.join(root, "coach-cards.json"));
+  const list = specs ? loadList(listFile, { from, specs }) : null;
   let files = (opts.cards || []).map((f) => path.resolve(f));
   let script = opts.script ? readJSON(path.resolve(opts.script)) : null;
   if (script?.cards?.length) files = script.cards.map((f) => path.resolve(f));
   if (!files.length) {
     if (!from) throw new Error("no cards: pass card images, --from <folder of cards> or set REEL_PROOF_CARDS");
-    files = pickCards({ from, count: Number(opts.count) || 3, ledger, specs });
-    if (!files.length) throw new Error(`no unused cards left in ${from}`);
+    if (opts.from || !list) {
+      // A folder named on the command line (or no coach list): the folder's next unused cards.
+      if (!opts.from && !list) throw new Error(`no coach card list at ${listFile}: proof reels pick only from that list (or pass --from <folder> to pick from a folder)`);
+      files = pickCards({ from, count: Number(opts.count) || 3, ledger, specs });
+      if (!files.length) throw new Error(`no unused cards left in ${from}`);
+    } else {
+      files = pickFromList({ list, count: Number(opts.count) || 3, ledger }).map((e) => e.file);
+      if (!files.length) throw new Error(`no unused cards left on the coach list (${listFile}); add texts to it`);
+    }
   }
   for (const f of files) if (!fs.existsSync(f)) throw new Error(`card not found: ${f}`);
   const day = (deps.now || (() => new Date()))().toISOString().slice(0, 10);
   const n = ledger.reels.filter((r) => r.day === day).length + 1;
   const stem = opts.name || `proof-${day}-${n}`;
   const dir = ensureDir(path.join(root, stem));
-  const cards = await readCards(files, deps, { from, specs });
+  const cards = await readCards(files, deps, { from, specs, list });
   // Every card known to the library: the editor draws the receipts look (texts full screen, no photo on screen).
   const receipts = cards.length > 0 && cards.every((c) => c.spec);
   writeJSON(path.join(dir, "cards.json"), cards);
@@ -387,7 +444,7 @@ export async function runProof(opts = {}, deps = {}) {
   const narration = await renderNarration(script, { voice, dir, deps });
   const names = dropNames({ stem, hook: script.hook, count: receipts ? 0 : files.length, label: opts.label || CARD_LABEL });
   if (receipts) {
-    writeJSON(path.join(dir, "proof.json"), proofData({ stem, script, cards, specs, label: opts.label || CARD_LABEL }));
+    writeJSON(path.join(dir, "proof.json"), proofData({ stem, script, cards, specs, list, label: opts.label || CARD_LABEL }));
     log(`proof: receipts look (${path.join(dir, "proof.json")})`);
   }
   const footage = await makeFootage({ photo, narration: narration.file, total: narration.total, out: path.join(dir, names.clip), deps });

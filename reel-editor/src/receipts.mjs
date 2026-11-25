@@ -261,9 +261,13 @@ export function receiptsHTML({ data, heard, duration, footageMarkup, audioMarkup
   const D = r3(duration);
   const wall = data.wall || [];
   const cards = wall.map(miniCard);
+  // Each column repeats its texts until it is long enough to keep scrolling the whole reel (a short coach list too).
   const cols = [0, 1, 2].map((c) => {
-    const mine = cards.filter((_, i) => i % 3 === c).join("");
-    return `<div class="col" id="col${c}" style="left:${18 + c * 354}px;top:${-120 * c}px">${mine}${mine}${mine}</div>`;
+    let mine = cards.filter((_, i) => i % 3 === c);
+    if (!mine.length) mine = cards.slice(0, 1);
+    const reps = mine.length ? Math.max(3, Math.ceil(24 / mine.length)) : 0;
+    const html = Array.from({ length: reps }, (_, r) => mine.slice(r % mine.length).concat(mine.slice(0, r % mine.length)).join("")).join("");
+    return `<div class="col" id="col${c}" style="left:${18 + c * 354}px;top:${-120 * c}px">${html}</div>`;
   }).join("");
   const win = (a, b) => `data-start="${r3(Math.max(0, a))}" data-duration="${r3(Math.max(0.1, Math.min(D, b) - Math.max(0, a)))}"`;
   // The hook and the setup captions drop sentence periods (captions never carry them); ? and ! stay.
