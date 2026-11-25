@@ -71,21 +71,26 @@ export function voiceCacheDir(env = process.env) {
  * Speaks `text` in a saved VoiceStudio voice and writes `out` (.wav as rendered, anything else is converted by
  * ffmpeg, so narration.mp3 works). The same voice, engine and text render once and are reused from the cache.
  */
-export async function speak({ text, voice = "vs:Greg", out, env = process.env, deps = {} }) {
+// One seed for every line of a reel keeps the clone's tone the same from line to line (Greg 2026-11-25: "the voice is
+// also sounding off"); REEL_VOICE_SEED overrides it, "random" lets VoiceStudio pick.
+export const DEFAULT_SEED = 2511;
+
+export async function speak({ text, voice = "vs:Greg", out, env = process.env, seed = env.REEL_VOICE_SEED ?? DEFAULT_SEED, deps = {} }) {
   const words = String(text || "").trim();
   if (!words) throw new Error("nothing to say");
   if (!out) throw new Error("speak needs an output file");
   const v = parseVoice(voice);
   const runImpl = deps.run || run;
   const cache = ensureDir(voiceCacheDir(env));
-  const cached = path.join(cache, `${sha1(`${v.name}|${v.engine}|${words}`)}.wav`);
+  const fixedSeed = String(seed ?? "").toLowerCase() === "random" || seed === "" || seed == null ? null : Number(seed);
+  const cached = path.join(cache, `${sha1(`${v.name}|${v.engine}|${words}${fixedSeed == null ? "" : `|seed ${fixedSeed}`}`)}.wav`);
   if (!fs.existsSync(cached) || fs.statSync(cached).size < 1000) {
     await (deps.ensure || ensureVoiceStudio)({ env, deps });
     const textFile = path.join(cache, `${path.basename(cached, ".wav")}.txt`);
     const tmp = `${cached}.part.wav`;
     fs.writeFileSync(textFile, words);
     try {
-      await runImpl(voicestudioBinary(env), ["--json", "speak", "--voice", v.name, "--engine", v.engine, "--language", "English", "--text-file", textFile, "-o", tmp, "--overwrite"], { capture: true });
+      await runImpl(voicestudioBinary(env), ["--json", "speak", "--voice", v.name, "--engine", v.engine, "--language", "English", ...(Number.isFinite(fixedSeed) ? ["--seed", String(fixedSeed)] : []), "--text-file", textFile, "-o", tmp, "--overwrite"], { capture: true });
       if (!fs.existsSync(tmp) || fs.statSync(tmp).size < 1000) throw new Error("VoiceStudio wrote no audio");
       fs.renameSync(tmp, cached);
     } finally {

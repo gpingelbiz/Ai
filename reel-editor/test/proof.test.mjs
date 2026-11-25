@@ -306,6 +306,7 @@ test("the render reviewer knows a proof reel's still photo is the design", async
   assert.match(proof, /the still photo of the speaker is the design, never a dead frame/);
   const receipts = watchPrompt({ ...base, proof: true, receipts: true });
   assert.match(receipts, /the caption and the text above it belong together/);
+  assert.match(receipts, /Never report the caption and the text above it as a mismatch/);
   assert.doesNotMatch(receipts, /still photo/);
 });
 

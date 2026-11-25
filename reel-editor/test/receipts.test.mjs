@@ -276,3 +276,30 @@ test("the coach list can carry a verified text itself, and a reel spreads across
   fs.writeFileSync(path.join(proofHome, "coach-cards.json"), JSON.stringify(j));
   await assert.rejects(runProof({ drop: path.join(home, "drop"), script: path.join(proofHome, r.stem, "script.json"), name: "gone", dryRun: true }, deps), /list:katt-sale is not on the coach list any more/);
 });
+
+test("proof reels keep the narration as recorded: no silence cuts, no phone-mic cleanup, one voice seed for every line", async () => {
+  const { loadPreset, mergeOverrides } = await import("../src/presets.mjs");
+  const p = mergeOverrides(loadPreset("pingel-pro"), { proofReel: true });
+  assert.equal(p.cuts.silence, "off");
+  assert.equal(p.cuts.badTakes, false);
+  assert.equal(p.cuts.fillers, false);
+  assert.equal(p.audio.cleanAudio, false);
+  const plain = mergeOverrides(loadPreset("pingel-pro"), {});
+  assert.notEqual(plain.cuts.silence, "off", "other reels still cut silences");
+  const { speak, DEFAULT_SEED } = await import("../src/voicestudio.mjs");
+  const home = tmp();
+  const calls = [];
+  const run = async (cmd, args) => { calls.push(args); const out = cmd === "ffmpeg" ? args.at(-1) : args[args.indexOf("-o") + 1]; fs.writeFileSync(out, Buffer.alloc(2000)); return { out: "" }; };
+  const env = { HOME: home, REEL_VOICE_CACHE: path.join(home, "cache") };
+  await speak({ text: "One line.", voice: "vs:Greg", out: path.join(home, "a.wav"), env, deps: { run, ensure: async () => {} } });
+  assert.ok(calls[0].join(" ").includes(`--seed ${DEFAULT_SEED}`));
+  await speak({ text: "One line.", voice: "vs:Greg", out: path.join(home, "b.wav"), env: { ...env, REEL_VOICE_SEED: "random" }, deps: { run, ensure: async () => {} } });
+  assert.ok(!calls[1].includes("--seed"), "a random seed is a different cached take");
+});
+
+test("text checks skip the plan's captions and hook in the receipts look (it draws its own)", async () => {
+  const { textSamples } = await import("../src/textcheck.mjs");
+  const base = { video: { duration: 20 }, hook: { text: "Your offer sells", start: 0, duration: 2 }, captions: [{ text: "closing", start: 2.4, end: 2.54 }] };
+  assert.equal(textSamples(base).filter((x) => x.kind === "caption" || x.kind === "hook").length, 2);
+  assert.equal(textSamples({ ...base, proofReel: true, proofData: { items: [{}] } }).filter((x) => x.kind === "caption" || x.kind === "hook").length, 0);
+});

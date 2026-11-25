@@ -177,6 +177,11 @@ export function mergeOverrides(preset, o = {}) {
     // The pro hook normally sits at 260 px, over the head of a photo framed this way: put it between chin and captions.
     if (num(o.hookPosition) == null) p.hook.proPosition = 0.5;
     p.evidence = { ...(p.evidence || {}), layout: "focus", zoom: false, until: "quote", minQuoteWords: 5 };
+    // The narration is a clean cloned voice with its pauses set on purpose (reel proof): never cut it and never run
+    // it through the phone-mic cleanup (noise reduction, de-esser, compressor). Greg 2026-11-25: "the voice is also
+    // sounding off" on a reel where every pause had been cut and that chain had processed the clone.
+    p.cuts = { ...p.cuts, silence: "off", badTakes: false, fillers: false };
+    p.audio = { ...p.audio, cleanAudio: false };
   }
   if (o.zoomStyle) p.zooms.style = o.zoomStyle;
   if (o.brollCut) p.broll.cut = o.brollCut;

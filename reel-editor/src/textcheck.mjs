@@ -33,8 +33,11 @@ export function textSamples(plan = {}) {
     if (!text || end <= start) return;
     out.push({ id: `${kind}-${index}`, kind, text, start, end, duration: end - start, at: at == null ? atInside(start, end) : Math.round(n(at) * 1000) / 1000 });
   };
-  if (plan.hook) add("hook", 0, plan.hook.text, plan.hook.start, n(plan.hook.start) + n(plan.hook.duration));
-  for (let i = 0; i < (plan.captions || []).length; i++) {
+  // The reel proof receipts look (src/receipts.mjs) draws its own hook and setup lines, not plan.hook or
+  // plan.captions: checking those would time text that is never on screen.
+  const receipts = !!(plan.proofReel && plan.proofData?.items?.length);
+  if (plan.hook && !receipts) add("hook", 0, plan.hook.text, plan.hook.start, n(plan.hook.start) + n(plan.hook.duration));
+  for (let i = 0; i < (receipts ? 0 : (plan.captions || []).length); i++) {
     const item = plan.captions[i];
     add("caption", i, item.text || (item.words || []).map((word) => word.text).join(" "), item.start, item.end);
   }
