@@ -175,7 +175,7 @@ test("the caption command guards only Greg, logs a missing send line, and update
 test("Greg's captions lead with search words for coaches and pick topic hashtags; clients keep the plain rule", () => {
   const greg = buildPrompt({ transcript: "x", hook: "", voice: "v", cta: "", greg: true });
   assert.match(greg, /first line names the problem this reel solves/);
-  assert.match(greg, /coach who owns the offer, not to a rep/);
+  assert.match(greg, /coach who owns the offer, never to a rep/);
   assert.match(greg, /Never broad or mood tags/);
   assert.match(greg, /Send this to the coach who still approves every discount/);
   const client = buildPrompt({ transcript: "x", hook: "", voice: "v", cta: "" });
