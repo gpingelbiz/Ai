@@ -14,7 +14,8 @@ export function findAsks(line) {
     send: new RegExp(start + "send\\s+(?:(?:this|the)\\s+)?(?:this|it|post|reel|video|to)\\b", "i"),
     share: new RegExp(start + "share\\s+(?:(?:this|the)\\s+)?(?:this|it|post|reel|video|with|to)\\b", "i"),
     comment: new RegExp(start + "(?:comment\\s+(?!from\\b|by\\b|was\\b|is\\b|about\\b)\\S+|(?:leave|drop|add)\\s+(?:a|your)\\s+comment\\b)", "i"),
-    dm: new RegExp(start + "(?:dm\\s+\\S+|(?:send|drop|message)\\s+(?:me|us)\\b)", "i"),
+    // "DM automations", "DM responses" and the like name a thing, not an ask.
+    dm: new RegExp(start + "(?:dm\\s+(?!(?:automations?|responses?|replies|inbox|inboxes|setters?|setting|flows?|funnels?|sequences?|conversations?|threads?|campaigns?|outreach|leads?)\\b)\\S+|(?:send|drop|message)\\s+(?:me|us)\\b)", "i"),
     follow: new RegExp(start + "follow\\s+(?:me\\b|us\\b|for\\b|along\\b|@|this\\s+(?:page|account)\\b)", "i"),
     link: /\b(?:click|tap|visit|check|use|hit|open)\s+(?:on\s+)?(?:the\s+)?link\b|\blink\s+in\s+(?:(?:my|the)\s+)?bio\b/i,
   };
