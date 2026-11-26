@@ -108,6 +108,15 @@ test("findAsks detects engagement instructions, including mixed case, without tr
   for (const [line, expected] of cases) assert.deepEqual(findAsks(line), expected, line);
 });
 
+test("naming a DM thing is not an ask, so a proof caption keeps the reel's order", () => {
+  assert.deepEqual(findAsks("We built his comment and DM automations. Once they were running, this."), []);
+  assert.deepEqual(findAsks("Now it\u2019s all about sales, DM responses and massive action"), []);
+  assert.deepEqual(findAsks("If your offer already sells and you\u2019re still on every call, DM me."), ["dm"]);
+  assert.deepEqual(findAsks("DM me the word SYSTEM"), ["dm"]);
+  const cap = "Your offer sells.\nWe built his content system. \u201cA\u201d\nWe built his comment and DM automations. Once they were running, this. \u201cB\u201d\nI build the sales system under the offer you already have.";
+  assert.equal(oneAsk(cap), cap);
+});
+
 test("oneAsk keeps the final ask line and moves it to the caption ending, preserving the specific recipient", () => {
   const send = "Send this to the owner who still approves every discount.";
   assert.equal(oneAsk(`Save this.\nDiscounts need a limit.\nComment READY.\n${send}`), `Discounts need a limit.\n${send}`);

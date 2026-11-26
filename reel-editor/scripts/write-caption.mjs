@@ -293,7 +293,9 @@ async function main() {
     if (!j.hashtagArm) j.hashtags = [];
   }
   if (proof) j.caption = proofCaption(plan.proofData);
-  j.caption = oneAsk(j.caption, { greg, cta });
+  // A proof caption is the narration in order and asks for nothing, so no line is moved as "the ask" (11-26: Blake's
+  // "comment and DM automations" setup was read as a DM ask and moved under the closer).
+  else j.caption = oneAsk(j.caption, { greg, cta });
   j.caption = cleanCaption(j.caption, { greg: path.basename(voicePath) === "greg.md" });
   if (greg && !cta && !findAsks(j.caption.split("\n").at(-1)).includes("send")) console.log("caption: no send line");
   fs.writeFileSync(path.join(workDir, "caption.json"), JSON.stringify(j, null, 2) + "\n");
