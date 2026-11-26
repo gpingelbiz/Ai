@@ -292,6 +292,8 @@ const CTA_PATTERNS = [
   /\bcomment(?: the word)? [a-z]+/, /\b(?:dm|message|text) me\b/, /\bsend me\b/, /\bjoin (?:me|us)\b/, /\binvite you\b/,
   /\bbook (?:a|your|an) (?:free )?(?:call|session|spot|seat)\b/, /\bsign up\b/, /\bregister (?:now|today|here|for|at)\b/,
   /\bapply (?:now|today|here|at|for)\b/, /\b(?:click|tap) (?:on )?the link\b/, /\bfollow me\b/,
+  // The v11 front door (Reel 11, 11-25: "Take the free sales scorecard." read as no ask at all).
+  /\b(?:take|grab|get|try|do) (?:the|my|our|this) (?:free |quick )?(?:sales )?(?:score ?card|quiz|assessment)\b/,
 ];
 
 /**
@@ -338,7 +340,7 @@ export function contrastProblems(frames = [], { minRatio = 1.8, share = 0.3 } = 
 /** Notes only (never a hold): no spoken ask and no on-screen CTA anywhere. */
 export function ctaNotes(plan = {}) {
   const spoken = (plan.words || []).filter((w) => !w.drop).map((w) => textTokens(w.text).join(" ")).filter(Boolean).join(" ");
-  if (plan.cta || CTA_PATTERNS.some((re) => re.test(spoken)) || /\blink in (?:my )?bio\b/.test(spoken)) return [];
+  if (plan.cta || CTA_PATTERNS.some((re) => re.test(spoken)) || /\b(?:link|score ?card|quiz) (?:is )?in (?:my )?bio\b/.test(spoken)) return [];
   return [{ code: "no-cta", level: "note", message: "nothing in the reel asks the viewer to do anything (no spoken ask, no CTA card); the post caption has to carry it" }];
 }
 
