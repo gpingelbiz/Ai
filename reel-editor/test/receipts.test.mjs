@@ -359,6 +359,17 @@ test("an added word is blamed on the line that was playing when it was heard", a
   assert.equal(checkLines(lines, [...heard.slice(0, 3), { text: "All", start: 1.7 }, { text: "right,", start: 1.9 }, ...heard.slice(5)].filter((w) => w.text !== "All" || w.start === 1.7)).every((x) => x.ok), true, "'all right' is how a transcriber writes 'alright'");
 });
 
+test("the listen-back reads a transcriber's 30% as the 30 percent the voice said", async () => {
+  const { checkLines, speechTokens } = await import("../src/voicecheck.mjs");
+  assert.deepEqual(speechTokens("down by 30%."), ["down", "by", "30", "percent"]);
+  assert.deepEqual(speechTokens("thirty percent"), ["30", "percent"]);
+  const lines = [{ kind: "quote", text: "I\u2019ve shortened my content creation time down by 30 percent", start: 0, duration: 3 }];
+  const heard = "I've shortened my content creation time down by 30%.".split(" ").map((text, i) => ({ text, start: i * 0.3 }));
+  assert.equal(checkLines(lines, heard)[0].ok, true);
+  const dropped = heard.slice(0, -1).concat([{ text: "30.", start: 2.7 }]);
+  assert.deepEqual(checkLines(lines, dropped)[0].problems, ['dropped "percent"'], "a real drop still counts");
+});
+
 test("the transcriber watchdog takes a written result from a process that never exits, and stops one that takes too long", async () => {
   const { runWatched } = await import("../src/transcribe.mjs");
   const dir = tmp();

@@ -11,10 +11,14 @@ const JOIN = { "all right": "alright", "going to": "gonna", "want to": "wanna", 
 const LIGHT = new Set(["a", "an", "the", "of", "to", "and", "or", "but", "so", "uh", "um", "oh", "is", "it", "in", "on", "at", "that", "this", "s", "d", "ll", "ve", "re", "m"]);
 const NUM = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100 };
 
-/** Raw speech tokens of one piece of text: lower case, contractions split ("she'd" -> "she", "d"). */
+// Symbols a transcriber writes for spoken words (11-26: the voice said "30 percent", Whisper wrote "30%").
+const SYMBOLS = [[/(\d)\s*%/g, "$1 percent"], [/\s&\s/g, " and "]];
+
+/** Raw speech tokens of one piece of text: lower case, contractions split ("she'd" -> "she", "d"), "%" read as "percent". */
 function rawTokens(text) {
   const out = [];
-  for (const t of tokenSpans(text)) for (const part of t.text.split("'")) if (part) out.push(part);
+  const said = SYMBOLS.reduce((s, [re, to]) => s.replace(re, to), String(text || ""));
+  for (const t of tokenSpans(said)) for (const part of t.text.split("'")) if (part) out.push(part);
   return out;
 }
 
