@@ -14,7 +14,7 @@ import { renderHookVariants } from "./pipeline.mjs";
 import { writeJSON, log } from "./util.mjs";
 import { resolveBrandTokens, tokensCSS, validateBrand } from "./brandtokens.mjs";
 import { runProof } from "./proof.mjs";
-import { speak } from "./voicestudio.mjs";
+import { speak } from "./voice.mjs";
 
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
 
@@ -33,7 +33,7 @@ Usage
   reel stitch <folder|clips...> [--order file] [--preset ...] [edit options]
                                     ordered clips into one reel, with an order sheet and scene joins
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
-  reel proof [cards...] [--from <cards folder>] [--count 3] [--photo <file>|--photos <folder>] [--voice vs:Greg]
+  reel proof [cards...] [--from <cards folder>] [--count 3] [--photo <file>|--photos <folder>] [--voice el:<id>|vs:Greg]
              [--script <script.json>] [--name <stem>] [--drop <raw folder>] [--no-drop] [--dry-run]
              [--specs <lib-specs.json>] [--no-specs] [--list <coach-cards.json>] [--no-voice-check]
                                     narrated proof reel for coaches, no filming: cards come from the coach list
@@ -41,7 +41,7 @@ Usage
                                     <folder> picks from a folder instead); your cloned voice reads real client texts, drawn
                                     full screen in the receipts look (texts from the card library's specs, names covered,
                                     no dates); dropped in Raw - Reel for the normal edit, gate and delivery (AI-labelled)
-  reel say "<text>" -o <file> [--voice vs:Greg]   one line in your cloned voice (VoiceStudio)
+  reel say "<text>" -o <file> [--voice el:<id>|vs:Greg]   one line in your cloned voice (REEL_PROOF_VOICE: ElevenLabs el:<voice id>, or VoiceStudio vs:<name>)
   reel ending <workdir> [--json]    check the opening and ending without rendering
   reel check <workdir> [--fix]     check an existing render and print the master report
   reel build <workdir> [--no-render] rebuild the HyperFrames project from an edited plan.json (then render)
@@ -144,8 +144,8 @@ Options (edit / batch)
   --no-clean-audio         skip noise reduction + loudness normalization
   --no-room-tone           fade jump cuts to silence instead of laying a quiet room bed underneath them
   --sfx                    ElevenLabs whoosh on zoom-ins and pop on the hook (needs ELEVENLABS_API_KEY)
-  --voiceover <script.txt> narration track: --voice <ElevenLabs id> or --voice vs:Greg (your cloned voice in
-                           VoiceStudio, cosyvoice engine; vs:Greg@voxcpm2 picks the other)   --replace-audio (mute footage)
+  --voiceover <script.txt> narration track: --voice <ElevenLabs id>, --voice el:<id> (your ElevenLabs clone, Eleven
+                           v4) or --voice vs:Greg (VoiceStudio, cosyvoice engine; vs:Greg@voxcpm2 picks the other)   --replace-audio (mute footage)
   --ai-voice               the voice track is a clone: Publish marks the post AI-made (#aivoice in a dropped file)
   --proof-reel             reel proof layout: the supplied texts are the only cards, shown whole above the captions
   --proof-data <json>      reel proof's proof.json (texts, quotes, wall): the reel is drawn in the receipts look

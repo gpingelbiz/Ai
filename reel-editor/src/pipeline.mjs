@@ -1226,6 +1226,9 @@ export async function prepareAudio({ workDir, projectDir, preset, opts, duration
     if (voicestudio.isVoiceStudioVoice(voiceId)) {
       log(`voiceover: generating in the cloned voice ${voiceId} (VoiceStudio)…`);
       await voicestudio.speak({ text, voice: voiceId, out: dst });
+    } else if (eleven.isCloneVoice(voiceId)) {
+      log(`voiceover: generating in the cloned voice ${voiceId} (ElevenLabs)…`);
+      await eleven.speakClone({ text, voice: voiceId, out: dst, seed: process.env.REEL_VOICE_SEED ?? voicestudio.DEFAULT_SEED });
     } else {
       log("voiceover: generating with ElevenLabs…");
       await eleven.tts({ text, voiceId, out: dst });
