@@ -84,6 +84,9 @@ test("receipts timing: one thing on screen at a time, hook gone before the first
   assert.ok(b.pops.at(-1) <= b.qa - 0.2, "every bubble is up before its quote is read");
   assert.equal(b.typing, null, "a short setup gets the text straight away");
   assert.ok(a.typing != null && c.typing != null);
+  // Never an empty text on screen: dots or the first bubble arrive with the text itself.
+  T.threads.forEach((t, i) => assert.ok((t.typing ?? t.pops[0]) - t.into <= 0.06, `text ${i + 1} rises with something in it`));
+  assert.ok(a.pops[0] - a.typing >= 0.75, "the dots get their moment before the text");
   assert.deepEqual(T.close.sentences.map((s) => s.at), [24.253, 25.893, 27.253, 28.273]);
   T.setups.forEach((s, i) => assert.ok(s.show >= T.threads[i].into, `setup ${i + 1} shows once its text is in`));
   assert.equal(T.threads[1].quote.length, 11);
@@ -368,3 +371,12 @@ test("the transcriber watchdog takes a written result from a process that never 
   const ok = await runWatched("/bin/bash", ["-c", `echo '{}' > '${path.join(dir, "fast.json")}'`], { out: path.join(dir, "fast.json"), settleMs: 5000 });
   assert.equal(ok.code, 0, "a normal exit resolves as before");
 });
+
+test("receipts: no typing dots when the thread opens on Greg's own message, and it still never rises empty", () => {
+  const items = DATA.items.map((it, i) => (i === 0 ? { ...it, messages: [{ who: "greg", text: "I'll build you a book a call funnel" }, ...it.messages] } : it));
+  const T = receiptsTimeline({ ...DATA, items }, HEARD, 29.4);
+  assert.equal(T.threads[0].typing, null, "nobody sees their own typing dots");
+  assert.ok(T.threads[0].pops[0] - T.threads[0].into <= 0.06);
+  assert.ok(T.threads[0].pops.at(-1) <= T.threads[0].qa - 0.2, "every bubble is still up before the quote");
+});
+
