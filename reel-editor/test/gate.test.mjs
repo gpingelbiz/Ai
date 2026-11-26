@@ -128,6 +128,12 @@ test("ctaProblems finds a spoken ask the cut lost, and leaves kept asks and sign
   assert.deepEqual(ctaProblems(null), []);
   assert.equal(ctaNotes({ words: body }).length, 1);
   assert.deepEqual(ctaNotes({ words: words("Comment BOOTCAMP below.", 0) }), []);
+  // The scorecard is an ask too (Reel 11's close).
+  assert.deepEqual(ctaNotes({ words: words("Want to see where yours stands? Take the free sales scorecard.", 0) }), []);
+  assert.deepEqual(ctaNotes({ words: words("The free sales scorecard is in my bio.", 0) }), []);
+  assert.equal(ctaNotes({ words: words("I built a scorecard for my own team.", 0) }).length, 1, "talking about a scorecard is not an ask");
+  const [cut] = ctaProblems({ originalDuration: 8, words: [...body, ...words("Take the free sales scorecard.", 4, "ending")] });
+  assert.equal(cut?.code, "cta-cut", "a scorecard ask the cut lost holds like any other ask");
 });
 
 test("a closing invitation is the point of the reel, not a sign-off to trim", () => {
