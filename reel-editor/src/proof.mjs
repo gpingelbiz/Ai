@@ -1,5 +1,5 @@
-// reel proof: a narrated proof reel with no filming. Greg's cloned voice (VoiceStudio, src/voicestudio.mjs) reads
-// real client texts. The narration goes over a slow push on a real photo of Greg (it carries the voice and makes the
+// reel proof: a narrated proof reel with no filming. Greg's cloned voice (his ElevenLabs clone as el:<voice id> since
+// 2026-11-25, or a VoiceStudio voice as vs:<name>; src/voice.mjs) reads real client texts. The narration goes over a slow push on a real photo of Greg (it carries the voice and makes the
 // cover) and the normal drop-folder watcher edits, gates and delivers it like any other reel (#aivoice marks it
 // AI-made for Publish).
 // With the card library's specs (Testimonials/Social/lib-specs.json) the texts are read exactly as sent, names still
@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { claudeText, firstJSON } from "./claude.mjs";
 import { ocrBinary, parseOcrJSON } from "./evidence.mjs";
-import { DEFAULT_SEED, parseVoice, speak } from "./voicestudio.mjs";
+import { DEFAULT_SEED, parseVoice, speak } from "./voice.mjs";
 import { checkLines } from "./voicecheck.mjs";
 import { ensureDir, log, r3, readJSON, run, writeJSON } from "./util.mjs";
 
@@ -323,7 +323,8 @@ export async function renderNarration(script, { voice, dir, deps = {}, check = t
   const seeds = lines.map(() => (Number.isFinite(base) ? base : DEFAULT_SEED));
   const take = async (i) => {
     const raw = path.join(parts, `${String(i + 1).padStart(2, "0")}-${lines[i].kind}.wav`);
-    await (deps.speak || speak)({ text: lines[i].text, voice, out: raw, seed: seeds[i], env });
+    // The lines either side go along so an ElevenLabs take keeps the flow of the whole read (VoiceStudio ignores them).
+    await (deps.speak || speak)({ text: lines[i].text, voice, out: raw, seed: seeds[i], env, previousText: lines[i - 1]?.text || "", nextText: lines[i + 1]?.text || "" });
     const clean = raw.replace(/\.wav$/, "-48k.wav");
     await (deps.run || run)("ffmpeg", ["-y", "-v", "error", "-i", raw, "-af", "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05,areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08,areverse", "-ac", "1", "-ar", "48000", clean], { capture: true });
     files[i] = clean;
