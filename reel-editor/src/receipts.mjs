@@ -167,10 +167,13 @@ export function receiptsTimeline(data, heard, duration) {
     const out = outs[i];
     const q = quotes[i];
     const qa = q.start;
-    // Typing dots only when the setup leaves time for them; a short setup gets the text straight away.
-    const typing = qa - into >= 2.4 ? into + 0.3 : null;
+    // The text never rises empty (preflight 11-25, Reel 10 at 0:19.4: only the "Real text" label on screen): the
+    // typing dots ride in with it when the setup leaves time for them, otherwise the first bubble pops as it lands.
+    // Dots only when the thread opens on the client's message: nobody sees their own typing dots.
     const nb = (it.messages || []).length;
-    let p0 = typing != null ? typing + 0.5 : into + 0.2;
+    const theirsFirst = (it.messages || [])[0]?.who !== "greg";
+    const typing = theirsFirst && qa - into >= 2.4 ? into : null;
+    let p0 = typing != null ? typing + 0.8 : into + 0.05;
     const latest = qa - 0.25;
     if (p0 > latest) p0 = Math.max(into + 0.1, latest);
     const gap = nb > 1 ? Math.max(0.12, Math.min(0.35, (latest - p0) / (nb - 1))) : 0;
