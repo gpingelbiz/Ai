@@ -169,3 +169,22 @@ test("normal captions, hooks and the CTA on a vertical reel take the zone's marg
   const wide = renderHTML({ ...plan, canvas: { width: H, height: W }, video: { ...plan.video, width: H, height: W } }, "footage.mp4");
   assert.match(wide, /\.cap \{\s*position: absolute; left: 7%; right: 12%;/);
 });
+
+test("pro captions broken for the old 780 px plate are broken again by the gate instead of holding the reel", async () => {
+  const { gateFixes } = await import("../src/gate.mjs");
+  const say = (text, t0) => text.split(" ").map((w, i) => ({ text: w, start: t0 + i * 0.3, end: t0 + i * 0.3 + 0.25 }));
+  // "Their monthly win" is 691 px at 80 px: one line on the old plate, two on today's 672 px line.
+  const a = say("Their monthly win", 1), b = say("People set their win conditions", 3);
+  const plan = { canvas: { width: 1080, height: 1920 }, style: { captions: { pro: true } },
+    captions: [{ words: a, text: "Their monthly win", start: 1, end: 2, lines: [3], y: 1248, thought: 0 }, { words: b, text: "People set their win conditions", start: 3, end: 4.6, lines: [5], y: 1248, thought: 1 }],
+    proGraphics: [{ id: "w1", type: "wordMark", start: b[3].start, end: b[3].end, caption: 1, captionWord: 3 }] };
+  const problem = { code: "safe-zone", level: "hold", at: 1.5, layers: ["captions"], kinds: ["captions"], edges: ["buttons"], times: [1.5] };
+  const { plan: fixed, applied, unfixable } = gateFixes([problem], plan);
+  assert.deepEqual(unfixable, []);
+  assert.match(applied[0], /captions broken again for the 720 px plate/);
+  assert.deepEqual(fixed.captions[0].lines, [2, 1]);
+  for (const g of fixed.captions) assert.ok(g.lines.length <= 2 && g.lines.reduce((x, y) => x + y, 0) === g.words.length);
+  assert.equal(fixed.captions.flatMap((g) => g.words).length, a.length + b.length, "no word is lost");
+  // A second captions problem in the same round is not broken again.
+  assert.equal(gateFixes([problem, problem], plan).applied.length, 1);
+});

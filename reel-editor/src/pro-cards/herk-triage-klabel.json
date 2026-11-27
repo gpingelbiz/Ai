@@ -1,0 +1,356 @@
+[
+  {
+    "id": "kallaway.t2.label.badge",
+    "outcome": "merged",
+    "type": "term-definition",
+    "reason": "The small icon tile is decorative and the remaining content is a term over its definition."
+  },
+  {
+    "id": "kallaway.t2.label.brace",
+    "outcome": "variant",
+    "type": "definition-brace",
+    "reason": "A brace draws from its center in both directions, grouping the two spoken lines."
+  },
+  {
+    "id": "kallaway.t2.label.bracket",
+    "outcome": "merged",
+    "type": "definition-underline",
+    "reason": "The title's drawing corners serve the same term-emphasis beat as the retained drawn underline."
+  },
+  {
+    "id": "kallaway.t2.label.bubble",
+    "outcome": "merged",
+    "type": "definition-tooltip",
+    "reason": "The pointer tail and the term-over-detail bubble survive in the same tooltip design."
+  },
+  {
+    "id": "kallaway.t2.label.byline",
+    "outcome": "unfit",
+    "reason": "The layout exists to carry a person's name and job title."
+  },
+  {
+    "id": "kallaway.t2.label.callout",
+    "outcome": "new",
+    "type": "reason-callout",
+    "reason": "A spoken claim and its rationale get separate reveals, with the why revealed on the second line."
+  },
+  {
+    "id": "kallaway.t2.label.category",
+    "outcome": "merged",
+    "type": "term-definition",
+    "reason": "The category chip is optional classification around the same term and definition, so the glossary header carries it."
+  },
+  {
+    "id": "kallaway.t2.label.checkmark",
+    "outcome": "new",
+    "type": "result-check",
+    "reason": "A check draws when Greg gives the evidence for the result he just named."
+  },
+  {
+    "id": "kallaway.t2.label.chipstat",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "A lone prominent spoken multiplier and its explanation already fit the compact stat card."
+  },
+  {
+    "id": "kallaway.t2.label.comparemini",
+    "outcome": "new",
+    "type": "split-benchmark",
+    "reason": "Two comparable benchmarks keep their respective spoken qualifiers under the figures; both values became spoken ranges."
+  },
+  {
+    "id": "kallaway.t2.label.coord",
+    "outcome": "unfit",
+    "reason": "Its defining coordinate chip contains baked latitude and longitude unrelated to either spoken field."
+  },
+  {
+    "id": "kallaway.t2.label.counter",
+    "outcome": "new",
+    "type": "count-stack-label",
+    "reason": "A vertical wipe rolls in the spoken count, followed separately by the named measure and its reporting window or population."
+  },
+  {
+    "id": "kallaway.t2.label.crosshair",
+    "outcome": "merged",
+    "type": "definition-leader",
+    "reason": "The reticle serves as a subject anchor for the same attached annotation; the retained leader stays within the card box."
+  },
+  {
+    "id": "kallaway.t2.label.dashed",
+    "outcome": "merged",
+    "type": "definition-leader",
+    "reason": "The dashed connector and endpoints serve the same draw-on marker-to-definition motion."
+  },
+  {
+    "id": "kallaway.t2.label.definition",
+    "outcome": "new",
+    "type": "term-definition",
+    "reason": "A glossary entry separates the named term from its spoken explanation with a rule that draws on the detail."
+  },
+  {
+    "id": "kallaway.t2.label.deltachip",
+    "outcome": "new",
+    "type": "reported-change-chip",
+    "reason": "A signed change badge reveals the spoken delta separately from the measure and its explicit comparison baseline."
+  },
+  {
+    "id": "kallaway.t2.label.eyebrow",
+    "outcome": "merged",
+    "type": "definition-underline",
+    "reason": "The main term receives the same draw-on underline; the source eyebrow is an optional title treatment."
+  },
+  {
+    "id": "kallaway.t2.label.fact",
+    "outcome": "merged",
+    "type": "reason-callout",
+    "reason": "The fact badge drops away and the spoken claim still leads into its supporting rationale."
+  },
+  {
+    "id": "kallaway.t2.label.flag",
+    "outcome": "merged",
+    "type": "definition-leader",
+    "reason": "The pole and small pennant serve as a subject anchor before the same callout detail."
+  },
+  {
+    "id": "kallaway.t2.label.formula",
+    "outcome": "duplicate",
+    "type": "formula",
+    "reason": "The source's result, operator and terms already fit the equation design when the ingredients and result are all spoken."
+  },
+  {
+    "id": "kallaway.t2.label.hash",
+    "outcome": "merged",
+    "type": "definition-tab",
+    "reason": "Dropping the decorative hash leaves the same separate term chip above its explanation."
+  },
+  {
+    "id": "kallaway.t2.label.highlightbox",
+    "outcome": "merged",
+    "type": "definition-underline",
+    "reason": "The drawn rectangle is another outline around the term, which the retained underline emphasizes before its detail."
+  },
+  {
+    "id": "kallaway.t2.label.iconchip",
+    "outcome": "merged",
+    "type": "term-definition",
+    "reason": "The decorative bolt drops away and the spoken term and gloss remain on one panel."
+  },
+  {
+    "id": "kallaway.t2.label.info",
+    "outcome": "merged",
+    "type": "term-definition",
+    "reason": "The small information badge adds no separate information to the term and definition."
+  },
+  {
+    "id": "kallaway.t2.label.infocard",
+    "outcome": "merged",
+    "type": "term-definition",
+    "reason": "The icon and footer ornament drop away, leaving the same glossary heading, term and detail."
+  },
+  {
+    "id": "kallaway.t2.label.keycap",
+    "outcome": "new",
+    "type": "shortcut-key",
+    "reason": "A keyboard chord sits on a raised keycap that presses down when its spoken effect appears."
+  },
+  {
+    "id": "kallaway.t2.label.keyword",
+    "outcome": "merged",
+    "type": "term-definition",
+    "reason": "The underlay supports an emphasized keyword and explanatory note with the same glossary structure."
+  },
+  {
+    "id": "kallaway.t2.label.leader",
+    "outcome": "variant",
+    "type": "definition-leader",
+    "reason": "A curved leader draws from an in-bounds marker into the definition panel."
+  },
+  {
+    "id": "kallaway.t2.label.legend",
+    "outcome": "unfit",
+    "reason": "The swatches require a matching chart or image to explain; the standalone card supplies no plot to key."
+  },
+  {
+    "id": "kallaway.t2.label.measure",
+    "outcome": "new",
+    "type": "duration-bracket-label",
+    "reason": "A two-ended bracket draws from the spoken duration and a second line explains what the time measures."
+  },
+  {
+    "id": "kallaway.t2.label.meterchip",
+    "outcome": "merged",
+    "type": "percent-label-bar",
+    "reason": "The count and fill present the same measured bar and context without a hard-coded denominator or percentage."
+  },
+  {
+    "id": "kallaway.t2.label.metric",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "The pill is a surface treatment for the existing prominent spoken number above its compact qualifier."
+  },
+  {
+    "id": "kallaway.t2.label.micropie",
+    "outcome": "duplicate",
+    "type": "percent-ring",
+    "reason": "A proportion fills a small donut beside its spoken qualification in the existing percentage ring."
+  },
+  {
+    "id": "kallaway.t2.label.minibar",
+    "outcome": "new",
+    "type": "percent-label-bar",
+    "reason": "The metric title, numerical percentage and measured population reveal separately around a bar that fills to the spoken fraction."
+  },
+  {
+    "id": "kallaway.t2.label.node",
+    "outcome": "merged",
+    "type": "definition-leader",
+    "reason": "The expansive node pulses and adornments drop away, leaving a marker connected to an explanation."
+  },
+  {
+    "id": "kallaway.t2.label.note",
+    "outcome": "merged",
+    "type": "definition-underline",
+    "reason": "The pin and tilt are surface treatments around the same underlined term and detail."
+  },
+  {
+    "id": "kallaway.t2.label.numbercallout",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "The counter becomes an exact figure reveal and the plain value-above-context layout is already a stat."
+  },
+  {
+    "id": "kallaway.t2.label.percent",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "An exact spoken percentage and what it measures already fit the existing compact stat presentation."
+  },
+  {
+    "id": "kallaway.t2.label.pointer",
+    "outcome": "merged",
+    "type": "definition-leader",
+    "reason": "A straight rather than curved connector has the same purpose and timed draw as the retained leader."
+  },
+  {
+    "id": "kallaway.t2.label.price",
+    "outcome": "new",
+    "type": "offer-price-tag",
+    "reason": "A price tag and its separate coverage strip preserve the price reveal without baked currency, price or billing interval."
+  },
+  {
+    "id": "kallaway.t2.label.progress",
+    "outcome": "duplicate",
+    "type": "percent-ring",
+    "reason": "A ring fills to a spoken fraction of the whole, with the metric and detail grounded together as its context."
+  },
+  {
+    "id": "kallaway.t2.label.pulse",
+    "outcome": "merged",
+    "type": "definition-leader",
+    "reason": "The concentric pulses are decorative around the same annotation marker."
+  },
+  {
+    "id": "kallaway.t2.label.qmark",
+    "outcome": "new",
+    "type": "quote-explained",
+    "reason": "A quotation mark accompanies a spoken teaching line and a separately revealed interpretation."
+  },
+  {
+    "id": "kallaway.t2.label.quote",
+    "outcome": "unfit",
+    "reason": "The attribution row exists for a named speaker and source citation."
+  },
+  {
+    "id": "kallaway.t2.label.rating",
+    "outcome": "duplicate",
+    "type": "rating",
+    "reason": "The existing rating renders a spoken score and fills marks only against its spoken scale."
+  },
+  {
+    "id": "kallaway.t2.label.ribbon",
+    "outcome": "merged",
+    "type": "lesson-ribbon",
+    "reason": "The Key Insight strip and the Takeaway pill become one heading ribbon above a spoken teaching line."
+  },
+  {
+    "id": "kallaway.t2.label.ringmark",
+    "outcome": "merged",
+    "type": "definition-leader",
+    "reason": "The ring and ticks mark the same callout anchor without adding information or a second layout."
+  },
+  {
+    "id": "kallaway.t2.label.search",
+    "outcome": "new",
+    "type": "search-explainer",
+    "reason": "The search field adds a grounded explanation beneath the query and the caret clears when that explanation starts."
+  },
+  {
+    "id": "kallaway.t2.label.sparkchip",
+    "outcome": "duplicate",
+    "type": "kpi-tile",
+    "reason": "The existing KPI tile already draws a decorative sparkline beside a grounded metric, without claiming made-up data points."
+  },
+  {
+    "id": "kallaway.t2.label.spec",
+    "outcome": "new",
+    "type": "spec-sheet",
+    "reason": "Two spoken property and value pairs keep the source's table and row-by-row build; omit its release date and fixed sample specs."
+  },
+  {
+    "id": "kallaway.t2.label.status",
+    "outcome": "new",
+    "type": "live-status",
+    "reason": "A status indicator lights beside an explicitly available offer, then the spoken terms of access write in."
+  },
+  {
+    "id": "kallaway.t2.label.step",
+    "outcome": "new",
+    "type": "step-detail",
+    "reason": "One named action is followed by its how-to line; the fixed source ordinal gives way to an unnumbered drawn arrow."
+  },
+  {
+    "id": "kallaway.t2.label.tag",
+    "outcome": "variant",
+    "type": "definition-tab",
+    "reason": "The term unfolds on a raised tab above an independently revealed explanation strip."
+  },
+  {
+    "id": "kallaway.t2.label.takeaway",
+    "outcome": "variant",
+    "type": "lesson-ribbon",
+    "reason": "A short ribbon opens vertically above the spoken takeaway within an on-footage placement rect."
+  },
+  {
+    "id": "kallaway.t2.label.tcode",
+    "outcome": "unfit",
+    "reason": "The defining HH:MM:SS:FF readout is an exact frame number absent from the spoken fields."
+  },
+  {
+    "id": "kallaway.t2.label.timestamp",
+    "outcome": "unfit",
+    "reason": "The leading clock chip marks a fixed, unspoken timestamp; the remaining term and detail are a generic callout."
+  },
+  {
+    "id": "kallaway.t2.label.toast",
+    "outcome": "new",
+    "type": "alert-preview",
+    "reason": "A drawn bell accompanies two exact spoken fields for an alert subject and body; omit the baked timestamp."
+  },
+  {
+    "id": "kallaway.t2.label.tooltip",
+    "outcome": "variant",
+    "type": "definition-tooltip",
+    "reason": "A filled pointer tail anchors a compact tooltip whose panel wipes open along the pointer's direction."
+  },
+  {
+    "id": "kallaway.t2.label.underline",
+    "outcome": "variant",
+    "type": "definition-underline",
+    "reason": "A rule matched to the term width draws on the term reveal, before the supporting detail."
+  },
+  {
+    "id": "kallaway.t2.label.warning",
+    "outcome": "new",
+    "type": "risk-explainer",
+    "reason": "A warning triangle identifies a named risk followed by its independently revealed consequence."
+  }
+]

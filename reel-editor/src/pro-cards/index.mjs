@@ -19,6 +19,15 @@ import { CARDS as procedure2 } from "./procedure-2.mjs";
 import { CARDS as proof2 } from "./proof-2.mjs";
 import { CARDS as conversation2 } from "./conversation-2.mjs";
 import { CARDS as warningPayoff2 } from "./warning-payoff-2.mjs";
+// The Herk Edit Kit import (2026-11-27), restyled to the pro look: see HERK-LICENSE.md and herk-triage-*.json.
+import { CARDS as herkKstat } from "./herk-kstat.mjs";
+import { CARDS as herkKoverview } from "./herk-koverview.mjs";
+import { CARDS as herkKsection } from "./herk-ksection.mjs";
+import { CARDS as herkKlower } from "./herk-klower.mjs";
+import { CARDS as herkKlabel } from "./herk-klabel.mjs";
+import { CARDS as herkVstat } from "./herk-vstat.mjs";
+import { CARDS as herkVoverview } from "./herk-voverview.mjs";
+import { CARDS as herkVlabel } from "./herk-vlabel.mjs";
 // Batch builders: add one import line and one spread each; nothing else in this file changes.
 
 export const CARDS = Object.freeze({
@@ -32,6 +41,14 @@ export const CARDS = Object.freeze({
   ...proof2,
   ...conversation2,
   ...warningPayoff2,
+  ...herkKstat,
+  ...herkKoverview,
+  ...herkKsection,
+  ...herkKlower,
+  ...herkKlabel,
+  ...herkVstat,
+  ...herkVoverview,
+  ...herkVlabel,
 });
 
 // Designs (since 2026-11-27, the Herk Edit Kit import). A card may be another design of an existing type: it sets

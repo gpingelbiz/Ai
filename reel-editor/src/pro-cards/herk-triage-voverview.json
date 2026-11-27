@@ -1,0 +1,228 @@
+[
+  {
+    "id": "vox-explainer.t1.section.circle",
+    "outcome": "unfit",
+    "reason": "The composition relies on the archive image opposite the headline and a circle behind the words, which the pro word-mark rules prohibit."
+  },
+  {
+    "id": "vox-explainer.t1.section.markerbox",
+    "outcome": "new",
+    "type": "stacked-title",
+    "reason": "Short spoken headline fragments rise into stacked blocks, with the final phrase on gold and the episode badge removed."
+  },
+  {
+    "id": "vox-explainer.t1.section.cutout",
+    "outcome": "unfit",
+    "reason": "The sliding subject image is the focal point and the accent medallion contains a logo."
+  },
+  {
+    "id": "vox-explainer.t1.section.stacked",
+    "outcome": "merged",
+    "type": "stacked-title",
+    "reason": "The masked line rise and final emphasis become the same headline stack after dropping the word circle and credit."
+  },
+  {
+    "id": "vox-explainer.t1.section.correction",
+    "outcome": "duplicate",
+    "type": "word-swap",
+    "reason": "The inline strike and replacement above a single word are already in word-swap after dropping the wordmark."
+  },
+  {
+    "id": "vox-explainer.t1.section.classified",
+    "outcome": "duplicate",
+    "type": "verdict-stamp",
+    "reason": "Dropping the filing code, exhibit label and decorative props leaves a spoken claim on paper with a tilted judgment stamp."
+  },
+  {
+    "id": "vox-explainer.t1.section.crt",
+    "outcome": "new",
+    "type": "chapter-screen",
+    "reason": "The center-line power-on reveal survives as a framed topic slate with a single sweep."
+  },
+  {
+    "id": "vox-explainer.t1.section.collage",
+    "outcome": "merged",
+    "type": "phrase-sweep",
+    "reason": "The plain setup and marked payoff survive as a selective phrase wipe after removing the logo and archive scraps."
+  },
+  {
+    "id": "vox-explainer.t1.section.fullbleed",
+    "outcome": "unfit",
+    "reason": "The photographic background supplies the full-frame composition and camera move."
+  },
+  {
+    "id": "vox-explainer.t1.section.split",
+    "outcome": "unfit",
+    "reason": "The image panel supplies one half of the split and the source card's defining slide-in."
+  },
+  {
+    "id": "vox-explainer.t1.section.stamp",
+    "outcome": "duplicate",
+    "type": "verdict-stamp",
+    "reason": "The tilted verdict impression is already available once the filing date is dropped."
+  },
+  {
+    "id": "vox-explainer.t1.section.ticker",
+    "outcome": "variant",
+    "type": "headline-strap",
+    "reason": "A short spoken detail rises in a bottom news strap under the lead, retaining the two-part note slots."
+  },
+  {
+    "id": "vox-explainer.t1.section.indexcard",
+    "outcome": "new",
+    "type": "tabbed-note",
+    "reason": "A rising tab introduces a ruled note with a spoken title and a separately timed spoken clarification."
+  },
+  {
+    "id": "vox-explainer.t1.section.tornstrip",
+    "outcome": "merged",
+    "type": "phrase-sweep",
+    "reason": "The marked phrase survives as a gold strip after dropping the newsprint columns, torn-paper treatment and credit."
+  },
+  {
+    "id": "vox-explainer.t1.section.numeral",
+    "outcome": "new",
+    "type": "chapter-number",
+    "reason": "A grounded chapter count anchors the upper right and a rule draws under the topic as it is spoken."
+  },
+  {
+    "id": "vox-explainer.t1.section.bracket",
+    "outcome": "variant",
+    "type": "bracket-slate",
+    "reason": "Brackets close in from the sides and a rule grows beneath the spoken topic headline using the chapter-screen slots."
+  },
+  {
+    "id": "vox-explainer.t1.section.map",
+    "outcome": "new",
+    "type": "location-pin",
+    "reason": "A drawn locator anchors the spoken place above the event headline using a generic pin and reticle."
+  },
+  {
+    "id": "vox-explainer.t1.section.highlight",
+    "outcome": "new",
+    "type": "phrase-sweep",
+    "reason": "The gold marker wipes behind a single spoken focus phrase between independently timed lines of context."
+  },
+  {
+    "id": "vox-explainer.t1.overview.timeline-3up",
+    "outcome": "unfit",
+    "reason": "The three-up timeline is a series of photos with years and dates that carry its chronology."
+  },
+  {
+    "id": "vox-explainer.t1.overview.numbered-list",
+    "outcome": "merged",
+    "type": "three-part-method",
+    "reason": "After dropping automatic ordinals, each topic and its subordinate explanation form the same two-level outline."
+  },
+  {
+    "id": "vox-explainer.t1.overview.checklist",
+    "outcome": "duplicate",
+    "type": "checklist",
+    "reason": "The existing checklist already reveals spoken rows and checks each box in sequence at pro's shorter capacity."
+  },
+  {
+    "id": "vox-explainer.t1.overview.toc",
+    "outcome": "unfit",
+    "reason": "Its defining page-reference column requires page numbers that Greg does not say in a spoken reel agenda."
+  },
+  {
+    "id": "vox-explainer.t1.overview.agenda-bars",
+    "outcome": "new",
+    "type": "agenda-bands",
+    "reason": "Full-width agenda bands wipe in at the named topics and the accent tracks the current topic."
+  },
+  {
+    "id": "vox-explainer.t1.overview.big-type",
+    "outcome": "merged",
+    "type": "agenda-bands",
+    "reason": "The four type-led agenda lines become the same sequential band reveal with one accent per spoken topic."
+  },
+  {
+    "id": "vox-explainer.t1.overview.quad",
+    "outcome": "new",
+    "type": "quadrant-notes",
+    "reason": "Each quadrant preserves a spoken heading and its separately timed note in a two-by-two grid."
+  },
+  {
+    "id": "vox-explainer.t1.overview.grid6",
+    "outcome": "new",
+    "type": "six-topic-grid",
+    "reason": "Six short items reflow into two columns and the gold active tile follows each spoken item."
+  },
+  {
+    "id": "vox-explainer.t1.overview.card-deck",
+    "outcome": "variant",
+    "type": "deck-draw",
+    "reason": "Each spoken topic slides onto the top of a compact deck using the agenda-bands slots."
+  },
+  {
+    "id": "vox-explainer.t1.overview.filmstrip",
+    "outcome": "unfit",
+    "reason": "The rolling filmstrip consists of four captioned images and depends on showing those images side by side."
+  },
+  {
+    "id": "vox-explainer.t1.overview.index-cards",
+    "outcome": "merged",
+    "type": "deck-draw",
+    "reason": "After removing the numbered file tabs, the overlap and one-at-a-time focus match the compact spoken deck."
+  },
+  {
+    "id": "vox-explainer.t1.overview.vertical-timeline",
+    "outcome": "variant",
+    "type": "milestone-timeline",
+    "reason": "Diamond links draw between three milestones with a separately spoken relative time and event on each row; drawn as a design of session-agenda (the same three timed milestones, built by the Kallaway overview lane)"
+  },
+  {
+    "id": "vox-explainer.t1.overview.roadmap",
+    "outcome": "variant",
+    "type": "route-trace",
+    "reason": "A winding route draws down the left as each relative time reveals, using milestone-timeline's time and event pairs."
+  },
+  {
+    "id": "vox-explainer.t1.overview.stepper",
+    "outcome": "duplicate",
+    "type": "timeline",
+    "reason": "Removing automatic step numbers leaves the existing horizontal nodes and a connector that grows one segment at a time."
+  },
+  {
+    "id": "vox-explainer.t1.overview.phases",
+    "outcome": "variant",
+    "type": "phase-bands",
+    "reason": "The same three heading-and-detail pairs sit in bands that change their active state with the spoken heading."
+  },
+  {
+    "id": "vox-explainer.t1.overview.board",
+    "outcome": "new",
+    "type": "timed-agenda",
+    "reason": "Topic and time remain separate columns, with a masked shutter revealing each spoken time on a compact three-row board."
+  },
+  {
+    "id": "vox-explainer.t1.overview.compare",
+    "outcome": "new",
+    "type": "comparison-columns",
+    "reason": "Two spoken option headers each lead a separate three-point list, preserving the grouped comparison."
+  },
+  {
+    "id": "vox-explainer.t1.overview.matrix",
+    "outcome": "new",
+    "type": "yes-no-matrix",
+    "reason": "An SVG check or cross follows each exact spoken yes or no in a two-option comparison with shared criteria."
+  },
+  {
+    "id": "vox-explainer.t1.overview.map-legend",
+    "outcome": "unfit",
+    "reason": "The numbered legend depends on map locations and number-to-pin mappings the card would have to invent."
+  },
+  {
+    "id": "vox-explainer.t1.overview.outline",
+    "outcome": "new",
+    "type": "three-part-method",
+    "reason": "The nested structure stays readable as three spoken headings with separately revealed indented explanations."
+  },
+  {
+    "id": "vox-explainer.t1.overview.dossier",
+    "outcome": "merged",
+    "type": "agenda-bands",
+    "reason": "With file numbers, fake stamps and drawer trim removed, the sequential full-width rows match the agenda bands."
+  }
+]

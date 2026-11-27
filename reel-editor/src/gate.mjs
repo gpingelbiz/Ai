@@ -24,7 +24,9 @@ import path from "node:path";
 import { PNG } from "pngjs";
 import { hyperframesBin, renderEnv } from "./render.mjs";
 import { editDistance, textTokens } from "./slide-preflight.mjs";
-import { readJSON, run, writeJSON } from "./util.mjs";
+import { fontFile, readJSON, run, writeJSON } from "./util.mjs";
+import { loadProMeasure, proLineBreaks, splitProPhrases, PRO_CAPTION_PLATE } from "./pro-captions.mjs";
+import { attachProWordMarks } from "./pro.mjs";
 import { shownText } from "./textcheck.mjs";
 import { detectFaces } from "./placement.mjs";
 import { SAFE_ZONE } from "./safe-zone.mjs";
@@ -531,8 +533,38 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
     const m = layer && f.layers?.[layer.index];
     return m?.count && m.coverage < rules.full ? [m.box] : [];
   });
-  let movedText = false;
+  let movedText = false, rebroke = false;
   for (const p of problems) {
+    if (p.code === "safe-zone" && p.kinds[0] === "captions" && next.style?.captions?.pro && Array.isArray(next.captions) && p.edges.every((e) => ["left", "right", "buttons"].includes(e))) {
+      // Pro captions broken for an older, wider plate (a plan made before the 150 px side strips, Nov 26) reach the
+      // side strip or the button column: break them again at today's width; a cue that no longer fits two lines
+      // becomes shorter cues the way the edit splits them. Its word marks follow their words.
+      if (rebroke) continue;
+      let measure = null;
+      try { measure = loadProMeasure(fontFile(next.style, "Inter.ttf")); } catch {}
+      if (measure) {
+        let changed = 0;
+        next.captions = next.captions.flatMap((g) => {
+          if (!g.words?.length) return [g];
+          const lines = proLineBreaks(g.words, { measure });
+          if (lines) {
+            const counts = lines.map((l) => l.length);
+            if (JSON.stringify(counts) !== JSON.stringify(g.lines)) changed++;
+            return [{ ...g, lines: counts }];
+          }
+          changed++;
+          try { return splitProPhrases(g.words, n(g.end, Infinity), { measure }).map((part) => ({ ...part, ...(g.y != null ? { y: g.y } : {}), ...(g.thought != null ? { thought: g.thought } : {}) })); } catch { return [g]; }
+        });
+        if (changed) {
+          if (Array.isArray(next.proGraphics)) next.proGraphics = attachProWordMarks(next.proGraphics, next.captions);
+          applied.push(`captions broken again for the ${PRO_CAPTION_PLATE} px plate (${changed} cue${changed === 1 ? "" : "s"}), clear of the side strips and the button column`);
+          rebroke = true;
+          continue;
+        }
+      }
+      unfixable.push(p);
+      continue;
+    }
     if (p.code === "text-overlap" && p.kinds.includes("hook") && p.kinds.includes("captions") && !movedText) {
       const hook = unionBox(boxesOf("hook", p.times)), capsAt = unionBox(boxesOf("captions", p.times)), capsAll = unionBox(boxesOf("captions"));
       const capStyle = next.style?.captions, hookStyle = next.style?.hook;

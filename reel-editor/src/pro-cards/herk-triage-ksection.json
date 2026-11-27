@@ -1,0 +1,359 @@
+[
+  {
+    "id": "kallaway.t1.section.ascend",
+    "outcome": "variant",
+    "type": "section-rise",
+    "reason": "The centered headline retains its word-by-word upward entrance."
+  },
+  {
+    "id": "kallaway.t1.section.aurora-bars",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The light bars supply atmosphere only, leaving the same section headline and a clean baseline."
+  },
+  {
+    "id": "kallaway.t1.section.beam",
+    "outcome": "merged",
+    "type": "section-wipe",
+    "reason": "The light beam's wake becomes the same left-to-right reveal with a moving leading edge."
+  },
+  {
+    "id": "kallaway.t1.section.boxed",
+    "outcome": "variant",
+    "type": "section-trace",
+    "reason": "The border traces its perimeter around the centered title on the spoken beat."
+  },
+  {
+    "id": "kallaway.t1.section.breath",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "Removing the halo and breathing hold leaves a plain section title."
+  },
+  {
+    "id": "kallaway.t1.section.chaptercard",
+    "outcome": "merged",
+    "type": "section-ribbon",
+    "reason": "The short chapter heading sits above the title band once the spring and glass effects are removed."
+  },
+  {
+    "id": "kallaway.t1.section.column-light",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The vertical lights are atmosphere, leaving the heading and one spoken section title."
+  },
+  {
+    "id": "kallaway.t1.section.constellation",
+    "outcome": "merged",
+    "type": "section-node",
+    "reason": "One traced node and connector retain the diagram's linking motion at phone width."
+  },
+  {
+    "id": "kallaway.t1.section.countdown",
+    "outcome": "variant",
+    "type": "chapter-count-ring",
+    "reason": "The ring sweeps around the spoken chapter number, then the topic writes underneath at its own reveal."
+  },
+  {
+    "id": "kallaway.t1.section.curtain",
+    "outcome": "merged",
+    "type": "section-aperture",
+    "reason": "The parting stage panels reduce to the same center-opening title mask."
+  },
+  {
+    "id": "kallaway.t1.section.dawn",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "Without the sunrise gradients, the horizon reduces to the rule under the title."
+  },
+  {
+    "id": "kallaway.t1.section.depth",
+    "outcome": "merged",
+    "type": "section-rise",
+    "reason": "Dropping blurred text duplicates leaves the upward entrance of the spoken title."
+  },
+  {
+    "id": "kallaway.t1.section.divider",
+    "outcome": "new",
+    "type": "section-divider",
+    "reason": "The heading and left-aligned title introduce an explicitly announced topic, with a rule drawn underneath."
+  },
+  {
+    "id": "kallaway.t1.section.drift-grid",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The drifting dots convey no spoken information, leaving a plain section title."
+  },
+  {
+    "id": "kallaway.t1.section.duotone",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The drifting color field drops out, leaving a heading and section title."
+  },
+  {
+    "id": "kallaway.t1.section.eclipse",
+    "outcome": "merged",
+    "type": "section-trace",
+    "reason": "Without the corona, the illuminated enclosure is the same draw-on frame around the title."
+  },
+  {
+    "id": "kallaway.t1.section.emblem",
+    "outcome": "variant",
+    "type": "term-badge-title",
+    "reason": "A short spoken acronym can sit in a badge before its spoken expansion, with no image or logo."
+  },
+  {
+    "id": "kallaway.t1.section.flare-sweep",
+    "outcome": "merged",
+    "type": "section-wipe",
+    "reason": "The flare that paints the title becomes the same leading edge and lateral wipe."
+  },
+  {
+    "id": "kallaway.t1.section.glow-rule",
+    "outcome": "variant",
+    "type": "section-footer",
+    "reason": "The title sits above a center-out rule and the heading reads underneath it."
+  },
+  {
+    "id": "kallaway.t1.section.gradient-word",
+    "outcome": "new",
+    "type": "term-lead-title",
+    "reason": "An oversized spoken term leads into a separately timed spoken explanation."
+  },
+  {
+    "id": "kallaway.t1.section.gridfloor",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The receding floor drops away and the visible baseline remains under the title."
+  },
+  {
+    "id": "kallaway.t1.section.halo",
+    "outcome": "merged",
+    "type": "section-trace",
+    "reason": "The frame drawing around the title survives as the same traced enclosure."
+  },
+  {
+    "id": "kallaway.t1.section.horizon",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The perspective floor and bloom reduce to the baseline beneath the spoken title."
+  },
+  {
+    "id": "kallaway.t1.section.index",
+    "outcome": "new",
+    "type": "section-number",
+    "reason": "The spoken index sits beside the spoken topic and the dividing rule draws in between them."
+  },
+  {
+    "id": "kallaway.t1.section.kinetic",
+    "outcome": "merged",
+    "type": "section-rise",
+    "reason": "The exaggerated entries reduce to the same individually animated words in a centered headline."
+  },
+  {
+    "id": "kallaway.t1.section.lensflare",
+    "outcome": "merged",
+    "type": "section-wipe",
+    "reason": "The sweeping flare and focus pull reduce to a lateral title reveal."
+  },
+  {
+    "id": "kallaway.t1.section.liquid",
+    "outcome": "merged",
+    "type": "section-trace",
+    "reason": "Removing the morphing glass leaves one enclosure around the title."
+  },
+  {
+    "id": "kallaway.t1.section.marquee",
+    "outcome": "unfit",
+    "reason": "The long repeating ticker needs a landscape reading area to carry its copy at phone-readable size beneath the headline."
+  },
+  {
+    "id": "kallaway.t1.section.mesh",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The perspective mesh drops out and the title reads above the same baseline."
+  },
+  {
+    "id": "kallaway.t1.section.monolith",
+    "outcome": "merged",
+    "type": "section-trace",
+    "reason": "The rising glass slab reduces to a framed centered title at a usable placement height."
+  },
+  {
+    "id": "kallaway.t1.section.node-title",
+    "outcome": "variant",
+    "type": "section-node",
+    "reason": "A line draws from a single node to the left edge of the title block."
+  },
+  {
+    "id": "kallaway.t1.section.numeral",
+    "outcome": "variant",
+    "type": "chapter-watermark",
+    "reason": "The spoken index becomes an oversized outlined number above the left-aligned topic."
+  },
+  {
+    "id": "kallaway.t1.section.orb",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The rising luminous orb is atmosphere, leaving the plain section title."
+  },
+  {
+    "id": "kallaway.t1.section.orbit",
+    "outcome": "merged",
+    "type": "section-trace",
+    "reason": "Removing the decorative orbital loop leaves a single drawn outline."
+  },
+  {
+    "id": "kallaway.t1.section.particles",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "Removing the ambient particle field leaves the plain section title."
+  },
+  {
+    "id": "kallaway.t1.section.pill",
+    "outcome": "merged",
+    "type": "section-ribbon",
+    "reason": "The heading above a separate title band survives, while the glass capsule styling drops out."
+  },
+  {
+    "id": "kallaway.t1.section.portal",
+    "outcome": "merged",
+    "type": "section-aperture",
+    "reason": "The opening portal becomes a center-opening mask for the title."
+  },
+  {
+    "id": "kallaway.t1.section.prism",
+    "outcome": "unfit",
+    "reason": "The side-by-side incoming beam, refraction fan and readable copy need the source's landscape width."
+  },
+  {
+    "id": "kallaway.t1.section.question",
+    "outcome": "new",
+    "type": "lesson-question",
+    "reason": "A question addressed to the viewer leads the teaching beat, with the heading below the exact spoken question."
+  },
+  {
+    "id": "kallaway.t1.section.quoteopen",
+    "outcome": "unfit",
+    "reason": "The attribution kicker supplies a third-party name, source and date, which the quote-opening layout depends on."
+  },
+  {
+    "id": "kallaway.t1.section.reveal-mask",
+    "outcome": "variant",
+    "type": "section-wipe",
+    "reason": "A moving gold edge clears the mask from left to right as the title is spoken."
+  },
+  {
+    "id": "kallaway.t1.section.ribbon",
+    "outcome": "variant",
+    "type": "section-ribbon",
+    "reason": "The spoken title writes into a gold band that unfolds beneath the heading."
+  },
+  {
+    "id": "kallaway.t1.section.ripple",
+    "outcome": "merged",
+    "type": "section-trace",
+    "reason": "The atmospheric ripple sequence reduces to one drawn enclosure."
+  },
+  {
+    "id": "kallaway.t1.section.searchbar",
+    "outcome": "duplicate",
+    "type": "search-bar",
+    "reason": "The magnifier, caret and spoken query already share the search-bar layout and write-in."
+  },
+  {
+    "id": "kallaway.t1.section.slab",
+    "outcome": "merged",
+    "type": "section-ribbon",
+    "reason": "The short heading and single title plate reduce to the same heading above a title band."
+  },
+  {
+    "id": "kallaway.t1.section.sphere-top",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "Dropping the descending atmospheric sphere leaves a plain section title."
+  },
+  {
+    "id": "kallaway.t1.section.split-reveal",
+    "outcome": "variant",
+    "type": "section-aperture",
+    "reason": "The spoken title opens outward from the middle seam in opposing directions."
+  },
+  {
+    "id": "kallaway.t1.section.splitpanel",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The right panel is scenery, leaving the left-aligned section headline as usable copy."
+  },
+  {
+    "id": "kallaway.t1.section.spotlight",
+    "outcome": "merged",
+    "type": "section-wipe",
+    "reason": "The moving light reveal becomes the same lateral wipe across the title."
+  },
+  {
+    "id": "kallaway.t1.section.spotlight-cone",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The fixed light cone and dust supply atmosphere, leaving a plain section title."
+  },
+  {
+    "id": "kallaway.t1.section.stack",
+    "outcome": "merged",
+    "type": "section-rise",
+    "reason": "The sequential moving title resolves to the same staggered text entrance at vertical scale."
+  },
+  {
+    "id": "kallaway.t1.section.stacked-words",
+    "outcome": "new",
+    "type": "section-title-strips",
+    "reason": "Separate strips slide from alternating sides as Greg speaks each phrase of one section title."
+  },
+  {
+    "id": "kallaway.t1.section.starfield",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "Removing the parallax stars leaves a plain section title."
+  },
+  {
+    "id": "kallaway.t1.section.sweep",
+    "outcome": "duplicate",
+    "type": "marker-highlight",
+    "reason": "The spoken teaching line already has a moving mark that draws behind the copy."
+  },
+  {
+    "id": "kallaway.t1.section.tunnel",
+    "outcome": "merged",
+    "type": "section-trace",
+    "reason": "The nested perspective frames reduce to one outline traced around the title."
+  },
+  {
+    "id": "kallaway.t1.section.type-scale",
+    "outcome": "merged",
+    "type": "section-footer",
+    "reason": "The headline grows into place with the heading below it, retaining the footer composition."
+  },
+  {
+    "id": "kallaway.t1.section.typed",
+    "outcome": "merged",
+    "type": "section-wipe",
+    "reason": "The terminal-style title reduces to a lateral type reveal with a passing caret."
+  },
+  {
+    "id": "kallaway.t1.section.underline-grow",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "A rule draws under the spoken title in the same editorial arrangement."
+  },
+  {
+    "id": "kallaway.t1.section.waveform",
+    "outcome": "merged",
+    "type": "section-divider",
+    "reason": "The background waveform supplies no spoken measurements or words, leaving the section title and its baseline."
+  },
+  {
+    "id": "kallaway.t1.section.wordmark",
+    "outcome": "merged",
+    "type": "section-wipe",
+    "reason": "The left-to-right letter illumination becomes the same wipe with a passing edge."
+  }
+]

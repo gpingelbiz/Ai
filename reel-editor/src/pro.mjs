@@ -169,7 +169,8 @@ export function groundCard(pick, type, words) {
         item = { text: textAt(words, from, to), from, to, at: words[from].start, end: words[to].end };
         if (item.text.length > (slot.maxChars || 48)) return null;
         // A slot may check its own words (a proof card's number must be a number he says; a streak counts to 7).
-        if (typeof slot.validate === "function" && !slot.validate(item.text, slots)) return null;
+        // A validator that throws (it read a slot not grounded yet) rejects the card instead of stopping the edit.
+        if (typeof slot.validate === "function") { let ok = false; try { ok = slot.validate(item.text, slots); } catch { ok = false; } if (!ok) return null; }
         spoken.push(item);
       }
       item.lines = fitLines(item.text, slot.width || 656, slot.size || 52, slot.maxLines || 2);
