@@ -79,7 +79,8 @@ export function proTimeline(overlays) {
   return `const proEase = ${proBezier.toString()};\nconst proEnter=proEase(.16,1,.3,1),proState=proEase(.65,0,.35,1),proExit=proEase(.4,0,1,1);\n${overlays.map((o) => renderProOverlay(o).timeline).join("\n")}\n`;
 }
 
-export function proCSS() {
+/** The pro look's styles. With `types`, only those cards' own rules are added (a reel carries a few of hundreds). */
+export function proCSS({ types = null } = {}) {
   return `
       .pro-overlay { position:absolute;box-sizing:border-box;padding:32px;border-radius:16px;background:rgba(11,11,13,.92);color:#F5F1E8;box-shadow:0 12px 32px rgba(0,0,0,.22);font-family:"Inter",sans-serif;font-size:52px;font-weight:600;line-height:62px;opacity:0;pointer-events:none;text-shadow:none;overflow:hidden; }
       .pro-overlay * { box-sizing:border-box; }
@@ -110,7 +111,7 @@ export function proCSS() {
       .pro-circle { height:calc(100% + 24px);top:-12px; }
       .pro-bare { background:none;box-shadow:none;padding:0;border-radius:0;overflow:visible; }
       .pro-full { border-radius:0;padding:110px; }
-${Object.values(CARDS).map((d) => d.css || "").join("\n")}
+${Object.entries(CARDS).filter(([t]) => !types || types.has(t)).map(([, d]) => d.css || "").join("\n")}
       .pro-word-mark path { fill:none;stroke:#C8A24B;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1; }
 `;
 }
