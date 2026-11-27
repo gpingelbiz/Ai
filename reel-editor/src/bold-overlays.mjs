@@ -74,7 +74,7 @@ export function placeBoldOverlays(picks, context) {
     if (box.x < safe.x || box.y < safe.y || box.x + box.w > safe.x + safe.w || box.y + box.h > safe.y + safe.h) continue;
     const active = accepted.filter((other) => event.start < other.end && event.end > other.start);
     const faces = zones.faces.filter((face) => event.start <= face.end && event.end >= face.start);
-    const gap = settings.zone.overlayGap * safe.w / (settings.zone.right - settings.zone.left);
+    const gap = settings.zone.overlayGap * (context.plan?.canvas?.width || 1080) / 1080;
     if ([zones.caption, ...faces, ...active.map((other) => other.box), ...(event.start < (zones.headline?.end || 0) ? [zones.headline] : [])].some((other) => boldBoxesOverlap(box, other, gap))) continue;
     const landingFrame = proposal.landingFrame ?? event.startFrame;
     if (!Number.isInteger(landingFrame) || landingFrame < event.startFrame || landingFrame >= event.endFrame) continue;

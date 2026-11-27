@@ -3,6 +3,7 @@ import path from "node:path";
 import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { inlineIconSVG } from "./icons.mjs";
 import { exactLineMatches } from "./premise.mjs";
+import { zoneFor, rightLimit } from "./safe-zone.mjs";
 import { esc } from "./text.mjs";
 import { log, warn, readJSON, writeJSON, r3, sha1 } from "./util.mjs";
 
@@ -95,7 +96,8 @@ export function timeLabelGeometry({ brand, W = 1080, H = 1920, premise = null, c
   const padX = Number(brand.spacing?.md) || 0;
   const padY = Number(brand.spacing?.sm) || 0;
   const y = premise?.box ? premise.box.y + premise.box.h + (Number(brand.spacing?.sm) || 0) : 200;
-  const box = { x: 76, y, w: Math.min(420, W - 152), h: Math.ceil(fontSize * (Number(brand.type?.body?.lineHeight) || 1.2) + 2 * padY) };
+  const zone = zoneFor(W, H), boxH = Math.ceil(fontSize * (Number(brand.type?.body?.lineHeight) || 1.2) + 2 * padY);
+  const box = { x: Math.round(zone.left), y, w: Math.round(Math.min(420, rightLimit(zone, y, y + boxH) - zone.left)), h: boxH };
   if (box.y + box.h > captionTop) return { skip: true, reason: "the time label would overlap the captions" };
   if (head) {
     const face = { x: (head.cx - head.w / 2) * W, y: (head.cy - head.h / 2) * H, w: head.w * W, h: head.h * H };

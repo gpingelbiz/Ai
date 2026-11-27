@@ -322,7 +322,7 @@ test("proof message markup is source-labelled, brand-colored and timed without c
   assert.match(html, /g-proof-underline/);
   assert.doesNotMatch(html, /Fake Name|g-avatar|n-time/);
   const css = proofMessageCSS({ H: 1920, colors: { text: "#EDEAE2", accent: "#39FF88", bg: "#19132A" }, captionTop: 1382 });
-  assert.match(css, /left: 76px;[\s\S]*top: 200px;[\s\S]*width: 864px/);
+  assert.match(css, /left: 150px;[\s\S]*top: 200px;[\s\S]*width: 750px/, "inside the 150 px side strip and the button column");
   assert.match(css, /background: #39FF88; color: #19132A/);
   assert.match(css, /font-size: 48px/);
   assert.doesNotMatch(css, /#0a80f8|#007aff|#fff(?:fff)?/i);

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { zoneFor, rightLimit } from "./safe-zone.mjs";
 
 /**
  * Frame-aware placement for everything that lands on top of the speaker: animation cards, glow notify and stamp
@@ -18,9 +19,11 @@ const r3 = (x) => Math.round(x * 1000) / 1000;
 
 export const PLACE_SLOTS = ["side", "top", "corner", "lower", "base", "behind", "push", "full"];
 
-// Instagram covers the top 200 px (name, audio) and the bottom ~320 px (caption, buttons); the like/comment rail
-// sits at the right edge from about 1150 px down.
-const SAFE = { left: 64, right: 64, top: 200, bottom: 320, rail: 140, railTop: 1150 };
+// The shared safe zone (src/safe-zone.mjs): 150 px side strips, the bottom strip, and the right button column from
+// 35% of the height down, the same numbers the master gate checks. Cards also keep below 200 px at the top, under
+// the name and audio line.
+const CARD_TOP = 200;
+const safeFor = (W, H) => { const z = zoneFor(W, H); return { ...z, top: Math.max(z.top, CARD_TOP * H / 1920) }; };
 
 /** Read the transform the composition applies to the footage, so detection fractions become canvas pixels. */
 export function viewFor({ framing = {}, origin, zoom = 1 } = {}) {
@@ -185,13 +188,13 @@ const COST = { side: 0.05, top: 0.1, corner: 0.14, lower: 0.16, base: 0.32, behi
 /** Every open spot for this frame, as { slot, side, space, anchor } spaces that already miss the head and captions. */
 export function openSpaces(frame, { gap = 28, behind = false } = {}) {
   const { W, H, head, caption } = frame;
-  const L = SAFE.left, R = W - SAFE.right, T = SAFE.top;
+  const z = safeFor(W, H);
+  const L = z.left, R = z.right, T = z.top;
   const capTop = caption.y - gap, capBottom = caption.y + caption.h + gap;
-  const floor = H - SAFE.bottom;
-  const railR = (bottom) => (bottom > SAFE.railTop ? Math.min(R, W - SAFE.rail) : R);
+  const floor = z.bottom;
   const spaces = [];
   const add = (slot, side, x, y, w, h, anchor) => {
-    const right = Math.min(x + w, railR(y + h));
+    const right = Math.min(x + w, rightLimit(z, y, y + h));
     w = right - x;
     if (w >= 160 && h >= 90) spaces.push({ slot, side, space: { x: r(x), y: r(y), w: r(w), h: r(h) }, anchor });
   };
@@ -208,7 +211,7 @@ export function openSpaces(frame, { gap = 28, behind = false } = {}) {
   add("side", "left", L, T, hL - gap - L, capTop - T, { cy: hCy });
   add("side", "right", hR + gap, T, R - hR - gap, capTop - T, { cy: hCy });
   // The like/comment rail narrows the right column low in the frame; the column above the rail keeps its width.
-  if (capTop > SAFE.railTop && SAFE.railTop - T > 300) add("side", "right", hR + gap, T, R - hR - gap, SAFE.railTop - T, { cy: hCy });
+  if (capTop > z.railTop && z.railTop - T > 300) add("side", "right", hR + gap, T, R - hR - gap, z.railTop - T, { cy: hCy });
   // A top corner: smaller, pinned to the top bar on the side with more room; it may reach over the head's column
   // only above the hair.
   const cornerW = Math.max(hL - gap - L, R - hR - gap);
@@ -293,7 +296,8 @@ export function placeCard(card, frame, { history = [], pin = null, maxScale = 0.
   }
   // The old layout: the card in the top band and the footage pushed down just far enough to clear the head.
   if (allowPush && kind === "card" && head && (!allowed || allowed.includes("push"))) {
-    const sp = { slot: "push", side: "center", space: { x: SAFE.left, y: SAFE.top, w: W - SAFE.left - SAFE.right, h: H * 0.34 }, anchor: "top" };
+    const z = safeFor(W, H);
+    const sp = { slot: "push", side: "center", space: { x: z.left, y: z.top, w: rightLimit(z, z.top, z.top + H * 0.34) - z.left, h: H * 0.34 }, anchor: "top" };
     const fit = fitScale(foot, sp.space, { max: maxScale, min: minScale });
     if (fit) {
       const box = boxIn(sp, fit, frame);

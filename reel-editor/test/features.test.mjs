@@ -37,7 +37,8 @@ test("analytics features records the experiment, hook, frame zero, graphics, der
   assert.equal(got.experiment.preset, "pingel-brand");
   assert.equal(got.experiment.look, "receipts");
   assert.equal(got.experiment.editorGitSha, "abc123");
-  assert.deepEqual(got.hook, { text: hookText, wordCount: 7, lineCount: 2, hasNumber: true, hasTime: true, hasQuote: false, promisedPhraseAt: 8 });
+  // Three lines inside the 150 px side strips (two at the old 92% width).
+  assert.deepEqual(got.hook, { text: hookText, wordCount: 7, lineCount: 3, hasNumber: true, hasTime: true, hasQuote: false, promisedPhraseAt: 8 });
   assert.deepEqual(got.frameZero, { source: "cold-open", brollAsset: "/tmp/laptop.png", visibleWordCount: 7 });
   assert.equal(got.graphics[0].informationRole, "proof");
   assert.equal(got.graphics[1].informationRole, "orient");

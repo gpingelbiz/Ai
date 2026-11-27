@@ -7,12 +7,14 @@ import { readFrame, viewFor, overlaps } from "./frame-place.mjs";
 import { eventClock } from "./event-clock.mjs";
 import { r3, writeJSON, warn } from "./util.mjs";
 import { CARDS } from "./pro-cards/index.mjs";
+import { zoneFor, rightLimit } from "./safe-zone.mjs";
+import { PRO_CAPTION_PLATE, PRO_HOOK_PLATE } from "./pro-captions.mjs";
 
 export const PRO_MOTION = Object.freeze({ enter: 0.233, state: 0.3, exit: 0.167, strike: 0.2, hold: 2.4, underline: 0.267, circle: 0.367 });
 export const PRO_RECTS = Object.freeze([
-  { slot: "upper", x: 120, y: 288, w: 720, h: 176 },
-  { slot: "torso", x: 120, y: 928, w: 720, h: 160 },
-  { slot: "explanation", x: 120, y: 288, w: 720, h: 560 },
+  { slot: "upper", x: 180, y: 288, w: 720, h: 176 },
+  { slot: "torso", x: 180, y: 928, w: 720, h: 160 },
+  { slot: "explanation", x: 180, y: 288, w: 720, h: 560 },
 ]);
 
 export function proEnabled(preset, plan, env = process.env) {
@@ -311,41 +313,56 @@ export function placeProOverlay(overlay, frame, { minScale = PRO_MIN_SCALE, igno
   // Existing face detection has no microphone class. Protect Greg's lower-left mic conservatively when unmeasured.
   const mic = ignoreMic ? null : frame.mic || { x: 0, y: 880 * k, w: 280 * k, h: 480 * k };
   const capBox = frame.caption || { x: 0, y: 1080 * k, w: frame.W, h: 220 * k };
-  const topSafe = 176 * k, bottomSafe = 1720 * k, side = 80 * k;
+  // The shared safe zone (src/safe-zone.mjs), the same numbers the master gate checks: 150 px side strips, the bottom
+  // strip from 1600 px, and the right button column from 35% of the height down. A zone that reaches the column's rows
+  // ends at its edge, so a card is placed clear of it here instead of being dropped at the gate.
+  const z = zoneFor(frame.W, frame.H);
+  const topSafe = 176 * k, bottomSafe = z.bottom, side = z.left;
   const zones = [];
-  zones.push({ slot: "upper", x: side, y: topSafe, w: frame.W - 2 * side, h: Math.min(head ? head.y - 56 * k : Infinity, capBox.y) - topSafe - 8 * k });
+  const zone = (slot, x, y, right, bottom) => zones.push({ slot, x, y, w: Math.min(right, rightLimit(z, y, bottom)) - x, h: bottom - y });
+  zone("upper", side, topSafe, z.right, Math.min(head ? head.y - 56 * k : Infinity, capBox.y) - 8 * k);
   const lowTop = Math.max(capBox.y + capBox.h, head ? head.y + head.h : 0) + 24 * k;
   const micRight = mic ? mic.x + mic.w + 24 * k : side;
-  zones.push({ slot: "torso", x: Math.max(side, micRight), y: lowTop, w: frame.W - side - Math.max(side, micRight), h: bottomSafe - lowTop });
-  zones.push({ slot: "torso-wide", x: side, y: Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0), w: frame.W - 2 * side, h: bottomSafe - Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0) });
+  zone("torso", Math.max(side, micRight), lowTop, z.right, bottomSafe);
+  zone("torso-wide", side, Math.max(lowTop, mic ? mic.y + mic.h + 24 * k : 0), z.right, bottomSafe);
   // Beside the head, when the shot leaves room on either side (wide or off-center framing).
   if (head) {
     const bandBottom = capBox.y - 8 * k;
-    zones.push({ slot: "left", x: side, y: topSafe, w: head.x - 56 * k - side, h: bandBottom - topSafe });
-    zones.push({ slot: "right", x: head.x + head.w + 56 * k, y: topSafe, w: frame.W - side - (head.x + head.w + 56 * k), h: bandBottom - topSafe });
+    zone("left", side, topSafe, head.x - 56 * k, bandBottom);
+    zone("right", head.x + head.w + 56 * k, topSafe, z.right, bandBottom);
+    // Beside the head above the button column's rows, where the right side keeps its full width.
+    if (bandBottom > z.railTop) zone("right", head.x + head.w + 56 * k, topSafe, z.right, z.railTop);
   }
   // Last resort for tight shots: the card stands in for the captions (they are hidden while it shows the words).
   if (captionSwap) {
     const swapTop = Math.max(capBox.y, head ? head.y + head.h + 24 * k : 0);
     zones.length = 0;
-    zones.push({ slot: "caption-swap", x: side, y: swapTop, w: frame.W - 2 * side, h: bottomSafe - swapTop - 24 * k });
+    zone("caption-swap", side, swapTop, z.right, bottomSafe - 24 * k);
   }
   // Greg 11-23 "I don't want the card always in the same spot": every zone offers left, centre and right (and, beside
   // the head, high and low) positions; the pick keeps size first, then moves away from the spots the last cards used.
   const cands = [];
   for (const z of zones) {
     if (z.w <= 0 || z.h <= 0) continue;
-    const scale = Math.min(1, z.w / (size.w * k), z.h / (size.h * k));
-    if (scale < minScale) continue;
-    const w = size.w * k * scale, h = size.h * k * scale;
-    const roomX = z.w - w, roomY = z.h - h - 16 * k;
-    const xs = roomX > 40 * k ? [["left", z.x], ["center", z.x + roomX / 2], ["right", z.x + roomX]] : [["center", z.x + roomX / 2]];
-    const ys = (z.slot === "left" || z.slot === "right") && roomY > 120 * k ? [["high", z.y + 8 * k], ["low", z.y + 8 * k + roomY]] : [["", z.y + 8 * k]];
-    for (const [ax, x] of xs) for (const [ay, y] of ys) {
-      const box = { x, y, w, h };
-      const swept = { ...box, y: box.y - 8 * k, h: box.h + 24 * k };
-      if (overlaps(swept, head, 56 * k) || (mic && overlaps(swept, mic, 24 * k)) || (!captionSwap && overlaps(swept, capBox))) continue;
-      cands.push({ slot: z.slot, spot: [z.slot, ax, ay].filter(Boolean).join("-"), ...box, scale: scale * k, s: scale });
+    // The card sits 8 px inside the top of its zone, so it may be at most the zone's height less those 8 px: a card
+    // that filled the torso zone used to end 8 px past it, under the bottom strip.
+    const fill = Math.min(1, z.w / (size.w * k), (z.h - 8 * k) / (size.h * k));
+    // A card as wide as its zone has one position. Inside the 150 px side strips that is most wide cards, so the same
+    // card is also offered a step smaller (90%, still inside the size bonus below) where that opens room to sit left
+    // or right: cards keep changing spot (Greg 11-23) without reaching back into the strips.
+    const steps = z.w - size.w * k * fill > 40 * k ? [fill] : [fill, fill * 0.9];
+    for (const scale of steps) {
+      if (scale < minScale) continue;
+      const w = size.w * k * scale, h = size.h * k * scale;
+      const roomX = z.w - w, roomY = z.h - h - 16 * k;
+      const xs = roomX > 40 * k ? [["left", z.x], ["center", z.x + roomX / 2], ["right", z.x + roomX]] : [["center", z.x + roomX / 2]];
+      const ys = (z.slot === "left" || z.slot === "right") && roomY > 120 * k ? [["high", z.y + 8 * k], ["low", z.y + 8 * k + roomY]] : [["", z.y + 8 * k]];
+      for (const [ax, x] of xs) for (const [ay, y] of ys) {
+        const box = { x, y, w, h };
+        const swept = { ...box, y: box.y - 8 * k, h: box.h + 24 * k };
+        if (overlaps(swept, head, 56 * k) || (mic && overlaps(swept, mic, 24 * k)) || (!captionSwap && overlaps(swept, capBox))) continue;
+        cands.push({ slot: z.slot, spot: [z.slot, ax, ay].filter(Boolean).join("-"), ...box, scale: scale * k, s: scale });
+      }
     }
   }
   if (!cands.length) return null;
@@ -431,7 +448,7 @@ export function proSoundCues(overlays, { fps = 30, level = 0.08 } = {}) {
 export function proCaptionBox(g, { W = 1080, H = 1920 } = {}) {
   const k = H / 1920, lines = g.lines?.length || 1;
   const y = Number.isFinite(g.y) ? g.y : 1248 * k;
-  return { x: (W - 828 * k) / 2, y, w: 828 * k, h: lines * 92 * k + 24 * k };
+  return { x: (W - PRO_CAPTION_PLATE * k) / 2, y, w: PRO_CAPTION_PLATE * k, h: lines * 92 * k + 24 * k };
 }
 export function proCaptionBand(groups, { H = 1920, W = 1080 } = {}) {
   const boxes = groups.map((g) => proCaptionBox(g, { W, H }));
@@ -442,7 +459,7 @@ export function proCaptionBand(groups, { H = 1920, W = 1080 } = {}) {
 export function proHookBox(hook, { W = 1080, H = 1920 } = {}) {
   if (!hook) return null;
   const k = H / 1920, px = hook.fontSize || 100, lines = hook.lines?.length || 1;
-  return { x: (W - 816 * k) / 2, y: 176 * k, w: 816 * k, h: (lines * px * 1.06 + 32) * k };
+  return { x: (W - PRO_HOOK_PLATE * k) / 2, y: 176 * k, w: PRO_HOOK_PLATE * k, h: (lines * px * 1.06 + 32) * k };
 }
 const timeHit = (a, b, slack = 0.05) => a.start < b.end - slack && b.start < a.end - slack;
 const boxHit = (a, b, pad = 8) => a && b && a.x < b.x + b.w + pad && a.x + a.w > b.x - pad && a.y < b.y + b.h + pad && a.y + a.h > b.y - pad;

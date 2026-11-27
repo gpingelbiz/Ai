@@ -109,7 +109,7 @@ const cardPlan = (graphics, extra = {}) => ({
   ...extra,
 });
 
-const safeBox = { x: 100, y: 250, width: 600, height: 300 };
+const safeBox = { x: 150, y: 250, width: 600, height: 300 }; // inside the shared safe zone
 
 test("card preflight: reading budget, five-second hold and item-timed hold are warnings with the card time", () => {
   const plan = cardPlan([{ type: "list", start: 4, duration: 5.2, eyebrow: "THE WHOLE PLAY", title: "DO THIS NOW", items: [{ text: "Make the first call", offset: 0 }, { text: "Ask what happened", offset: 2, duration: 1 }], box: safeBox }]);
@@ -140,7 +140,7 @@ test("card preflight: actual and estimated boxes respect the card rectangle, cap
   const actual = graphicChecks(cardPlan([bad]));
   assert.ok(actual.some((i) => i.code === "card-bounds"));
   assert.ok(actual.some((i) => i.code === "card-right-rail"));
-  const edgeBox = graphicChecks(cardPlan([{ type: "headline", start: 4, duration: 3, text: "Own the number", bounds: { left: 100, top: 250, right: 900, bottom: 800 } }]));
+  const edgeBox = graphicChecks(cardPlan([{ type: "headline", start: 4, duration: 3, text: "Own the number", bounds: { left: 150, top: 250, right: 900, bottom: 800 } }]));
   assert.ok(!edgeBox.some((i) => i.code === "card-bounds"));
   const estimated = graphicChecks(cardPlan([{ type: "headline", start: 4, duration: 3, text: "Own the number" }]));
   assert.match(estimated.find((i) => i.code === "card-bounds").message, /estimated headline box/);

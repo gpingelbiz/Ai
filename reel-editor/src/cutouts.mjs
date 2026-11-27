@@ -1,5 +1,6 @@
 import { makeCutout } from "./behind.mjs";
 import { r3 } from "./util.mjs";
+import { zoneFor, rightLimit } from "./safe-zone.mjs";
 
 /** Cutout is one b-roll layout; unknown values keep the established full-frame cutaway. */
 export function brollLayout(value) {
@@ -43,10 +44,13 @@ function coveredByPerson(grid, box, W, H) {
 
 /** Largest readable word box in the upper half. Falls back to a normal-size word fully above the head. */
 export function placePopoutWord(text, grid, { width = 1080, height = 1920, maxCovered = 0.06, headTop = 0.28, zoom = 1, originX = 0.5, originY = 0.38, shiftY = 0 } = {}) {
-  const left = Math.min(width, Math.max(0, width * (76 / 1080)));
-  const right = Math.min(width, Math.max(left + 1, width * (940 / 1080)));
+  // The shared safe zone (src/safe-zone.mjs): clear of the side strips and, since a pop-out can sit low in the upper
+  // half, of the right button column too.
+  const zone = zoneFor(width, height);
+  const left = Math.min(width, Math.max(0, zone.left));
+  const right = Math.min(width, Math.max(left + 1, rightLimit(zone, 0, height / 2)));
   const safeWidth = right - left;
-  // Anton is condensed; this keeps the measured box inside the safe 76-940 band while letting the pop-out read
+  // Anton is condensed; this keeps the measured box inside the safe band while letting the pop-out read
   // larger than the normal slam's deliberately conservative 0.52em-per-character estimate.
   const chars = Math.max(3, String(text || "").length * 0.42);
   const maxFont = Math.min(height * 0.16, safeWidth / chars);

@@ -36,10 +36,10 @@ test("time labels are exact, outside the hook, three seconds apart and capped at
 
 test("time label geometry clears premise, captions and head, then renders brand tokens and Lucide", () => {
   const style = loadPreset("pingel-v2");
-  const premise = { box: { x: 76, y: 200, w: 864, h: 100 } };
+  const premise = { box: { x: 150, y: 200, w: 780, h: 100 } };
   const geometry = timeLabelGeometry({ brand: style.brand, premise, captionTop: 1200 });
   assert.equal(geometry.skip, undefined);
-  assert.equal(geometry.box.x, 76);
+  assert.equal(geometry.box.x, 150, "inside the 150 px side strip");
   assert.ok(geometry.box.y > premise.box.y + premise.box.h && geometry.fontSize >= 40 && geometry.fontSize <= 44);
   assert.equal(timeLabelGeometry({ brand: style.brand, premise, captionTop: 350 }).skip, true);
   assert.equal(timeLabelGeometry({ brand: style.brand, premise, captionTop: 1200, head: { cx: 0.2, cy: 0.2, w: 0.3, h: 0.3 } }).skip, true);

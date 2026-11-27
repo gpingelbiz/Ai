@@ -43,7 +43,9 @@ test("no swap cards leaves everything alone", () => {
 });
 
 test("cards move around: the next card avoids the spot the last one used", () => {
-  const wide = { measured: true, W: 1080, H: 1920, head: { x: 330, y: 520, w: 420, h: 420 }, mic: { x: 0, y: 1400, w: 200, h: 300 }, caption: { x: 0, y: 1248, w: 1080, h: 120 } };
+  // Captions high enough that the torso keeps room above the bottom strip (1600 px, the shared safe zone); the quote
+  // fills the torso's width, so its moves come from the 90% step.
+  const wide = { measured: true, W: 1080, H: 1920, head: { x: 330, y: 520, w: 420, h: 420 }, mic: { x: 0, y: 1400, w: 200, h: 300 }, caption: { x: 0, y: 1000, w: 1080, h: 120 } };
   const a = placeProOverlay(quote, wide, { recent: [] });
   const b = placeProOverlay(quote, wide, { recent: [a.spot] });
   assert.ok(a && b);

@@ -5,6 +5,7 @@ import path from "node:path";
 import { run, PKG_ROOT } from "./util.mjs";
 import { driftDuring } from "./motion.mjs";
 import { nativeTool } from "./native-tool.mjs";
+import { zoneFor } from "./safe-zone.mjs";
 
 /**
  * Put the hook where it will not cover the speaker's head: above it when there is room, otherwise between the chin
@@ -160,8 +161,10 @@ export function headSpanX(detection, { zoom = 1, originX = 0.5 } = {}) {
 
 /** Rough wrapped height of the hook (fraction of canvas height). Anton caps measure about 0.44em per character
  *  (29 characters filled 965 px at 75.6 px on a real render); 0.46 keeps a little slack. */
-export function hookBlockHeight(words, { W = 1080, H = 1920, fontPx, widthFrac = 0.92, lineHeight = 1.0, goldScale = 1.14, charEm = 0.46, padEm = 0.42 } = {}) {
-  const avail = W * widthFrac;
+export function hookBlockHeight(words, { W = 1080, H = 1920, fontPx, widthFrac, lineHeight = 1.0, goldScale = 1.14, charEm = 0.46, padEm = 0.42 } = {}) {
+  // The hook block's width: inside the shared safe zone's side strips on a vertical reel (compose.mjs sets the same
+  // margins), 92% of the frame on a landscape one.
+  const avail = W * (widthFrac ?? (H / W >= 1.5 ? 1 - 2 * Math.max(0.04, zoneFor(W, H).left / W) : 0.92));
   let lines = 1, x = 0;
   for (const w of words) {
     const em = (w.key ? goldScale : 1) * fontPx;
@@ -299,7 +302,9 @@ export function fitBlockHook(words, { treat, headTop, fontSizeFrac, W = 1080, H 
   if (!block || !(headTop > 0)) return null;
   const measure = (frac) => hookBlockHeight(words, { W, H, fontPx: Math.round(frac * H * block.em), charEm: block.charEm, lineHeight: block.lineHeight, padEm: block.padEm, goldScale: 1 });
   let frac = fontSizeFrac;
-  while (frac > fontSizeFrac * 0.6 && measure(frac) > headTop - gap - top) frac = Math.round(frac * 0.94 * 1000) / 1000;
+  // Shrinks to 60% at most: the last step stops on the floor instead of going under it.
+  const floor = Math.ceil(fontSizeFrac * 0.6 * 1000) / 1000;
+  while (frac > floor && measure(frac) > headTop - gap - top) frac = Math.max(floor, Math.round(frac * 0.94 * 1000) / 1000);
   const h = measure(frac);
   const blockTop = Math.max(top, headTop - gap - h);
   return { fontSizeFrac: frac, position: Math.round((blockTop + 1.2 * frac) * 1000) / 1000, fits: blockTop + h <= headTop - gap + 1e-6 };

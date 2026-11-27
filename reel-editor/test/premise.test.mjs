@@ -116,7 +116,7 @@ test("brand-token geometry and rendering produce the fixed strip, section swaps 
   const geometry = premiseGeometry({ brand: style.brand, sections: [{ label: "make the calls" }], headTop: 0.3, captionTop: 1200 });
   assert.equal(geometry.skip, undefined);
   assert.ok(geometry.fontSize >= 44 && geometry.fontSize <= 52);
-  assert.equal(geometry.box.x, 76);
+  assert.equal(geometry.box.x, 150, "inside the 150 px side strip");
   assert.ok(geometry.box.y >= 200 && geometry.box.y + geometry.box.h <= 330);
 
   const premise = { premise: "three ways < lead", sections: [{ label: "make the calls", line: 1, at: 5, icon: "phone-call.svg" }], start: 3, duration: 17, forced: false, ...geometry, headTop: 0.3, duck: [{ outAt: 7.8, hiddenAt: 8, inAt: 10, shownAt: 10.2 }] };

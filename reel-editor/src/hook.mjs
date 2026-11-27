@@ -1,6 +1,7 @@
 import { fitBlockHook, hookBlockHeight, BLOCK_HOOKS } from "./placement.mjs";
-import { proLineBreaks } from "./pro-captions.mjs";
+import { proLineBreaks, PRO_HOOK_LINE } from "./pro-captions.mjs";
 import { norm } from "./text.mjs";
+import { zoneFor, centredWidth } from "./safe-zone.mjs";
 
 /** A single readable title; long supplied titles are shortened at word boundaries at the same type size. */
 export function planProHook(words, { text, duration = 2.4, reelDuration, measure } = {}) {
@@ -10,12 +11,12 @@ export function planProHook(words, { text, duration = 2.4, reelDuration, measure
   const weak = /^(a|an|the|to|of|in|on|at|for|with|from|by|and|or|but|your|my|our|their|his|her|its|not|never|no|without|\d+)$/i;
   // Keep the whole title: step the size down (100, 88, 80 px on 1080x1920; measure is at 108) before dropping words.
   for (const px of [100, 88, 80]) {
-    const lines = proLineBreaks(all, { measure, maxWidth: 768 * 108 / px });
+    const lines = proLineBreaks(all, { measure, maxWidth: PRO_HOOK_LINE * 108 / px });
     if (lines && !weak.test(all.at(-1).text)) return { text: all.map((w) => w.text).join(" "), words: all, lines: lines.map((line) => line.length), fontSize: px, start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
   }
   const tokens = [...all];
   while (tokens.length) {
-    const lines = proLineBreaks(tokens, { measure, maxWidth: 768 * 108 / 80 });
+    const lines = proLineBreaks(tokens, { measure, maxWidth: PRO_HOOK_LINE * 108 / 80 });
     if (lines && !weak.test(tokens.at(-1).text)) {
       return { text: tokens.map((w) => w.text).join(" "), words: tokens, lines: lines.map((line) => line.length), fontSize: 80, start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
     }
@@ -59,10 +60,18 @@ export function plaqueLayout(words, options = {}) {
   if (fit.fits && fit.fontSizeFrac >= fontSizeFrac * 0.85) return above;
   if (!(headBottom > 0) || !(captionTop > 0)) return above;
   const block = BLOCK_HOOKS.plaque;
-  const h = hookBlockHeight(words, { W, H, fontPx: Math.round(fontSizeFrac * H * block.em), charEm: block.charEm, lineHeight: block.lineHeight, padEm: block.padEm, goldScale: 1 });
   const top = headBottom + gap;
-  if (top + h > captionTop - gap) return above;
-  return { fontSizeFrac, position: Math.round(top * 1000) / 1000, fits: true, zone: "below" };
+  // Between the chin and the captions the plaque is in the right button column's rows, so it keeps the column's
+  // width clear on both sides (compose.mjs sets the same margins). Since the side strips (Nov 26) a long hook can need
+  // a line more there: it gets one font step smaller (90%) before it is squeezed back above the head.
+  const z = H / W >= 1.5 ? zoneFor(W, H) : null;
+  const widthFrac = z ? centredWidth(z, top * H, captionTop * H) / W : undefined;
+  for (const k of [1, 0.9]) {
+    const frac = Math.round(fontSizeFrac * k * 10000) / 10000;
+    const h = hookBlockHeight(words, { W, H, fontPx: Math.round(frac * H * block.em), widthFrac, charEm: block.charEm, lineHeight: block.lineHeight, padEm: block.padEm, goldScale: 1 });
+    if (top + h <= captionTop - gap) return { fontSizeFrac: frac, position: Math.round(top * 1000) / 1000, fits: true, zone: "below" };
+  }
+  return above;
 }
 
 /**

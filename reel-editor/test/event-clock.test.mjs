@@ -190,15 +190,15 @@ test("composed glow cues align to actual scene and overlay endpoints, including 
 test("audio-only correction leaves every existing preset's picture HTML byte identical", () => {
   // Captured from the unchanged composer and presets. Only audio data-start values are normalized.
   const baselines = {
-    "_defaults.json": "bd7c6c985af1110b15a46d62d03b45e51b311af0df705370a63b51fe1a0b95f4",
-    "clean.json": "99be4a953cd99f9d43b333f6e0ae52ef7bd04766251b20e20bef1d443f328b27",
-    "pace-fast.json": "bdddb605d636b0d774990349b693127d77f11c7ebbe51ae355287d35b9c43dc0",
-    "pingel-brand.json": "4eaead4a87da7bcde22aab93f226ba5f747f111bfb7af1c814852257cdbe87f4",
-    "pingel-runway.json": "4eaead4a87da7bcde22aab93f226ba5f747f111bfb7af1c814852257cdbe87f4",
-    "pingel-v2.json": "831efee6cbce9bfeeb082af7c5c41abccd80d07a0e52f8befb8f5f52e87baaa1",
-    "speaker.json": "15c39838d8b35e09084ab95548d603b6f0309667b433c763aeedaed8f4d3f795",
-    "vsl.json": "dcb8971978ec67a698d23f1ad8527ab91c8f1e2c232472b1fae395fed7339b4c",
-    "youtube.json": "4b0a9797a4f2a72f98cb0ad0615f2ecf96cc1d74ece48ae996105c57b70320d0",
+    "_defaults.json": "ea2f1ee8e5b1a0d868911cc80bce7c60d45efd30ba0658eeaec3cfcd93015be3",
+    "clean.json": "d065a89f5251a0eb3cb2d811299e900eade7449123b3ee25deb7ddce3480ba37",
+    "pace-fast.json": "e893e410afae03010f06ed8f36810aac2223409dc6a3c00856b1b5cc438fedd5",
+    "pingel-brand.json": "e36c1191d0e60a976b470f516291235f4855a6476e30eaecb7b20f65c40b5c65",
+    "pingel-runway.json": "e36c1191d0e60a976b470f516291235f4855a6476e30eaecb7b20f65c40b5c65",
+    "pingel-v2.json": "2ae4b8dd54f5d474fa851bb4a3f73bf83fa97f8d05616bc9f1bf96dd850f01d4",
+    "speaker.json": "7888b82703403a2c193e9caa3ff9ea69519cd7ad983ef41562ad1b475781f3ed",
+    "vsl.json": "bc364cfe28e638f0f30b7cb22f4decf45fd25e87ce82c7d47585212a3dc80be8",
+    "youtube.json": "95cf7ee8ff635f94dc75db045a939256d0e70ca9976889b352f8304d44a33d27",
   };
   // New pro components have snapshot-free timeline checks; these hashes freeze the pre-existing looks.
   const names = fs.readdirSync(path.join(PKG_ROOT, "presets")).filter((name) => name.endsWith(".json") && !["pingel-bold.json", "pingel-pro.json", "broll-shotlist.json"].includes(name));

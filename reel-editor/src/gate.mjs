@@ -6,13 +6,13 @@
  * so a serif look rendered taller than planned and its hook ran into the captions (a client's women's-event reel, Nov 24),
  * and the text check passed it because it never compared one piece of text with another. Here the real renderer draws
  * each text layer alone (every other layer hidden) at the moments that matter; the pixels each layer paints are its
- * true footprint, so overlap and the Instagram safe zone are read off real frames.
+ * true footprint, so overlap and the safe zone (Instagram, TikTok, Facebook) are read off real frames.
  *
  * What it does with a problem:
  *   hook over captions        captions move down below the measured hook (or the hook moves up when they cannot)
- *   a card / slam / icon      that item is dropped
- *   over other text or out
- *   of the safe zone
+ *   a card / pro card /       that item is dropped (placement reads the same safe zone, so this is the backstop)
+ *   slam / icon over other
+ *   text or out of the zone
  *   a doubled caption word    the repeat is taken out ("Bootcamp Camp" -> "Bootcamp")
  *   a spoken ask cut off      the edit is run again ending after the ask (runEdit reads gate.json retry.endAfter)
  * Then the reel is rebuilt and checked again (at most twice). Anything still wrong holds the reel: gate.json and
@@ -27,10 +27,21 @@ import { editDistance, textTokens } from "./slide-preflight.mjs";
 import { readJSON, run, writeJSON } from "./util.mjs";
 import { shownText } from "./textcheck.mjs";
 import { detectFaces } from "./placement.mjs";
+import { SAFE_ZONE } from "./safe-zone.mjs";
 
-// Instagram Reels at 1080x1920: the caption/handle strip at the bottom, the button column on the right, the top bar.
-// Same numbers as the house rules (x 76-1004, 940 beside the buttons, bottom 83.3%), with a few pixels of slack.
-export const GATE_SAFE = { left: 70, right: 1010, iconRight: 946, iconFrom: 0.42, iconTo: 0.86, top: 0.07, bottom: 0.833 };
+// The shared safe zone (src/safe-zone.mjs: Instagram, TikTok and Facebook at 1080x1920): 150 px side strips, the right
+// button column from 35% of the height down, the top bar and the bottom strip. Placement uses the same numbers; the
+// gate allows 6 px of slack so a measured anti-aliased edge on the line itself is not a problem.
+const SLACK = 6;
+export const GATE_SAFE = Object.freeze({
+  left: SAFE_ZONE.side - SLACK,
+  right: SAFE_ZONE.width - SAFE_ZONE.side + SLACK,
+  iconRight: SAFE_ZONE.width - SAFE_ZONE.rail + SLACK,
+  iconFrom: SAFE_ZONE.railTop / SAFE_ZONE.height,
+  iconTo: 1,
+  top: SAFE_ZONE.top / SAFE_ZONE.height,
+  bottom: SAFE_ZONE.bottom / SAFE_ZONE.height,
+});
 export const GATE_RULES = {
   step: 2,           // read every 2nd pixel (2 px precision is plenty for a collision)
   diff: 90,          // summed RGB change against the empty frame that counts as "this layer painted here"
@@ -193,9 +204,9 @@ export function overlapCount(a, b, { pad = GATE_RULES.pad } = {}) {
   return hits;
 }
 
-/** Share of a layer's pixels outside the Instagram safe zone, and which edges it crosses. */
+/** Share of a layer's pixels outside the safe zone, and which edges it crosses ("buttons" is the right button column). */
 export function safeZoneSpill(m, safe = GATE_SAFE) {
-  // The zone is Instagram's 9:16 overlay; a landscape render (YouTube, a wide VSL) has none.
+  // The zone is the platforms' 9:16 overlay; a landscape render (YouTube, a wide VSL) has none.
   if (!m.count || m.H / m.W < 1.5) return { share: 0, edges: [] };
   const { w, h, step, W, H } = m;
   const sx = W / 1080;
@@ -227,6 +238,7 @@ const kindOf = (layer) => {
   if (id === "captions") return "captions";
   if (id === "cta") return "cta";
   if (/^gfx-\d+$/.test(id)) return "card";
+  if (/^pro-\d+$/.test(id)) return "procard";
   if (/^slam-\d+$/.test(id)) return "slam";
   if (/^icon-\d+$/.test(id)) return "icon";
   return "other";
@@ -259,7 +271,7 @@ export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, saf
       }
       const spill = safeZoneSpill(active[i].mask, safe);
       if (spill.share > rules.outside) {
-        add({ code: "safe-zone", level: "hold", at: frame.t, layers: [layerName(active[i].layer)], kinds: [kindOf(active[i].layer)], boxes: [active[i].mask.box], edges: spill.edges, message: `${layerName(active[i].layer)} reaches into the Instagram ${spill.edges.join("/")} area at ${frame.t.toFixed(2)}s (${Math.round(spill.share * 100)}% of it)` });
+        add({ code: "safe-zone", level: "hold", at: frame.t, layers: [layerName(active[i].layer)], kinds: [kindOf(active[i].layer)], boxes: [active[i].mask.box], edges: spill.edges, message: `${layerName(active[i].layer)} reaches past the safe zone (${spill.edges.join("/")}) at ${frame.t.toFixed(2)}s (${Math.round(spill.share * 100)}% of it)` });
       }
     }
   }
@@ -513,7 +525,7 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
   const next = JSON.parse(JSON.stringify(plan));
   const H = n(plan.canvas?.height, 1920);
   const applied = [], unfixable = [];
-  const drop = { graphics: new Set(), slams: new Set(), icons: new Set() };
+  const drop = { graphics: new Set(), slams: new Set(), icons: new Set(), pro: new Set() };
   const boxesOf = (id, times = null) => frames.filter((f) => !times || times.includes(f.t)).flatMap((f) => {
     const layer = layers.find((l) => l.id === id);
     const m = layer && f.layers?.[layer.index];
@@ -564,7 +576,7 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
       continue;
     }
     if (p.code === "safe-zone" && p.kinds[0] === "cta" && p.edges.every((e) => ["left", "right", "buttons"].includes(e))) {
-      // A CTA too wide for the frame (a long "Comment KEYWORD" pill under Instagram's buttons, Nov 24) gets smaller
+      // A CTA too wide for the frame (a long "Comment KEYWORD" pill under the platform buttons, Nov 24) gets smaller
       // text, sized to fit with room for its 6% pulse. Never dropped: it is the ask.
       const box = unionBox(boxesOf("cta", p.times));
       const W = n(plan.canvas?.width, 1080), sx = W / 1080;
@@ -578,7 +590,7 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
         if (factor > 0.5) {
           const before = Number(ct.fontSizeFrac) || 0.036;
           ct.fontSizeFrac = Math.round(before * factor * 10000) / 10000;
-          applied.push(`CTA text made ${Math.round((1 - factor) * 100)}% smaller so it clears Instagram's ${p.edges.includes("buttons") ? "buttons" : "edge"}`);
+          applied.push(`CTA text made ${Math.round((1 - factor) * 100)}% smaller so it clears the ${p.edges.includes("buttons") ? "button column" : "side strip"}`);
           continue;
         }
       }
@@ -588,12 +600,18 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
     if (p.code === "text-overlap" || p.code === "safe-zone") {
       // Drop the extra (a card, a slam, an icon); the hook and the captions are never the one dropped.
       const names = p.layers.map((name, i) => ({ name, kind: p.kinds[i] }));
-      const extra = names.find((x) => x.kind === "card") || names.find((x) => x.kind === "slam") || names.find((x) => x.kind === "icon");
-      if (extra) {
+      const extra = names.find((x) => x.kind === "card") || names.find((x) => x.kind === "procard") || names.find((x) => x.kind === "slam") || names.find((x) => x.kind === "icon");
+      // A pro card is found by its id (pro-N), which is not its place in plan.proGraphics.
+      if (extra?.kind === "procard" && Array.isArray(next.proGraphics) && next.proGraphics.some((g) => g.id === extra.name)) {
+        if (!drop.pro.has(extra.name)) applied.push(`card ${extra.name} dropped (${p.code === "safe-zone" ? `it reached past the safe zone (${p.edges.join("/")})` : `it touched ${names.find((x) => x !== extra)?.name}`})`);
+        drop.pro.add(extra.name);
+        continue;
+      }
+      if (extra && extra.kind !== "procard") {
         const i = Number(extra.name.match(/-(\d+)$/)?.[1]);
         const bucket = extra.kind === "card" ? "graphics" : extra.kind === "slam" ? "slams" : "icons";
         if (Number.isInteger(i) && Array.isArray(next[bucket]) && next[bucket][i]) {
-          if (!drop[bucket].has(i)) applied.push(`${extra.kind} ${i + 1} dropped (${p.code === "safe-zone" ? `it reached the Instagram ${p.edges.join("/")} area` : `it touched ${names.find((x) => x !== extra)?.name}`})`);
+          if (!drop[bucket].has(i)) applied.push(`${extra.kind} ${i + 1} dropped (${p.code === "safe-zone" ? `it reached past the safe zone (${p.edges.join("/")})` : `it touched ${names.find((x) => x !== extra)?.name}`})`);
           drop[bucket].add(i);
           continue;
         }
@@ -644,7 +662,8 @@ export function gateFixes(problems = [], plan = {}, { frames = [], layers = [], 
     }
     unfixable.push(p);
   }
-  for (const [bucket, set] of Object.entries(drop)) if (set.size) next[bucket] = next[bucket].filter((_, i) => !set.has(i));
+  for (const [bucket, set] of Object.entries(drop)) if (set.size && bucket !== "pro") next[bucket] = next[bucket].filter((_, i) => !set.has(i));
+  if (drop.pro.size) next.proGraphics = next.proGraphics.filter((g) => !drop.pro.has(g.id));
   // A caption emptied by a removal hands its time to the one before it.
   if (Array.isArray(next.captions)) {
     const kept = [];

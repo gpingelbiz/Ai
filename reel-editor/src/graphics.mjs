@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
+import { SAFE_ZONE } from "./safe-zone.mjs";
+
+// Card edges on a vertical reel, from the shared safe zone (src/safe-zone.mjs): 150 px from the left edge, and since
+// these cards reach the right button column's rows, the column's 180 px on the right (fractions of a 1080 width).
+const CARD_LEFT = SAFE_ZONE.side / SAFE_ZONE.width, CARD_RIGHT = SAFE_ZONE.rail / SAFE_ZONE.width;
+const pct = (f) => `${Math.round(f * 100000) / 1000}%`;
 import { log, warn, readJSON, writeJSON, ensureDir, r3 } from "./util.mjs";
 import { classifyBeats, beatJobsPrompt, flipCards, mixCards } from "./beat-jobs.mjs";
 import { QUIET_SKINS } from "./brandlooks.mjs";
@@ -942,10 +948,12 @@ export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const u = H / 1920;
   const px = (n) => `${Math.round(n * u)}px`;
+  const tall = !(W > 0) || H / W >= 1.5;
+  const side = (old, zone) => pct(tall ? Math.max(old, zone) : old);
   const overlay = mode === "overlay" ? `
       .gfx { background: none; }
       .gfx::after { background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 30%, rgba(0,0,0,0) 42%); }
-      .g-box { left: 4%; right: 4%; top: 5.5%; bottom: auto; max-height: 40%; justify-content: flex-start; gap: ${px(24)}; padding: ${px(36)} ${px(40)} ${px(40)}; border-radius: ${px(26)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55), inset 0 ${px(3)} 0 ${c.accent}; }
+      .g-box { left: ${side(0.04, CARD_LEFT)}; right: ${side(0.04, CARD_RIGHT)}; top: 5.5%; bottom: auto; max-height: 40%; justify-content: flex-start; gap: ${px(24)}; padding: ${px(36)} ${px(40)} ${px(40)}; border-radius: ${px(26)}; background: linear-gradient(180deg, rgba(10,10,12,0.86), rgba(10,10,12,0.78)); border: ${px(2)} solid rgba(255,255,255,0.12); box-shadow: 0 ${px(24)} ${px(60)} rgba(0,0,0,0.55), inset 0 ${px(3)} 0 ${c.accent}; }
       .g-center { align-items: flex-start; text-align: left; }
       .g-eyebrow { font-size: ${px(32)}; }
       .g-stat { line-height: 1; }
@@ -1022,7 +1030,7 @@ export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0
   return `
       .gfx { --u: ${u}px; position: absolute; inset: 0; overflow: hidden; opacity: 0; background: radial-gradient(120% 62% at 50% 34%, ${c.accent}2e 0%, ${c.accent}00 60%), ${c.bg}; color: ${c.text}; font-family: "Inter", sans-serif; }
       .gfx::after { content: ""; position: absolute; inset: 0; background: radial-gradient(90% 60% at 50% 40%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 100%); pointer-events: none; }
-      .g-box { position: absolute; left: 8%; right: 11%; top: 15%; bottom: 46%; display: flex; flex-direction: column; justify-content: center; gap: ${px(34)}; z-index: 1; }
+      .g-box { position: absolute; left: ${side(0.08, CARD_LEFT)}; right: ${side(0.11, CARD_RIGHT)}; top: 15%; bottom: 46%; display: flex; flex-direction: column; justify-content: center; gap: ${px(34)}; z-index: 1; }
       .g-center { align-items: center; text-align: center; }
       .g-eyebrow { display: inline-flex; align-items: center; gap: ${px(14)}; font-size: ${px(30)}; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: ${c.accent}; }
       .g-dot { width: ${px(12)}; height: ${px(12)}; border-radius: 50%; background: ${c.accent}; box-shadow: 0 0 ${px(18)} ${c.accent}; }
@@ -1068,7 +1076,7 @@ export function graphicsCSS({ W, H, colors, mode = "overlay", captionTop = H * 0
       .g-link { width: ${px(4)}; height: ${px(70)}; background: linear-gradient(${c.accent}, ${c.accent}55); transform-origin: 50% 0; }
       .g-icon { flex: none; width: ${px(52)}; height: ${px(52)}; transform-origin: 50% 50%; }
       .g-icon path { fill: none; stroke: ${c.accent}; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-      .gfx.gfx-timed.gfx-list .g-box, .gfx.gfx-timed.gfx-steps .g-box { left: ${px(76)}; right: ${px(140)}; top: ${px(200)}; bottom: auto; max-height: ${px(Math.max(300, captionTop / u - 260))}; box-sizing: border-box; overflow: hidden; transform-origin: 50% 50%; }
+      .gfx.gfx-timed.gfx-list .g-box, .gfx.gfx-timed.gfx-steps .g-box { left: ${px(tall ? SAFE_ZONE.side : 76)}; right: ${px(tall ? SAFE_ZONE.rail : 140)}; top: ${px(200)}; bottom: auto; max-height: ${px(Math.max(300, captionTop / u - 260))}; box-sizing: border-box; overflow: hidden; transform-origin: 50% 50%; }
       .gfx.gfx-timed .g-rows, .gfx.gfx-timed .g-steps { display: flex; flex-direction: column; align-items: stretch; gap: ${px(12)}; width: 100%; }
       .gfx.gfx-timed .g-live-item { position: relative; display: flex; align-items: center; min-height: ${px(62)}; padding-left: ${px(34)}; transform-origin: 0 50%; }
       .gfx.gfx-timed .g-item-text { flex: 1; min-width: 0; opacity: 0; color: ${c.accent}; transform-origin: 0 50%; }
@@ -1152,15 +1160,18 @@ ${persistent ? `      .gfx.gfx-persistent { background: none; }
 }
 
 /** Proof threads are brand artifacts, not phone screenshots; this CSS is emitted only when a proof card exists. */
-export function proofMessageCSS({ H, colors, captionTop = H * 0.72 }) {
+export function proofMessageCSS({ W, H, colors, captionTop = H * 0.72 }) {
   const c = { text: "#FFFFFF", accent: "#FFD600", bg: "#0B0B0D", ...colors };
   const u = H / 1920;
   const px = (n) => `${Math.round(n * u)}px`;
+  // A vertical reel keeps the thread inside the shared safe zone; a landscape one has no platform overlay.
+  const tall = !(W > 0) || H / W >= 1.5;
+  const proofLeft = tall ? SAFE_ZONE.side : 76, proofWidth = tall ? SAFE_ZONE.width - SAFE_ZONE.side - SAFE_ZONE.rail : 864;
   const maxHeight = Math.max(360, Math.round(captionTop - 200 * u - 40 * u));
   return `
       .gfx.gfx-message-proof { background: none; color: ${c.text}; }
       .gfx.gfx-message-proof::after { background: linear-gradient(180deg, color-mix(in srgb, ${c.bg} 52%, transparent) 0%, color-mix(in srgb, ${c.bg} 18%, transparent) 34%, transparent 48%); }
-      .gfx.gfx-message-proof .g-box.g-proof { left: ${px(76)}; right: auto; top: ${px(200)}; bottom: auto; width: ${px(864)}; max-height: ${maxHeight}px; box-sizing: border-box; overflow: hidden; justify-content: flex-start; align-items: stretch; gap: ${px(12)}; padding: ${px(26)} ${px(32)} ${px(30)}; border-radius: ${px(24)}; border: ${px(2)} solid ${c.text}; background: color-mix(in srgb, ${c.bg} 94%, transparent); color: ${c.text}; box-shadow: 0 ${px(18)} ${px(52)} color-mix(in srgb, ${c.bg} 72%, transparent); text-align: left; }
+      .gfx.gfx-message-proof .g-box.g-proof { left: ${px(proofLeft)}; right: auto; top: ${px(200)}; bottom: auto; width: ${px(proofWidth)}; max-height: ${maxHeight}px; box-sizing: border-box; overflow: hidden; justify-content: flex-start; align-items: stretch; gap: ${px(12)}; padding: ${px(26)} ${px(32)} ${px(30)}; border-radius: ${px(24)}; border: ${px(2)} solid ${c.text}; background: color-mix(in srgb, ${c.bg} 94%, transparent); color: ${c.text}; box-shadow: 0 ${px(18)} ${px(52)} color-mix(in srgb, ${c.bg} 72%, transparent); text-align: left; }
       .gfx.gfx-message-proof .g-proof-label { font-size: ${px(24)}; line-height: 1; font-weight: 800; letter-spacing: 0.2em; color: ${c.accent}; }
       .gfx.gfx-message-proof .g-proof-context { min-height: ${px(52)}; font-size: ${px(48)}; line-height: 1.08; font-weight: 850; letter-spacing: -0.01em; text-transform: uppercase; color: ${c.text}; }
       .gfx.gfx-message-proof .g-proof-thread { display: flex; flex-direction: column; align-items: stretch; gap: ${px(12)}; width: 100%; }

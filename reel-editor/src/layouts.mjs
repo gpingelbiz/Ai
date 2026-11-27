@@ -1,8 +1,12 @@
 import { headBoxFor, zoomDuring } from "./placement.mjs";
+import { zoneFor, rightLimit } from "./safe-zone.mjs";
 
-const SAFE_LEFT = 76;
-const SAFE_RIGHT = 940;
+// The shared safe zone at 1080x1920 (src/safe-zone.mjs). A panel that reaches the right button column's rows (35% of
+// the height down) stops at the column's edge; one that ends above them may use the full width up to the side strip.
+const ZONE = zoneFor(1080, 1920);
+const SAFE_LEFT = ZONE.left;
 const TOP_SAFE = 200;
+const rightFor = (bottom) => rightLimit(ZONE, TOP_SAFE, bottom);
 const PANEL_GAP = 24;
 const PANEL_MIN = 280;
 const PANEL_MAX = 360;
@@ -40,6 +44,7 @@ export function planWindowLayout(shot, context = {}) {
 
   const leftEdge = (head.cx - head.w / 2) * W;
   const rightEdge = (head.cx + head.w / 2) * W;
+  const SAFE_RIGHT = rightFor(TOP_SAFE + PANEL_MAX * 1.25);
   const rooms = [
     { side: "left", room: leftEdge - PANEL_GAP - SAFE_LEFT },
     { side: "right", room: SAFE_RIGHT - rightEdge - PANEL_GAP },
@@ -78,6 +83,8 @@ export function planPersistentLayout(scene, context = {}) {
     const head = headFor({ start: scene.start, duration: scene.duration }, context);
     if (head) {
       const W = context.W || 1080;
+      // This lane may grow down to the caption band, into the button column's rows.
+      const SAFE_RIGHT = rightFor(bottom);
       const rooms = [
         { side: "left", room: (head.cx - head.w / 2) * W - PANEL_GAP - SAFE_LEFT },
         { side: "right", room: SAFE_RIGHT - (head.cx + head.w / 2) * W - PANEL_GAP },
@@ -88,6 +95,13 @@ export function planPersistentLayout(scene, context = {}) {
   }
   const height = panel.side === "top" ? panel.h : Math.min(required, bottom - panel.y);
   if (height < required) return { skip: true, reason: `${count} rows do not fit at 40px in the clear ${panel.side} lane` };
+  // A right-hand lane that grew into the button column's rows narrows to the column's edge (its inner edge stays put,
+  // clear of the head); too narrow to read then, it is skipped rather than left under the buttons.
+  const edge = rightFor(panel.y + height);
+  if (panel.x + panel.w > edge) {
+    if (edge - panel.x < PANEL_MIN) return { skip: true, reason: `the ${panel.side} lane is under the right button column` };
+    panel = { ...panel, w: Math.floor(edge - panel.x) };
+  }
   return { placement: { x: panel.x, y: panel.y, w: panel.w, h: height, side: panel.side }, fontSize, note: panel.side === "top" ? "persistent structure above the head" : `persistent structure on the ${panel.side} of the head` };
 }
 

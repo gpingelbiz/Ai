@@ -12,7 +12,9 @@ test("pop-out placement: takes the largest clear box, shrinks around occupancy, 
   assert.equal(clear.covered, 0);
 
   const striped = grid();
-  for (let row = 0; row < 48; row++) if (row % 8 < 2) for (let col = 0; col < 27; col++) striped.cells[row * 27 + col] = 1;
+  // Bands three rows deep: thin enough to find a spot, thick enough that the full-size word (250 px inside the
+  // 150-900 px safe band) does not fit between them.
+  for (let row = 0; row < 48; row++) if (row % 8 < 3) for (let col = 0; col < 27; col++) striped.cells[row * 27 + col] = 1;
   const shrunk = placePopoutWord("POWER", striped, { maxCovered: 0.15 });
   assert.equal(shrunk.fallback, false);
   assert.ok(shrunk.fontSize < clear.fontSize, `${shrunk.fontSize} should be smaller than ${clear.fontSize}`);

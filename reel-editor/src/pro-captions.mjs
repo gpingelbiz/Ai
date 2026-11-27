@@ -2,6 +2,19 @@ import { createRequire } from "node:module";
 import { cleanText, autoKeyword } from "./captions.mjs";
 import { norm } from "./text.mjs";
 import { r3 } from "./util.mjs";
+import { zoneFor, centredWidth } from "./safe-zone.mjs";
+
+// The pro plates are centred. Captions sit in the right button column's rows, so a plate is at most as wide as the
+// frame minus the column on both sides (720 px at 1080x1920); the hook title sits above those rows and only keeps
+// clear of the 150 px side strips (780 px). Both plates have 24 px of padding each side.
+const PRO_ZONE = zoneFor(1080, 1920);
+export const PRO_PAD = 24;
+export const PRO_CAPTION_PLATE = centredWidth(PRO_ZONE, PRO_ZONE.railTop, PRO_ZONE.bottom);
+export const PRO_CAPTION_LINE = PRO_CAPTION_PLATE - 2 * PRO_PAD;
+export const PRO_HOOK_PLATE = centredWidth(PRO_ZONE, 0, PRO_ZONE.railTop);
+export const PRO_HOOK_LINE = PRO_HOOK_PLATE - 2 * PRO_PAD;
+/** The lowest a pro caption plate may reach: where the platforms' bottom strip starts. */
+export const PRO_CAPTION_FLOOR = PRO_ZONE.bottom;
 
 const NEGATIONS = new Set("not never no without don't doesn't didn't can't cannot won't wouldn't shouldn't couldn't isn't aren't wasn't weren't".split(" "));
 const NUMBERS = new Set("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred thousand million billion point half double triple".split(" "));
@@ -38,7 +51,7 @@ function blockedBreaks(words, protectedPhrases = []) {
 }
 
 /** Fixed-size, balanced lines. Null asks the phrase splitter to use fewer words, never smaller type. */
-export function proLineBreaks(words, { measure, maxWidth = 780, protectedPhrases = [] } = {}) {
+export function proLineBreaks(words, { measure, maxWidth = PRO_CAPTION_LINE, protectedPhrases = [] } = {}) {
   const width = (ws) => measure(ws.map((w) => w.text).join(" "));
   if (!words.length) return [];
   if (width(words) <= maxWidth) return [words];
@@ -134,7 +147,7 @@ export function placeProCaptions(groups, heads = [], { height = 1920, base: base
   const scale = height / 1920;
   const positions = new Map();
   // base: the usual plate height (y=1248); reel proof sets it lower so the supplied texts get the room above.
-  const base = baseFraction * height, bottomSafe = 1720 * scale, topSafe = 420 * scale, gap = 56 * scale;
+  const base = baseFraction * height, bottomSafe = PRO_CAPTION_FLOOR * scale, topSafe = 420 * scale, gap = 56 * scale;
   for (const g of groups) {
     if (positions.has(g.thought)) continue;
     const related = groups.filter((other) => other.thought === g.thought);

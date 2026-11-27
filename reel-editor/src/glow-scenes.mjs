@@ -1,3 +1,9 @@
+import { SAFE_ZONE } from "./safe-zone.mjs";
+
+// Centred scene words sit at 60% of the height, in the right button column's rows: they keep the column's width
+// clear on both sides (src/safe-zone.mjs).
+const SCENE_SIDE = `${Math.round(SAFE_ZONE.rail / SAFE_ZONE.width * 100000) / 1000}%`;
+
 /**
  * Glow display elements: the full-screen scenes (on the brand's dark ground) and the band overlays (over the speaker)
  * of the glow look. Each element type has markup, styles and a timeline; the plan says what to show and when.
@@ -167,7 +173,7 @@ export function glowScenesCSS({ W, H, c }) {
       .gs-bridge-target { opacity: 0; }
       .gs-img { object-fit: contain; filter: drop-shadow(0 30px 60px rgba(0,0,0,0.6)) drop-shadow(0 0 70px ${hexA(accent, 0.3)}); }
       .gs-icons { position: absolute; left: 6%; right: 6%; top: 24%; height: 30%; display: flex; align-items: center; justify-content: center; gap: 2%; }
-      .gs-text, .gs-label { position: absolute; left: 8%; right: 8%; top: 60%; text-align: center; font-weight: 760; font-size: ${px(0.042)}px; line-height: 1.12; letter-spacing: 0.012em; word-spacing: 0.1em; text-transform: uppercase; text-wrap: balance; text-shadow: ${glow}; }
+      .gs-text, .gs-label { position: absolute; left: ${SCENE_SIDE}; right: ${SCENE_SIDE}; top: 60%; text-align: center; font-weight: 760; font-size: ${px(0.042)}px; line-height: 1.12; letter-spacing: 0.012em; word-spacing: 0.1em; text-transform: uppercase; text-wrap: balance; text-shadow: ${glow}; }
       .gsw { display: inline-block; opacity: 0; }
       .gsw.k { color: ${accent}; text-shadow: ${goldGlow}; }
       .gs-top { position: absolute; left: 0; right: 0; top: 13%; display: flex; justify-content: center; }

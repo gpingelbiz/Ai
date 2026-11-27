@@ -117,7 +117,9 @@ test("glow: a spoken flip becomes a swap line, features take turns carrying a ma
 });
 
 test("glow scenes can sit behind the speaker, never on his face, and only when asked", () => {
-  const det = { frames: [0, 1, 2, 3].map((t) => ({ t, faces: [{ x: 0.52, y: 0.2, w: 0.22, h: 0.13 }], bodies: [{ x: 0.38, y: 0.2, w: 0.5, h: 0.75 }] })) };
+  // The head a little right of centre: with the 150 px side strips (the shared safe zone) the panel's narrowest
+  // readable width (475 px) only fits on the left when it may tuck behind him.
+  const det = { frames: [0, 1, 2, 3].map((t) => ({ t, faces: [{ x: 0.58, y: 0.2, w: 0.22, h: 0.13 }], bodies: [{ x: 0.38, y: 0.2, w: 0.5, h: 0.75 }] })) };
   const scenes = [{ type: "icons", start: 0.5, end: 3, icons: [] }];
   // No room beside him for the panel: without the matte the scene keeps the full screen.
   const plain = placeGlowScenes(scenes, det);

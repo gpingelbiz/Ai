@@ -1,4 +1,5 @@
 import { esc } from "./text.mjs";
+import { PRO_CAPTION_PLATE, PRO_CAPTION_LINE, PRO_HOOK_LINE, PRO_PAD } from "./pro-captions.mjs";
 
 function rows(words, lengths, render) {
   let offset = 0;
@@ -24,13 +25,13 @@ export function proCSS({ height = 1920, captions = false, hook = false, hookTop 
   const px = (n) => `${n * height / 1920}px`;
   return `${captions ? `
       #captions { z-index: 20; }
-      #captions .cap.cap-pro { left: 50%; right: auto; width: max-content; max-width: ${px(828)}; margin: 0; transform: translateX(-50%); }
-      #captions .cap-pro .cap-line { display: block; box-sizing: content-box; max-width: ${px(780)}; padding: ${px(12)} ${px(24)}; border-radius: ${px(12)}; background: rgba(17,17,17,0.92); color: #FFFFFF; font-family: "Inter", sans-serif; font-size: ${px(80)}; font-weight: 700; line-height: ${px(92)}; letter-spacing: ${px(-0.8)}; text-transform: none; text-align: center; text-shadow: none; -webkit-text-stroke: 0; filter: none; box-shadow: none; }
+      #captions .cap.cap-pro { left: 50%; right: auto; width: max-content; max-width: ${px(PRO_CAPTION_PLATE)}; margin: 0; transform: translateX(-50%); }
+      #captions .cap-pro .cap-line { display: block; box-sizing: content-box; max-width: ${px(PRO_CAPTION_LINE)}; padding: ${px(12)} ${px(PRO_PAD)}; border-radius: ${px(12)}; background: rgba(17,17,17,0.92); color: #FFFFFF; font-family: "Inter", sans-serif; font-size: ${px(80)}; font-weight: 700; line-height: ${px(92)}; letter-spacing: ${px(-0.8)}; text-transform: none; text-align: center; text-shadow: none; -webkit-text-stroke: 0; filter: none; box-shadow: none; }
       #captions .cap-pro .cap-line { font-optical-sizing: none; }
       #captions .cap-pro .w { font-size: inherit; font-weight: 700; opacity: 1; text-shadow: none; }
       #captions .cap-pro .w.k { color: #E2BA64; font-size: inherit; font-weight: 700; background: none; }
       #captions .cap-pro .pro-row { display: block; white-space: nowrap; }` : ""}${hook ? `
       #hook.hook-pro { position: absolute; inset: 0; padding: 0; opacity: 1; pointer-events: none; z-index: 19; }
-      #pro-title { position: absolute; top: ${px(hookTop)}; left: 50%; transform: translateX(-50%); width: max-content; max-width: ${px(768)}; padding: ${px(16)} ${px(24)}; border-radius: ${px(12)}; background: #000000; color: #FFFFFF; font-family: "Anton", sans-serif; font-weight: 400; font-size: ${px(100)}; line-height: ${px(106)}; letter-spacing: 0; text-align: center; text-transform: none; text-shadow: none; -webkit-text-stroke: 0; }
+      #pro-title { position: absolute; top: ${px(hookTop)}; left: 50%; transform: translateX(-50%); width: max-content; max-width: ${px(PRO_HOOK_LINE)}; padding: ${px(16)} ${px(PRO_PAD)}; border-radius: ${px(12)}; background: #000000; color: #FFFFFF; font-family: "Anton", sans-serif; font-weight: 400; font-size: ${px(100)}; line-height: ${px(106)}; letter-spacing: 0; text-align: center; text-transform: none; text-shadow: none; -webkit-text-stroke: 0; }
       #pro-title .pro-row { display: block; white-space: nowrap; }` : ""}`;
 }

@@ -13,6 +13,7 @@ import { loadBoldProof, stageBoldProof } from "./bold-proof.mjs";
 import { BOLD_TALK_DEFAULTS, boldTalkPrompt, validateBoldSpeakers, resolveBoldTalk } from "./bold-talk.mjs";
 import { BOLD_EXTRAS_DEFAULTS, prepareBoldExtras, stageBoldExtras } from "./bold-extras.mjs";
 
+import { SAFE_ZONE } from "./safe-zone.mjs";
 export { boldText } from "./bold-render.mjs";
 
 // These defaults also work in an installed engine without Greg's personal preset file.
@@ -23,7 +24,9 @@ const DEFAULTS = {
   phrases: { targetWords: 3, minWords: 2, maxWords: 4, protectedMaxWords: 7, targetSeconds: 0.75, minSeconds: 0.4, maxSeconds: 1.8, lead: 0.05, maxGap: 0.7, goldShare: 0.25, punchShare: 0.4, protectedPhrases: [] },
   quiet: { size: 84, weight: 650, emphasisWeight: 900, lineHeight: 1.08, stroke: 6, shadow: "0 3px 8px rgba(0,0,0,0.85), 0 5px 22px rgba(0,0,0,0.65)" },
   punch: { size: 104, weight: 900, lineHeight: 1.02, stroke: 12, payoffScale: 1.9, payoffFrames: 4, payoffFrom: 0.96, payoffSettle: false },
-  zone: { left: 76, right: 1004, top: 200, bottom: 1600, captionTop: 1056, chinGap: 32, overlayGap: 32, headMargin: 0.15 },
+  // left/right/bottom come from the shared safe zone (src/safe-zone.mjs). The text sits in the right button column's
+  // rows, so its right edge is the column's edge, not the side strip.
+  zone: { left: SAFE_ZONE.side, right: SAFE_ZONE.width - SAFE_ZONE.rail, top: 200, bottom: SAFE_ZONE.bottom, captionTop: 1056, chinGap: 32, overlayGap: 32, headMargin: 0.15 },
   faces: { samplesPerSecond: 4 },
   framing: { enabled: true, maxPer30: 4, minSpacing: 7.5 },
   talk: BOLD_TALK_DEFAULTS,

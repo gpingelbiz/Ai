@@ -9,14 +9,20 @@
 // zone the master gate measures (x 70..1010, right edge 946 beside the buttons, bottom 83%).
 import { esc } from "./text.mjs";
 
+// Everything sits inside the shared safe zone (src/safe-zone.mjs): 150 px side strips and, since the texts reach the
+// right button column's rows, its edge at 900 px. The thread's 5% push-in grows it 17.5 px each side, still inside.
 export const RECEIPTS = Object.freeze({
-  threadLeft: 98, threadWidth: 820, threadTop: 250, threadHeight: 1020, push: 1.05,
-  capTop: 1330, capLeft: 80, capWidth: 860,
-  textLeft: 76, textWidth: 864, hookTop: 600, closeTop: 600,
+  threadLeft: 175, threadWidth: 700, threadTop: 250, threadHeight: 1020, push: 1.05,
+  capTop: 1330, capLeft: 150, capWidth: 750,
+  textLeft: 150, textWidth: 750, hookTop: 600, closeTop: 600,
   minSlam: 0.9,
 });
 const GOLD = "#C8A24B", BONE = "#F5F1E8", INK = "#0B0B0D";
 const OUT = 0.22, IN = 0.35; // a text swipes away in OUT s, the next one rises in IN s
+// The stat row (150 px "from", 130 px arrow, 230 px "to", Anton) must fit the safe width: a long pair such as
+// "$4K -> $20K" (about 890 px) is zoomed down to fit, measured at about 0.52 em per Anton character.
+const statWidth = (s) => 0.52 * (150 * [...String(s.from)].length + 230 * [...String(s.to)].length) + 0.9 * 130 + 60;
+const statZoom = (s) => { const k = Math.min(1, RECEIPTS.textWidth / statWidth(s)); return k < 1 ? ` style="zoom:${Math.floor(k * 1000) / 1000}"` : ""; };
 
 /** Word tokens the way reel proof checks quotes (letters and digits, inner apostrophes kept), with where each sits. */
 export function tokenSpans(text) {
@@ -248,7 +254,7 @@ html,body{margin:0;background:${INK}}
 .cw{opacity:.28}
 .stat{position:absolute;inset:0;background:${INK};opacity:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .stat .lab{font-weight:800;font-size:40px;letter-spacing:.14em;color:${GOLD};margin-bottom:10px;max-width:${R.textWidth}px;text-align:center}
-.stat .row{display:flex;align-items:center;gap:30px;font-family:Anton;margin-right:${1080 - 2 * 508}px}
+.stat .row{display:flex;align-items:center;gap:30px;font-family:Anton;margin-right:${1080 - 2 * (R.threadLeft + R.threadWidth / 2)}px}
 .stat .from{font-size:150px;color:#8E8A84}
 .stat .arr{font-size:130px;color:${BONE}}
 .stat .to{font-size:230px;color:${GOLD};white-space:nowrap}
@@ -293,7 +299,7 @@ export function receiptsHTML({ data, heard, duration, footageMarkup, audioMarkup
   const statsHTML = T.threads.map((th, i) => {
     if (!th.slam) return "";
     const s = th.slam;
-    return `<div class="stat" id="s${i}" ${win(s.at, th.out + OUT)}>${s.label ? `<div class="lab">${esc(s.label)}</div>` : ""}<div class="row"><div class="from">${esc(s.from)}</div><div class="arr">→</div><div class="to">${esc(s.to)}</div></div></div>`;
+    return `<div class="stat" id="s${i}" ${win(s.at, th.out + OUT)}>${s.label ? `<div class="lab">${esc(s.label)}</div>` : ""}<div class="row"${statZoom(s)}><div class="from">${esc(s.from)}</div><div class="arr">→</div><div class="to">${esc(s.to)}</div></div></div>`;
   }).join("\n");
   const capsHTML = T.setups.map((s, i) => `<div class="cap" id="cap${i}" ${win(s.show, s.b + 0.7)}>${s.words.map(([w], j) => `<span class="cw" id="c${i}-${j}">${esc(w.replace(/[.,;:]+$/, ""))}</span>`).join(" ")}</div>`).join("\n");
   const closeHTML = `<div id="close" ${win(T.close.start - 0.12, D)}>${T.close.sentences.map((s, i) => `<div id="cl${i}">${sentenceHTML(s.words)}</div>`).join("")}</div>`;

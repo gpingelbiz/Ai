@@ -15,6 +15,7 @@ import { holdGlowFeatures } from "./glow-light.mjs";
 import { mixGlowPicks, classifyBeats, linesFromWords, beatJobsPrompt } from "./beat-jobs.mjs";
 import { log } from "./util.mjs";
 import { makeCutout } from "./behind.mjs";
+import { zoneFor } from "./safe-zone.mjs";
 
 export { pacingReport } from "./glow-pacing.mjs";
 
@@ -623,7 +624,7 @@ export function runningCaptions(plan, band, { W = 1080, H = 1920 } = {}) {
       const end = r3(k < chunks.length - 1 ? chunks[k + 1][0].start - 0.06 : Math.max(g.end, c.at(-1).end + 0.05));
       if (end - start < 0.2 || inOverlay(start, end)) return;
       const y = Math.min(band(start, end), Math.round(0.785 * H) - h);
-      runs.push({ kind: "feat", run: true, sweep: false, start, end, text: c.map((w) => w.text).join(" "), words: c, place: { x: Math.round(0.07 * W), y, w: Math.round(0.58 * W), size, h } });
+      runs.push({ kind: "feat", run: true, sweep: false, start, end, text: c.map((w) => w.text).join(" "), words: c, place: { x: Math.round(Math.max(0.07 * W, zoneFor(W, H).left)), y, w: Math.round(0.58 * W), size, h } });
     });
   }
   const captions = [...plan.captions.filter((c) => c.kind !== "sub"), ...runs].sort((a, b) => a.start - b.start);
