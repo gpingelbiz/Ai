@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  GATE_RULES, captionProblems, ctaNotes, ctaProblems, gateFixes, gateText, gateTimes, isolationHtml, layerMask, layoutProblems,
+  GATE_RULES, GATE_SAFE, captionProblems, ctaNotes, ctaProblems, gateFixes, gateText, gateTimes, isolationHtml, layerMask, layoutProblems,
   contrastProblems, silentCaptions, fillerCard, letterContrast, measureLayers, overlapCount, planFixes, tidyCardText, rootLayers, runGate, safeZoneSpill, spokenNearMiss,
 } from "../src/gate.mjs";
 import { findSignOff } from "../src/cuts.mjs";
@@ -398,13 +398,16 @@ test("a CTA pill too wide for the frame gets smaller text instead of holding the
   const layers = [...rootLayers(PAGE), { index: 10, id: "cta", tag: "div", text: true, start: 20, duration: 5 }];
   const frames = [{ t: 21.5, layers: { 10: mask([{ x: 110, y: 860, w: 860, h: 122 }]) } }];
   const problems = layoutProblems(frames, layers);
-  assert.deepEqual(problems.map((p) => [p.code, p.edges]), [["safe-zone", ["buttons"]]]);
+  // x 110-970 at 45% of the height: past the 150 px left strip and under the button column (the shared safe zone).
+  assert.deepEqual(problems.map((p) => [p.code, p.edges]), [["safe-zone", ["left", "buttons"]]]);
   const plan = { ...basePlan(), style: { ...basePlan().style, cta: { fontSizeFrac: 0.036 } }, cta: { text: "Comment BOOTCAMP", start: 20, duration: 5, position: 0.48 } };
   const { plan: fixed, applied, unfixable } = gateFixes(problems, plan, { frames, layers });
-  const factor = (2 * (946 - 540) - 12) / (860 * 1.06);
+  const half = Math.min(540 - GATE_SAFE.left, GATE_SAFE.iconRight - 540);
+  const factor = (2 * half - 12) / (860 * 1.06);
   assert.equal(fixed.style.cta.fontSizeFrac, Math.round(0.036 * factor * 10000) / 10000);
-  assert.ok(860 * factor * 1.06 <= 2 * (946 - 540), "the pulsed pill fits left of the buttons");
-  assert.match(applied[0], /CTA text made 12% smaller so it clears Instagram's buttons/);
+  assert.ok(860 * factor * 1.06 <= 2 * half, "the pulsed pill fits left of the buttons");
+  assert.ok(540 - 430 * factor * 1.06 >= GATE_SAFE.left, "and right of the left strip");
+  assert.match(applied[0], new RegExp(`CTA text made ${Math.round((1 - factor) * 100)}% smaller so it clears the button column`));
   assert.deepEqual(unfixable, []);
   assert.equal(fixed.cta.text, "Comment BOOTCAMP", "the ask stays");
 });

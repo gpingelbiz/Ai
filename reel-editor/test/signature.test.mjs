@@ -91,19 +91,19 @@ test("carousel: an enabled signature appears once on every slide", () => {
 
 test("legacy render snapshots: no signature and no house list keep every existing preset's HTML unchanged", () => {
   const expected = {
-    clean: "6138df32bbb050886d4625ea8b055259ca2a1baa57f437214a371d8aecbcdefd",
-    "pace-fast": "afcfbca8378f7e54f2e6fe41f56283cd53df97794cb2c4037c0a948d08b29f53",
+    clean: "b06324be3e9fe816767452765357529bb2cd3cd8a41fb98dc595a5231b8bd40c",
+    "pace-fast": "97682c1d05d38d845d6849a1e91701b929848dca6b20e729aeff68e440f46579",
     // 2026-11-02: Greg's own captions went back to caps, gold and markers (jungle reel debrief); pingel-v2 keeps its look.
-    "pingel-brand": "29081fd96a143dcf925e3e532df2c5c7dd9ba6c18618b6f597011c8ab39a4d44",
+    "pingel-brand": "2f2a3d460c7aba9001451b0eadec4c761dbcd11f1b092605ce030b946f06c3fe",
     // Bold's own runtime and caption coverage have separate tests in bold*.test.mjs.
-    "pingel-bold": "92e8b002c1ff181c4c6f6eab9ed9ba31ba3c960c365c3eebd09d8470c0048af4",
+    "pingel-bold": "16eada40f684cdda83cf9e6aa54cb7dce10e1ffc74016dcfcb908fbd0053f7ee",
     // Runway also disables the inherited focus pull.
-    "pingel-runway": "120535b95e5a57e57af383f8d32459c051a10aaa9be209e823aa68ef2c884f43",
-    "pingel-v2": "22d553ccbd4dda63bc49f89f48b9729a4f7a3dd9d044f721d049a2c9910d1638",
-    speaker: "02fd8099cebdcecbf752ed364a994eb4b9b706388112c8db6eedc3512df3f83a",
+    "pingel-runway": "1bd775a4ac3c27de1274ac55610d9570170fa228b2cb8bebb246d83d6e8435e5",
+    "pingel-v2": "6a7516b461408b5ef2fbb0aa9197cdff6710d65b270094d489406605f0ec99c5",
+    speaker: "03f8b0f0aea3503cfb6d76046b7bb6239bdcf5bafba57c304a6db29ede8a102d",
     // 2026-11-10: Greg picked bigger VSL subtitles on a dark plate.
-    vsl: "63024ec2532c5e2298bca4d54fa2e38761ceb4ce024a2e295c2d5db2298dfe57",
-    youtube: "1e0120f8f3c4dc3eb9b118ca35c0c75fdda699f6089095cbc22e7ab8baa4278f",
+    vsl: "022929dbccdb55581e4f019e6a37367fb2decbfbb6d61321cfa1c995975c5835",
+    youtube: "1ed1bfcbb4b859978467789b6171b21cd1317f899b392844b6ab3e9a4ce6029c",
   };
   // Pro is new; its classes and timing are checked without snapshots in pro-render.test.mjs.
   for (const file of fs.readdirSync(new URL("../presets", import.meta.url)).filter((name) => name.endsWith(".json") && !name.startsWith("_") && !["broll-shotlist.json", "pingel-pro.json"].includes(name)).sort()) {

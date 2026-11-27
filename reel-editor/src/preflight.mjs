@@ -7,6 +7,7 @@ import { probe } from "./probe.mjs";
 import { hookBlockHeight } from "./placement.mjs";
 import { isPersistentScene, numberMotion, sceneDuration } from "./graphics.mjs";
 import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
+import { SAFE_ZONE } from "./safe-zone.mjs";
 
 export {
   boxIntersection,
@@ -40,8 +41,9 @@ export {
  * Nothing here blocks delivery unless preflight.strict is set; the report is written as preflight.txt either way.
  */
 
-// Instagram Reels at 9:16: the caption and handle strip at the bottom, the icon column on the right, the top bar.
-export const SAFE = { top: 0.07, bottom: 0.167, right: 0.11, rightFrom: 0.42, rightTo: 0.86 };
+// The shared safe zone (src/safe-zone.mjs, Instagram, TikTok and Facebook at 9:16): the caption and handle strip at the
+// bottom, the button column on the right from 35% of the height down, the top bar, and 150 px side strips.
+export const SAFE = Object.freeze({ top: SAFE_ZONE.top / SAFE_ZONE.height, bottom: 1 - SAFE_ZONE.bottom / SAFE_ZONE.height, right: SAFE_ZONE.rail / SAFE_ZONE.width, rightFrom: SAFE_ZONE.railTop / SAFE_ZONE.height, rightTo: 1, side: SAFE_ZONE.side / SAFE_ZONE.width });
 
 export const CARD_RULES = {
   readingWpm: 160,
@@ -52,8 +54,8 @@ export const CARD_RULES = {
   eventWindow: 10,
   maxMajorStarts: 2,
   minMajorGap: 3,
-  left: 76,
-  right: 940,
+  left: SAFE_ZONE.side,
+  right: SAFE_ZONE.width - SAFE_ZONE.side,
   top: 200,
 };
 
@@ -151,14 +153,15 @@ export function premiseChecks(plan) {
   const cap = plan.style?.captions || {};
   const captionTop = plan.captions?.length && cap.enabled !== false ? (cap.position ?? 0.6) * H - 0.6 * (cap.fontSizeFrac || 0.04) * H : H;
   const bad = [];
-  if (box.x < 76) bad.push(`left ${Math.round(box.x)}px`);
-  if (right > Math.min(940, W - 76)) bad.push(`right ${Math.round(right)}px`);
+  const sideX = SAFE.side * W, maxRight = W - sideX;
+  if (box.x < sideX) bad.push(`left ${Math.round(box.x)}px`);
+  if (right > maxRight) bad.push(`right ${Math.round(right)}px`);
   if (box.y < 200) bad.push(`top ${Math.round(box.y)}px`);
   if (bottom > captionTop) bad.push(`bottom ${Math.round(bottom)}px past captions at ${Math.round(captionTop)}px`);
-  if (bad.length) items.push({ level: "warn", code: "premise-bounds", message: `premise strip is outside x 76-${Math.min(940, W - 76)}px / y 200px-caption top (${bad.join(", ")})` });
+  if (bad.length) items.push({ level: "warn", code: "premise-bounds", message: `premise strip is outside x ${Math.round(sideX)}-${Math.round(maxRight)}px / y 200px-caption top (${bad.join(", ")})` });
   if (fontSize < 44) items.push({ level: "warn", code: "premise-size", message: `premise strip text is ${fontSize}px (minimum 44px)` });
   if (Number.isFinite(premise.headTop) && bottom > premise.headTop * H) items.push({ level: "warn", code: "premise-head", message: `premise strip ends at ${Math.round(bottom)}px, over the head at ${Math.round(premise.headTop * H)}px` });
-  if (right > W - 140 && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "premise-right-rail", message: "premise strip reaches Instagram's right action rail" });
+  if (right > W - SAFE.right * W && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "premise-right-rail", message: "premise strip reaches the right button column" });
   return items;
 }
 
@@ -352,8 +355,8 @@ export function graphicChecks(plan) {
     if (bottom > captionTop) bad.push(`bottom ${Math.round(bottom)}px past captions at ${Math.round(captionTop)}px`);
     const source = box.estimated ? `estimated ${card.type || "card"} box` : `${card.type || "card"} box`;
     if (bad.length) items.push({ level: "warn", code: "card-bounds", message: `${source} at ${at(card)} is outside x ${rules.left}-${rules.right}px / y ${rules.top}px-caption top (${bad.join(", ")})` });
-    // Instagram's action rail only exists on a 9:16 reel.
-    if (H > W && right > rules.right && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "card-right-rail", message: `${source} at ${at(card)} reaches the right action rail below ${pct(SAFE.rightFrom)}` });
+    // The right button column only exists on a 9:16 reel.
+    if (H > W && right > W - SAFE.right * W && bottom > SAFE.rightFrom * H) items.push({ level: "warn", code: "card-right-rail", message: `${source} at ${at(card)} reaches the right action rail below ${pct(SAFE.rightFrom)}` });
     if (persistent && (+card.fontSize || 0) < 40) items.push({ level: "warn", code: "persistent-size", message: `${card.type || "persistent card"} at ${at(card)} uses ${+card.fontSize || 0}px item text (minimum 40px)` });
     if (persistent && card.head) {
       const face = { x: (card.head.cx - card.head.w / 2) * W, y: (card.head.cy - card.head.h / 2) * H, w: card.head.w * W, h: card.head.h * H };

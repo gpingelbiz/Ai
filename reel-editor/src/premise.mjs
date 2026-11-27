@@ -3,6 +3,7 @@ import path from "node:path";
 import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { lucideIconNames, validLucideIcon } from "./icons.mjs";
 import { log, warn, readJSON, writeJSON, r3, sha1 } from "./util.mjs";
+import { zoneFor, rightLimit } from "./safe-zone.mjs";
 
 const FILLERS = new Set(["ah", "er", "erm", "hmm", "mhm", "mm", "uh", "uhh", "uhm", "um", "umm"]);
 const tokenList = (text) => String(text || "").toLowerCase().replace(/’/g, "'").match(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu) || [];
@@ -187,7 +188,9 @@ export function premiseGeometry({ brand, W = 1080, H = 1920, sections = [], head
   const bodyLine = Number(brand.type?.body?.lineHeight) || 1;
   const wantedH = Math.ceil(fontSize * displayLine + 2 * pad + (sections.length ? gap + sectionFontSize * bodyLine : 0));
   const h = Math.min(130, wantedH);
-  const box = { x: 76, y: 200, w: Math.min(864, W - 152), h };
+  // Inside the shared safe zone's side strips (src/safe-zone.mjs); the band ends above the button column's rows.
+  const zone = zoneFor(W, H);
+  const box = { x: Math.round(zone.left), y: 200, w: Math.round(Math.min(864, rightLimit(zone, 200, 200 + h) - zone.left)), h };
   const headLimit = Number.isFinite(headTop) ? Math.floor(headTop * H - (Number(spacing.sm) || 0)) : Infinity;
   if (box.y + box.h > headLimit) return { skip: true, reason: `the top band would overlap the head at ${Math.round(headTop * H)}px` };
   if (box.y + box.h > captionTop) return { skip: true, reason: "the top band would overlap the captions" };

@@ -10,6 +10,7 @@ import { brandQuietCSS } from "./brandlooks.mjs";
 import { tokensCSS } from "./brandtokens.mjs";
 import { signatureCSS, signatureHTML } from "./signature.mjs";
 import { creditValueGrounded, creditVerifiedGrounded } from "./credentials.mjs";
+import { zoneFor } from "./safe-zone.mjs";
 import { evidenceCSS, evidenceHTML, EVIDENCE_JS } from "./evidence.mjs";
 import { timeLabelHTML, TIME_LABELS_JS } from "./time-labels.mjs";
 import { keywordColorOnFootage } from "./captions.mjs";
@@ -239,6 +240,17 @@ export function renderHTML(plan, footage) {
   const hookBox = hookStyle === "box" ? `background: ${hexA(c.bg || "#0B0B0D", 0.86)}; padding: 0.18em 0.45em; border-radius: 0.14em; box-decoration-break: clone; -webkit-box-decoration-break: clone;` : "";
   const ct = s.cta || {};
   const ctaFont = Math.round((ct.fontSizeFrac || 0.036) * H);
+  // The shared safe zone (src/safe-zone.mjs) as CSS margins. A vertical reel keeps captions, hooks and the CTA clear of
+  // the 150 px side strips, and text in the right button column's rows (35% of the height down) clear of the column;
+  // centred text keeps the column's width on both sides. A landscape canvas has no platform overlay.
+  const tall = H / W >= 1.5;
+  const zone = zoneFor(W, H);
+  const sideM = tall ? zone.left / W : 0, railM = tall ? (W - Math.min(zone.right, zone.railX)) / W : 0;
+  const marginAt = (top, height) => (tall && top + height > zone.railTop && top < zone.bottom ? railM : sideM);
+  const capLeft = Math.max(cap.sideMarginFrac ?? 0, sideM), capRight = Math.max(cap.rightMarginFrac ?? cap.sideMarginFrac ?? 0, railM);
+  const hookM = Math.max(0.04, marginAt(hk.position * H, 2.6 * hookFont));
+  const ctaTop = (plan.cta?.position ?? ct.position ?? 0.62) * H - ctaFont * 0.9;
+  const ctaM = Math.max(0.07, marginAt(ctaTop, 2.6 * ctaFont));
   const ctaStyle = plan.cta?.style || ct.style || "pill";
   const ctaLook =
     ctaStyle === "text"
@@ -408,7 +420,7 @@ export function renderHTML(plan, footage) {
     .map((sl, i) => {
       const p = sl.popout?.src ? sl.popout : null;
       const at = !p && sl.place ? sl.place : null;
-      const stage = p ? ` style="left:${r3((76 / 1080) * 100)}%;right:${r3(((1080 - 940) / 1080) * 100)}%;top:${p.placement.top}px;height:${Math.round(p.placement.fontSize * 1.05)}px"` : at ? ` style="left:${at.x}px;right:auto;top:${at.y}px;width:${at.w}px;height:${at.h}px"` : "";
+      const stage = p ? ` style="left:${r3((zone.left / W) * 100)}%;right:${r3(((W - Math.min(zone.right, zone.railX)) / W) * 100)}%;top:${p.placement.top}px;height:${Math.round(p.placement.fontSize * 1.05)}px"` : at ? ` style="left:${at.x}px;right:auto;top:${at.y}px;width:${at.w}px;height:${at.h}px"` : "";
       return `      <div id="slam-${i}" class="slam clip${p ? " slam-popout" : ""}${p?.placement?.fallback ? " slam-front" : ""}" data-start="${sl.t}" data-duration="${r3(sl.end - sl.t)}" data-track-index="3" data-layout-allow-overflow><div class="slam-stage"${stage}><div class="slam-word slam-t-${esc(s.slams?.style || "slam")}" style="font-size:${p?.placement.fontSize || (at ? Math.min(at.fontSize, slamFont(sl.text)) : slamFont(sl.text))}px">${esc(sl.text)}</div></div></div>`;
     })
     .join("\n");
@@ -663,7 +675,7 @@ ${iconList.length ? `      .icon-pop { position: absolute; opacity: 0; pointer-e
       .an path { fill: none; stroke: ${c.accent}; stroke-width: ${Math.max(3, Math.round(capFont * 0.085))}px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       .an-underline { left: -3%; width: 106%; bottom: -0.2em; height: 0.24em; }
       .an-circle { left: -14%; width: 128%; top: -22%; height: 144%; }${cap.marker === "arrow" || (glow && captions.some((g) => g.kind === "feat" && g.mark === "arrow")) ? "\n      .an-arrow { left: -0.95em; top: 50%; width: 0.85em; height: 0.85em; }" : ""}
-${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H, persistent: hasPersistent, placed: cardList.some((g) => g.place) }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ H, colors: c, captionTop: cap.position * H }) : "") + (hasMix ? mixCSS({ H, colors: c }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}${evidenceTokens ? evidenceCSS(evidenceTokens) : ""}
+${cardList.length ? graphicsCSS({ W, H, colors: c, mode: s.graphics?.mode || "overlay", captionTop: cap.position * H, persistent: hasPersistent, placed: cardList.some((g) => g.place) }) + skinsCSS({ H, colors: c, skins: skinsUsed }) + (hasProof ? proofMessageCSS({ W, H, colors: c, captionTop: cap.position * H }) : "") + (hasMix ? mixCSS({ H, colors: c }) : "") : ""}${progressList.length ? progressCSS({ H, colors: c }) : ""}${evidenceTokens ? evidenceCSS(evidenceTokens) : ""}
 ${premise ? `      #premise-strip {
         position: absolute; left: ${premise.box.x}px; top: ${premise.box.y}px; width: ${premise.box.w}px; height: ${premise.box.h}px;
         display: flex; flex-direction: column; justify-content: center; gap: ${premise.gap}px; box-sizing: border-box;
@@ -682,7 +694,7 @@ ${premiseHasIcons ? `      .premise-section-icon { flex: 0 0 ${premise.sectionFo
 ` : ""}
       #captions { position: absolute; inset: 0; pointer-events: none; }
       .cap {
-        position: absolute; left: ${r3(cap.sideMarginFrac * 100)}%; right: ${r3((cap.rightMarginFrac ?? cap.sideMarginFrac) * 100)}%; top: ${r3(cap.position * 100)}%;
+        position: absolute; left: ${r3(capLeft * 100)}%; right: ${r3(capRight * 100)}%; top: ${r3(cap.position * 100)}%;
         margin-top: -0.6em; display: flex; justify-content: center; opacity: 0;
       }
       .cap-line {
@@ -735,7 +747,7 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
         text-transform: ${hk.uppercase === false ? "none" : "uppercase"}; color: ${hookColor}; text-align: center;
         -webkit-text-stroke: ${hookStroke}px ${c.stroke}; paint-order: stroke fill; text-shadow: ${hk.shadow || cap.shadow};
       }
-      #hook-block { position: absolute; left: 4%; right: 4%; top: ${Math.round(hk.position * H)}px; text-align: center; }
+      #hook-block { position: absolute; left: ${r3(hookM * 100)}%; right: ${r3(hookM * 100)}%; top: ${Math.round(hk.position * H)}px; text-align: center; }
       #hook-scrim { position: absolute; inset: -38% -8%; background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.66) 0%, rgba(0,0,0,0.44) 46%, rgba(0,0,0,0) 74%); }
       #hook-lines { position: relative; font-size: 1.08em; line-height: 1.0; text-wrap: balance; -webkit-text-stroke: ${r3(hookStroke * 0.45)}px ${c.stroke}; text-shadow: 0 0.035em 0 rgba(0,0,0,0.55), 0 0.08em 0.45em rgba(0,0,0,0.6); color: ${c.text}; }
       #hook-lines .hw { display: inline-block; margin: 0 0.04em; }
@@ -744,13 +756,13 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
       #hook-text { display: inline-flex; align-items: center; justify-content: center; min-height: 2.4em; max-width: 100%; transform-origin: 50% 50%; ${hookBox} }
       #cta {
         position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
-        padding: ${Math.max(0, Math.round((plan.cta?.position ?? ct.position ?? 0.62) * H - ctaFont * 0.9))}px 7% 0; box-sizing: border-box;
+        padding: ${Math.max(0, Math.round((plan.cta?.position ?? ct.position ?? 0.62) * H - ctaFont * 0.9))}px ${r3(ctaM * 100)}% 0; box-sizing: border-box;
         font-family: "Anton", sans-serif; font-weight: 400; font-size: ${ctaFont}px; line-height: 1.1; letter-spacing: 0.03em;
         text-transform: ${ct.uppercase === false ? "none" : "uppercase"}; text-align: center;
       }
       #cta-text { display: inline-block; max-width: 100%; transform-origin: 50% 50%; ${ctaLook} }
       .hook-cursor { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.14em; vertical-align: -0.1em; background: ${c.accent}; }${themeCSS({ H, colors: c, theme })}${hk.plaque === true ? `
-      #hook.hook-plaque #hook-block { ${hk.side ? `left: ${r3(hk.side.left * 100)}%; right: ${r3(hk.side.right * 100)}%; text-align: left;` : "left: 7%; right: 7%; text-align: center;"} }
+      #hook.hook-plaque #hook-block { ${hk.side ? `left: ${r3(hk.side.left * 100)}%; right: ${r3(hk.side.right * 100)}%; text-align: left;` : `left: ${r3(Math.max(0.07, hookM) * 100)}%; right: ${r3(Math.max(0.07, hookM) * 100)}%; text-align: center;`} }
       #hook.hook-plaque #hook-scrim, #hook.hook-plaque #hook-bar { display: none; }
       #hook.hook-plaque #hook-lines { display: inline-block; box-sizing: border-box; max-width: 100%; padding: 0.24em 0.38em 0.2em; color: ${c.text}; background: ${c.bg}; background-image: none; border: 0; border-left: ${Math.max(1, Math.round(6 * H / 1920))}px solid ${c.accent}; border-radius: 0.14em; box-shadow: none; transform: none; font-family: "Anton", sans-serif; font-style: normal; font-weight: 400; font-size: 1em; line-height: 1.05; letter-spacing: 0.01em; text-transform: ${hk.uppercase === false ? "none" : "uppercase"}; -webkit-text-stroke: 0; paint-order: normal; text-shadow: none; }
       #hook.hook-plaque #hook-lines::before, #hook.hook-plaque #hook-lines::after { display: none; }

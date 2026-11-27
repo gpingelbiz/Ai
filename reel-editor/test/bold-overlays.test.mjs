@@ -41,7 +41,7 @@ test("only accepted overlays receive markup, timeline and sound at the final fra
   const dispose = registerBoldOverlay("fixture", {
     prompt: "Transcript ranges only",
     validate: (pick) => ({ ...pick, holdSeconds: 1 }),
-    place: (event) => ({ box: { x: 100, y: 200, w: 250, h: 150 }, landingFrame: event.startFrame + 2 }),
+    place: (event) => ({ box: { x: 200, y: 200, w: 250, h: 150 }, landingFrame: event.startFrame + 2 }), // inside the 150 px side strip
     html: (event, { esc }) => `<div class="fixture">${esc(words.slice(event.from, event.to + 1).map((w) => w.text).join(" "))}</div>`,
     css: () => ".bold-root .fixture { color:#F5F1E8; }",
     timeline: (event) => `tl.set(".fixture", { opacity: 1 }, ${event.landing});`,

@@ -41,7 +41,7 @@ The checklist for turning a signed client into a Content Studio that posts for t
 - **Photo finishing:** one consistent treatment per post, and it never touches skin.
 - **The slide check:** every word read back, no text on a face, readable contrast, no reused photo, clean copy.
 - **The grid check:** the new tile against their last 11, at Instagram's 3:4 crop.
-- **Reels:** the text check (clipped text, text on a face, an unreadable hook) and the master gate (text running into other text, the Instagram safe zone, doubled caption words, a spoken ask cut off) hold a bad reel as a draft. The gate fixes what it can first.
+- **Reels:** the text check (clipped text, text on a face, an unreadable hook) and the master gate (text running into other text, the safe zone for Instagram, TikTok and Facebook, doubled caption words, a spoken ask cut off) hold a bad reel as a draft. The gate fixes what it can first.
 - **Alt text** on every image, and the **AI label** whenever a picture is AI-made.
 
 ## Known limits (tell the client)

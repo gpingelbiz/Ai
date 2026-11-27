@@ -185,7 +185,7 @@ export async function stageBoldProof(picks, context, { inspect, redact, crop } =
 /** Search free rectangles around the active face, captions and other accepted overlays. */
 export function placeBoldCard(size, event, context, { beside = false } = {}) {
   const { zones, settings, overlays = [] } = context, safe = zones.safe;
-  const gap = settings.zone.overlayGap * safe.w / (settings.zone.right - settings.zone.left);
+  const gap = settings.zone.overlayGap * (context.plan?.canvas?.width || 1080) / 1080;
   // Face boxes stop at the hairline: keep another third of a face height above them clear for hair or a cap.
   const faces = zones.faces.filter((face) => event.start <= face.end && event.end >= face.start).map((face) => ({ ...face, y: face.y - face.h / 3, h: face.h * 4 / 3 }));
   const headline = zones.headline && event.start < zones.headline.end ? zones.headline : null;
@@ -215,7 +215,8 @@ function placeProof(event, context) {
   const scale = context.plan.canvas.width / 1080, settings = cfg(context, "proof");
   const label = event.label ? said(event.label, context.words) : clean(entry.label);
   const labelH = 64 * scale, maxH = Math.min(360, Math.max(1, settings.height)) * scale;
-  const maxW = Math.min(820, Math.max(1, settings.width)) * scale;
+  // Never wider than the safe zone the card is placed in (750 px at 1080 since the 150 px side strips, Nov 26).
+  const maxW = Math.min(Math.min(820, Math.max(1, settings.width)) * scale, context.zones?.safe?.w ?? Infinity);
   const w = Math.min(maxW, (maxH - labelH) * asset.width / asset.height), mediaH = w * asset.height / asset.width;
   const textPx = renderedEvidenceTextPx(asset.lines, { h: mediaH });
   if (!textPx || asset.lines.some((line) => line.box.h * mediaH < 32) || textPx < 32) return null;
@@ -229,7 +230,7 @@ function placeDefine(event, context) {
   if (!admitted(event, context, "define") || !validateDefinePick(event, context)) return null;
   const data = definitionData(event, context);
   if ((context.overlays || []).some((other) => other.kind === "define" && tokens(other.data.term).join(" ") === tokens(data.term).join(" "))) return null;
-  const scale = context.plan.canvas.width / 1080, w = Math.min(820, Math.max(1, cfg(context, "define").width)) * scale, padding = 32 * scale;
+  const scale = context.plan.canvas.width / 1080, w = Math.min(Math.min(820, Math.max(1, cfg(context, "define").width)) * scale, context.zones?.safe?.w ?? Infinity), padding = 32 * scale;
   const termSize = fitBoldText([data.term], { size: 56 * scale, width: w - 2 * padding }).size;
   const size = fitBoldText([data.definition], { size: 40 * scale, width: w - 2 * padding }).size;
   if (termSize < 32 || size < 32) return null;

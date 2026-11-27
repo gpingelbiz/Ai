@@ -120,15 +120,15 @@ test("math rows cut on exact frames and survive forward, reverse and shuffled GS
 });
 
 test("registered evidence overlays preserve byte-identical HTML for every existing preset and client look", () => {
-  const expected = { clean: "ad9cc68d543e4107981dede25e654040ecb03a202e098fd6b867c5237770bc85", "pingel-brand": "4eb4d6a574f49395fd8c951946f3ce715d4302693118df5b502bf1c6715ecad3", "pingel-runway": "4eb4d6a574f49395fd8c951946f3ce715d4302693118df5b502bf1c6715ecad3", "pingel-v2": "307483b2092fa537163dda7739cd3fb2e6936ca8296122943ce647629b773830", speaker: "9b2e4191af94d57d2629fac3458cf4130fc6ba020162ef2b0b08ef1079e9f044", vsl: "91efe2ca41328efea454a587b14623b047ab1ecacb4b19a0d8bbb8f6b3b756d6", youtube: "5f816a16952920dc71c1466176e7668d52561baca99c025e70facade0df6b621" };
+  const expected = { clean: "e16e5bd17435167cbcd67b31c13f417400b9f8d3a3cb96cfe38e11a248e989ba", "pingel-brand": "fbd2d1f5d710a6e864d6d272aa4d97e9e17aacc53b14314e96ed7e5d4556bf99", "pingel-runway": "fbd2d1f5d710a6e864d6d272aa4d97e9e17aacc53b14314e96ed7e5d4556bf99", "pingel-v2": "119ac336a650881960d7e5eb83487944193999c077ccc7f5dc81934b71b7d44d", speaker: "1e2c30f2e2ca512f8a09e6cb72b29bce54d2f8f3dd7c226e96654773adb67465", vsl: "ee4938073f75d31fee2bb2cf11497ca3ff3cb0c8df0d3d3d8db0706cb0f911cc", youtube: "134af6795d5e4a78312af24885962cb9c193961246b3cdf19a180a160015c1a8" };
   const digest = (plan) => createHash("sha256").update(renderHTML(plan, "assets/footage.mp4")).digest("hex");
   for (const [preset, hash] of Object.entries(expected)) {
     const plan = fixturePlan("/fixture.mp4"); plan.style = loadPreset(preset); plan.preset = preset;
     assert.equal(digest(plan), hash, preset); assert.doesNotMatch(renderHTML(plan, "assets/footage.mp4"), /bold-proof|bold-definition|bold-math/);
   }
   const client = fixturePlan("/fixture.mp4"); client.style.captions.style = "glow"; client.glowScenes = []; client.glowOverlays = [];
-  assert.equal(digest(client), "1f352cb80d58644128375a2442b41591a500cf81e7b2d45ef739338e7c2b0f14");
+  assert.equal(digest(client), "b9ee0afa17071577a68e771dee444a435beb5167018d9130fe49cad0e25073b3");
   client.preset = "brand-fixture"; client.style.name = "brand-fixture"; client.style.colors = { text: "#fafafa", accent: "#b1bbcc", stroke: "#141424", bg: "#1a1b2a" };
   Object.assign(client.style.captions, { style: "reveal", uppercase: false, animation: "cut", dimFuture: false });
-  assert.equal(digest(client), "1653bbb274e2dd1a2ee9fdcaa51283d65d9b012fd7f773a2b8e2375c67b013ab");
+  assert.equal(digest(client), "c33ce0e4766cdcdf9525b84ff9e590091da9a757a7a3e8de059e4650f3af11e2");
 });

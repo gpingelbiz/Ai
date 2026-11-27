@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { makeCutout } from "./behind.mjs";
+import { zoneFor, rightLimit } from "./safe-zone.mjs";
 import { firstExactLine } from "./graphics.mjs";
 import { planWindowLayout } from "./layouts.mjs";
 import { signatureSafeArea, titlePlate } from "./signature.mjs";
@@ -323,8 +324,12 @@ export function layoutGeometry(item, { W, H, captionTop, tokens, face, detection
   }
   const box = { x: 0, y: 0, w: W, h: H };
   const media = { ...box };
-  const labelBox = { x: 76, y: 200, w: Math.min(864, W - 152), h: labelH };
-  const target = { x: 76, y: labelBox.y + labelBox.h + (Number(tokens.spacing?.sm) || 0), w: labelBox.w, h: Math.max(1, captionTop - labelBox.y - labelBox.h - (Number(tokens.spacing?.sm) || 0)) };
+  // The label and the zoom target stay inside the shared safe zone (src/safe-zone.mjs); the target reaches down into
+  // the right button column's rows, so it ends at the column's edge.
+  const zone = zoneFor(W, H), left = Math.round(zone.left);
+  const labelBox = { x: left, y: 200, w: Math.round(Math.min(864, rightLimit(zone, 200, 200 + labelH) - left)), h: labelH };
+  const targetY = labelBox.y + labelBox.h + (Number(tokens.spacing?.sm) || 0);
+  const target = { x: left, y: targetY, w: Math.round(Math.min(labelBox.w, rightLimit(zone, targetY, captionTop) - left)), h: Math.max(1, captionTop - labelBox.y - labelBox.h - (Number(tokens.spacing?.sm) || 0)) };
   const focus = focusGeometry(item, media, target, tokens, { zoom });
   return { box, media, labelBox, plate, ...focus };
 }

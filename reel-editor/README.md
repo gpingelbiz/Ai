@@ -393,7 +393,9 @@ Their look builds on Greg's full look (so it keeps every improvement), with ever
 
 ## Layout and safe zones
 
-Captions are placed from the face: just under the chin, with the block never lower than 0.76 (where the caption overlay starts to cover it) and never higher than 0.56 (Meta's safe box ends at 65%: the username, caption and audio bar cover the bottom 35%). A close-up selfie gets them under the chin at about 0.75; a wide shot gets them at the safe line. `--caption-position` overrides; without a face the preset's 0.60 is used. A 7% left and 12% right margin keeps them off the action buttons on the right. The hook goes above the head or under the chin and the cards keep to the top 54%. The CTA pill sits at 0.48. The hook is on screen at full strength from frame 0 with a slow push-in on the footage (reels that spread show text by frame 4 and motion in the first half second).
+**One safe zone for every vertical reel (`src/safe-zone.mjs`, since 2026-11-26).** Every reel also posts to TikTok and Facebook, so the zone is the union of the platforms' overlays at 1080x1920: 150 px stay clear down each side, the right button column (TikTok's is the widest, 180 px) is clear from 35% of the height down, the top bar (7%) and the bottom strip (from 1600 px) as before. Card placement (frame placement, the pro cards, b-roll windows, the bold look), the captions, hooks and CTA, preflight and the master gate all read these same numbers, so a card is placed clear the first time instead of being dropped at the gate. Centred text in the button column's rows keeps 180 px on both sides (pro captions: a plate of at most 720 px, lines of 672 px at 80 px type; a cue that would need a third line takes fewer words). A landscape canvas has no overlay.
+
+Captions are placed from the face: just under the chin, with the block never lower than 0.76 (where the caption overlay starts to cover it) and never higher than 0.56 (Meta's safe box ends at 65%: the username, caption and audio bar cover the bottom 35%). A close-up selfie gets them under the chin at about 0.75; a wide shot gets them at the safe line. `--caption-position` overrides; without a face the preset's 0.60 is used. The safe zone's margins (at least 150 px on the left, 180 px on the right) keep them off the side strips and the button column. The hook goes above the head or under the chin and the cards keep to the top 54%. The CTA pill sits at 0.48. The hook is on screen at full strength from frame 0 with a slow push-in on the footage (reels that spread show text by frame 4 and motion in the first half second).
 
 ### The master gate (`src/gate.mjs`, `reel gate <workdir>`)
 
@@ -402,7 +404,7 @@ The last check every reel passes before it is delivered, and the one that fixes 
 | Found | Fixed by |
 | --- | --- |
 | hook and captions touching (within 6 px) | captions move down below the measured hook with a 40 px gap; the hook moves up when the captions would reach the Instagram strip |
-| a card, slam or icon touching other text, or reaching into the Instagram top bar, button column (x over 946 between 42% and 86%), sides (x 70-1010) or bottom strip (below 83.3%) | that item is dropped |
+| a card, pro card, slam or icon touching other text, or reaching past the safe zone: the top bar, the button column (x over 906 from 35% of the height down), the side strips (x 144-936) or the bottom strip (below 83.3%); 6 px of slack on the shared zone | that item is dropped (placement uses the same zone, so this is the backstop) |
 | a doubled caption word, or a word followed by its own tail ("Bootcamp Camp") | the repeat is taken out |
 | a spoken ask cut from the ending ("I invite you to join me for...", "comment...", "book a call", "DM me") | the same edit runs again ending after the ask (`--end-after`); the transcript is cached |
 | captions over a face (the text check's face hit) | captions move under the lowest chin Vision sees at those moments |
@@ -414,7 +416,7 @@ The last check every reel passes before it is delivered, and the one that fixes 
 | transcript spacing on a card ("1 ,000", "Re -loop") | closed up ("1,000", "Re-loop") |
 | mirrored selfie footage (Vision reads words in the shot only when the frame is flipped) | flipped back in the clean pass |
 | a CTA card on the captions | moved up clear of them |
-| a CTA card too wide for the frame (under Instagram's buttons or off an edge) | its text made smaller to fit, pulse included |
+| a CTA card too wide for the frame (under the button column or into a side strip) | its text made smaller to fit, pulse included |
 
 The plan-only fixes (caption lines, silence, hook words, cards) go into `plan.json` before the first render, so they cost nothing; the measured ones need one re-render.
 

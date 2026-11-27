@@ -38,7 +38,7 @@ test("preset inherits the engine and keeps all competing automatic planners off;
   assert.equal(allowedFile("presets/pingel-bold.json"), false);
   assert.equal(allowedFile("src/bold.mjs"), true);
   const cfg = boldSettings(); cfg.zone.left = 0;
-  assert.equal(boldSettings().zone.left, 76, "defaults cannot be mutated through a result");
+  assert.equal(boldSettings().zone.left, 150, "defaults cannot be mutated through a result (the shared safe zone)");
   assert.equal(boldSettings({ bold: { quiet: { size: 80 } } }).quiet.size, 80);
 });
 

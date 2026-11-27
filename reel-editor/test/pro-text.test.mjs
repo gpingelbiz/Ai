@@ -20,7 +20,7 @@ test("pro caption markup has fixed line breaks, escaped words and a stable measu
   assert.equal((html.match(/class="w k"/g) || []).length, 1);
   assert.match(proCaptionHTML({ ...group, y: undefined }, 0, { height: 960 }), /font-size:40px;top:624px/);
   const css = proCSS({ captions: true });
-  for (const spec of [/font-weight: 700/, /line-height: 92px/, /letter-spacing: -0.8px/, /max-width: 780px/, /padding: 12px 24px/, /border-radius: 12px/, /rgba\(17,17,17,0.92\)/, /#E2BA64/, /text-shadow: none/]) assert.match(css, spec);
+  for (const spec of [/font-weight: 700/, /line-height: 92px/, /letter-spacing: -0.8px/, /max-width: 672px/, /max-width: 720px/, /padding: 12px 24px/, /border-radius: 12px/, /rgba\(17,17,17,0.92\)/, /#E2BA64/, /text-shadow: none/]) assert.match(css, spec);
   assert.equal(proCSS(), "");
 });
 
@@ -34,7 +34,7 @@ test("pro hook markup and style give frame zero a two-line Anton title on black"
   assert.match(css, /font-family: "Anton"/);
   assert.match(css, /font-weight: 400; font-size: 100px/);
   assert.match(css, /background: #000000/);
-  assert.match(css, /max-width: 768px; padding: 16px 24px/, "816 px outer width includes the plate padding");
+  assert.match(css, /max-width: 732px; padding: 16px 24px/, "780 px outer width (inside the 150 px side strips) includes the plate padding");
   assert.match(css, /opacity: 1/);
 });
 
@@ -97,11 +97,11 @@ test("pro zoom budget limits both total and rolling density with a still two-sec
 
 // These hashes were captured before changing the composer; golden pixels have the same HTML, CSS and GSAP input.
 const legacy = {
-  "pingel-brand": "4eb4d6a574f49395fd8c951946f3ce715d4302693118df5b502bf1c6715ecad3",
-  "pingel-bold": "f4bb7290699d14e6354ee7e7020ee7e2ba9f3b3c77df831200ef7ebf3d526192",
-  clean: "ad9cc68d543e4107981dede25e654040ecb03a202e098fd6b867c5237770bc85",
-  vsl: "91efe2ca41328efea454a587b14623b047ab1ecacb4b19a0d8bbb8f6b3b756d6",
-  "pingel-v2": "307483b2092fa537163dda7739cd3fb2e6936ca8296122943ce647629b773830",
+  "pingel-brand": "fbd2d1f5d710a6e864d6d272aa4d97e9e17aacc53b14314e96ed7e5d4556bf99",
+  "pingel-bold": "36ac41f8da3f1ebfed456faf516a9c30578c4805f1dffc0ed50de27547adba37",
+  clean: "e16e5bd17435167cbcd67b31c13f417400b9f8d3a3cb96cfe38e11a248e989ba",
+  vsl: "ee4938073f75d31fee2bb2cf11497ca3ff3cb0c8df0d3d3d8db0706cb0f911cc",
+  "pingel-v2": "119ac336a650881960d7e5eb83487944193999c077ccc7f5dc81934b71b7d44d",
 };
 for (const [name, hash] of Object.entries(legacy)) test(`${name} composition remains byte-identical to the pre-pro baseline`, () => {
   const plan = fixturePlan("fixture.mp4");
