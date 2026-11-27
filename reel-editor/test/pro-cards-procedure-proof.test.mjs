@@ -63,7 +63,9 @@ test("batch registers eleven complete procedure and proof cards and grounds thei
     assert.ok(def.hint.length > 20 && !def.hint.includes("\n"));
     assert.ok(["obsidian", "bone", "bare"].includes(def.surface));
     const { words, pick, o } = fixture(type);
-    assert.deepEqual(groundProOverlay(pick, words), groundCard(pick, type, words));
+    // Named design: since the Herk import some of these types have more designs, and the planner's pick may land on one.
+    const { group, ...designed } = groundProOverlay({ ...pick, design: type }, words) || {};
+    assert.deepEqual(designed, groundCard(pick, type, words));
     assert.ok(PRO_RECTS.some((r) => def.size.w <= r.w && def.size.h <= r.h), type);
     assert.deepEqual(proSize(o), def.size);
     assert.deepEqual(o.reveals, o.phrases.map((p) => words[p.from].start));

@@ -201,7 +201,7 @@ test("caution tape reserves one fullscreen reading moment and keeps the rest tra
   assert.equal(def.surface, "bare");
   assert.match(renderProOverlay(overlay).html, /pro-bare pro-full/);
   assert.match(def.css, /\.pro-caution-tape\.pro-full \{ padding:0;background:none;box-shadow:none/);
-  assert.match(def.css, /top:170px;width:1080px/);
+  assert.match(def.css, /left:150px;top:170px;width:780px/, "inside the 150 px side strips (the shared safe zone)");
   assert.equal((renderProOverlay(overlay).html.match(/class="wp-stripes"/g) || []).length, 2);
   assert.match(proPrompt(words), /caution-tape.*FULL SCREEN/);
   assert.equal(budgetProOverlays([overlay], { duration: 30 }).length, 1);

@@ -192,7 +192,7 @@ test("the full-width strip uses bare fullscreen placement and obeys its reading 
   assert.equal(CARDS["takeaway-banner"].surface, "bare");
   const r = renderProOverlay({ ...overlay, id: "banner", place: { x: 0, y: 0 } });
   assert.match(r.html, /pro-bare pro-full/);
-  assert.match(CARDS["takeaway-banner"].css, /top:170px;width:1080px/);
+  assert.match(CARDS["takeaway-banner"].css, /left:150px;top:170px;width:780px/, "inside the 150 px side strips (the shared safe zone)");
   assert.match(CARDS["takeaway-banner"].css, /\.pro-takeaway-banner\.pro-full \{ padding:0;background:none;box-shadow:none/);
   assert.equal(budgetProOverlays([overlay], { duration: 30 }).length, 1);
   assert.equal(budgetProOverlays([{ ...overlay, end: overlay.start + 4.501 }], { duration: 30 }).length, 0);

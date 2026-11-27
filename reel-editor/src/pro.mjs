@@ -6,7 +6,7 @@ import { GREG_PRESETS, isClientJob } from "./client-mode.mjs";
 import { readFrame, viewFor, overlaps } from "./frame-place.mjs";
 import { eventClock } from "./event-clock.mjs";
 import { r3, writeJSON, warn } from "./util.mjs";
-import { CARDS } from "./pro-cards/index.mjs";
+import { CARDS, CARD_GROUPS, rootOf, tagsOf } from "./pro-cards/index.mjs";
 import { zoneFor, rightLimit } from "./safe-zone.mjs";
 import { PRO_CAPTION_PLATE, PRO_HOOK_PLATE } from "./pro-captions.mjs";
 
@@ -90,7 +90,7 @@ export function groundProOverlay(pick, words, { groups = [] } = {}) {
   if (!pick || !words?.length) return null;
   pick = normPick(pick, words);
   const type = CARDS[pick.type] ? pick.type : typeFor(pick.type);
-  if (CARDS[type]) return groundCard(pick, type, words);
+  if (CARDS[type]) return groundDesign(pick, type, words);
   if (!["correction", "compare", "steps", "stat", "wordMark", "label"].includes(type)) return null;
   const anchor = words[pick.from]?.start ?? pick.start ?? groups[pick.line]?.start ?? 0;
   const span = (v) => {
@@ -169,7 +169,8 @@ export function groundCard(pick, type, words) {
         item = { text: textAt(words, from, to), from, to, at: words[from].start, end: words[to].end };
         if (item.text.length > (slot.maxChars || 48)) return null;
         // A slot may check its own words (a proof card's number must be a number he says; a streak counts to 7).
-        if (typeof slot.validate === "function" && !slot.validate(item.text, slots)) return null;
+        // A validator that throws (it read a slot not grounded yet) rejects the card instead of stopping the edit.
+        if (typeof slot.validate === "function") { let ok = false; try { ok = slot.validate(item.text, slots); } catch { ok = false; } if (!ok) return null; }
         spoken.push(item);
       }
       item.lines = fitLines(item.text, slot.width || 656, slot.size || 52, slot.maxLines || 2);
@@ -184,6 +185,29 @@ export function groundCard(pick, type, words) {
   const complete = Math.max(spoken.at(-1).end, reveals.at(-1) + PRO_MOTION.enter);
   const end = complete + PRO_RULES.hold + PRO_MOTION.exit;
   return { type, card: true, start, slots, phrases: spoken, reveals, complete: r3(complete), end: r3(end), duration: r3(end - start), ...(def.fullscreen ? { fullscreen: true } : {}) };
+}
+
+/**
+ * One planned card, drawn in one of its type's designs (src/pro-cards/index.mjs CARD_GROUPS). The planner names the
+ * root type; the design is picked from the words, so the same reel always gets the same design and different reels
+ * get different ones. A design whose slot limits the words do not fit is skipped for the next.
+ */
+export function designOrder(type, pick = {}) {
+  const designs = CARD_GROUPS[rootOf(type)] || [type];
+  if (designs.length < 2) return designs;
+  const first = Object.values(pick).flatMap((v) => (Array.isArray(v) ? v : [v])).find((v) => Number.isInteger(v?.from))?.from ?? 0;
+  const seed = Math.imul(first + 1, 2654435761) >>> 0;
+  const k = seed % designs.length;
+  const order = [...designs.slice(k), ...designs.slice(0, k)];
+  return CARDS[pick.design] && designs.includes(pick.design) ? [pick.design, ...order.filter((d) => d !== pick.design)] : order;
+}
+function groundDesign(pick, type, words) {
+  for (const design of designOrder(type, pick)) {
+    const card = groundCard(pick, design, words);
+    // A type with one design grounds exactly as before; a design of a group also records the group it stands for.
+    if (card) return (CARD_GROUPS[rootOf(design)]?.length || 1) > 1 ? { ...card, group: rootOf(design) } : card;
+  }
+  return null;
 }
 
 /** Reuse the existing beat jobs and saved element picks before asking for new direction. */
@@ -218,7 +242,8 @@ export function budgetProOverlays(candidates, { duration = 0, hookEnd = PRO_RULE
     const prev = kept.filter((p) => p.type !== "wordMark").at(-1);
     if (c.type !== "wordMark") {
       if (prev && (c.start - prev.start < R.minGap || c.start < prev.end)) continue;
-      if (kept.some((p) => p.type === c.type && (duration <= 45 || c.start - p.start < 20))) continue;
+      // One type per reel counts every design of it (a stat in two looks is still two stats).
+      if (kept.some((p) => rootOf(p.type) === rootOf(c.type) && (duration <= 45 || c.start - p.start < 20))) continue;
       if (prev && familyOf(prev) === familyOf(c)) continue;
       if (prev && surfaceOf(prev) === "bone" && surfaceOf(c) === "bone") continue;
     } else if (kept.some((p) => p.type === "wordMark" && c.start < p.end)) continue;
@@ -240,7 +265,8 @@ export function proPrompt(words, { duration = 0 } = {}) {
     "Plan teaching cards ON Greg's footage that write in as he speaks (the card rules). At most one full-screen card. No decoration, invented claims or paraphrases in spoken slots.",
     `Duration ${duration}s. About one card per 6-8 s of talk, at most 5 per 30 s, at least 2.5 s apart, never two at once, none before 2.4 s or in the last 3 s. Each type once per reel, never the same family twice in a row. Pick the card whose family fits the words: distinction, procedure, proof, conversation, warning, payoff, emphasis.`,
     "Every {from,to} is a pair of WORD INDEXES (the integer at the start of each transcript line below), never seconds. Types: correction {wrong:{from,to},right:{from,to}} ONLY for an explicit wrong/right correction; compare {left:{from,to},right:{from,to}}; steps {items:[{from,to},{from,to},{from,to}]} exactly three; stat {valueRange:{from,to},labelRange:{from,to}}; wordMark {word} (an underline drawn under one caption word); label {from,to} at most three words.",
-    ...Object.entries(CARDS).map(([t, d]) => `${t} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : `{from,to} max ${s.maxChars || 48} chars`}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""} [${d.family}]: ${d.hint}`),
+    // One line per type; a type with several designs is still one line (the code picks the design).
+    ...Object.entries(CARDS).filter(([, d]) => !d.variantOf).map(([t, d]) => `${t}${tagsOf(t).length ? ` <${tagsOf(t).join(", ")}>` : ""} {${Object.entries(d.slots).map(([n, s]) => `${n}:${s.kind === "label" ? `"label, max ${s.maxChars || 26} chars, no digits"` : `{from,to} max ${s.maxChars || 48} chars`}${s.repeat ? `[${s.repeat[0]}-${s.repeat[1]}]` : ""}`).join(",")}}${d.fullscreen ? " (FULL SCREEN, at most one per reel)" : ""} [${d.family}]: ${d.hint}`),
     "You MUST suggest 10 to 14 candidate cards spread across the whole reel (more than will be used; the rules pick the final 3-5). Use at least five different types and families. Every number on a card must be a number Greg says. Keep each spoken slot short: the words that would be written on the card, usually 1-6 words.",
     "Correction phrases at most 22 characters each; compare phrases at most 18; steps at most 12 each; stat value at most 8 and label at most 26. Keep qualifiers with numbers. Labels last at most 2.5s.",
     words.map((w, i) => `${i} ${w.start.toFixed(3)} ${w.text}`).join("\n"),

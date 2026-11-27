@@ -222,7 +222,7 @@ export const CARDS = {
   "takeaway-banner": {
     family: "payoff",
     hint: "Greg gives a short final takeaway that earns the reel's single full-width reading moment",
-    slots: { takeaway: { kind: "spoken", maxChars: 72, width: 912, size: 54, maxLines: 2 } },
+    slots: { takeaway: { kind: "spoken", maxChars: 72, width: 708, size: 54, maxLines: 2 } },
     // Fullscreen placement is the registry's only route to a 1080px strip; the rest stays transparent.
     size: { w: 1080, h: 1920 },
     fullscreen: true,
@@ -232,7 +232,7 @@ export const CARDS = {
     },
     css: `
       .pro-takeaway-banner.pro-full { padding:0;background:none;box-shadow:none; }
-      .pro-takeaway-banner .dp-strip { position:absolute;left:0;top:170px;width:1080px;padding:26px 84px;background:#C8A24B;color:#0B0B0D; }
+      .pro-takeaway-banner .dp-strip { position:absolute;left:150px;top:170px;width:780px;padding:26px 36px;background:#C8A24B;color:#0B0B0D; }
       .pro-takeaway-banner .dp-copy { font:800 54px/64px "Inter",sans-serif;opacity:0; }`,
   },
 };

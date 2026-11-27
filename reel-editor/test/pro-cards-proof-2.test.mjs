@@ -63,7 +63,9 @@ test("ten proof cards register with bounded sizes, exact ranges and planner hint
     assert.ok(PRO_RECTS.some((r) => def.size.w <= r.w && def.size.h <= r.h), type);
     assert.ok(!def.fullscreen);
     const { words, pick, o } = fixture(type);
-    assert.deepEqual(groundProOverlay(pick, words), groundCard(pick, type, words));
+    // Named design: since the Herk import some of these types have more designs, and the planner's pick may land on one.
+    const { group, ...designed } = groundProOverlay({ ...pick, design: type }, words) || {};
+    assert.deepEqual(designed, groundCard(pick, type, words));
     assert.deepEqual(proSize(o), def.size);
     assert.deepEqual(o.reveals, o.phrases.map((p) => words[p.from].start));
     for (const [name, slot] of Object.entries(def.slots)) {

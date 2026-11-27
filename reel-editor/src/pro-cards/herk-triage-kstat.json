@@ -1,0 +1,359 @@
+[
+  {
+    "id": "kallaway.t1.stat.annot",
+    "outcome": "new",
+    "type": "annotated-figure",
+    "reason": "A headline figure carries spoken notes on drawn leaders."
+  },
+  {
+    "id": "kallaway.t1.stat.beforeafter",
+    "outcome": "duplicate",
+    "type": "case-study",
+    "reason": "The existing arrow links two spoken comparable values with a metric context."
+  },
+  {
+    "id": "kallaway.t1.stat.bigpercent",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "A large percentage and context use the existing single-stat arrangement."
+  },
+  {
+    "id": "kallaway.t1.stat.bracketstat",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "The large amount and caption use the existing stat layout once ornamental brackets go."
+  },
+  {
+    "id": "kallaway.t1.stat.bubble",
+    "outcome": "variant",
+    "type": "percent-bubble",
+    "reason": "A growing disc encodes the spoken percent by area alongside the exact value and context."
+  },
+  {
+    "id": "kallaway.t1.stat.cbars",
+    "outcome": "variant",
+    "type": "paired-rate-bars",
+    "reason": "Two horizontal fills encode the before and after rates on the same scale."
+  },
+  {
+    "id": "kallaway.t1.stat.clockface",
+    "outcome": "duplicate",
+    "type": "percent-ring",
+    "reason": "Clock ticks leave the same circular percentage sweep and center value."
+  },
+  {
+    "id": "kallaway.t1.stat.column",
+    "outcome": "duplicate",
+    "type": "bars",
+    "reason": "The existing vertical bars grow from a baseline for a compact set of comparable spoken amounts."
+  },
+  {
+    "id": "kallaway.t1.stat.compass",
+    "outcome": "duplicate",
+    "type": "gauge",
+    "reason": "The compass hand tracks the spoken percentage on the existing semicircular gauge."
+  },
+  {
+    "id": "kallaway.t1.stat.counterpill",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "A pill around one count is surface styling once the interim digits are removed."
+  },
+  {
+    "id": "kallaway.t1.stat.curve",
+    "outcome": "new",
+    "type": "trend-points",
+    "reason": "Draws a measured sequence from three or four spoken observations and removes the hard-coded curve and dates."
+  },
+  {
+    "id": "kallaway.t1.stat.delta",
+    "outcome": "merged",
+    "type": "delta-arrow",
+    "reason": "The directional caret becomes the same spoken change and drawn trend arrow."
+  },
+  {
+    "id": "kallaway.t1.stat.dial",
+    "outcome": "duplicate",
+    "type": "gauge",
+    "reason": "The moving needle and measured arc are already represented by the existing gauge."
+  },
+  {
+    "id": "kallaway.t1.stat.donut",
+    "outcome": "duplicate",
+    "type": "percent-ring",
+    "reason": "A thicker circular fill and side explanation use the existing percent ring."
+  },
+  {
+    "id": "kallaway.t1.stat.dotgrid",
+    "outcome": "merged",
+    "type": "percent-grid",
+    "reason": "Dots and squares are equivalent hundred-cell encodings with the same fill motion."
+  },
+  {
+    "id": "kallaway.t1.stat.figure",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "The main figure and exact context are already the existing stat."
+  },
+  {
+    "id": "kallaway.t1.stat.fillshape",
+    "outcome": "variant",
+    "type": "percent-tank",
+    "reason": "The spoken share fills a vertical vessel upward alongside the exact value and context."
+  },
+  {
+    "id": "kallaway.t1.stat.fraction",
+    "outcome": "duplicate",
+    "type": "rating",
+    "reason": "The existing score and dot row already show a spoken part and whole without a preset denominator."
+  },
+  {
+    "id": "kallaway.t1.stat.funnel",
+    "outcome": "new",
+    "type": "funnel-counts",
+    "reason": "Measured narrowing stage bands use actual spoken counts and drop the canned stage data and separate headline rate."
+  },
+  {
+    "id": "kallaway.t1.stat.growtharrow",
+    "outcome": "new",
+    "type": "delta-arrow",
+    "reason": "A large rising or falling arrow draws beside an explicitly directional spoken percentage."
+  },
+  {
+    "id": "kallaway.t1.stat.heatcell",
+    "outcome": "duplicate",
+    "type": "rating",
+    "reason": "The existing score design presents a spoken score and scale after the heat effect is removed."
+  },
+  {
+    "id": "kallaway.t1.stat.isotype",
+    "outcome": "new",
+    "type": "people-fraction",
+    "reason": "A group of people icons maps one icon per explicitly spoken person in the part and whole."
+  },
+  {
+    "id": "kallaway.t1.stat.layered",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "When the glow layers go, the value and context match the existing stat."
+  },
+  {
+    "id": "kallaway.t1.stat.mega",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "A bare oversized amount with context is already the single-stat layout."
+  },
+  {
+    "id": "kallaway.t1.stat.meter",
+    "outcome": "merged",
+    "type": "percent-track",
+    "reason": "Removing the preset axis labels leaves the same left-to-right measured fill."
+  },
+  {
+    "id": "kallaway.t1.stat.milestone",
+    "outcome": "variant",
+    "type": "percent-track",
+    "reason": "A marker sweeps along an unnumbered rail to the spoken percentage and the exact context writes below it."
+  },
+  {
+    "id": "kallaway.t1.stat.money",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "Only the single monetary figure and its context survive the currency-panel styling."
+  },
+  {
+    "id": "kallaway.t1.stat.multiplier",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "The disc is decorative and the factor and exact context read as a single stat."
+  },
+  {
+    "id": "kallaway.t1.stat.multiring",
+    "outcome": "new",
+    "type": "benchmark-rings",
+    "reason": "Independent concentric arcs fill against three actual spoken benchmark percentages and category ranges."
+  },
+  {
+    "id": "kallaway.t1.stat.needle",
+    "outcome": "merged",
+    "type": "percent-track",
+    "reason": "The track, moving tip and percentage map to the same design when the percentage is supplied as a spoken range."
+  },
+  {
+    "id": "kallaway.t1.stat.nodes",
+    "outcome": "merged",
+    "type": "annotated-figure",
+    "reason": "Two compact, exact leader notes preserve the central figure and connected qualifiers at phone size."
+  },
+  {
+    "id": "kallaway.t1.stat.odometer",
+    "outcome": "duplicate",
+    "type": "odometer",
+    "reason": "The existing digit windows already roll the earned count and retain the spoken context."
+  },
+  {
+    "id": "kallaway.t1.stat.orbitmoons",
+    "outcome": "merged",
+    "type": "annotated-figure",
+    "reason": "The two satellite readouts become two short linked spoken notes around the primary amount."
+  },
+  {
+    "id": "kallaway.t1.stat.orbitstat",
+    "outcome": "duplicate",
+    "type": "stat",
+    "reason": "The orbit is cosmetic because the orbit angle does not encode the count."
+  },
+  {
+    "id": "kallaway.t1.stat.pair",
+    "outcome": "new",
+    "type": "side-by-side-metrics",
+    "reason": "Two separately explained outcome measures occupy parallel columns and reveal in speaking order."
+  },
+  {
+    "id": "kallaway.t1.stat.percentile",
+    "outcome": "new",
+    "type": "percentile-tail",
+    "reason": "The spoken top or bottom share fills from its corresponding end without an inferred distribution curve."
+  },
+  {
+    "id": "kallaway.t1.stat.pictobar",
+    "outcome": "unfit",
+    "reason": "The person strip needs a population total or a people-per-icon number that the source count does not supply."
+  },
+  {
+    "id": "kallaway.t1.stat.polar",
+    "outcome": "unfit",
+    "reason": "The six wedge magnitudes are unspoken numeric data and six readable category labels around the chart require a wide frame."
+  },
+  {
+    "id": "kallaway.t1.stat.quotestat",
+    "outcome": "new",
+    "type": "quantified-quote",
+    "reason": "The spoken setup and tail frame a separately revealed numeric claim."
+  },
+  {
+    "id": "kallaway.t1.stat.radialbars",
+    "outcome": "merged",
+    "type": "benchmark-rings",
+    "reason": "The concentric benchmark arcs and their fills are the same design once every benchmark is spoken."
+  },
+  {
+    "id": "kallaway.t1.stat.range",
+    "outcome": "new",
+    "type": "range-marker",
+    "reason": "A moving marker locates a spoken measurement between two spoken bounds in matching units."
+  },
+  {
+    "id": "kallaway.t1.stat.rank",
+    "outcome": "new",
+    "type": "rank-medallion",
+    "reason": "A drawn seal marks an explicitly spoken ordinal placement with the field size only when spoken."
+  },
+  {
+    "id": "kallaway.t1.stat.ratio",
+    "outcome": "new",
+    "type": "ratio-lockup",
+    "reason": "Displays both terms of a spoken ratio with the exact separator in a distinct treatment."
+  },
+  {
+    "id": "kallaway.t1.stat.ring",
+    "outcome": "duplicate",
+    "type": "percent-ring",
+    "reason": "The existing circular track fills to the spoken percentage with the value at its center."
+  },
+  {
+    "id": "kallaway.t1.stat.risewall",
+    "outcome": "new",
+    "type": "rising-figure",
+    "reason": "The exact headline wipes up from a ruled wall and its qualification writes inside the strip below."
+  },
+  {
+    "id": "kallaway.t1.stat.score",
+    "outcome": "duplicate",
+    "type": "rating",
+    "reason": "Star shapes replace dots but the score, spoken scale and lit rating row are the same layout."
+  },
+  {
+    "id": "kallaway.t1.stat.segbar",
+    "outcome": "merged",
+    "type": "percent-track",
+    "reason": "The gaps are ornamental on the same measured horizontal fill with a leading edge."
+  },
+  {
+    "id": "kallaway.t1.stat.semigauge",
+    "outcome": "variant",
+    "type": "arc-gauge",
+    "reason": "A semicircular arc directly draws the percentage instead of moving the gauge's needle."
+  },
+  {
+    "id": "kallaway.t1.stat.sparkline",
+    "outcome": "merged",
+    "type": "trend-points",
+    "reason": "Its draw-on trajectory uses the same sequence of grounded observations without a fabricated curve."
+  },
+  {
+    "id": "kallaway.t1.stat.spectrum",
+    "outcome": "merged",
+    "type": "percent-track",
+    "reason": "A moving marker on a flat percentage rail is the same idea after the spectrum color goes."
+  },
+  {
+    "id": "kallaway.t1.stat.split",
+    "outcome": "merged",
+    "type": "side-by-side-metrics",
+    "reason": "The pill and divider styling go, leaving two separately identified measures in parallel columns."
+  },
+  {
+    "id": "kallaway.t1.stat.stackedbars",
+    "outcome": "variant",
+    "type": "comparison-rows",
+    "reason": "Comparable spoken amounts fill stacked horizontal rows in place of vertical columns."
+  },
+  {
+    "id": "kallaway.t1.stat.tickerstat",
+    "outcome": "unfit",
+    "reason": "The ticker needs a continuing feed of unsaid figures and a long moving line of copy that depends on width."
+  },
+  {
+    "id": "kallaway.t1.stat.tiles",
+    "outcome": "duplicate",
+    "type": "odometer",
+    "reason": "The individual digit boxes already roll the exact count in the existing odometer."
+  },
+  {
+    "id": "kallaway.t1.stat.timer",
+    "outcome": "variant",
+    "type": "digital-duration",
+    "reason": "A digital readout rises into its window and lands on the exact spoken duration without an invented counter."
+  },
+  {
+    "id": "kallaway.t1.stat.trendline",
+    "outcome": "merged",
+    "type": "trend-points",
+    "reason": "Its growth line draws through the same spoken observations on an unnumbered plot."
+  },
+  {
+    "id": "kallaway.t1.stat.underscore",
+    "outcome": "merged",
+    "type": "rising-figure",
+    "reason": "Its underline stroke becomes the rising headline's drawn rim."
+  },
+  {
+    "id": "kallaway.t1.stat.versus",
+    "outcome": "merged",
+    "type": "side-by-side-metrics",
+    "reason": "The frame and versus badge leave the same parallel arrangement of two spoken measures."
+  },
+  {
+    "id": "kallaway.t1.stat.waffle",
+    "outcome": "variant",
+    "type": "percent-grid",
+    "reason": "The spoken percentage lights a hundred-cell grid alongside the headline and context."
+  },
+  {
+    "id": "kallaway.t1.stat.waterfall",
+    "outcome": "new",
+    "type": "waterfall-build",
+    "reason": "Spoken signed contributions grow as floating blocks to a matching spoken total."
+  }
+]

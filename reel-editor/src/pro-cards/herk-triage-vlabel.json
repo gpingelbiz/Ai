@@ -1,0 +1,145 @@
+[
+  {
+    "id": "vox-explainer.t2.lower-third.marker",
+    "outcome": "unfit",
+    "reason": "The marker introduces a person by name and job title, and the reporting tag alone does not identify the speaker."
+  },
+  {
+    "id": "vox-explainer.t2.label.margin-note",
+    "outcome": "new",
+    "type": "term-explainer",
+    "reason": "A marker tab names a spoken term and a separate rising slab explains it when Greg gives its meaning."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.bar-slab",
+    "outcome": "unfit",
+    "reason": "The lower bar links the speaker's name to a job title and affiliation."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.index-tab",
+    "outcome": "unfit",
+    "reason": "The index tab categorizes a speaker whose name and job title fill the main panel."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.stacked",
+    "outcome": "unfit",
+    "reason": "The two main tiers are the speaker name and the job title."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.sticky",
+    "outcome": "unfit",
+    "reason": "The pinned note is a speaker ID built around a name and job title."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.rail",
+    "outcome": "unfit",
+    "reason": "The rail anchors the name and job title as one speaker ID."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.badge",
+    "outcome": "unfit",
+    "reason": "The avatar badge relies on a person's initials and pairs with the full name and job title."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.clapper",
+    "outcome": "unfit",
+    "reason": "The clapperboard identifies the subject by name and role."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.highlight",
+    "outcome": "unfit",
+    "reason": "The highlight is drawn behind a guest's name and the adjoining line is their job title."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.bracket",
+    "outcome": "unfit",
+    "reason": "The brackets frame an expert's name next to their job title and affiliation."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.stamp",
+    "outcome": "unfit",
+    "reason": "The stamp contains the on-record speaker's name and its subtitle supplies their job title."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.ribbon",
+    "outcome": "unfit",
+    "reason": "The ribbon carries a reporter's name and the subtitle supplies their title and outlet."
+  },
+  {
+    "id": "vox-explainer.t2.lower-third.type-card",
+    "outcome": "unfit",
+    "reason": "The typeset card is a speaker credit that needs a name, job title and outlet."
+  },
+  {
+    "id": "vox-explainer.t2.label.circle",
+    "outcome": "merged",
+    "type": "term-underline",
+    "reason": "Moving the drawn accent below the term to clear the words yields the same underline and explanation."
+  },
+  {
+    "id": "vox-explainer.t2.label.bracket",
+    "outcome": "variant",
+    "type": "term-brackets",
+    "reason": "Two brackets move inward from opposite sides and the term writes out from center above a centered definition."
+  },
+  {
+    "id": "vox-explainer.t2.label.sticky",
+    "outcome": "variant",
+    "type": "term-sticky",
+    "reason": "A folded term note drops from above at a fixed tilt and the level detail enters from below."
+  },
+  {
+    "id": "vox-explainer.t2.label.underline",
+    "outcome": "variant",
+    "type": "term-underline",
+    "reason": "A gold stroke draws beneath the term itself above an indented definition."
+  },
+  {
+    "id": "vox-explainer.t2.label.pin",
+    "outcome": "variant",
+    "type": "term-pin",
+    "reason": "A dedicated left gutter holds a falling diamond and extends a rule down beside the detail."
+  },
+  {
+    "id": "vox-explainer.t2.label.footnote",
+    "outcome": "merged",
+    "type": "term-pin",
+    "reason": "The asterisk and rule reduce to the same anchored two-row annotation and its detail rail."
+  },
+  {
+    "id": "vox-explainer.t2.label.tag",
+    "outcome": "merged",
+    "type": "term-sticky",
+    "reason": "Without the swing, the notched header drops in as the same folded term tab over a separate detail slab."
+  },
+  {
+    "id": "vox-explainer.t2.label.caption",
+    "outcome": "variant",
+    "type": "term-caption",
+    "reason": "The term and detail share one horizontal band with separate columns and a dash that draws across the gap."
+  },
+  {
+    "id": "vox-explainer.t2.label.definition",
+    "outcome": "merged",
+    "type": "term-underline",
+    "reason": "Dropping the supplied phonetics and inferred part of speech leaves a term, drawn rule and indented definition."
+  },
+  {
+    "id": "vox-explainer.t2.label.spotlight",
+    "outcome": "merged",
+    "type": "term-explainer",
+    "reason": "Dropping the frame-wide gradient leaves the same term tab wipe and rising explanatory slab."
+  },
+  {
+    "id": "vox-explainer.t2.label.pull-quote",
+    "outcome": "new",
+    "type": "quote-with-context",
+    "reason": "The attribution and date can be removed while preserving a short quote of Greg's own and his independently revealed explanation."
+  },
+  {
+    "id": "vox-explainer.t2.label.magnify",
+    "outcome": "variant",
+    "type": "term-lens",
+    "reason": "The term writes into a solid lens that scales in and draws its handle before the definition appears below."
+  }
+]
