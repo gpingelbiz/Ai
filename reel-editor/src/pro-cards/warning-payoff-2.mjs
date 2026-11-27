@@ -31,7 +31,7 @@ export const CARDS = {
   "caution-tape": {
     family: "warning",
     hint: "Greg delivers a short explicit warning that earns the reel's single full-width reading moment; quote the warning verbatim",
-    slots: { warning: { kind: "spoken", maxChars: 72, width: 912, size: 52, maxLines: 2 } },
+    slots: { warning: { kind: "spoken", maxChars: 72, width: 708, size: 52, maxLines: 2 } },
     // Like takeaway-banner, only the strip is opaque; fullscreen reserves the full-width reading moment.
     size: { w: 1080, h: 1920 },
     fullscreen: true,
@@ -44,9 +44,9 @@ export const CARDS = {
     },
     css: `
       .pro-caution-tape.pro-full { padding:0;background:none;box-shadow:none; }
-      .pro-caution-tape .wp-tape { position:absolute;left:0;top:170px;width:1080px;background:#C8A24B;color:#0B0B0D; }
-      .pro-caution-tape .wp-stripes { display:block;width:1080px;height:20px;fill:#0B0B0D; }
-      .pro-caution-tape .wp-warning { padding:20px 84px; }
+      .pro-caution-tape .wp-tape { position:absolute;left:150px;top:170px;width:780px;background:#C8A24B;color:#0B0B0D; }
+      .pro-caution-tape .wp-stripes { display:block;width:780px;height:20px;fill:#0B0B0D; }
+      .pro-caution-tape .wp-warning { padding:20px 36px; }
       .pro-caution-tape .wp-copy { font:800 52px/62px "Inter",sans-serif;opacity:0;clip-path:inset(0 100% 0 0); }`,
   },
   "crossed-out": {

@@ -110,7 +110,7 @@ export function proCSS({ types = null } = {}) {
       .pro-underline { height:24px;bottom:-24px; }
       .pro-circle { height:calc(100% + 24px);top:-12px; }
       .pro-bare { background:none;box-shadow:none;padding:0;border-radius:0;overflow:visible; }
-      .pro-full { border-radius:0;padding:110px; }
+      .pro-full { border-radius:0;padding:200px 180px 320px; } /* words inside the shared safe zone (src/safe-zone.mjs) */
 ${Object.entries(CARDS).filter(([t]) => !types || types.has(t)).map(([, d]) => d.css || "").join("\n")}
       .pro-word-mark path { fill:none;stroke:#C8A24B;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1; }
 `;
