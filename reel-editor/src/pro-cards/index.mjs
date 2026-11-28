@@ -29,6 +29,17 @@ import { CARDS as herkKlabel } from "./herk-klabel.mjs";
 import { CARDS as herkVstat } from "./herk-vstat.mjs";
 import { CARDS as herkVoverview } from "./herk-voverview.mjs";
 import { CARDS as herkVlabel } from "./herk-vlabel.mjs";
+// The ghost-editor and iart.ai imports (2026-11-28), restyled to the pro look: see GHOST-EDITOR-LICENSE.md,
+// IART-LICENSE.md and the ge-triage-*.json / iart-triage.json files for every source idea and what became of it.
+import { CARDS as geA } from "./ge-a.mjs";
+import { CARDS as geB } from "./ge-b.mjs";
+import { CARDS as geC } from "./ge-c.mjs";
+import { CARDS as geD } from "./ge-d.mjs";
+import { CARDS as geE } from "./ge-e.mjs";
+import { CARDS as geF } from "./ge-f.mjs";
+import { CARDS as geG } from "./ge-g.mjs";
+import { CARDS as geH } from "./ge-h.mjs";
+import { CARDS as iart } from "./iart-cards.mjs";
 // Batch builders: add one import line and one spread each; nothing else in this file changes.
 
 export const CARDS = Object.freeze({
@@ -51,6 +62,15 @@ export const CARDS = Object.freeze({
   ...herkVstat,
   ...herkVoverview,
   ...herkVlabel,
+  ...geA,
+  ...geB,
+  ...geC,
+  ...geD,
+  ...geE,
+  ...geF,
+  ...geG,
+  ...geH,
+  ...iart,
 });
 
 // Designs (since 2026-11-27, the Herk Edit Kit import). A card may be another design of an existing type: it sets

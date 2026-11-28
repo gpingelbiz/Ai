@@ -328,6 +328,10 @@ export const PRO_MIN_SCALE = 0.62;
 /** Fewer real cards than this and missed cards are retried smaller (down to PRO_FLOOR_SCALE) and over the mic. */
 export const PRO_MIN_CARDS = 2;
 export const PRO_FLOOR_SCALE = 0.5;
+// A caption-swap card hides the captions for as long as its words run. Long build-up cards (three examples, then the
+// point) can run 12 s, far too long without captions, so only a card whose words take at most this long may swap.
+export const PRO_SWAP_SPAN = 6;
+export const canSwapCaptions = (o) => (o.complete ?? o.end) - o.start <= PRO_SWAP_SPAN;
 export function placeProOverlay(overlay, frame, { minScale = PRO_MIN_SCALE, ignoreMic = false, captionSwap = false, recent = [] } = {}) {
   const size = proSize(overlay);
   if (!frame?.measured || !size) return null;
@@ -452,7 +456,7 @@ export async function placeProGraphics(overlays, { video, detect, W = 1080, H = 
     if (realCards() >= minCards || overlay.type === "wordMark") continue;
     let place = placeProOverlay(overlay, frame, { minScale: PRO_FLOOR_SCALE, ignoreMic: true, recent: spots() });
     let card = overlay;
-    if (!place) {
+    if (!place && canSwapCaptions(overlay)) {
       place = placeProOverlay(overlay, frame, { minScale: PRO_MIN_SCALE, ignoreMic: true, captionSwap: true });
       // A swap card hides the captions, so it only holds a beat past its last spoken word.
       if (place) { const end = Math.min(overlay.end, (overlay.complete ?? overlay.end) + 0.8); card = { ...overlay, end: Math.round(end * 1000) / 1000, duration: Math.round((end - overlay.start) * 1000) / 1000 }; }

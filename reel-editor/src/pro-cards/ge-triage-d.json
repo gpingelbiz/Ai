@@ -1,0 +1,329 @@
+[
+ {
+  "id": "seoul-list/ig-comment-card",
+  "outcome": "variant",
+  "type": "comment-typed-slip",
+  "reason": "A spoken viewer comment writes onto a bone slip below a header rule, with a drawn speech mark."
+ },
+ {
+  "id": "seoul-list/macos-window-cutouts",
+  "outcome": "unfit",
+  "reason": "The changing items are footage cutouts inside an imitation macOS window over a second copy of the shot."
+ },
+ {
+  "id": "seoul-list/blue-text-selection",
+  "outcome": "variant",
+  "type": "selection-rows",
+  "reason": "Peer topics wipe onto individually sized selection bands in a left-aligned column."
+ },
+ {
+  "id": "seoul-list/triptych",
+  "outcome": "unfit",
+  "reason": "The three equal bands require three footage clips."
+ },
+ {
+  "id": "seoul-list/flash-kamery-ampersand",
+  "outcome": "unfit",
+  "reason": "An isolated connector and ampersand are a transitional punctuation beat."
+ },
+ {
+  "id": "seoul-list/ios-notification-banner-typed",
+  "outcome": "variant",
+  "type": "alert-drop",
+  "reason": "An unbranded subject bar drops in first and the quoted body writes underneath on its own cue."
+ },
+ {
+  "id": "seoul-list/flash-no-i-dazhe",
+  "outcome": "unfit",
+  "reason": "The standalone conjunctions are transition words with no teaching content."
+ },
+ {
+  "id": "seoul-list/lockscreen-notification-stack",
+  "outcome": "variant",
+  "type": "alert-cascade",
+  "reason": "Incoming lines step down and sideways as each alert arrives, with no clock, date or inferred dismissal."
+ },
+ {
+  "id": "seoul-list/todo-list-phone-flick",
+  "outcome": "unfit",
+  "reason": "The joke relies on recognizable Reminders and chat screens swapping in a phone mockup."
+ },
+ {
+  "id": "seoul-list/viral-post-card-counter",
+  "outcome": "duplicate",
+  "type": "metric-stat-chip",
+  "reason": "The usable metric and its explicit spoken count already land as a value chip, while the post metadata would require extra figures."
+ },
+ {
+  "id": "seoul-list/count-up-number-page",
+  "outcome": "variant",
+  "type": "count-print-window",
+  "reason": "The earned count feeds through a single large window, with no intermediate values displayed."
+ },
+ {
+  "id": "seoul-list/ranked-list-top-fill",
+  "outcome": "variant",
+  "type": "rank-fill-strip",
+  "reason": "A stationary rank board fills its lead row on its cue as subsequent priority lines slide into ruled rows."
+ },
+ {
+  "id": "seoul-list/line-chart-two-lines",
+  "outcome": "cut",
+  "type": "countertrend-pair",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: Two explicitly quantified sales metrics rise and fall over the same interval on one shared-scale chart.)"
+ },
+ {
+  "id": "seoul-list/dots-crowd-one-alone",
+  "outcome": "variant",
+  "type": "fraction-breakaway",
+  "reason": "An exactly quantified subgroup separates from its dot crowd when Greg says what that subgroup did."
+ },
+ {
+  "id": "seoul-list/photo-bands-3-on-white",
+  "outcome": "unfit",
+  "reason": "The labeled bands are three photos."
+ },
+ {
+  "id": "seoul-list/grid4-tilted-cards",
+  "outcome": "unfit",
+  "reason": "The tilted tiles are a four-photo grid."
+ },
+ {
+  "id": "seoul-list/versus-2up-check-cross",
+  "outcome": "variant",
+  "type": "versus-checkline",
+  "reason": "Two real alternatives enter from opposite directions, then a drawn cross, check and strike distinguish the recommendation."
+ },
+ {
+  "id": "seoul-list/type-page-big-sticker",
+  "outcome": "unfit",
+  "reason": "The isolated reaction beat depends on a large imported sticker and a full-screen punctuation page."
+ },
+ {
+  "id": "seoul-list/still-slow-push",
+  "outcome": "unfit",
+  "reason": "The slow push is a camera treatment for full-screen footage."
+ },
+ {
+  "id": "seoul-list/kraft-paper-map-card",
+  "outcome": "unfit",
+  "reason": "The map is a travel-route illustration with no use in Greg's sales teaching."
+ },
+ {
+  "id": "seoul-list/red-glitch-word",
+  "outcome": "duplicate",
+  "type": "big-word",
+  "reason": "A single spoken keyword is already emphasized in Anton once the glow and jitter are removed."
+ },
+ {
+  "id": "seoul-list/red-word-on-footage",
+  "outcome": "duplicate",
+  "type": "big-word",
+  "reason": "A single highlighted word over footage is already the payoff of this card."
+ },
+ {
+  "id": "seoul-list/stacked-word-list",
+  "outcome": "duplicate",
+  "type": "stacked-title",
+  "reason": "The heavy word stack becomes the existing headline in successive spoken fragments."
+ },
+ {
+  "id": "seoul-list/flash-with-subword",
+  "outcome": "variant",
+  "type": "headline-qualifier",
+  "reason": "A quiet upper-left fragment sets up a large focal fragment and an optional right-aligned ending."
+ },
+ {
+  "id": "seoul-list/flash-oversized-word",
+  "outcome": "duplicate",
+  "type": "big-word",
+  "reason": "Once the overscan is brought inside the safe zone, it is the existing single-word emphasis."
+ },
+ {
+  "id": "seoul-list/squiggle-zigzag-on-chest",
+  "outcome": "variant",
+  "type": "lesson-understroke",
+  "reason": "A gold zigzag draws beneath the spoken teaching line and ends in a dot."
+ },
+ {
+  "id": "seoul-list/ig-story-question-sticker",
+  "outcome": "variant",
+  "type": "question-ticket",
+  "reason": "An unbranded ticket with a fixed header reveals the exact question Greg asks before teaching the answer."
+ },
+ {
+  "id": "seoul-list/join-button-sticker",
+  "outcome": "unfit",
+  "reason": "It is a subscribe CTA simulation that implies a viewer action and depends on a community identity."
+ },
+ {
+  "id": "seoul-list/findmy-radar-searching",
+  "outcome": "unfit",
+  "reason": "The location scan is an Apple UI imitation with no sales-training information."
+ },
+ {
+  "id": "seoul-list/index-card-typewriter-term",
+  "outcome": "variant",
+  "type": "word-index-slip",
+  "reason": "A slightly tilted ruled index slip slides in and writes one earned keyword."
+ },
+ {
+  "id": "seoul-list/word-letters-fall-away",
+  "outcome": "variant",
+  "type": "erasing-habit",
+  "reason": "Gold letters peel away in order from a named rejected habit, leaving its wording legible in grey."
+ },
+ {
+  "id": "seoul-list/crossword-fills-on-spoken-words",
+  "outcome": "cut",
+  "type": "letter-cell-topics",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was variant: Exact peer terms fill in letter cells on cue, using separate lines so their spelling does not depend on intersections.)"
+ },
+ {
+  "id": "seoul-list/book-cover-bookmark-tip",
+  "outcome": "unfit",
+  "reason": "The bookmark reveal depends on the real book cover as its container."
+ },
+ {
+  "id": "seoul-list/chatlist-counters-go-grey-muted",
+  "outcome": "unfit",
+  "reason": "The action changes per-app unread counters that Greg would have to say, inside a messenger UI."
+ },
+ {
+  "id": "seoul-list/crossword-answer-strips-callback",
+  "outcome": "cut",
+  "type": "letter-cell-topics",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was merged: The callback strips and the crossword both become horizontal cells carrying exact spoken terms.)"
+ },
+ {
+  "id": "seoul-list/cc-work-toggle-off",
+  "outcome": "duplicate",
+  "type": "toggle-switch",
+  "reason": "Once the Control Center identity goes away, the switch flipping on the spoken change is already in the library."
+ },
+ {
+  "id": "seoul-list/receipt-print-stat",
+  "outcome": "variant",
+  "type": "receipt-tally",
+  "reason": "A bone tally prints successive spoken amounts with context, in full-width rows."
+ },
+ {
+  "id": "seoul-list/tension-gauge-stuck-red",
+  "outcome": "unfit",
+  "reason": "The pinned level suggests a measurement even though the speaker gives no value."
+ },
+ {
+  "id": "seoul-list/divan-strike-callback",
+  "outcome": "variant",
+  "type": "strike-recall",
+  "reason": "A single hand-drawn stroke strikes each line of the rejected habit after it writes in."
+ },
+ {
+  "id": "seoul-list/list-chips-stack-numbered",
+  "outcome": "variant",
+  "type": "pill-push-stack",
+  "reason": "A spoken item arrives in a pill and pushes older ones up, keeping numbering inside spoken copy if given."
+ },
+ {
+  "id": "seoul-list/archive-card-on-white-line-big",
+  "outcome": "unfit",
+  "reason": "The layout needs the archive photo between the spoken lines."
+ },
+ {
+  "id": "seoul-list/ig-caption-dark-thanks-heart",
+  "outcome": "duplicate",
+  "type": "comment",
+  "reason": "After stripping the avatar photo and handle, the dark viewer-comment card already writes in the text and animates a heart."
+ },
+ {
+  "id": "seoul-list/tried-list-strikethrough",
+  "outcome": "cut",
+  "type": "failed-attempts",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: Greg's tried fixes get marked off in sequence before his spoken result lands on a dark plate.)"
+ },
+ {
+  "id": "seoul-list/polaroid-on-black-caption",
+  "outcome": "unfit",
+  "reason": "The polaroid composition depends on a photo."
+ },
+ {
+  "id": "seoul-list/alarm-stop-locked",
+  "outcome": "unfit",
+  "reason": "The alarm-specific disabled stop control relies on app behavior with no use in Greg's reels."
+ },
+ {
+  "id": "seoul-list/dm-stack-want-to-try",
+  "outcome": "cut",
+  "type": "inbound-replies",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: A one-sided stack shows multiple prospects replying independently to the same prompt.)"
+ },
+ {
+  "id": "seoul-list/appstore-row-count-200",
+  "outcome": "unfit",
+  "reason": "The download counter is part of an App Store row that depends on an app logo and a branded control."
+ },
+ {
+  "id": "seoul-list/ios-delete-app-sheet",
+  "outcome": "unfit",
+  "reason": "The deletion is a long-press iOS system action on a specific app icon."
+ },
+ {
+  "id": "stan-style/diagram-sources-tool-word-bottom-up",
+  "outcome": "cut",
+  "type": "input-convergence",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Two spoken sales inputs join one named process and connect upward to its explicitly spoken output.)"
+ },
+ {
+  "id": "stan-style/panel-app-page",
+  "outcome": "unfit",
+  "reason": "The panel demonstrates a real app through a screen recording."
+ },
+ {
+  "id": "stan-style/panel-modal-over-dimmed-ui",
+  "outcome": "unfit",
+  "reason": "The modal only makes sense over the real app recording."
+ },
+ {
+  "id": "stan-style/panel-page-scroll",
+  "outcome": "unfit",
+  "reason": "The scroll is motion inside the recorded app page."
+ },
+ {
+  "id": "stan-style/panel-tab-clicks",
+  "outcome": "unfit",
+  "reason": "The clicked tabs are actions inside the recorded app."
+ },
+ {
+  "id": "stan-style/steps-3",
+  "outcome": "duplicate",
+  "type": "section-number",
+  "reason": "Each panel's spoken index and short title already fit the section number card after removing the recording and app icons."
+ },
+ {
+  "id": "stan-style/aside-asterisks",
+  "outcome": "unfit",
+  "reason": "The asterisks are a caption treatment for an aside."
+ },
+ {
+  "id": "stan-style/diagram-fan-out-ai-to-four-numbers",
+  "outcome": "variant",
+  "type": "output-branches",
+  "reason": "A hub fans out down a curved rail to four spoken leaves, with no unsaid indices."
+ },
+ {
+  "id": "stan-style/panel-designed-viral-post-ring",
+  "outcome": "unfit",
+  "reason": "The panel spotlights a specific social post and needs the original screen asset or an imitation of it."
+ },
+ {
+  "id": "stan-style/panel-stock-broll-behind-head",
+  "outcome": "unfit",
+  "reason": "The behind-head panel requires a second footage plate and person cutout."
+ },
+ {
+  "id": "stan-style/steps-roles-label-rol-plus-example",
+  "outcome": "variant",
+  "type": "role-example-tabs",
+  "reason": "A single note pane cycles through each named part of a method and reveals its example on the next spoken cue."
+ }
+]

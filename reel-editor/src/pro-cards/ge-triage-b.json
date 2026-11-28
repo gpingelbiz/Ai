@@ -1,0 +1,383 @@
+[
+ {
+  "id": "clean-os/quote-page-card",
+  "outcome": "variant",
+  "type": "marked-quote-page",
+  "reason": "The quote and spoken context sit on a bone page with a marker sweep behind the quote."
+ },
+ {
+  "id": "clean-os/today-vs-then-segment",
+  "outcome": "duplicate",
+  "type": "toggle-switch",
+  "reason": "An old activity giving way to a new one in the same frame uses the existing habit swap."
+ },
+ {
+  "id": "clean-os/segmented-control-flip",
+  "outcome": "duplicate",
+  "type": "either-or",
+  "reason": "Two side-by-side options and a cue that chooses the second are already available as a pro choice card."
+ },
+ {
+  "id": "clean-os/earned-zero-counter",
+  "outcome": "duplicate",
+  "type": "duration-bracket-label",
+  "reason": "A spoken duration paired with its no-result outcome uses the existing duration card once intermediate counts are removed."
+ },
+ {
+  "id": "clean-os/receipt-split-bar",
+  "outcome": "variant",
+  "type": "receipt-share-strip",
+  "reason": "A receipt's itemized amounts become proportional segments when the spoken total lands."
+ },
+ {
+  "id": "clean-os/business-growth-chart",
+  "outcome": "duplicate",
+  "type": "line-chart",
+  "reason": "The existing chart already draws an ascending line between two spoken business results."
+ },
+ {
+  "id": "clean-os/reminders-checklist-ticks",
+  "outcome": "duplicate",
+  "type": "checklist",
+  "reason": "The same action rows check off on their spoken cues with the existing gold tick."
+ },
+ {
+  "id": "clean-os/order-tracking-progress",
+  "outcome": "variant",
+  "type": "progress-status-rail",
+  "reason": "A vertical rail records each exact spoken progress state."
+ },
+ {
+  "id": "clean-os/shop-place-card-open",
+  "outcome": "duplicate",
+  "type": "live-status",
+  "reason": "A resource opening and its access details already earn a live-status chip and two spoken lines."
+ },
+ {
+  "id": "clean-os/share-sheet-contacts",
+  "outcome": "unfit",
+  "reason": "The contact-specific send state depends on the recipients' identities and their avatars."
+ },
+ {
+  "id": "clean-os/notes-typing-empty-todo",
+  "outcome": "unfit",
+  "reason": "The app imitation and the empty editor carry the payoff independently of Greg's words."
+ },
+ {
+  "id": "clean-os/wisdom-ring-segment-flip",
+  "outcome": "variant",
+  "type": "rate-change-ring",
+  "reason": "One ring resizes between two explicit rates for the same metric as its exact value changes."
+ },
+ {
+  "id": "clean-os/incoming-call-too-close",
+  "outcome": "duplicate",
+  "type": "incoming-call",
+  "reason": "The existing handset already moves on the spoken caller as the call arrives."
+ },
+ {
+  "id": "clean-os/ios-toggle-flip",
+  "outcome": "duplicate",
+  "type": "toggle-switch",
+  "reason": "The existing switch already slides its knob when the replacement habit is said."
+ },
+ {
+  "id": "clean-os/app-icon-tap-open",
+  "outcome": "unfit",
+  "reason": "Opening an app from its icon is a scene transition."
+ },
+ {
+  "id": "clean-os/career-path-line",
+  "outcome": "duplicate",
+  "type": "route-trace",
+  "reason": "A drawn zig-zag route with marked milestones already exists for a spoken journey."
+ },
+ {
+  "id": "clean-os/viral-post-counters",
+  "outcome": "unfit",
+  "reason": "The source ties engagement counters to a real post and its unspoken likes, reposts and views."
+ },
+ {
+  "id": "clean-os/ranked-list-first-fills",
+  "outcome": "variant",
+  "type": "first-place-rows",
+  "reason": "The top-ranked spoken item receives a check, with the remaining rows filling only on their own words."
+ },
+ {
+  "id": "clean-os/task-switcher-cards",
+  "outcome": "cut",
+  "type": "priority-focus",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: The active border follows named tasks and settles on the one Greg explicitly repeats as his choice.)"
+ },
+ {
+  "id": "clean-os/ai-badge-tiles",
+  "outcome": "unfit",
+  "reason": "The expert tiles depend on people and their titles or badges."
+ },
+ {
+  "id": "clean-os/role-combo-chips",
+  "outcome": "variant",
+  "type": "formula-chip-stack",
+  "reason": "Speaking each ingredient builds a vertical stack of chips that resolves into the stated result."
+ },
+ {
+  "id": "clean-os/job-search-results",
+  "outcome": "unfit",
+  "reason": "The search results depend on actual job titles and listings."
+ },
+ {
+  "id": "clean-os/cost-down-bars-up",
+  "outcome": "new",
+  "type": "counter-moving-results",
+  "reason": "Two explicit signed changes show one business metric decreasing and another increasing in the same result."
+ },
+ {
+  "id": "clean-os/profile-roles-multiplier",
+  "outcome": "unfit",
+  "reason": "The profile depends on real titles and steps an inferred multiplier as rows arrive."
+ },
+ {
+  "id": "clean-os/auto-reply-toggle-on",
+  "outcome": "unfit",
+  "reason": "The event and switch need the app's auto-reply setting, while the scene supplies no message to quote."
+ },
+ {
+  "id": "clean-os/focus-mode-on",
+  "outcome": "unfit",
+  "reason": "The named mode and moon represent a specific operating-system feature and its settings."
+ },
+ {
+  "id": "clean-os/health-bars-fatigue-sleep",
+  "outcome": "merged",
+  "type": "counter-moving-results",
+  "reason": "The two health measures distill to one falling metric and one rising metric for a sales result."
+ },
+ {
+  "id": "clean-os/health-stress-ecg",
+  "outcome": "unfit",
+  "reason": "The scrolling ECG needs physiological measurements and preset pulse and step numbers."
+ },
+ {
+  "id": "clean-os/workout-tiles-pick",
+  "outcome": "cut",
+  "type": "priority-tiles",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was variant: A two-column choice grid keeps all spoken options visible while the repeated decision fills a gold tile.)"
+ },
+ {
+  "id": "clean-os/live-activity-workout-timer",
+  "outcome": "variant",
+  "type": "clock-ring-capsule",
+  "reason": "A clock ring traces beside the exact spoken duration."
+ },
+ {
+  "id": "clean-os/maps-crowd-people-nearby",
+  "outcome": "unfit",
+  "reason": "The full-screen map needs real locations and preset crowd and proximity numbers."
+ },
+ {
+  "id": "clean-os/new-contact-chip",
+  "outcome": "unfit",
+  "reason": "The new-contact event is built around the identity of the person added."
+ },
+ {
+  "id": "clean-os/notes-swipe-delete",
+  "outcome": "cut",
+  "type": "discarded-draft",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: The actual outreach draft slides away when Greg explicitly says to delete it or leave it unsent.)"
+ },
+ {
+  "id": "clean-os/reminders-empty",
+  "outcome": "cut",
+  "type": "queue-cleared",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Named outstanding items slide away when Greg explicitly states the entire queue is clear.)"
+ },
+ {
+  "id": "clean-os/contact-no-shared-history",
+  "outcome": "unfit",
+  "reason": "The contact history depends on a named person, real dates and a branded contact view."
+ },
+ {
+  "id": "clean-os/maps-route-past-now",
+  "outcome": "duplicate",
+  "type": "route-trace",
+  "reason": "Leaving out the geographic map leaves a route draw between named milestones, already in the timeline designs."
+ },
+ {
+  "id": "clean-os/photos-places-album",
+  "outcome": "unfit",
+  "reason": "The album needs original stills and a real place."
+ },
+ {
+  "id": "clean-os/win-streak-medals",
+  "outcome": "variant",
+  "type": "streak-medallions",
+  "reason": "A row of earned hexagon medals rises with the spoken streak count."
+ },
+ {
+  "id": "clean-os/ig-message-requests",
+  "outcome": "cut",
+  "type": "pipeline-inbox",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Inbound prospect examples stack beneath their explicitly spoken backlog total in a generic inbox.)"
+ },
+ {
+  "id": "clean-os/safari-real-page-loads",
+  "outcome": "unfit",
+  "reason": "The sequence requires a URL and a real branded web page."
+ },
+ {
+  "id": "clean-os/rich-link-preview",
+  "outcome": "unfit",
+  "reason": "A rich preview requires a real URL and the page's identity or art."
+ },
+ {
+  "id": "clean-os/community-sheet-rows",
+  "outcome": "duplicate",
+  "type": "checklist",
+  "reason": "Once the membership chrome is removed, the rows tick as Greg names each included action."
+ },
+ {
+  "id": "clean-os/join-button-tapped",
+  "outcome": "unfit",
+  "reason": "The subscription confirmation depends on a real page and its branded controls."
+ },
+ {
+  "id": "clean-os/podcast-now-playing-card",
+  "outcome": "unfit",
+  "reason": "The scrubber scene depends on an actual episode title, artwork and playback."
+ },
+ {
+  "id": "clean-os/lookup-popover-definition",
+  "outcome": "variant",
+  "type": "selected-term-popover",
+  "reason": "A selection frames the spoken term while its spoken definition opens separately beneath it."
+ },
+ {
+  "id": "clean-os/control-center-two-sliders",
+  "outcome": "variant",
+  "type": "opposing-levels",
+  "reason": "Two vertical levels drain and fill to the explicitly spoken signed percentages."
+ },
+ {
+  "id": "clean-os/calendar-week-blocks-renamed",
+  "outcome": "cut",
+  "type": "calendar-reallocation",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was merged: A renamed schedule block and a reclaimed block both keep the time slot while the spoken activity changes.)"
+ },
+ {
+  "id": "clean-os/handwriting-to-type-struck",
+  "outcome": "cut",
+  "type": "ink-struck-note",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was variant: An ink stroke accompanies the write-in, then a strike crosses the exact rejected copy.)"
+ },
+ {
+  "id": "clean-os/pinch-zoom-too-close",
+  "outcome": "unfit",
+  "reason": "The effect is a zoom-and-blur transition, with no distinct teaching layout after that treatment is removed."
+ },
+ {
+  "id": "clean-os/mail-draft-recipients-to-self",
+  "outcome": "unfit",
+  "reason": "The scene's recipient redirection relies on recipient identities in an imitation of Mail."
+ },
+ {
+  "id": "clean-os/wifi-network-vanishes",
+  "outcome": "unfit",
+  "reason": "The disappearing Wi-Fi entry needs a network name and has no use in Greg's reels."
+ },
+ {
+  "id": "clean-os/notification-stacks-swipe-mute",
+  "outcome": "cut",
+  "type": "queue-cleared",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was merged: Named interruptions slide away into one explicitly stated cleared or muted status.)"
+ },
+ {
+  "id": "clean-os/home-apps-become-life-widgets",
+  "outcome": "cut",
+  "type": "calendar-reallocation",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was merged: The row-for-row replacement becomes spoken old and new activities occupying the same schedule slots.)"
+ },
+ {
+  "id": "clean-os/today-view-free-hours-widget",
+  "outcome": "duplicate",
+  "type": "ratio-step-blocks",
+  "reason": "An earned count fills the matching share of an explicitly spoken total, which is the existing step-block design."
+ },
+ {
+  "id": "clean-os/spotlight-question-no-results",
+  "outcome": "cut",
+  "type": "empty-search",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: The exact query writes in and a separate row reveals the explicitly spoken empty result.)"
+ },
+ {
+  "id": "clean-os/beach-photo-thought-wheel",
+  "outcome": "unfit",
+  "reason": "The vacation still supplies the visual premise for the thought picker."
+ },
+ {
+  "id": "clean-os/bluetooth-work-disconnect",
+  "outcome": "merged",
+  "type": "progress-status-rail",
+  "reason": "The connecting and disconnecting states become the same series of spoken state changes once device chrome is removed."
+ },
+ {
+  "id": "clean-os/study-38k-two-bars",
+  "outcome": "unfit",
+  "reason": "The benchmark depends on an external study, a cited sample size and specific health measures."
+ },
+ {
+  "id": "clean-os/battery-background-app",
+  "outcome": "unfit",
+  "reason": "The layout requires app-level battery and screen-time values that Greg does not say."
+ },
+ {
+  "id": "clean-os/photos-card-sport-flip",
+  "outcome": "unfit",
+  "reason": "The object flips require sport stills."
+ },
+ {
+  "id": "clean-os/slide-over-book-card",
+  "outcome": "unfit",
+  "reason": "The side card requires a real cover, author and book title."
+ },
+ {
+  "id": "clean-os/day-view-phone-blocks-give-way",
+  "outcome": "cut",
+  "type": "calendar-reallocation",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Each occupied time block shrinks while the explicitly named replacement activity takes its place.)"
+ },
+ {
+  "id": "clean-os/idea-1",
+  "outcome": "duplicate",
+  "type": "either-or",
+  "reason": "The tapped option card covers the two-action decision. The other suggestions use app-specific or repeated controls."
+ },
+ {
+  "id": "clean-os/idea-2",
+  "outcome": "unfit",
+  "reason": "These are scene transitions and entry gestures."
+ },
+ {
+  "id": "clean-os/idea-3",
+  "outcome": "cut",
+  "type": "ink-struck-note",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was merged: The track-changes and marker ideas become a hand-drawn edit on the actual rejected wording.)"
+ },
+ {
+  "id": "clean-os/idea-4",
+  "outcome": "merged",
+  "type": "clock-ring-capsule",
+  "reason": "The stopwatch and ring completion cues become one timed trace around the spoken duration."
+ },
+ {
+  "id": "clean-os/idea-5",
+  "outcome": "cut",
+  "type": "ink-struck-note",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was merged: The ink stroke and exact spoken type carry the handwriting and conversion idea.)"
+ },
+ {
+  "id": "clean-os/idea-6",
+  "outcome": "duplicate",
+  "type": "word-swap",
+  "reason": "The existing single-word replacement covers autocorrect. The caret and waveform are composing or caption treatments."
+ }
+]

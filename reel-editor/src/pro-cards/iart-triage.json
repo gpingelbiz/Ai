@@ -1,0 +1,924 @@
+[
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#problem-first-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#pattern-interrupt-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#curiosity-gap-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#immediate-benefit-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#direct-callout-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#agitate-problem",
+  "outcome": "unfit",
+  "reason": "Whole ad beat depends on a product pain sketch and supporting footage."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#benefit-statement",
+  "outcome": "duplicate",
+  "type": "gold-frame",
+  "reason": "A short self-contained benefit runs as a spoken pull quote."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#proof-stat",
+  "outcome": "duplicate",
+  "type": "rising-figure",
+  "reason": "A single outcome figure with its spoken context already has a focal reveal."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#proof-demo",
+  "outcome": "unfit",
+  "reason": "Needs product or demo footage."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/ad-creative-video#message-matched-cta",
+  "outcome": "deferred",
+  "type": "offer-message-match",
+  "reason": "A spoken promise paired with an exact next action could illustrate message matching in a sales lesson."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/launch-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-ad-video-skills/launch-video#tease-fragments",
+  "outcome": "unfit",
+  "reason": "Needs product footage or product imagery."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/launch-video#hero-product-reveal",
+  "outcome": "unfit",
+  "reason": "Needs a real product visual or logo."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/launch-video#feature-montage",
+  "outcome": "unfit",
+  "reason": "The per-feature keyword is coupled to footage or a product UI demo."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/launch-video#brand-end-card",
+  "outcome": "unfit",
+  "reason": "Needs a logo and URL."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/testimonial-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-ad-video-skills/testimonial-video#quote-and-rating",
+  "outcome": "cut",
+  "type": "rated-client-quote",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Pairs a client quote with its explicit spoken score, a combination neither the quote nor rating cards carry.)"
+ },
+ {
+  "id": "iart:iart-ad-video-skills/testimonial-video#fractional-star-fill",
+  "outcome": "cut",
+  "type": "rated-client-quote",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was merged: The spoken scale and partially filled final star are built into the rated client quote.)"
+ },
+ {
+  "id": "iart:iart-ad-video-skills/testimonial-video#quote-line-reveal",
+  "outcome": "variant",
+  "type": "client-quote-mask",
+  "reason": "Masked lines build beneath the optional spoken attribution in a client quote."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/testimonial-video#quote-phrase-emphasis",
+  "outcome": "duplicate",
+  "type": "phrase-sweep",
+  "reason": "The existing phrase sweep emphasizes the explicitly grounded focus span inside its setup and tail."
+ },
+ {
+  "id": "iart:iart-ad-video-skills/testimonial-video#author-block",
+  "outcome": "unfit",
+  "reason": "The standalone trust block requires a person's name, role and company, and can require a photo."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#keyword-note",
+  "outcome": "duplicate",
+  "type": "term-explainer",
+  "reason": "A large spoken term and its short explanation already live on paired note strips."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#synchronized-big-number",
+  "outcome": "variant",
+  "type": "tall-figure-wipe",
+  "reason": "The figure lands with a vertical gold field reveal sized to leave the speaker visible."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#keyword-icon",
+  "outcome": "duplicate",
+  "type": "lightbulb",
+  "reason": "A single idea next to an illustrated SVG icon is already covered."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#attention-arrow",
+  "outcome": "duplicate",
+  "type": "arrow",
+  "reason": "A grounded attention cue already has a drawn arrow."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#logo-overlay",
+  "outcome": "unfit",
+  "reason": "Requires a logo."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#short-list-build",
+  "outcome": "duplicate",
+  "type": "stack-fan",
+  "reason": "Spoken process components already stack one by one."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#full-cover-process",
+  "outcome": "duplicate",
+  "type": "first-then-finally",
+  "reason": "The actual process can already be laid out as an on-footage sequence."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#product-interface-cover",
+  "outcome": "unfit",
+  "reason": "Requires a product UI, app imitation or footage."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#compound-setup",
+  "outcome": "duplicate",
+  "type": "annotated-figure",
+  "reason": "A starting amount with two spoken conditions is a headline figure and its qualifications."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#compound-growth-milestones",
+  "outcome": "cut",
+  "type": "area-milestones",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was variant: Chronological samples draw an area series interval by interval.)"
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#compound-simple-comparison",
+  "outcome": "cut",
+  "type": "shared-start-gap",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Two approaches branch from a truly shared spoken baseline to comparable endpoints and one visible gap.)"
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#rule-of-seventy-two",
+  "outcome": "cut",
+  "type": "formula-worked-example",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: The generic spoken calculation is paired with its actual worked example.)"
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#travel-endpoints",
+  "outcome": "new",
+  "type": "handoff-duration",
+  "reason": "The two endpoints and the exact elapsed time map to a sales lead handoff without the space assets."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#travel-orbit-comparison",
+  "outcome": "unfit",
+  "reason": "The nested orbital distances and path rely on unspoken radii and a space geometry lesson."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#travel-time-bars",
+  "outcome": "variant",
+  "type": "duration-benchmark-rail",
+  "reason": "Comparable spoken durations end at moving dots on ruler tracks instead of filling box bars."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#travel-route-trace",
+  "outcome": "merged",
+  "type": "packet-handoff",
+  "reason": "The route's moving point maps to the packet moving between named sales stages."
+ },
+ {
+  "id": "iart:iart-b-roll-skills/talking-head-b-roll#travel-mixed-duration-list",
+  "outcome": "duplicate",
+  "type": "timed-agenda",
+  "reason": "The unscaled name-and-duration summary already fits the timed agenda rows."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/animated-infographic#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-data-animation-skills/animated-infographic#sequenced-infographic",
+  "outcome": "duplicate",
+  "type": "three-part-method",
+  "reason": "A three-part method already builds named phases with individual explanations."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/animated-infographic#icon-step-cards",
+  "outcome": "duplicate",
+  "type": "step-detail",
+  "reason": "Short explanation cards already pair an action with a directional mark."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/animated-infographic#staggered-sections",
+  "outcome": "duplicate",
+  "type": "phase-bands",
+  "reason": "Staggered phases with an active band are already covered."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/animated-infographic#infographic-counter",
+  "outcome": "duplicate",
+  "type": "odometer",
+  "reason": "A whole spoken count already has a sequential digit treatment."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/animated-infographic#infographic-connector",
+  "outcome": "duplicate",
+  "type": "timeline-spine",
+  "reason": "The staggered icon steps use a drawn connector comparable to the timeline spine."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/chart-animation#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-data-animation-skills/chart-animation#bar-chart-race",
+  "outcome": "cut",
+  "type": "contest-lead-shift",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Two spoken scoreboard snapshots can visibly trade the lead while the bars keep one scale.)"
+ },
+ {
+  "id": "iart:iart-data-animation-skills/chart-animation#number-ticker",
+  "outcome": "duplicate",
+  "type": "odometer",
+  "reason": "The odometer rolls the actual count without displaying invented intermediate numbers."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/chart-animation#line-area-reveal",
+  "outcome": "cut",
+  "type": "area-milestones",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was merged: Each interval fills the area underneath the line when its endpoint is spoken.)"
+ },
+ {
+  "id": "iart:iart-data-animation-skills/chart-animation#point-annotation",
+  "outcome": "cut",
+  "type": "area-milestones",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was merged: Each plotted milestone is paired with its exact spoken number in the right-hand reading column.)"
+ },
+ {
+  "id": "iart:iart-data-animation-skills/presentation-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-data-animation-skills/presentation-video#title-card",
+  "outcome": "duplicate",
+  "type": "term-lead-title",
+  "reason": "The speaking headline and following qualifier already fit the term-led title treatment."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/presentation-video#staggered-bullets",
+  "outcome": "variant",
+  "type": "chapter-bullets",
+  "reason": "A diamond-led topic list rises one line at a time instead of relying on trailing leaders."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/presentation-video#narrated-content-slide",
+  "outcome": "deferred",
+  "type": "titled-lesson-list",
+  "reason": "A spoken topic with two to four factual bullet points is broader than the recipe type's list of ingredients."
+ },
+ {
+  "id": "iart:iart-data-animation-skills/presentation-video#numbered-section-divider",
+  "outcome": "duplicate",
+  "type": "chapter-watermark",
+  "reason": "The section number and chapter title already have a large background-number design."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/diagram-animation#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/diagram-animation#progressive-nodes",
+  "outcome": "merged",
+  "type": "sketched-outcomes",
+  "reason": "Shapes, links and exact spoken labels are disclosed together on the whiteboard branch diagram."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/diagram-animation#sequence-lifelines",
+  "outcome": "cut",
+  "type": "role-handoff",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: Two named sales roles exchange three ordered operational handoffs along alternating arrows.)"
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/diagram-animation#flowing-connector",
+  "outcome": "variant",
+  "type": "packet-handoff",
+  "reason": "A single packet traverses one segment when the next exact stage is spoken."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/diagram-animation#growing-bar-chart",
+  "outcome": "duplicate",
+  "type": "bars",
+  "reason": "Baseline-driven bars already rise when their item is spoken."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/diagram-animation#line-draw",
+  "outcome": "duplicate",
+  "type": "line-chart",
+  "reason": "The two-endpoint comparison already draws its line between observed values."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/diagram-animation#area-under-line",
+  "outcome": "cut",
+  "type": "area-milestones",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was merged: The filled series uses the same new area chart as the other data-animation recipe.)"
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/diagram-animation#count-up",
+  "outcome": "duplicate",
+  "type": "odometer",
+  "reason": "The source count motion survives as the existing odometer, using only the spoken count."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/explainer-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/explainer-video#progressive-diagram",
+  "outcome": "duplicate",
+  "type": "linked-system",
+  "reason": "The example's multiple input nodes flowing into a shared next stage are covered by the linked system diagram."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/explainer-video#kinetic-keyword-stagger",
+  "outcome": "variant",
+  "type": "headline-word-build",
+  "reason": "Words within a spoken teaching fragment rise together in a short cascade across alternating alignments."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/explainer-video#bar-grow-with-number",
+  "outcome": "duplicate",
+  "type": "bars",
+  "reason": "Spoken amount reveals already drive the bars."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/explainer-video#checklist-problem-sketch",
+  "outcome": "duplicate",
+  "type": "checklist",
+  "reason": "The list fits the existing checklist with a tick at each named action."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/explainer-video#single-button-solution",
+  "outcome": "unfit",
+  "reason": "The product transformation needs a UI or brand imitation."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/explainer-video#caption-cues",
+  "outcome": "unfit",
+  "reason": "Caption authoring belongs to the subtitle track."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/isometric-animation#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/isometric-animation#isometric-plane",
+  "outcome": "merged",
+  "type": "stacked-system-deck",
+  "reason": "The plane becomes the top face of the stack with all copy kept upright."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/isometric-animation#extruded-block",
+  "outcome": "merged",
+  "type": "stacked-system-deck",
+  "reason": "Inline three-face slabs carry the volume treatment without skewing any copy."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/isometric-animation#stacked-z-layers",
+  "outcome": "variant",
+  "type": "stacked-system-deck",
+  "reason": "Upright labels sit on three-face slabs that build from the spoken foundation upward."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/isometric-animation#exploded-view",
+  "outcome": "merged",
+  "type": "stacked-system-deck",
+  "reason": "The same tier stack closes the gaps when the last layer is spoken."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/isometric-animation#isometric-grid",
+  "outcome": "unfit",
+  "reason": "A projection grid alone has no teaching content in Greg's reels."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/isometric-animation#orthographic-block-scene",
+  "outcome": "merged",
+  "type": "stacked-system-deck",
+  "reason": "The same bottom-up block arrangement is expressed as inline SVG faces."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#dashoffset-draw-on",
+  "outcome": "variant",
+  "type": "sketched-outcomes",
+  "reason": "A hand-drawn right-to-left branch grows as Greg states each of a parent idea's three outcomes."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#marker-hand-follow",
+  "outcome": "unfit",
+  "reason": "The drawing-hand illusion depends on a marker-hand asset."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#multi-stroke-draw",
+  "outcome": "merged",
+  "type": "sketched-outcomes",
+  "reason": "Each branch uses separate connector and node strokes tied to the matching words."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#gsap-draw-on",
+  "outcome": "merged",
+  "type": "sketched-outcomes",
+  "reason": "The same branch strokes draw deterministically on the house timeline."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#handwriting",
+  "outcome": "merged",
+  "type": "outline-emphasis",
+  "reason": "The text-outline reveal is adapted to upright house type with separate outline and fill."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#fill-after-outline",
+  "outcome": "merged",
+  "type": "sketched-outcomes",
+  "reason": "Drawn branch nodes transition into a gold fill as Greg names the outcomes."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#erase-wipe",
+  "outcome": "unfit",
+  "reason": "Erasing the board is a transition."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#frame-driven-draw",
+  "outcome": "merged",
+  "type": "sketched-outcomes",
+  "reason": "Scrubbable timeline strokes produce the same drawn branch design."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/whiteboard-animation#board-build-sequence",
+  "outcome": "merged",
+  "type": "sketched-outcomes",
+  "reason": "The branch diagram builds the parent and its consequence nodes progressively."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#personalized-intro",
+  "outcome": "unfit",
+  "reason": "Needs a person's name and a year."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#big-number-reveal",
+  "outcome": "duplicate",
+  "type": "odometer",
+  "reason": "The oversized count-up idea already has an odometer design using the spoken amount."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#staggered-top-x",
+  "outcome": "deferred",
+  "type": "measured-rank-list",
+  "reason": "A ranked list with exact spoken positions, labels and amounts deserves its own measured ranking type."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#superlative-persona",
+  "outcome": "unfit",
+  "reason": "The archetype is invented from unseen thresholds instead of being spoken."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#comparison-percentile",
+  "outcome": "duplicate",
+  "type": "percentile-tail",
+  "reason": "A spoken top or bottom percentile already sweeps a horizontal tail bar."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#peak-period-heatmap",
+  "outcome": "deferred",
+  "type": "period-performance",
+  "reason": "A compact time-and-value series with a highlighted peak can show the busiest pipeline period when every reading is spoken."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#outro-share-card",
+  "outcome": "unfit",
+  "reason": "Needs a logo, handle and URL."
+ },
+ {
+  "id": "iart:iart-explainer-video-skills/wrapped-video#second-ranked-list",
+  "outcome": "deferred",
+  "type": "measured-rank-list",
+  "reason": "The optional second list needs the same spoken amounts and ranks as the first."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#mask-up",
+  "outcome": "variant",
+  "type": "masked-topic",
+  "reason": "A baseline mask hides the short vertical rise of each grounded headline line."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#focus-pull-blur",
+  "outcome": "unfit",
+  "reason": "A blur-to-focus transition alone adds no teaching information to an existing card."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#directional-wipe",
+  "outcome": "duplicate",
+  "type": "section-wipe",
+  "reason": "A teaching topic already has a directional wipe design."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#character-stagger",
+  "outcome": "variant",
+  "type": "spelled-emphasis",
+  "reason": "The spoken anchor starts a short sequence of individual glyph reveals."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#gsap-character-stagger",
+  "outcome": "merged",
+  "type": "spelled-emphasis",
+  "reason": "GSAP's character technique yields the same short glyph cascade."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#gsap-line-mask",
+  "outcome": "merged",
+  "type": "masked-topic",
+  "reason": "The same line-mask rise works with the registry's existing timeline."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#framer-word-stagger",
+  "outcome": "merged",
+  "type": "headline-word-build",
+  "reason": "Each spoken headline fragment begins the same brief word cascade."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#framer-character-stagger",
+  "outcome": "merged",
+  "type": "spelled-emphasis",
+  "reason": "The character-level option yields the same short glyph cascade."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#remotion-character-stagger",
+  "outcome": "merged",
+  "type": "spelled-emphasis",
+  "reason": "Frame-driven character stagger is the same glyph sequence in house timing."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#variable-weight",
+  "outcome": "variant",
+  "type": "weight-emphasis",
+  "reason": "A single emphasis word thickens once through the Inter weight axis."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#text-on-path",
+  "outcome": "unfit",
+  "reason": "Moving spoken copy along a curve has no teaching use and makes a phone-sized read harder."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#outline-text-draw",
+  "outcome": "variant",
+  "type": "outline-emphasis",
+  "reason": "A fast outline reveal followed by a filled face keeps the outline idea on arbitrary grounded copy."
+ },
+ {
+  "id": "iart:iart-kinetic-typography-skills/kinetic-typography#after-effects-character-stagger",
+  "outcome": "merged",
+  "type": "spelled-emphasis",
+  "reason": "The per-character entrance yields the same glyph cascade."
+ },
+ {
+  "id": "iart:iart-lower-thirds-skills/lower-thirds#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-lower-thirds-skills/lower-thirds#lower-third-template",
+  "outcome": "unfit",
+  "reason": "The broadcast identity template needs a person's name and title."
+ },
+ {
+  "id": "iart:iart-lower-thirds-skills/lower-thirds#church-speaker",
+  "outcome": "unfit",
+  "reason": "The identity card requires a person's name and title."
+ },
+ {
+  "id": "iart:iart-lower-thirds-skills/lower-thirds#scripture-reference",
+  "outcome": "unfit",
+  "reason": "Needs a source citation."
+ },
+ {
+  "id": "iart:iart-lower-thirds-skills/lower-thirds#podcast-host",
+  "outcome": "unfit",
+  "reason": "Needs a person's name, title and show identity."
+ },
+ {
+  "id": "iart:iart-lower-thirds-skills/lower-thirds#podcast-guest",
+  "outcome": "unfit",
+  "reason": "Needs a person's name, title and company."
+ },
+ {
+  "id": "iart:iart-lower-thirds-skills/lower-thirds#twitch-name-card",
+  "outcome": "unfit",
+  "reason": "Needs a streamer's alias and show identity."
+ },
+ {
+  "id": "iart:iart-motion-design-skills/after-effects#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-motion-design-skills/animation-principles#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-motion-design-skills/beat-sync-editing#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-motion-design-skills/color-motion#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-motion-design-skills/logo-animation#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-motion-design-skills/motion-art-direction#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-motion-design-skills/motion-background#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-motion-design-skills/remotion-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-motion-design-skills/shot-composition#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#app-chrome",
+  "outcome": "unfit",
+  "reason": "Requires iMessage, WhatsApp or Telegram imitation."
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#bubble-with-tail",
+  "outcome": "duplicate",
+  "type": "text-thread",
+  "reason": "Alternating spoken text bubbles are already represented by the text thread."
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#staggered-bubble-entry",
+  "outcome": "duplicate",
+  "type": "dm-chat",
+  "reason": "Quoted messages already arrive separately at their individual reveals."
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#typing-indicator",
+  "outcome": "duplicate",
+  "type": "typing",
+  "reason": "The composing-message card already uses a typing beat."
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#read-receipt",
+  "outcome": "new",
+  "type": "message-read-state",
+  "reason": "Shows an exact sent message and a separate, explicitly spoken delivery or read state."
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#timestamp-divider",
+  "outcome": "unfit",
+  "reason": "Requires a date or clock stamp outside the source's spoken message slots."
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#reaction-tapback",
+  "outcome": "cut",
+  "type": "message-reaction",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Shows a specific reaction to a quoted outreach message as a neutral SVG badge paired with Greg's words.)"
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#thread-auto-scroll",
+  "outcome": "variant",
+  "type": "alert-scroll-tray",
+  "reason": "The bounded message viewport is adapted to the existing sequence of three spoken alert titles and texts."
+ },
+ {
+  "id": "iart:iart-text-message-video-skills/text-message-animation#per-message-pop",
+  "outcome": "unfit",
+  "reason": "The per-bubble cue is sound design."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/caption-animation#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/caption-animation#active-word-highlight",
+  "outcome": "unfit",
+  "reason": "Karaoke highlight belongs to the caption track."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/caption-animation#per-word-pop",
+  "outcome": "unfit",
+  "reason": "Word pop is a caption treatment."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/caption-animation#caption-pages",
+  "outcome": "unfit",
+  "reason": "Pagination is a caption treatment."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/caption-animation#outlined-burn-in",
+  "outcome": "unfit",
+  "reason": "Outline and shadow style the caption track."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/countdown-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/countdown-video#elapsed-clock-countdown",
+  "outcome": "unfit",
+  "reason": "An automatic elapsed timer displays numbers Greg does not say."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/countdown-video#fixed-date-countdown",
+  "outcome": "unfit",
+  "reason": "Needs a date and generates unspoken countdown values."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/countdown-video#starting-soon",
+  "outcome": "unfit",
+  "reason": "A stream holding screen is a separate full-screen scene."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/countdown-video#digit-roll",
+  "outcome": "duplicate",
+  "type": "odometer",
+  "reason": "The existing odometer already uses reels with the earned digits."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/countdown-video#digit-flip",
+  "outcome": "variant",
+  "type": "count-hinge",
+  "reason": "One hinged readout replaces a spoken count with the next lower spoken count."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/lower-thirds#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/lower-thirds#nameplate",
+  "outcome": "unfit",
+  "reason": "Requires a person's name and title."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/lower-thirds#wipe-bar",
+  "outcome": "merged",
+  "type": "masked-topic",
+  "reason": "The bar-and-copy entrance becomes a masked spoken teaching title without a nameplate."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#open-loop-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#direct-promise-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#negation-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#pattern-interrupt-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#stakes-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#listicle-hook",
+  "outcome": "unfit",
+  "reason": "Opening hook treatment belongs to the reel hook."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#captioned-loop",
+  "outcome": "unfit",
+  "reason": "It is a reel-wide caption and transition structure."
+ },
+ {
+  "id": "iart:iart-tiktok-video-skills/short-form-video#punch-in",
+  "outcome": "unfit",
+  "reason": "This is a camera transition rather than a card."
+ },
+ {
+  "id": "iart:iart-youtube-video-skills/audiogram#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-youtube-video-skills/audiogram#mirrored-frequency-bars",
+  "outcome": "unfit",
+  "reason": "A true frequency display needs audio data beyond the spoken words."
+ },
+ {
+  "id": "iart:iart-youtube-video-skills/audiogram#oscilloscope",
+  "outcome": "unfit",
+  "reason": "A true oscilloscope needs the recorded waveform."
+ },
+ {
+  "id": "iart:iart-youtube-video-skills/audiogram#cover-audiogram",
+  "outcome": "unfit",
+  "reason": "Requires real cover art and the source audio."
+ },
+ {
+  "id": "iart:iart-youtube-video-skills/audiogram#playback-progress",
+  "outcome": "unfit",
+  "reason": "Audio playback progress is timeline decoration."
+ },
+ {
+  "id": "iart:iart-youtube-video-skills/youtube-intro-outro#technique",
+  "outcome": "unfit",
+  "reason": "technique, not a card"
+ },
+ {
+  "id": "iart:iart-youtube-video-skills/youtube-intro-outro#logo-sting",
+  "outcome": "unfit",
+  "reason": "Needs a logo."
+ },
+ {
+  "id": "iart:iart-youtube-video-skills/youtube-intro-outro#end-screen-plate",
+  "outcome": "unfit",
+  "reason": "The layout is reserved for YouTube's end-screen interface."
+ }
+]

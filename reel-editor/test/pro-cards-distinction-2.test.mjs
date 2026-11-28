@@ -88,7 +88,9 @@ for (const [type, values] of Object.entries(cases)) {
   test(`${type} grounds exact copy, fits placement and writes each spoken slot at its own time`, () => {
     const { overlay, words, pick } = fixture(type), def = CARDS[type];
     assert.ok(overlay);
-    assert.deepEqual(groundProOverlay(pick, words), overlay);
+    // Named design: since the 2026-11-28 ghost-editor import some of these types have more designs, and the planner's pick may land on one.
+    const { group, ...designed } = groundProOverlay({ ...pick, design: pick.type }, words) || {};
+    assert.deepEqual(designed, overlay);
     assert.deepEqual(proSize(overlay), def.size);
     assert.ok(placeProOverlay(overlay, { measured: true, W: 1080, H: 1920, head: { x: 0, y: 1500, w: 100, h: 100 } }));
     const r = renderProOverlay(placed(overlay)), { calls, enter, state, exit } = events(overlay);
