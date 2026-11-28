@@ -101,3 +101,13 @@ test("a full-screen pro card is a full layer for the gate even where its dark pa
   assert.ok(layoutProblems([{ t: 5, layers: { 3: m } }], layers).some((p) => p.code === "safe-zone"));
   assert.deepEqual(layoutProblems([{ t: 5, layers: { 3: m } }], layers, undefined, undefined, { fullIds: ["pro-split"] }), []);
 });
+
+test("a written pro hook keeps every word: smaller steps and a third line come before dropping one", async () => {
+  const { planProHook } = await import("../src/hook.mjs");
+  const anton = loadProMeasure(new URL("../assets/fonts/Anton-Regular.ttf", import.meta.url).pathname, { size: 108, weight: 400, tracking: 0 });
+  for (const text of ["Speed to respond is the *most underrated lever*", "Getting easier? That's when you *don't ease off*", "Prime your brain with *recent wins* before calling"]) {
+    const hook = planProHook([], { text, reelDuration: 40, measure: anton });
+    assert.equal(hook.text, text.replace(/\*/g, ""), "nothing cut off the end");
+    assert.ok(hook.fontSize >= 64 && hook.lines.length <= 3);
+  }
+});

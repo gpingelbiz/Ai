@@ -327,9 +327,11 @@ export function buildShape(shape, lines, words, { min = SHAPE_RULES.min, max = S
   let start = fi;
   if (!lead || openerProblems(lead, lines[li + 1]).length) {
     const why = lead ? openerProblems(lead, lines[li + 1]).map((p) => p.message).join("; ") : "no lead";
+    // Only the body's own first kept line may stand in: skipping further in opened IMG_4766 C7 on a fragment
+    // ("Something physical, a walk, a workout...") after "Third, ..." was rejected. Otherwise the moment is dropped.
     let k = fi;
-    while (k <= Math.min(ti, pi) && (dropIds.has(lines[k].id) || openerProblems(lines[k], lines[k + 1]).length)) k++;
-    if (k > Math.min(ti, pi)) return { problem: `no line can open it (${why})` };
+    while (k <= Math.min(ti, pi) && dropIds.has(lines[k].id)) k++;
+    if (k > Math.min(ti, pi) || openerProblems(lines[k], lines[k + 1]).length) return { problem: `no line can open it (${why})` };
     lead = lines[k];
     start = k;
   }

@@ -75,8 +75,9 @@ test("a lead that refers back falls back to the first kept body line, or the sha
   const built = buildShape({ lead: l2[0].id, from: l2[1].id, to: l2[9].id, payoff: l2[8].id }, l2, w2, { min: 20, max: 60 });
   assert.equal(built.problem, undefined, built.problem);
   assert.equal(built.lead, S.setup1, "the refers-back line never opens; the body's own first line does");
+  // When the body itself starts on the bad line, nothing later stands in for it (a fragment would open the reel).
   const bad = buildShape({ lead: l2[0].id, from: l2[0].id, to: l2[9].id, payoff: l2[8].id }, l2, w2, { min: 20, max: 60 });
-  assert.equal(bad.lead, S.setup1);
+  assert.match(bad.problem, /no line can open it/);
 });
 
 test("at most three kept ranges: the smallest gaps close first, the lead stays its own range", () => {

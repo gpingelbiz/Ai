@@ -9,10 +9,24 @@ export function planProHook(words, { text, duration = 2.4, reelDuration, measure
   if (!source) return null;
   const all = source.text.replace(/\*/g, "").split(/\s+/).map((text) => ({ text }));
   const weak = /^(a|an|the|to|of|in|on|at|for|with|from|by|and|or|but|your|my|our|their|his|her|its|not|never|no|without|\d+)$/i;
-  // Keep the whole title: step the size down (100, 88, 80 px on 1080x1920; measure is at 108) before dropping words.
-  for (const px of [100, 88, 80]) {
-    const lines = proLineBreaks(all, { measure, maxWidth: PRO_HOOK_LINE * 108 / px });
-    if (lines && !weak.test(all.at(-1).text)) return { text: all.map((w) => w.text).join(" "), words: all, lines: lines.map((line) => line.length), fontSize: px, start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
+  // Keep the whole title: step the size down (100, 88, 80, 72, 64 px on 1080x1920; measure is at 108), then try a
+  // third line, before dropping a word. Since the 150 px side strips (Nov 26) the plate is narrower, and stopping at
+  // 80 px cut written hooks mid-phrase ("...when you don't ease", IMG_4766 Nov 27).
+  const seconds = Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4)));
+  const title = (lines, px) => ({ text: all.map((w) => w.text).join(" "), words: all, lines: lines.map((line) => line.length), fontSize: px, start: 0, duration: seconds });
+  if (!weak.test(all.at(-1).text)) {
+    for (const px of [100, 88, 80, 72, 64]) {
+      const lines = proLineBreaks(all, { measure, maxWidth: PRO_HOOK_LINE * 108 / px });
+      if (lines) return title(lines, px);
+    }
+    for (const px of [72, 64]) {
+      const max = PRO_HOOK_LINE * 108 / px, lines = [];
+      for (const w of all) {
+        const line = lines.at(-1);
+        if (line && measure([...line, w].map((x) => x.text).join(" ")) <= max) line.push(w); else lines.push([w]);
+      }
+      if (lines.length <= 3 && lines.every((line) => measure(line.map((x) => x.text).join(" ")) <= max)) return title(lines, px);
+    }
   }
   const tokens = [...all];
   while (tokens.length) {
