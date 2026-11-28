@@ -108,6 +108,42 @@ export function statSlam(quote) {
   return { label, from: `${from.replace(/,/g, "")}`, to: `${b}${unit}`, toIndex };
 }
 
+// Bubble text in SF Pro Text runs at most about 0.47 em a character once words wrap whole (11-28: a 353-character
+// text at 52 px rendered 14 lines of up to 28 characters in the 644 px text box; 0.47 em counts 15).
+const BUBBLE_EM = 0.47, FONT_STEPS = [72, 62, 52, 46, 43, 40, 36, 32];
+function wrapCount(text, perLine) {
+  let lines = 0;
+  for (const para of text.split("\n")) {
+    lines++;
+    let n = 0;
+    for (const w of para.split(/\s+/).filter(Boolean)) {
+      const add = n ? n + 1 + w.length : w.length;
+      if (add > perLine && n) { lines++; n = w.length; } else n = add;
+    }
+  }
+  return lines;
+}
+
+/** Height a thread takes at a bubble font: the label, the typing dots while they show, every bubble wrapped. */
+export function threadNeeds(messages, font, typing = false) {
+  const perLine = Math.max(1, Math.floor((RECEIPTS.threadWidth - 56) / (BUBBLE_EM * font)));
+  const texts = messages.map((m) => String(m.text || "").trim().replace(/[ \t]*\n[\s]*\n\s*/g, "\n"));
+  const label = 30 * 1.2 + 28, dots = typing ? 14 + 20 + 56 : 0;
+  return label + dots + texts.reduce((h, t) => h + 14 + 40 + wrapCount(t, perLine) * font * 1.34, 0);
+}
+
+/**
+ * Short texts (most coach texts are a line or two) read big; long ones step down. The thread is centred in its box,
+ * so one taller than the box spills out the top: reel #33 of the 11-27 remake put the "Real text" label at y 114,
+ * above the safe zone, while the typing dots still showed. The font steps down until label, dots and bubbles fit.
+ */
+export function threadFont(messages, typing = false) {
+  const chars = messages.reduce((n, m) => n + String(m.text || "").length, 0);
+  let k = FONT_STEPS.indexOf(chars > 520 ? 40 : chars > 380 ? 46 : chars > 140 ? 52 : chars > 60 ? 62 : 72);
+  while (k < FONT_STEPS.length - 1 && threadNeeds(messages, FONT_STEPS[k], typing) > RECEIPTS.threadHeight) k++;
+  return FONT_STEPS[k];
+}
+
 /**
  * The thread's bubbles as HTML: the quoted run of words wrapped one span per token (the marker fills each as it is
  * said), names covered with solid pills. Returns the bubbles and how many quote tokens were marked.
@@ -289,9 +325,7 @@ export function receiptsHTML({ data, heard, duration, footageMarkup, audioMarkup
   const threadsHTML = (data.items || []).map((it, i) => {
     const th = T.threads[i];
     const { bubbles } = threadMarkup(it.messages || [], it.quote, it.redact || [], `t${i}`);
-    const chars = (it.messages || []).reduce((n, m) => n + String(m.text || "").length, 0);
-    // Short texts (most coach texts are a line or two) read big; long ones step down so the thread fits.
-    const font = chars > 520 ? 40 : chars > 380 ? 46 : chars > 140 ? 52 : chars > 60 ? 62 : 72;
+    const font = threadFont(it.messages || [], th.typing != null);
     const bs = bubbles.map((b, k) => `<div class="b ${b.who}${k === bubbles.length - 1 || bubbles[k + 1].who !== b.who ? " last" : ""}" id="t${i}-b${k}" style="font-size:${font}px">${b.html}</div>`).join("");
     const typing = th.typing != null ? `<div class="typing" id="t${i}-typing"><i></i><i></i><i></i></div>` : "";
     return `<div class="thread" id="t${i}" ${win(th.into, th.gone)}><div class="push" id="t${i}-push"><div class="meta">${esc(data.label || "Real text")}</div>${typing}${bs}</div></div>`;
