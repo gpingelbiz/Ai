@@ -64,13 +64,16 @@ test("the only page changes are the title and the timed proof layer beneath the 
     assert.ok(layer);
     assert.equal(layer[1], tag);
     assert.ok(layer[0].includes(`src="${file}" data-start="0" data-duration="${end}"`));
-    assert.match(layer[0], /width:100%;height:100%;object-fit:cover/);
+    // Fitted whole between the hook and the captions, on an obsidian ground: a record is never cropped or captioned over.
+    assert.match(layer[0], /object-fit:contain/);
+    const ground = html.match(/\n +<div id="proof-opener-ground"[^\n]+/);
+    assert.ok(ground && ground.index < layer.index && /background:#0B0B0D/.test(ground[0]) && ground[0].includes(`data-duration="${end}"`));
     if (tag === "video") assert.match(layer[0], / muted playsinline>/);
     assert.ok(layer.index > html.indexOf('id="footage"'));
     for (const id of ["hook", "captions", "teaching-card"]) {
       assert.ok(html.indexOf(`id="${id}"`) > layer.index, id);
     }
-    assert.equal(html.replace(layer[0], "").replace(`<title>${variant.name}</title>`, `<title>${plan.name}</title>`), base);
+    assert.equal(html.replace(layer[0], "").replace(ground[0], "").replace(`<title>${variant.name}</title>`, `<title>${plan.name}</title>`), base);
   }
 });
 
@@ -162,4 +165,14 @@ test("a build that changes the matched edit reports the mismatch", async (t) => 
     },
   };
   await assert.rejects(makeProofFirst(job, file, { deps }), /checks changed the matched edit/);
+});
+
+
+test("the opener box sits under the pro hook and above the first captions shown while it is up", async () => {
+  const { openerBox } = await import("../src/compose.mjs");
+  const plan = { opener: { duration: 2 }, hook: { lines: [3, 4], fontSize: 100 }, captions: [{ start: 0.2, end: 1, y: 1248 }, { start: 5, end: 6, y: 900 }] };
+  const box = openerBox(plan, 1920);
+  assert.ok(Math.abs(box.top - (176 + 2 * 106 + 32 + 24)) < 0.01, JSON.stringify(box));
+  assert.ok(Math.abs(box.top + box.height - (1248 - 24)) < 0.01);
+  assert.equal(openerBox({ ...plan, opener: null }), null);
 });

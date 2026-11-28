@@ -32,7 +32,9 @@ export const CARDS = {
     render(o, h) {
       const [heading] = o.slots.heading;
       const label = heading ? `<div class="split-heading">${h.copy(heading)}</div>` : "";
-      const rows = o.slots.items.map((item, i) => `<li class="split-item"><span class="split-number" aria-hidden="true">${i + 1}</span><span>${h.copy(item)}</span></li>`).join("");
+      // A list item is a name, not a sentence: the period he ended it on is not shown.
+      const bare = (item) => ({ ...item, lines: (item.lines || [item.text]).map((line, k, all) => (k === all.length - 1 ? String(line).replace(/[.,;:!?]+$/, "") : line)) });
+      const rows = o.slots.items.map((item, i) => `<li class="split-item"><span class="split-number" aria-hidden="true">${i + 1}</span><span>${h.copy(bare(item))}</span></li>`).join("");
       const timeline = o.slots.items.map((item, i) =>
         `tl.fromTo(${h.sel(`.split-item:nth-child(${i + 1})`)},{opacity:0,clipPath:"inset(0 100% 0 0)"},{opacity:1,clipPath:"inset(0 0% 0 0)",duration:${h.motion.enter},ease:proEnter,immediateRender:false},${item.at});`
       ).join("\n");

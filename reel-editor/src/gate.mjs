@@ -251,7 +251,10 @@ const indexOf = (layer) => Number(String(layer.id || "").match(/-(\d+)$/)?.[1]);
  * Layout verdict from measured masks: frames = [{ t, layers: { [index]: mask } }]. Only layers that hold words are
  * compared; full-screen layers (a photo, a full card) are skipped because text over them is the design.
  */
-export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, safe = GATE_SAFE) {
+export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, safe = GATE_SAFE, { fullIds = [] } = {}) {
+  // A full-screen pro card (the full list, the split list) is a full layer by design even where it measures under
+  // 40%: its obsidian panel over Greg's dark shirt barely differs from the footage (the split list, Nov 27).
+  const full = new Set(fullIds);
   const byIndex = new Map(layers.map((layer) => [layer.index, layer]));
   const seen = new Map();
   const add = (problem) => {
@@ -263,7 +266,7 @@ export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, saf
   };
   for (const frame of frames) {
     const active = Object.entries(frame.layers || {}).map(([index, mask]) => ({ layer: byIndex.get(Number(index)), mask }))
-      .filter((item) => item.layer && item.mask?.count && item.mask.coverage < rules.full);
+      .filter((item) => item.layer && item.mask?.count && item.mask.coverage < rules.full && !full.has(item.layer.id));
     for (let i = 0; i < active.length; i++) {
       for (let j = i + 1; j < active.length; j++) {
         const a = active[i], b = active[j];
@@ -844,7 +847,7 @@ export async function runGate(workDir, { round = 0, fixes = [], rules = GATE_RUL
   try {
     const quiet = !!plan.style?.captions?.quiet && !plan.style?.captions?.plate;
     measured = await measure(path.join(workDir, "project"), { duration: n(plan.video?.duration, 0), rules, contrast: quiet });
-    problems.push(...layoutProblems(measured.frames, measured.layers, rules));
+    problems.push(...layoutProblems(measured.frames, measured.layers, rules, GATE_SAFE, { fullIds: (plan.proGraphics || []).filter((o) => o.fullscreen).map((o) => o.id) }));
     if (quiet) problems.push(...contrastProblems(measured.frames));
   } catch (error) {
     problems.push({ code: "gate-unavailable", level: "hold", message: `the layout could not be measured: ${String(error.message).split("\n")[0]}` });

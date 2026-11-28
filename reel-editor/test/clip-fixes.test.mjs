@@ -88,3 +88,16 @@ test("the silence guard keeps sound next to a word but not room sound seconds aw
   assert.ok(out.segments[0].end < 5, "the room sound 3 s from any word does not come back");
   assert.equal(out.segments.length, 2);
 });
+
+test("a full-screen pro card is a full layer for the gate even where its dark panel measures under 40%", async () => {
+  const { layoutProblems } = await import("../src/gate.mjs");
+  // A 1080 wide panel low in the frame, 30% coverage as measured: the gate would read it as a text card in the strips.
+  const W = 1080, H = 1920, step = 2, w = W / step, h = H / step;
+  const mask = new Uint8Array(w * h);
+  for (let y = Math.round(1300 / step); y < h; y++) for (let x = 0; x < w; x++) mask[y * w + x] = 1;
+  let count = 0; for (const v of mask) count += v;
+  const m = { mask, w, h, step, W, H, count, coverage: 0.3, box: { x: 0, y: 1300, w: W, h: 620 } };
+  const layers = [{ index: 3, id: "pro-split", text: true }];
+  assert.ok(layoutProblems([{ t: 5, layers: { 3: m } }], layers).some((p) => p.code === "safe-zone"));
+  assert.deepEqual(layoutProblems([{ t: 5, layers: { 3: m } }], layers, undefined, undefined, { fullIds: ["pro-split"] }), []);
+});
