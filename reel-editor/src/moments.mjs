@@ -256,6 +256,9 @@ export function openerProblems(line, next = null) {
   if (LEANS.has(firstWord(text))) out.push({ code: "leans-back", message: `opens on "${text.split(/\s+/)[0]}", which leans on what came before` });
   if (REFERS_BACK.test(text)) out.push({ code: "refers-back", message: `opens by referring back ("${text.match(REFERS_BACK)[0]}")` });
   if (READS_CHAT.test(text)) out.push({ code: "reads-chat", message: `opens on the live room ("${text.match(READS_CHAT)[0]}")` });
+  // The middle of a list ("Third, you start with your body...") leans on the items before it.
+  const ordinal = text.match(/^(first|second|third|fourth|fifth|sixth|next|lastly|finally|number (one|two|three|four|five)|step (one|two|three|four|five))\b/i);
+  if (ordinal) out.push({ code: "refers-back", message: `opens on "${ordinal[0]}", the middle of a list` });
   // A question to the room answered by a list of shouted answers ("Working out, gratitude texts, right? Cardio.").
   if (/\?["')]*$/.test(text) && next && /,/.test(next.text) && String(next.text).split(/\s+/).length <= 10) out.push({ code: "reads-chat", message: "opens on a question to the room that the next line answers from the chat" });
   return out;
@@ -333,8 +336,9 @@ export function buildShape(shape, lines, words, { min = SHAPE_RULES.min, max = S
   const lifted = at(lead.id) < start || at(lead.id) > ti || at(lead.id) !== lines.slice(start, ti + 1).findIndex((l) => !dropIds.has(l.id)) + start;
   if (pi < 0) return { problem: "no payoff line" };
   if (dropIds.has(lines[pi].id) || pi < fi || pi > ti) return { problem: `the payoff ${shape.payoff} is not inside the kept lines` };
-  // The body stops at the payoff, or at most two lines after it (the end of its thought), never later.
-  const end = Math.min(ti, pi + 2);
+  // The body ends on the payoff: the complete takeaway is the last thing said (two lines past it ran into the next
+  // example on IMG_4766: "...what to practice. 'I feel like I'm not doing enough.' Feeling.").
+  const end = pi;
   const body = [];
   for (let k = start; k <= end; k++) if (!dropIds.has(lines[k].id) && !(lifted && lines[k].id === lead.id)) body.push(k);
   // Runs of consecutive kept lines become ranges; the lead is its own range when lifted.

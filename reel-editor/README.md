@@ -149,6 +149,18 @@ By hand: `reel edit recording.mov --preset vsl --canvas landscape [--script scri
 
 `reel clips <long video> [--count 5] [--plan-only] [--replan]` transcribes the whole recording once, has headless Claude pick up to `count` windows of 30-90 s (each starting where a thought begins and ending on its payoff, scored 0-100 for how well it would hold a cold viewer, with a hook written for each), cuts each window out of the source with the hardware encoder and runs the normal edit on it with its slice of the transcript. `clips.json` in the work dir lists the windows, scores and outputs; `--plan-only` stops after the pick, `--replan` picks again, `--auto-hook` uses the opening line instead of Claude's hook. Every edit option applies to each clip.
 
+**The shaped picker (default since 2026-11-27, Herk Edit Kit rules, MIT).** A clip is up to three kept ranges, not one window. The claim line goes first, lifted from later when that is where it is said; then the body follows in source order, with chat reading, asides and abandoned takes left out; and the clip ends on its payoff line.
+- **Pass 1:** Claude finds the moments by their quotable line.
+- **Pass 2:** Claude shapes each moment by line label: `lead`, `from`, `to`, `drop` and `payoff`.
+- **Code builds the ranges and enforces the hard rules:**
+  - No opener that refers back ("this whole segment", "earlier", "those lies", "Third, ..."), reads the chat, or asks the room.
+  - The payoff must be kept and must be the last thing said.
+  - Kept time is 35 to 60 s.
+  - A lifted lead is taken out of the body, so the retake cutter never deletes the cold open.
+- **Cutting:** the ranges are cut with one seek each and joined with 30/40 ms audio fades.
+- **Files:** `clips.json` gives each clip `keeps`, `lifted`, `payoff.line` and `payoff.time`; `clips-picker.json` holds Claude's shapes and the reasons anything was dropped.
+- **Old pickers:** `--picker edges` keeps the earlier one-window clean-edge picker.
+
 ## Hook A/B
 
 `reel hooks <workdir> "hook A" "hook B"` renders the first 4 s of a finished reel once per hook (draft quality, same cuts, captions and music) into `<workdir>/hooks/`. The drop folders do this with hook ideas 2 and 3 from `caption.txt` into a `Hook options` folder next to the reel; drop the clip again as `clip__Chosen hook.mov` to re-edit with the winner. `REEL_WATCH_HOOKS=0` turns it off.
@@ -417,6 +429,8 @@ The last check every reel passes before it is delivered, and the one that fixes 
 | mirrored selfie footage (Vision reads words in the shot only when the frame is flipped) | flipped back in the clean pass |
 | a CTA card on the captions | moved up clear of them |
 | a CTA card too wide for the frame (under the button column or into a side strip) | its text made smaller to fit, pulse included |
+| dead air: no words for more than 2 s on a vertical talking-head reel (Greg reading the chat; 6.2 s of it passed in an IMG_4766 clip) | the edit runs again with that stretch cut (`gate.json` `retry.cutGaps`, in source seconds). The silence guard also only puts back sound within 1 s of a word, so room sound never comes back in the first place |
+| pro captions from an older, wider plate reaching a side strip or the button column | broken again for today's plate |
 
 The plan-only fixes (caption lines, silence, hook words, cards) go into `plan.json` before the first render, so they cost nothing; the measured ones need one re-render.
 
@@ -518,7 +532,7 @@ Rate limits: the first 429 from Codex pauses every Codex call from the editor fo
 
 ## Hook titles
 
-Without `--hook`, the first phrase of the clip is used. For a real hook, have Claude read `words.json` and write one, then pass it with `--hook`. The `SKILL.md` in this folder tells Claude how to run the whole thing.
+Without `--hook`, the opening sentence is the hook when it is a complete thought of 3 to 12 words. Otherwise Claude writes a 4 to 8 word hook from the opening, the way `reel clips` writes them: true to what is said, never ending on a comma or a dangling word. It is cached in `hook-written.json`, and `--no-auto-hook` keeps the old first-phrase behaviour. Cutting the first words at a word count made hooks like "...is, who" on clips that were already cut (Nov 27).
 
 ## HDR footage (iPhone, HDR10)
 

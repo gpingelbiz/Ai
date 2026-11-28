@@ -115,3 +115,11 @@ test("kept ranges are cut with a seek per range and joined with 30/40 ms audio f
   assert.match(graph, /afade=t=out:st=6\.26:d=0\.04/);
   assert.match(graph, /concat=n=2:v=1:a=1\[v\]\[a\]/);
 });
+
+test("an opener in the middle of a list refers back; the body ends on its payoff line", () => {
+  assert.equal(openerProblems({ text: "Third, you start with your body before your phone." })[0].code, "refers-back");
+  assert.deepEqual(openerProblems({ text: "Thirty two is where it shows." }), []);
+  const built = buildShape({ lead: id("claim"), from: id("setup1"), to: id("next"), payoff: id("payoff") }, lines, words, { min: 20, max: 60 });
+  const text = keepWords(words, built.keeps).map((w) => w.text).join(" ");
+  assert.ok(text.endsWith("finally shows."), text.slice(-40));
+});
