@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { RECEIPTS, alignTokens, cover, lineTimings, receiptsHTML, receiptsTimeline, splitSentences, statSlam, threadMarkup, tokenSpans } from "../src/receipts.mjs";
+import { RECEIPTS, alignTokens, cover, lineTimings, receiptsHTML, receiptsTimeline, splitSentences, statSlam, threadFont, threadMarkup, threadNeeds, tokenSpans } from "../src/receipts.mjs";
 import { DEFAULT_CLOSE, loadList, loadSpecs, pickCards, pickFromList, proofData, runProof, specText, specsFile, validateScript, wallSpecs } from "../src/proof.mjs";
 import { GATE_SAFE, rootLayers } from "../src/gate.mjs";
 import { projectHTML } from "../src/compose.mjs";
@@ -391,3 +391,16 @@ test("receipts: no typing dots when the thread opens on Greg's own message, and 
   assert.ok(T.threads[0].pops.at(-1) <= T.threads[0].qa - 0.2, "every bubble is still up before the quote");
 });
 
+
+test("a long text steps its font down until label, typing dots and bubbles fit the thread box (remake #33)", () => {
+  // 353 characters: the old character rule gave 52 px, a thread about 1250 px tall in a 1020 px box with the dots
+  // showing, so the centred thread put the "Real text" label at y 114, above the safe zone.
+  const long = [{ who: "them", text: "Thank you! Over the past month we are now averaging 3-5M views, 15%+ engagement, adding 5K+ followers, daily. We have the momentum and I’ve shortened my content creation time down by 30 percent (just getting more efficient)! Now it’s all about sales, DM responses and massive action on that side of the house! I’m excited to have you in our corner Greg." }];
+  assert.ok(threadNeeds(long, 52, true) > RECEIPTS.threadHeight, "52 px is too tall for the box");
+  const font = threadFont(long, true);
+  assert.ok(font < 52 && threadNeeds(long, font, true) <= RECEIPTS.threadHeight, `fits at ${font} px`);
+  assert.ok(threadFont(long, false) >= font, "without the dots it never needs a smaller font");
+  // Short texts keep their size.
+  assert.equal(threadFont([{ who: "them", text: "Yes finally working" }], true), 72);
+  assert.equal(threadFont([{ who: "them", text: "Closed two more this week off the follow up script, thank you" }], true), 62);
+});
