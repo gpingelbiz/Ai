@@ -1,0 +1,449 @@
+[
+ {
+  "id": "whiteboard/stick",
+  "outcome": "unfit",
+  "reason": "A generic sketch of a person or pose is visual vocabulary without a standalone sales teaching beat."
+ },
+ {
+  "id": "whiteboard/arrow",
+  "outcome": "duplicate",
+  "type": "arrow",
+  "reason": "The existing directional callout already draws a freehand arrow beside the spoken pointer."
+ },
+ {
+  "id": "whiteboard/check",
+  "outcome": "duplicate",
+  "type": "checklist",
+  "reason": "A tick marking each spoken action already has a dedicated layout and reveal."
+ },
+ {
+  "id": "whiteboard/cross",
+  "outcome": "duplicate",
+  "type": "crossed-out",
+  "reason": "The existing rejection card draws two strokes into an X on the rejected habit."
+ },
+ {
+  "id": "whiteboard/underline",
+  "outcome": "unfit",
+  "reason": "A caption emphasis mark rather than a card. The shared caption underline already draws on the spoken word."
+ },
+ {
+  "id": "whiteboard/grid",
+  "outcome": "duplicate",
+  "type": "quadrant-notes",
+  "reason": "The four-part teaching use is already a divided two-by-two board with spoken content in each quadrant."
+ },
+ {
+  "id": "whiteboard/line",
+  "outcome": "unfit",
+  "reason": "A plain stroke is a reusable emphasis mark rather than a card."
+ },
+ {
+  "id": "whiteboard/crown",
+  "outcome": "unfit",
+  "reason": "The prop stands for a named person in the source. As a generic win icon it adds only decoration."
+ },
+ {
+  "id": "whiteboard/clock",
+  "outcome": "duplicate",
+  "type": "stopwatch",
+  "reason": "The analogue dial and hands already support an explicitly spoken duration."
+ },
+ {
+  "id": "whiteboard/bulb",
+  "outcome": "duplicate",
+  "type": "lightbulb",
+  "reason": "The existing payoff already draws a bulb where Greg states a realization or solution."
+ },
+ {
+  "id": "whiteboard/bubble",
+  "outcome": "merged",
+  "type": "thought-bubbles",
+  "reason": "The drawn speech bubble is the literal panel for the spoken term, contrasted with the definition in a thought cloud."
+ },
+ {
+  "id": "whiteboard/shield",
+  "outcome": "variant",
+  "type": "objection-shield",
+  "reason": "The prospect's quote sits inside the drawn safeguard, which recedes when Greg's response writes into a separate panel."
+ },
+ {
+  "id": "whiteboard/cloud",
+  "outcome": "variant",
+  "type": "thought-bubbles",
+  "reason": "The thought cloud holds Greg's spoken definition and draws when he explains the term in the speech bubble."
+ },
+ {
+  "id": "whiteboard/books",
+  "outcome": "duplicate",
+  "type": "crossed-out",
+  "reason": "Rejecting more knowledge as the solution is already the spoken bad habit with a drawn X. The book stack adds decoration."
+ },
+ {
+  "id": "whiteboard/eye",
+  "outcome": "unfit",
+  "reason": "A watching eye is visual vocabulary without a specific observable sales result or instruction."
+ },
+ {
+  "id": "whiteboard/boomerang",
+  "outcome": "variant",
+  "type": "reply-return",
+  "reason": "A return stroke connects the spoken objection to the rep's actual reply."
+ },
+ {
+  "id": "whiteboard/robot",
+  "outcome": "unfit",
+  "reason": "The source's AI manager is a character prop with no standalone use in Greg's sales instruction."
+ },
+ {
+  "id": "whiteboard/barbell",
+  "outcome": "unfit",
+  "reason": "A barbell is a generic training metaphor. The symbol alone carries no specific drill or instruction."
+ },
+ {
+  "id": "whiteboard/trophy",
+  "outcome": "duplicate",
+  "type": "trophy",
+  "reason": "The existing achieved-win card already draws the cup outline on the spoken achievement."
+ },
+ {
+  "id": "whiteboard/phone",
+  "outcome": "duplicate",
+  "type": "dialer",
+  "reason": "An outbound call and its spoken line already have a generic phone composition."
+ },
+ {
+  "id": "whiteboard/envelope",
+  "outcome": "cut",
+  "type": "envelope-open",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was variant: The envelope draws and unfolds to show the spoken notification subject and message on a letter.)"
+ },
+ {
+  "id": "whiteboard/bridge",
+  "outcome": "new",
+  "type": "role-handoff",
+  "reason": "The bridge shows exactly who hands over what to whom, with a distinct spoken transfer between two roles."
+ },
+ {
+  "id": "whiteboard/laptop",
+  "outcome": "unfit",
+  "reason": "A bare laptop outline has no standalone use. A product demonstration would need screen footage or app imagery."
+ },
+ {
+  "id": "whiteboard/tag",
+  "outcome": "duplicate",
+  "type": "offer-price-tag",
+  "reason": "The existing offer card already puts the explicitly spoken price on a tag."
+ },
+ {
+  "id": "whiteboard/form",
+  "outcome": "duplicate",
+  "type": "spec-sheet",
+  "reason": "Once a generic form has meaningful spoken field and value pairs, the existing specification layout already carries them."
+ },
+ {
+  "id": "whiteboard/camera",
+  "outcome": "unfit",
+  "reason": "A camera outline is a filming prop with no standalone use in Greg's sales lessons."
+ },
+ {
+  "id": "whiteboard/heart",
+  "outcome": "unfit",
+  "reason": "The generic relationships mark expresses sentiment without an observable sales signal or teaching point."
+ },
+ {
+  "id": "whiteboard/sun",
+  "outcome": "unfit",
+  "reason": "A sun is a time-of-day prop with no standalone sales teaching use."
+ },
+ {
+  "id": "whiteboard/rings",
+  "outcome": "duplicate",
+  "type": "venn",
+  "reason": "Two overlapping shapes already show two spoken ideas or roles that intersect."
+ },
+ {
+  "id": "whiteboard/calendar",
+  "outcome": "duplicate",
+  "type": "calendar",
+  "reason": "The existing booked-call card already uses a calendar page and allows a date only when spoken."
+ },
+ {
+  "id": "whiteboard/coffee",
+  "outcome": "unfit",
+  "reason": "A coffee cup is a lifestyle prop with no standalone use in Greg's reels."
+ },
+ {
+  "id": "whiteboard/people",
+  "outcome": "unfit",
+  "reason": "Two unlabeled figures are an illustration rather than a card. The sketch gives no spoken exchange, relationship or count."
+ },
+ {
+  "id": "whiteboard/hourglass",
+  "outcome": "unfit",
+  "reason": "A static hourglass is a waiting prop. Swapping the icon on a spoken duration adds no distinct layout or motion."
+ },
+ {
+  "id": "whiteboard/polaroid",
+  "outcome": "unfit",
+  "reason": "The instant-print frame needs a photo to carry what Greg is describing."
+ },
+ {
+  "id": "whiteboard/pin",
+  "outcome": "duplicate",
+  "type": "place-pin",
+  "reason": "The existing pin already identifies the exact spoken place where a relevant example happened."
+ },
+ {
+  "id": "whiteboard/link",
+  "outcome": "duplicate",
+  "type": "venn",
+  "reason": "Interlocking rings restyle to the existing overlapping shapes for two explicitly related ideas."
+ },
+ {
+  "id": "whiteboard/wrench",
+  "outcome": "unfit",
+  "reason": "A tool icon for something to improve is decoration, without a spoken action or a specific problem to solve."
+ },
+ {
+  "id": "whiteboard/phone-apps",
+  "outcome": "unfit",
+  "reason": "The app grid depends on a phone-interface illustration and does not carry a sales teaching point."
+ },
+ {
+  "id": "whiteboard/badge",
+  "outcome": "unfit",
+  "reason": "The alert dot is app chrome rather than a card. Adding an unread tally would require a number Greg actually says."
+ },
+ {
+  "id": "whiteboard/book",
+  "outcome": "unfit",
+  "reason": "A book sketch needs a specific real title or cover to identify the resource being shown."
+ },
+ {
+  "id": "whiteboard/key",
+  "outcome": "duplicate",
+  "type": "key-insight",
+  "reason": "The existing decisive-insight card already draws a key around the exact insight reveal."
+ },
+ {
+  "id": "whiteboard/bell",
+  "outcome": "duplicate",
+  "type": "lock-screen",
+  "reason": "The existing notification rows already include a bell beside the quoted alert."
+ },
+ {
+  "id": "whiteboard/plane",
+  "outcome": "unfit",
+  "reason": "The paper plane is a send icon. By itself it supplies no quoted message or process information."
+ },
+ {
+  "id": "whiteboard/social-card",
+  "outcome": "unfit",
+  "reason": "A like card depends on social app chrome without a quoted comment to carry the teaching beat."
+ },
+ {
+  "id": "whiteboard/wheel",
+  "outcome": "unfit",
+  "reason": "The steering wheel is an agency metaphor without a specific sales choice to show."
+ },
+ {
+  "id": "whiteboard/flag",
+  "outcome": "duplicate",
+  "type": "roadmap",
+  "reason": "A start flag is another marker for the first spoken milestone, which the existing roadmap already places."
+ },
+ {
+  "id": "whiteboard/bed",
+  "outcome": "unfit",
+  "reason": "The bed is a sleep-habit prop with no standalone use in Greg's reels."
+ },
+ {
+  "id": "whiteboard/runner",
+  "outcome": "unfit",
+  "reason": "A running figure is a fitness illustration without a specific sales drill or result."
+ },
+ {
+  "id": "whiteboard/house",
+  "outcome": "unfit",
+  "reason": "The house stands for family or close friends in the source and has no standalone sales teaching use."
+ },
+ {
+  "id": "whiteboard/mountain",
+  "outcome": "unfit",
+  "reason": "A peak is an illustration of a daunting task without the spoken actions that would describe how to tackle it."
+ },
+ {
+  "id": "whiteboard/day-box",
+  "outcome": "merged",
+  "type": "work-block-split",
+  "reason": "A box divided into time units becomes the same time allocation chart when Greg states the total and names the activities."
+ },
+ {
+  "id": "whiteboard/zz",
+  "outcome": "unfit",
+  "reason": "Sleep marks are decorative lettering with no standalone sales teaching use."
+ },
+ {
+  "id": "whiteboard/idea-1",
+  "outcome": "duplicate",
+  "type": "scale-balance",
+  "reason": "The beam already tips toward the spoken second priority and keeps both phrases upright."
+ },
+ {
+  "id": "whiteboard/idea-2",
+  "outcome": "variant",
+  "type": "rung-layers",
+  "reason": "The vertical ladder draws each explicitly dependent layer above the spoken foundation."
+ },
+ {
+  "id": "whiteboard/idea-3",
+  "outcome": "unfit",
+  "reason": "A maze needs a route and named choices to carry a specific teaching point. Confusion alone is a visual metaphor."
+ },
+ {
+  "id": "whiteboard/idea-4",
+  "outcome": "duplicate",
+  "type": "scale-balance",
+  "reason": "A plank tipping toward the priority Greg favors repeats the existing balance motion and meaning."
+ },
+ {
+  "id": "whiteboard/idea-5",
+  "outcome": "variant",
+  "type": "focus-drains",
+  "reason": "made a design of capacity-drain at merge (same slots, same meaning): A battery loses a marker per named drain, showing several spoken causes of cumulative attention or energy loss."
+ },
+ {
+  "id": "whiteboard/idea-6",
+  "outcome": "duplicate",
+  "type": "route-trace",
+  "reason": "The existing route already connects stops using a drawn curved path at each spoken milestone. Dots alone are a stroke treatment."
+ },
+ {
+  "id": "whiteboard/idea-7",
+  "outcome": "duplicate",
+  "type": "timeline",
+  "reason": "The existing rail already activates marks and their joining line on the spoken milestones."
+ },
+ {
+  "id": "whiteboard/idea-8",
+  "outcome": "variant",
+  "type": "ingredient-pull",
+  "reason": "Drawn field lines gather the stated ingredients into the explicitly spoken result when it lands."
+ },
+ {
+  "id": "data-story/book-print-ring",
+  "outcome": "unfit",
+  "reason": "The marked detail needs the real cover, the author's name and the source being cited."
+ },
+ {
+  "id": "data-story/category-bars-sourced",
+  "outcome": "duplicate",
+  "type": "comparison-rows",
+  "reason": "The useful chart already grows horizontal comparable bars from zero on the spoken categories and values. The kicker needs an external citation."
+ },
+ {
+  "id": "data-story/day-unit-chart",
+  "outcome": "new",
+  "type": "work-block-split",
+  "reason": "Greg can explicitly partition a sales work block into named activities. The unit cells derive from his stated times."
+ },
+ {
+  "id": "data-story/idea-1",
+  "outcome": "unfit",
+  "reason": "Sonification and a score are sound treatments rather than cards."
+ },
+ {
+  "id": "data-story/idea-2",
+  "outcome": "variant",
+  "type": "tracking-trend",
+  "reason": "A chronological line draws across the card, with a moving active point and one large exact reading for the newest point."
+ },
+ {
+  "id": "data-story/idea-3",
+  "outcome": "variant",
+  "type": "bar-to-cells",
+  "reason": "The same exact spoken share starts as a solid bar and splits into cells on the spoken context."
+ },
+ {
+  "id": "data-story/idea-4",
+  "outcome": "unfit",
+  "reason": "A frozen axis strip is navigation for a scrolling data sheet rather than a card. It relies on axis tick values that may be unspoken."
+ },
+ {
+  "id": "data-story/idea-5",
+  "outcome": "unfit",
+  "reason": "Text behind the speaker is a footage matte and compositing treatment rather than a card."
+ },
+ {
+  "id": "hologram-hud/phone-scan-in",
+  "outcome": "unfit",
+  "reason": "The orbiting phone opening depends on a full-screen device scene, a mock app grid and an unspoken scan tally."
+ },
+ {
+  "id": "hologram-hud/book-keep-cover",
+  "outcome": "unfit",
+  "reason": "The locked source tile depends on a real book cover and the author's name and title."
+ },
+ {
+  "id": "hologram-hud/notifications-pull-out",
+  "outcome": "variant",
+  "type": "alert-extract",
+  "reason": "Each quoted alert pulls out of a bracket on its spoken title and then writes the spoken message."
+ },
+ {
+  "id": "hologram-hud/basics-turntable",
+  "outcome": "variant",
+  "type": "dock-checklist",
+  "reason": "Each spoken action docks into a rail, locks into its row and switches on without a status tally or orbit."
+ },
+ {
+  "id": "hologram-hud/erase-and-fill",
+  "outcome": "variant",
+  "type": "scan-replace",
+  "reason": "A top-down scan erases the outline of the old metric and reveals the comparable case-study result on the spoken value."
+ },
+ {
+  "id": "hologram-hud/idea-1",
+  "outcome": "duplicate",
+  "type": "term-lens",
+  "reason": "The existing solid loupe focuses the spoken term and lets its exact explanation carry the close-up."
+ },
+ {
+  "id": "hologram-hud/idea-2",
+  "outcome": "unfit",
+  "reason": "Sub-frame motion blur is a whip-transition treatment rather than a card."
+ },
+ {
+  "id": "hologram-hud/idea-3",
+  "outcome": "unfit",
+  "reason": "An own-axis spin is a scene animation rule rather than a card and requires continuous rotation."
+ },
+ {
+  "id": "hologram-hud/idea-4",
+  "outcome": "unfit",
+  "reason": "A plan-view entrance depends on a recognizable physical product footprint and an opening scene, with no standalone sales teaching information."
+ },
+ {
+  "id": "hologram-hud/idea-5",
+  "outcome": "duplicate",
+  "type": "topic-chip-grid",
+  "reason": "Short spoken component labels already settle into a flat two-by-two layout. Physical models would be decoration in this format."
+ },
+ {
+  "id": "hologram-hud/idea-6",
+  "outcome": "unfit",
+  "reason": "A silent loop is a separate Story or pinned-post format and has no spoken slot reveals."
+ },
+ {
+  "id": "hologram-hud/idea-7",
+  "outcome": "merged",
+  "type": "scan-replace",
+  "reason": "Dim the old version and scan in the replacement on the same spoken reveal, using the same comparison design."
+ },
+ {
+  "id": "hologram-hud/idea-8",
+  "outcome": "unfit",
+  "reason": "The recognizably colored wireframe needs a supplied logo or brand mark."
+ }
+]

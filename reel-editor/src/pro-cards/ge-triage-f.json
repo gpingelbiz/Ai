@@ -1,0 +1,422 @@
+[
+ {
+  "id": "kinetic-doc/page-type-quote",
+  "outcome": "variant",
+  "type": "quote-caret",
+  "reason": "A bone pull quote keeps the character entry and final caret with Greg's spoken line."
+ },
+ {
+  "id": "kinetic-doc/page-paper-term",
+  "outcome": "variant",
+  "type": "term-cursor",
+  "reason": "A single coined sales term writes onto bone and leaves a contracted cursor at its edge."
+ },
+ {
+  "id": "kinetic-doc/page-black-glow",
+  "outcome": "duplicate",
+  "type": "big-word",
+  "reason": "The isolated beat-matched phrase emphasis is already carried by the dark-shot Anton slam once the glow is removed."
+ },
+ {
+  "id": "kinetic-doc/polaroid-slide",
+  "outcome": "unfit",
+  "reason": "Needs a sequence of photos for the camera to move across."
+ },
+ {
+  "id": "kinetic-doc/window-steps",
+  "outcome": "unfit",
+  "reason": "Needs a photo or footage insert to step through sizes and push in."
+ },
+ {
+  "id": "kinetic-doc/archive-name-band",
+  "outcome": "unfit",
+  "reason": "Needs an archive portrait and the person's name."
+ },
+ {
+  "id": "kinetic-doc/counter-ticks",
+  "outcome": "variant",
+  "type": "count-tick-rail",
+  "reason": "The exact spoken count holds while decorative tick marks sweep beneath it."
+ },
+ {
+  "id": "kinetic-doc/red-label-sub",
+  "outcome": "variant",
+  "type": "headline-double-wipe",
+  "reason": "Both the accent headline and its shorter offset explanatory strip wipe in on their own phrases."
+ },
+ {
+  "id": "kinetic-doc/erase-word",
+  "outcome": "unfit",
+  "reason": "Deletes caption glyphs when a later word is spoken, so it is a caption effect."
+ },
+ {
+  "id": "kinetic-doc/swap-gag",
+  "outcome": "duplicate",
+  "type": "toggle-switch",
+  "reason": "The source's on-word flip to a replacement state already works as a habit switch."
+ },
+ {
+  "id": "kinetic-doc/strike-red",
+  "outcome": "merged",
+  "type": "ruled-out-methods",
+  "reason": "The horizontal rejection stroke joins the per-line strikes on tactics Greg collectively rules out."
+ },
+ {
+  "id": "kinetic-doc/punch-picture",
+  "outcome": "unfit",
+  "reason": "Needs a picture insert to punch in on."
+ },
+ {
+  "id": "kinetic-doc/punch-face-literal",
+  "outcome": "unfit",
+  "reason": "Changes the footage framing on a stressed word."
+ },
+ {
+  "id": "kinetic-doc/page-book-marginalia",
+  "outcome": "unfit",
+  "reason": "Needs a cited passage from a real book together with its author and title."
+ },
+ {
+  "id": "kinetic-doc/turn-wedding-portrait-phone",
+  "outcome": "unfit",
+  "reason": "Needs an archive portrait and an object image for a visual wedding gag."
+ },
+ {
+  "id": "kinetic-doc/frame-contact-sheet-grease",
+  "outcome": "unfit",
+  "reason": "Needs three photos and draws circles around them."
+ },
+ {
+  "id": "kinetic-doc/page-balance-scale-tip",
+  "outcome": "duplicate",
+  "type": "scale-balance",
+  "reason": "Two qualitative pans with the second tipping the beam already animate on the deciding phrase."
+ },
+ {
+  "id": "kinetic-doc/prop-slot-drum-list",
+  "outcome": "variant",
+  "type": "topic-drum",
+  "reason": "A single drum window cycles through spoken peer skills or topics in order."
+ },
+ {
+  "id": "kinetic-doc/page-plug-pulled-term",
+  "outcome": "variant",
+  "type": "habit-disconnect",
+  "reason": "An SVG plug disconnects on the named risky habit and the spoken consequence follows."
+ },
+ {
+  "id": "kinetic-doc/stat-receipt-printout",
+  "outcome": "cut",
+  "type": "results-slip",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: A measured result and separate findings share a printout in speaking order.)"
+ },
+ {
+  "id": "kinetic-doc/frame-quad-tiles",
+  "outcome": "duplicate",
+  "type": "topic-chip-grid",
+  "reason": "The spoken peer topics become a two-by-two grid with each cell appearing in order, already carried by topic chips."
+ },
+ {
+  "id": "kinetic-doc/print-side-taped-cover",
+  "outcome": "unfit",
+  "reason": "Needs a real book cover and the author's name."
+ },
+ {
+  "id": "kinetic-doc/stamp-vykl-sources",
+  "outcome": "variant",
+  "type": "methods-reject-stamps",
+  "reason": "Tactics stack on their phrases, then receive individual rejection stamps on the spoken group decision."
+ },
+ {
+  "id": "kinetic-doc/list-red-numerals-chest",
+  "outcome": "variant",
+  "type": "numbered-action-rows",
+  "reason": "Each numbered agenda item writes in with a badge containing its own spoken index."
+ },
+ {
+  "id": "kinetic-doc/print-photo-corners-red",
+  "outcome": "unfit",
+  "reason": "Needs a photo to mount in the album corners."
+ },
+ {
+  "id": "kinetic-doc/print-lak-page-loupe",
+  "outcome": "duplicate",
+  "type": "term-lens",
+  "reason": "Magnifying a focal piece of copy already works as the lens on a short spoken term and its explanation."
+ },
+ {
+  "id": "kinetic-doc/timeline-then-now-line",
+  "outcome": "duplicate",
+  "type": "timeline",
+  "reason": "The time nodes and drawn connecting rail already support spoken past and present milestones."
+ },
+ {
+  "id": "kinetic-doc/frame-print-pile",
+  "outcome": "duplicate",
+  "type": "stack-fan",
+  "reason": "The cumulative landing of text-only method cards is already a staggered stack with static tilt."
+ },
+ {
+  "id": "kinetic-doc/page-lights-on-idea",
+  "outcome": "duplicate",
+  "type": "lightbulb",
+  "reason": "A dim-to-lit visual payoff on the spoken realization already has a lightbulb cue."
+ },
+ {
+  "id": "kinetic-doc/cta-five-stars-review",
+  "outcome": "unfit",
+  "reason": "Filling five stars on a generic request for a review shows a number Greg may never say."
+ },
+ {
+  "id": "kinetic-doc/idea-1",
+  "outcome": "unfit",
+  "reason": "An object crossing the frame is an edit transition between shots."
+ },
+ {
+  "id": "kinetic-doc/idea-2",
+  "outcome": "unfit",
+  "reason": "Needs photo cutouts to build the scene."
+ },
+ {
+  "id": "kinetic-doc/idea-3",
+  "outcome": "unfit",
+  "reason": "Needs a tracked point on the footage to attach the graphic."
+ },
+ {
+  "id": "kinetic-doc/idea-4",
+  "outcome": "unfit",
+  "reason": "A map of several named locations has no use in Greg's sales teaching."
+ },
+ {
+  "id": "kinetic-doc/idea-5",
+  "outcome": "unfit",
+  "reason": "Needs footage playing on the television and a shot of the room."
+ },
+ {
+  "id": "tactile-paper/webgl-page-fold",
+  "outcome": "unfit",
+  "reason": "A whole-scene rendering technique for page turns and curls."
+ },
+ {
+  "id": "tactile-paper/stepped-motion-12-8",
+  "outcome": "unfit",
+  "reason": "A recipe-wide timing rule for all designed moves."
+ },
+ {
+  "id": "tactile-paper/page-unfurl-entrance",
+  "outcome": "unfit",
+  "reason": "An entrance treatment for a whole page without spoken content of its own."
+ },
+ {
+  "id": "tactile-paper/gobo-shadow",
+  "outcome": "unfit",
+  "reason": "A drifting lighting grade for page close-ups."
+ },
+ {
+  "id": "tactile-paper/title-half-line-rise",
+  "outcome": "unfit",
+  "reason": "A hook caption whose meaning depends on the object shown in the scene."
+ },
+ {
+  "id": "tactile-paper/white-brush-arrow",
+  "outcome": "cut",
+  "type": "brush-arrow-callout",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was variant: The curved shaft draws from the spoken callout area before the arrowhead lands.)"
+ },
+ {
+  "id": "tactile-paper/black-brush-arrow",
+  "outcome": "cut",
+  "type": "brush-arrow-callout",
+  "reason": "cut at merge: the design rendered broken or faint in the gallery (was merged: The same shaft-and-then-head motion serves the callout in gold.)"
+ },
+ {
+  "id": "tactile-paper/crimson-underline",
+  "outcome": "variant",
+  "type": "note-underline",
+  "reason": "An irregular line finishes drawing under the exact lesson instead of sweeping behind it."
+ },
+ {
+  "id": "tactile-paper/crimson-hand-ellipse",
+  "outcome": "unfit",
+  "reason": "A circle drawn around a scene object, with no spoken field independent of that object."
+ },
+ {
+  "id": "tactile-paper/charcoal-word-label",
+  "outcome": "unfit",
+  "reason": "Needs factual attribution such as a person's name or a year."
+ },
+ {
+  "id": "tactile-paper/rising-letters-word",
+  "outcome": "variant",
+  "type": "word-lift",
+  "reason": "A single spoken keyword rises letter by letter behind a gold edge."
+ },
+ {
+  "id": "tactile-paper/simmel-essay-page",
+  "outcome": "unfit",
+  "reason": "Needs the real essay, its author, and a source citation."
+ },
+ {
+  "id": "tactile-paper/bw-city-print",
+  "outcome": "unfit",
+  "reason": "Needs a city photograph."
+ },
+ {
+  "id": "tactile-paper/halftone-crowd-from-above",
+  "outcome": "unfit",
+  "reason": "Needs a crowd image serving as the scene under the page."
+ },
+ {
+  "id": "tactile-paper/notebook-speaker-line",
+  "outcome": "merged",
+  "type": "note-underline",
+  "reason": "The speaker's exact reminder becomes the same bone note with a drawn mark beneath the line."
+ },
+ {
+  "id": "tactile-paper/train-ticket-price",
+  "outcome": "variant",
+  "type": "offer-ticket",
+  "reason": "A perforated ticket reveals the spoken offer price, then writes in what it covers."
+ },
+ {
+  "id": "tactile-paper/sheet-unfurls-below-face",
+  "outcome": "unfit",
+  "reason": "Needs the cited source page and is a placement treatment for that insert."
+ },
+ {
+  "id": "tactile-paper/archive-mount-print",
+  "outcome": "unfit",
+  "reason": "Needs an archival photograph and the place name pictured."
+ },
+ {
+  "id": "tactile-paper/valley-print-below-face",
+  "outcome": "unfit",
+  "reason": "Needs a landmark photograph to match the spoken location."
+ },
+ {
+  "id": "tactile-paper/methods-list-struck-through",
+  "outcome": "new",
+  "type": "ruled-out-methods",
+  "reason": "Previously tried tactics stay readable and receive individual strikes on the collective spoken rejection."
+ },
+ {
+  "id": "tactile-paper/clock-print-squats-rises",
+  "outcome": "unfit",
+  "reason": "Needs a clock photograph as the prop behind the rising word."
+ },
+ {
+  "id": "tactile-paper/count-strip-200-circled",
+  "outcome": "merged",
+  "type": "count-tick-rail",
+  "reason": "The typed count and its accent work as the same count rail with a straight mark beneath the exact figure."
+ },
+ {
+  "id": "tactile-paper/torn-cutout-beside-head",
+  "outcome": "unfit",
+  "reason": "Needs the photo that the torn rim surrounds."
+ },
+ {
+  "id": "tactile-paper/grey-flip-failed-methods",
+  "outcome": "merged",
+  "type": "ruled-out-methods",
+  "reason": "The methods dim together on the same spoken group decision that draws the strikes."
+ },
+ {
+  "id": "tactile-paper/typed-labels-red-clock-scene",
+  "outcome": "unfit",
+  "reason": "Needs a clock photo and a full-frame collage."
+ },
+ {
+  "id": "tactile-paper/typed-number-label-chest",
+  "outcome": "variant",
+  "type": "metric-typed-slip",
+  "reason": "A spoken metric and exact measure arrive as two offset typed slips with an end caret."
+ },
+ {
+  "id": "tactile-paper/valley-print-paper-cut",
+  "outcome": "unfit",
+  "reason": "Needs a landmark photo and a cut away from the footage."
+ },
+ {
+  "id": "tactile-paper/torn-paper-phone-own-recording",
+  "outcome": "unfit",
+  "reason": "Needs the speaker's own app screen recording."
+ },
+ {
+  "id": "tactile-paper/torn-appstore-row-card",
+  "outcome": "unfit",
+  "reason": "Needs an App Store imitation with a real app icon and seller."
+ },
+ {
+  "id": "tactile-paper/own-recording-phone-print",
+  "outcome": "unfit",
+  "reason": "Needs the speaker's own app screen recording and a baked frame."
+ },
+ {
+  "id": "tactile-paper/app-store-row-strip",
+  "outcome": "unfit",
+  "reason": "Needs an App Store imitation and a real app logo."
+ },
+ {
+  "id": "tactile-paper/idea-1",
+  "outcome": "variant",
+  "type": "before-after-overlay",
+  "reason": "Comparable figures that need a wider field share the same space, with the after figure wiping over the before."
+ },
+ {
+  "id": "tactile-paper/idea-2",
+  "outcome": "unfit",
+  "reason": "A whole-scene object wipe between shots."
+ },
+ {
+  "id": "tactile-paper/idea-3",
+  "outcome": "unfit",
+  "reason": "A reverse page transition for revisiting a shot."
+ },
+ {
+  "id": "tactile-paper/idea-4",
+  "outcome": "unfit",
+  "reason": "Needs screenshots, real papers, and a desk plate."
+ },
+ {
+  "id": "tactile-paper/idea-5",
+  "outcome": "merged",
+  "type": "ruled-out-methods",
+  "reason": "The per-line gold zigzag becomes the stroke on each rejected tactic in the grouped warning."
+ },
+ {
+  "id": "tactile-paper/idea-6",
+  "outcome": "unfit",
+  "reason": "A blur transition around a cut."
+ },
+ {
+  "id": "tactile-paper/idea-7",
+  "outcome": "unfit",
+  "reason": "Needs a moving external target for the brush head to track."
+ },
+ {
+  "id": "tactile-paper/idea-8",
+  "outcome": "unfit",
+  "reason": "Needs the speaker's own screen recording and a tracked cursor."
+ },
+ {
+  "id": "tactile-paper/idea-9",
+  "outcome": "unfit",
+  "reason": "Paper foley is a sound treatment."
+ },
+ {
+  "id": "tactile-paper/idea-10",
+  "outcome": "unfit",
+  "reason": "An editing instruction to loop on the next spoken sentence."
+ },
+ {
+  "id": "tactile-paper/idea-11",
+  "outcome": "unfit",
+  "reason": "A whole-scene rendering adjustment for a page fold and shadow."
+ },
+ {
+  "id": "tactile-paper/idea-12",
+  "outcome": "unfit",
+  "reason": "A recipe-level proposal to combine collage, stepped motion, and foley."
+ }
+]

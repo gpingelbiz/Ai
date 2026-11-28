@@ -1,0 +1,456 @@
+[
+ {
+  "id": "result-podcast/polaroid",
+  "outcome": "unfit",
+  "reason": "Needs a photo to carry the main beat."
+ },
+ {
+  "id": "result-podcast/paper-stack-swap",
+  "outcome": "unfit",
+  "reason": "The stop-motion exchange needs a sequence of photos."
+ },
+ {
+  "id": "result-podcast/navy-text-card",
+  "outcome": "merged",
+  "type": "spoken-title-landing",
+  "reason": "The setup and emphasized landing line become the same spoken headline build."
+ },
+ {
+  "id": "result-podcast/rec-frame",
+  "outcome": "unfit",
+  "reason": "A recording frame is a camera treatment without spoken teaching information."
+ },
+ {
+  "id": "result-podcast/incoming-call-decline",
+  "outcome": "cut",
+  "type": "call-screening",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: Identifies an incoming caller and then shows the explicitly spoken decision to screen the call.)"
+ },
+ {
+  "id": "result-podcast/cursor-dialog",
+  "outcome": "unfit",
+  "reason": "The storage or update dialog depends on system app imitation and an unspoken button choice."
+ },
+ {
+  "id": "result-podcast/chat-bubble-card",
+  "outcome": "duplicate",
+  "type": "text-thread",
+  "reason": "The spoken exchange already appears in sequential message bubbles."
+ },
+ {
+  "id": "result-podcast/yellow-wash-photo",
+  "outcome": "unfit",
+  "reason": "Needs a photo and its color wash is a grading treatment."
+ },
+ {
+  "id": "result-podcast/notebook-todo",
+  "outcome": "merged",
+  "type": "ruled-checks",
+  "reason": "The written to-do rows and margin boxes use the same notebook layout as the checklist."
+ },
+ {
+  "id": "result-podcast/cork-sticky-notes-fall",
+  "outcome": "variant",
+  "type": "pinned-method-board",
+  "reason": "Method components land on an anchored board in a grid."
+ },
+ {
+  "id": "result-podcast/boarding-pass-stamp",
+  "outcome": "unfit",
+  "reason": "The boarding pass needs actual travel details that have no recurring use in Greg's reels."
+ },
+ {
+  "id": "result-podcast/thermal-receipt-print",
+  "outcome": "variant",
+  "type": "printed-tally",
+  "reason": "Itemized costs feed down from a printer slot and the spoken total lands in a box."
+ },
+ {
+  "id": "result-podcast/envelopes-postmark",
+  "outcome": "merged",
+  "type": "slate-strike",
+  "reason": "The contrast and crossed-out wording carry into the slate after dropping personal details and the postmark."
+ },
+ {
+  "id": "result-podcast/business-card",
+  "outcome": "unfit",
+  "reason": "The design needs a person's name and title to make sense as a business card."
+ },
+ {
+  "id": "result-podcast/newspaper-clipping-circled",
+  "outcome": "duplicate",
+  "type": "newspaper",
+  "reason": "A self-contained spoken headline already has a clipping layout, and headline circles are outside the card rules."
+ },
+ {
+  "id": "result-podcast/tear-off-calendar",
+  "outcome": "variant",
+  "type": "milestone-leaves",
+  "reason": "Each spoken milestone gets its own sheet and the prior sheet sheds its tab."
+ },
+ {
+  "id": "result-podcast/translation-sheets-lak-russian",
+  "outcome": "variant",
+  "type": "phrase-translation",
+  "reason": "Two sheets and a drawn arrow connect a sales term to Greg's spoken plain-language explanation."
+ },
+ {
+  "id": "result-podcast/kraft-map-route-stamp",
+  "outcome": "merged",
+  "type": "drawn-milestones",
+  "reason": "The connecting draw-on carries into the route through named sales handoffs."
+ },
+ {
+  "id": "result-podcast/typewriter-quote-cards-navy",
+  "outcome": "variant",
+  "type": "typed-pullquote",
+  "reason": "The exact quote types out in a compact reading panel."
+ },
+ {
+  "id": "result-podcast/hire-ledger-total-zero-stamp",
+  "outcome": "merged",
+  "type": "printed-tally",
+  "reason": "Ruled entries roll into the same total box, using the actual spoken amount."
+ },
+ {
+  "id": "result-podcast/merchant-notebook-deal-lines",
+  "outcome": "cut",
+  "type": "revised-deal-terms",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: Pairs each original deal term with its spoken replacement before the next pair.)"
+ },
+ {
+  "id": "result-podcast/kraft-map-routes-out",
+  "outcome": "duplicate",
+  "type": "idea-hub",
+  "reason": "One origin connecting to four named points already has a hub-and-spoke treatment."
+ },
+ {
+  "id": "result-podcast/checklist-four-ticks",
+  "outcome": "variant",
+  "type": "ruled-checks",
+  "reason": "Hand-drawn ticks enter a separate right margin beside the spoken actions."
+ },
+ {
+  "id": "result-podcast/notice-pinned-postmarks",
+  "outcome": "unfit",
+  "reason": "The notice needs a person's name and real postmark details."
+ },
+ {
+  "id": "result-podcast/polaroids-on-wood",
+  "outcome": "unfit",
+  "reason": "Needs B-roll or photos to fill the frames."
+ },
+ {
+  "id": "result-podcast/name-tag-beside-head",
+  "outcome": "unfit",
+  "reason": "The label exists solely to display a person's name."
+ },
+ {
+  "id": "result-podcast/polaroid-beside-face",
+  "outcome": "unfit",
+  "reason": "The side frame needs a photo."
+ },
+ {
+  "id": "result-podcast/polaroid-over-head",
+  "outcome": "unfit",
+  "reason": "The frame above the speaker needs a photo."
+ },
+ {
+  "id": "result-podcast/polaroid-trio-per-word",
+  "outcome": "unfit",
+  "reason": "The listed objects are shown as photos, one in every frame."
+ },
+ {
+  "id": "result-podcast/polaroid-live-video",
+  "outcome": "unfit",
+  "reason": "Needs a video clip in the photo window."
+ },
+ {
+  "id": "result-podcast/photo-ken-burns",
+  "outcome": "unfit",
+  "reason": "A zoom inside a photo frame needs a photo and is a camera treatment."
+ },
+ {
+  "id": "result-podcast/navy-quote-card-word-land",
+  "outcome": "variant",
+  "type": "spoken-title-landing",
+  "reason": "Builds a headline on successive spoken ranges and gives the last fragment a larger landing line."
+ },
+ {
+  "id": "result-podcast/hand-drawn-path-diagram",
+  "outcome": "variant",
+  "type": "drawn-milestones",
+  "reason": "An upright draw-on route connects separately named sales milestones."
+ },
+ {
+  "id": "result-podcast/printed-post-headline-highlight",
+  "outcome": "unfit",
+  "reason": "The viral-post evidence needs an identifiable source and a supported engagement number."
+ },
+ {
+  "id": "result-podcast/lined-index-card-columns",
+  "outcome": "new",
+  "type": "buyer-motive",
+  "reason": "Connects a named buyer need to the distinct buyer behavior it causes."
+ },
+ {
+  "id": "result-podcast/lined-notebook-slip",
+  "outcome": "unfit",
+  "reason": "The artifact needs a person's name to deliver its point."
+ },
+ {
+  "id": "result-podcast/highlighted-details-strip",
+  "outcome": "variant",
+  "type": "detail-underlines",
+  "reason": "Peer skills or topics write into full-width rows with an individual underline."
+ },
+ {
+  "id": "result-podcast/navy-number-card-side",
+  "outcome": "duplicate",
+  "type": "rising-figure",
+  "reason": "The standalone figure and its spoken context already have a reveal-first proof card."
+ },
+ {
+  "id": "result-podcast/aged-letter-quote-words",
+  "outcome": "merged",
+  "type": "typed-pullquote",
+  "reason": "The quote on a light reading surface shares the print reveal once the signature is removed."
+ },
+ {
+  "id": "result-podcast/term-index-card",
+  "outcome": "duplicate",
+  "type": "term-underline",
+  "reason": "The term writes in and is underlined before its spoken explanation, as in the existing explainer."
+ },
+ {
+  "id": "result-podcast/sticky-note-slap",
+  "outcome": "duplicate",
+  "type": "sticky-note",
+  "reason": "The single practical reminder already writes on a sticky note in the pro library."
+ },
+ {
+  "id": "result-podcast/book-cover-side",
+  "outcome": "unfit",
+  "reason": "Needs a real cover or a book title and author attribution."
+ },
+ {
+  "id": "result-podcast/torn-notification-slips",
+  "outcome": "variant",
+  "type": "alert-tearaway",
+  "reason": "A paper tab tears away beside each spoken alert title and message without app chrome or badge counts."
+ },
+ {
+  "id": "result-podcast/day-timeline-strip",
+  "outcome": "merged",
+  "type": "milestone-leaves",
+  "reason": "The next time marker arrives and the previous marker's tab peels away."
+ },
+ {
+  "id": "result-podcast/zigzag-career-card",
+  "outcome": "merged",
+  "type": "drawn-milestones",
+  "reason": "The winding hand-drawn route is incorporated into the milestone trace."
+ },
+ {
+  "id": "result-podcast/numbered-list-scribbles",
+  "outcome": "duplicate",
+  "type": "handoff-rail",
+  "reason": "Spoken task boxes with arrows between them already map as handoffs without added ordinals or placeholders."
+ },
+ {
+  "id": "result-podcast/folder-tabs-drop",
+  "outcome": "variant",
+  "type": "topic-files",
+  "reason": "Tabbed file dividers land individually on each spoken agenda topic."
+ },
+ {
+  "id": "result-podcast/kraft-hang-tag",
+  "outcome": "new",
+  "type": "price-revision",
+  "reason": "A spoken offer price is struck through when Greg says the price replacing it."
+ },
+ {
+  "id": "result-podcast/study-stat-card-counter",
+  "outcome": "duplicate",
+  "type": "count-stack-label",
+  "reason": "The existing card reveals a finished count and two spoken qualifiers without displaying invented intermediate counts."
+ },
+ {
+  "id": "result-podcast/kraft-city-map-pin",
+  "outcome": "duplicate",
+  "type": "location-pin",
+  "reason": "The spoken place and what happened there already have a pin-drop treatment."
+ },
+ {
+  "id": "result-podcast/paper-speech-bubble",
+  "outcome": "variant",
+  "type": "stamped-quote",
+  "reason": "A memorable spoken line gets a speech bubble and a separate pull-quote stamp."
+ },
+ {
+  "id": "result-podcast/recurring-motif-prop",
+  "outcome": "unfit",
+  "reason": "Recurrence is a reel-wide editing rule rather than a card."
+ },
+ {
+  "id": "result-podcast/handwriting-wipe",
+  "outcome": "unfit",
+  "reason": "A clip-path wipe is a reveal primitive already used by pro cards."
+ },
+ {
+  "id": "result-podcast/rubber-stamp-slam",
+  "outcome": "unfit",
+  "reason": "A stamp impact is a motion primitive rather than a standalone card idea."
+ },
+ {
+  "id": "result-podcast/snap-punch-in",
+  "outcome": "unfit",
+  "reason": "A camera punch-in is a footage treatment."
+ },
+ {
+  "id": "result-podcast/marker-circle-draw",
+  "outcome": "unfit",
+  "reason": "A circle is a word mark and the pro rules allow the underline treatment."
+ },
+ {
+  "id": "result-podcast/highlighter-swipe",
+  "outcome": "unfit",
+  "reason": "A highlight swipe on words is an emphasis primitive, already present in the card library."
+ },
+ {
+  "id": "result-podcast/marker-strike-through",
+  "outcome": "merged",
+  "type": "slate-strike",
+  "reason": "The drawn strike appears as Greg names each habit to avoid."
+ },
+ {
+  "id": "result-podcast/hand-drawn-arrow",
+  "outcome": "unfit",
+  "reason": "An arrow alone is an annotation primitive and needs spoken information around it."
+ },
+ {
+  "id": "result-podcast/ink-doodle-icon",
+  "outcome": "unfit",
+  "reason": "The icon alone is decorative without a spoken sales claim."
+ },
+ {
+  "id": "result-podcast/quote-word-by-word",
+  "outcome": "merged",
+  "type": "typed-pullquote",
+  "reason": "The quote reveals incrementally during its exact range's timed print pass."
+ },
+ {
+  "id": "result-podcast/dashed-route-draw",
+  "outcome": "merged",
+  "type": "drawn-milestones",
+  "reason": "The dashed guide and its trace are incorporated into the spoken route design."
+ },
+ {
+  "id": "result-podcast/pop-in-accent",
+  "outcome": "unfit",
+  "reason": "An overshoot pop is an entrance preset rather than a teaching card."
+ },
+ {
+  "id": "result-podcast/marker-underline-swipe",
+  "outcome": "duplicate",
+  "type": "term-underline",
+  "reason": "The existing term treatment already draws an underline as the term is revealed."
+ },
+ {
+  "id": "result-podcast/number-count-up",
+  "outcome": "unfit",
+  "reason": "The standalone count-up displays intermediate numbers Greg never says."
+ },
+ {
+  "id": "result-podcast/prop-shake",
+  "outcome": "unfit",
+  "reason": "A repeated shake is a motion effect outside the pro motion rules."
+ },
+ {
+  "id": "result-podcast/sticky-battery-drain",
+  "outcome": "new",
+  "type": "capacity-drain",
+  "reason": "Successive named drains remove symbolic charge marks from a single explicitly named resource."
+ },
+ {
+  "id": "result-podcast/dictionary-clipping",
+  "outcome": "duplicate",
+  "type": "term-definition",
+  "reason": "The term and its spoken meaning already have a definition card when the dictionary metadata is dropped."
+ },
+ {
+  "id": "result-podcast/ticket-stub-study",
+  "outcome": "new",
+  "type": "coaching-findings",
+  "reason": "A spoken sales test and two or three observed findings reveal on a perforated stub."
+ },
+ {
+  "id": "result-podcast/gauge-needle-red",
+  "outcome": "duplicate",
+  "type": "gauge",
+  "reason": "A needle already moves to the precise spoken percentage, within the pro motion rules."
+ },
+ {
+  "id": "result-podcast/gauge-fullscreen",
+  "outcome": "unfit",
+  "reason": "The fullscreen insert is a lone instrument and its purpose is to hide footage."
+ },
+ {
+  "id": "result-podcast/punch-card-list",
+  "outcome": "variant",
+  "type": "punch-list",
+  "reason": "The fullscreen reading list punches one hole per spoken action."
+ },
+ {
+  "id": "result-podcast/paper-light-switch",
+  "outcome": "variant",
+  "type": "habit-rocker",
+  "reason": "A rocker flips on the decisive change between two conditions, then the bulb appears with its spoken explanation."
+ },
+ {
+  "id": "result-podcast/breaker-panel-tape-labels",
+  "outcome": "new",
+  "type": "habits-to-cut",
+  "reason": "Each explicitly named habit to cut gets its own downward breaker action."
+ },
+ {
+  "id": "result-podcast/open-at-clock-sign",
+  "outcome": "cut",
+  "type": "availability-clock",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: A literal clock-time announcement shows when the named coaching intake, offer or booking window opens.)"
+ },
+ {
+  "id": "result-podcast/rx-pad-basics",
+  "outcome": "duplicate",
+  "type": "recipe",
+  "reason": "A named outcome and prescribed actions already map to the ingredients of a spoken recipe."
+ },
+ {
+  "id": "result-podcast/phone-jar-empties",
+  "outcome": "unfit",
+  "reason": "Emptying a jar of phones is a phone-use metaphor without a recurring sales-teaching use."
+ },
+ {
+  "id": "result-podcast/telegram-tape-strips",
+  "outcome": "duplicate",
+  "type": "section-title-strips",
+  "reason": "The spoken headline fragments already write onto separate slips without a circle over text."
+ },
+ {
+  "id": "result-podcast/time-card-clock-punch",
+  "outcome": "variant",
+  "type": "clocked-results",
+  "reason": "A small press stamps the spoken headline figure before its result rows write in."
+ },
+ {
+  "id": "result-podcast/chalk-slate-versus",
+  "outcome": "variant",
+  "type": "slate-strike",
+  "reason": "A slate holds both sets of practices and draws a strike through each rejected practice on its cue."
+ },
+ {
+  "id": "result-podcast/film-strip-four-frames",
+  "outcome": "unfit",
+  "reason": "Needs object photos in each frame of the strip."
+ }
+]

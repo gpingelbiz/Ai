@@ -63,7 +63,9 @@ test("ten distinct procedure cards register, ground exact words and fit a placem
     assert.ok(Object.values(def.slots).every((s) => s.kind === "spoken"));
     const { o, words, pick } = fixture(type), size = proSize(o);
     assert.ok(PRO_RECTS.some((rect) => size.w <= rect.w && size.h <= rect.h), type);
-    assert.deepEqual(groundProOverlay(pick, words), groundCard(pick, type, words));
+    // Named design: since the 2026-11-28 ghost-editor import some of these types have more designs, and the planner's pick may land on one.
+    const { group, ...designed } = groundProOverlay({ ...pick, design: type }, words) || {};
+    assert.deepEqual(designed, groundCard(pick, type, words));
     assert.deepEqual(o.phrases.map((p) => p.text), Object.values(fixtures[type]).flat());
     assert.deepEqual(o.reveals, o.phrases.map((p) => words[p.from].start));
     assert.match(proPrompt(words), new RegExp(`${type}.*\\[procedure\\]`));

@@ -71,7 +71,9 @@ for (const [type, def] of Object.entries(CARDS)) {
     assert.ok(["obsidian", "bone", "bare"].includes(def.surface));
     assert.equal(o.fullscreen, undefined);
     assert.ok(PRO_RECTS.some((rect) => size.w <= rect.w && size.h <= rect.h));
-    assert.deepEqual(groundProOverlay({ type, slots: pick }, words), groundCard(pick, type, words));
+    // Named design: since the 2026-11-28 ghost-editor import some of these types have more designs, and the planner's pick may land on one.
+    const { group, ...designed } = groundProOverlay({ type, design: type, slots: pick }, words) || {};
+    assert.deepEqual(designed, groundCard(pick, type, words));
     const result = renderProOverlay(o), calls = events(o);
     assert.match(result.html, new RegExp(`pro-overlay pro-${type}`));
     assert.doesNotMatch(result.html + result.timeline, /undefined|NaN/);

@@ -69,7 +69,8 @@ for (const type of Object.keys(cases)) {
     const { words, pick, overlay } = fixture(type), def = CARDS[type];
     assert.ok(overlay, `${type} must fit at the promised type size`);
     // The shared router still aliases "quote" to correction before consulting the registry.
-    if (type !== "quote") assert.deepEqual(groundProOverlay(pick, words), overlay);
+    // Named design: since the 2026-11-28 ghost-editor import some of these types have more designs, and the planner's pick may land on one.
+    if (type !== "quote") { const { group, ...designed } = groundProOverlay({ ...pick, design: type }, words) || {}; assert.deepEqual(designed, overlay); }
     assert.equal(overlay.card, true);
     assert.deepEqual(proSize(overlay), def.size);
     const frame = { measured: true, W: 1080, H: 1920, head: { x: 0, y: 1500, w: 100, h: 100 } };

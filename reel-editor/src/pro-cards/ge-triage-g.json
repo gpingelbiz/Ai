@@ -1,0 +1,402 @@
+[
+ {
+  "id": "product-page/signature-measured-push",
+  "outcome": "unfit",
+  "reason": "Virtual camera entrance is a house motion rule."
+ },
+ {
+  "id": "product-page/signature-zoom-for-title",
+  "outcome": "unfit",
+  "reason": "Virtual camera pullback is a page transition."
+ },
+ {
+  "id": "product-page/signature-hairline-line-art",
+  "outcome": "unfit",
+  "reason": "Hairline rendering is a drawing rule with no information of its own."
+ },
+ {
+  "id": "product-page/signature-music-dropout",
+  "outcome": "unfit",
+  "reason": "Music dropout is sound automation."
+ },
+ {
+  "id": "product-page/signature-rise-stack-pages",
+  "outcome": "variant",
+  "type": "rising-sheets",
+  "reason": "Successive steps rise into a staggered stack with each previous sheet receding."
+ },
+ {
+  "id": "product-page/emphasis-veil-before-title",
+  "outcome": "unfit",
+  "reason": "The veil is a compositing transition over a busy page."
+ },
+ {
+  "id": "product-page/emphasis-three-voice-pivot",
+  "outcome": "unfit",
+  "reason": "The chest pivot is a caption treatment."
+ },
+ {
+  "id": "product-page/scene-cover-rise-push-detail",
+  "outcome": "unfit",
+  "reason": "The close-up depends on a real cover and its printed title."
+ },
+ {
+  "id": "product-page/scene-ios-permission-alert",
+  "outcome": "unfit",
+  "reason": "The action demonstrates an iOS permission screen."
+ },
+ {
+  "id": "product-page/scene-ios-settings-toggles-off",
+  "outcome": "unfit",
+  "reason": "The recipe demonstrates a branded iOS settings screen with named apps."
+ },
+ {
+  "id": "product-page/prop-bell-icon-slash",
+  "outcome": "unfit",
+  "reason": "Muting an app notification is outside Greg's sales teaching."
+ },
+ {
+  "id": "product-page/prop-art-exploded-phone",
+  "outcome": "unfit",
+  "reason": "The internal layers of a phone have no use in Greg's reels."
+ },
+ {
+  "id": "product-page/prop-art-bed-moon",
+  "outcome": "unfit",
+  "reason": "The bed and moon illustrate sleep habits with no sales application."
+ },
+ {
+  "id": "product-page/prop-art-sneaker",
+  "outcome": "unfit",
+  "reason": "The shoe is a running illustration with no sales application."
+ },
+ {
+  "id": "product-page/prop-art-mugs-teapot",
+  "outcome": "unfit",
+  "reason": "The tea scene has no use in Greg's sales instruction."
+ },
+ {
+  "id": "product-page/prop-art-staircase-bead",
+  "outcome": "duplicate",
+  "type": "staircase",
+  "reason": "The existing staircase already moves a bead from one spoken action to the next."
+ },
+ {
+  "id": "product-page/prop-art-book",
+  "outcome": "unfit",
+  "reason": "The closed book as a gallery ornament carries no sales lesson on its own."
+ },
+ {
+  "id": "product-page/scene-scan-page-highlight-push",
+  "outcome": "unfit",
+  "reason": "The zoom and marks rely on the words and layout of a real scanned page."
+ },
+ {
+  "id": "product-page/scene-split-loupe-strip",
+  "outcome": "unfit",
+  "reason": "The loupe depends on a real printed source with words outside the spoken copy."
+ },
+ {
+  "id": "product-page/prop-art-crowd-dots-one-alone",
+  "outcome": "new",
+  "type": "audience-focus",
+  "reason": "A qualitative crowd singles out the prospect or narrower segment Greg tells reps to prioritize."
+ },
+ {
+  "id": "product-page/scene-split-chat-typing-send",
+  "outcome": "variant",
+  "type": "draft-send",
+  "reason": "A generic composer writes the quoted draft and settles it into a sent state."
+ },
+ {
+  "id": "product-page/prop-art-doorframe-height-marks",
+  "outcome": "variant",
+  "type": "height-marks",
+  "reason": "A door jamb and ascending drawn ticks show the spoken steps building on one another."
+ },
+ {
+  "id": "product-page/scene-split-voice-message-plays",
+  "outcome": "variant",
+  "type": "voice-playback",
+  "reason": "The quoted voicemail is paired with a play-to-pause change and a waveform sweep."
+ },
+ {
+  "id": "product-page/scene-profile-grid-push-real-tile",
+  "outcome": "unfit",
+  "reason": "The callback and push require a real reel tile and profile grid."
+ },
+ {
+  "id": "product-page/scene-corpus-window-translate-lines",
+  "outcome": "unfit",
+  "reason": "The scene demonstrates a named app's translation tool and source document."
+ },
+ {
+  "id": "product-page/scene-ig-share-sheet-send-bubble",
+  "outcome": "unfit",
+  "reason": "The share action relies on a reel tile and an Instagram share sheet."
+ },
+ {
+  "id": "product-page/scene-appstore-chip-home-reps-ring",
+  "outcome": "unfit",
+  "reason": "The callouts rely on a real app home screen and App Store branding."
+ },
+ {
+  "id": "product-page/scene-methods-list-strike",
+  "outcome": "cut",
+  "type": "method-elimination",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: Multiple named tactics are crossed out together when Greg voices their shared failure.)"
+ },
+ {
+  "id": "product-page/scene-real-alarm-shakes-until-squats",
+  "outcome": "unfit",
+  "reason": "The action requires a real alarm screen in the named app."
+ },
+ {
+  "id": "product-page/prop-dots-200-half-lit",
+  "outcome": "cut",
+  "type": "cohort-outcome-share",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: The card pairs an explicitly sized cohort with the spoken share that reached an outcome.)"
+ },
+ {
+  "id": "product-page/scene-own-recording-phone-counts-to-dismissed",
+  "outcome": "unfit",
+  "reason": "The action needs the speaker's actual screen recording and the app's done screen."
+ },
+ {
+  "id": "product-page/prop-appstore-row-card",
+  "outcome": "unfit",
+  "reason": "The row relies on a real app icon, seller name and App Store design."
+ },
+ {
+  "id": "product-page/idea-1",
+  "outcome": "unfit",
+  "reason": "The zoom requires a real screen recording of the tool."
+ },
+ {
+  "id": "product-page/idea-2",
+  "outcome": "unfit",
+  "reason": "Caret tracking and the slash chip illustrate an app-specific text input affordance."
+ },
+ {
+  "id": "product-page/idea-3",
+  "outcome": "unfit",
+  "reason": "The pullback and dive are a camera transition between demo shots."
+ },
+ {
+  "id": "product-page/idea-4",
+  "outcome": "unfit",
+  "reason": "The cursor camera requires real screen-recording footage."
+ },
+ {
+  "id": "product-page/idea-5",
+  "outcome": "unfit",
+  "reason": "A one-frame interface palette inversion is a transition treatment."
+ },
+ {
+  "id": "product-page/idea-6",
+  "outcome": "unfit",
+  "reason": "Action retiming requires the footage of the real demo."
+ },
+ {
+  "id": "product-page/idea-7",
+  "outcome": "unfit",
+  "reason": "The desk footage, caption voices and music dropout form a B-roll scene."
+ },
+ {
+  "id": "product-page/idea-8",
+  "outcome": "unfit",
+  "reason": "The blank beat is a pacing transition before the reply."
+ },
+ {
+  "id": "product-page/idea-9",
+  "outcome": "variant",
+  "type": "reply-selection",
+  "reason": "The spoken alternatives build as vertical lines and the endorsed reply settles into a send row."
+ },
+ {
+  "id": "product-page/idea-10",
+  "outcome": "unfit",
+  "reason": "The feather and gradient are a caption treatment."
+ },
+ {
+  "id": "product-page/idea-11",
+  "outcome": "unfit",
+  "reason": "The illustration generator is a production technique."
+ },
+ {
+  "id": "product-page/idea-12",
+  "outcome": "unfit",
+  "reason": "The proposed additions are sound effects."
+ },
+ {
+  "id": "product-page/idea-13",
+  "outcome": "unfit",
+  "reason": "The riser and pad are sound cues."
+ },
+ {
+  "id": "product-page/idea-14",
+  "outcome": "new",
+  "type": "comment-keyword-offer",
+  "reason": "The explicit comment instruction, keyword and promised offer earn a dedicated gold keyword reveal."
+ },
+ {
+  "id": "step-deck/emphasis-flicker-on",
+  "outcome": "unfit",
+  "reason": "The opacity flicker is a caption emphasis treatment."
+ },
+ {
+  "id": "step-deck/emphasis-punch-in",
+  "outcome": "unfit",
+  "reason": "The punch-in reframes the talking-head footage."
+ },
+ {
+  "id": "step-deck/emphasis-blue-box-under-word",
+  "outcome": "unfit",
+  "reason": "The standalone box is a caption word mark and the house uses an underline there."
+ },
+ {
+  "id": "step-deck/scene-title-caps-rgb-split",
+  "outcome": "variant",
+  "type": "stacked-promise",
+  "reason": "A centered setup tier and larger final phrase write on their cues with a short scale settle."
+ },
+ {
+  "id": "step-deck/frame-paper-panel-replay",
+  "outcome": "unfit",
+  "reason": "The panel and its caption frame metaphor footage."
+ },
+ {
+  "id": "step-deck/scene-clip-panel-then-full",
+  "outcome": "unfit",
+  "reason": "The scene requires continuous footage for the transition from panel to full screen."
+ },
+ {
+  "id": "step-deck/scene-five-tables-rack-focus",
+  "outcome": "cut",
+  "type": "finish-one-first",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: Several open tasks give way to one explicit priority and the action that completes it.)"
+ },
+ {
+  "id": "step-deck/scene-tables-return",
+  "outcome": "cut",
+  "type": "finish-one-first",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was merged: The finished center task is the payoff state of the same focus-and-complete diagram.)"
+ },
+ {
+  "id": "step-deck/scene-counter-1-to-10",
+  "outcome": "variant",
+  "type": "count-settle",
+  "reason": "A vertically rolling reveal lands directly on the exact count and the spoken label follows."
+ },
+ {
+  "id": "step-deck/scene-quote-box-word-reveal",
+  "outcome": "variant",
+  "type": "quote-aperture",
+  "reason": "A reading box opens from the center while Greg's exact pull quote writes in."
+ },
+ {
+  "id": "step-deck/scene-dot-crowd-rack",
+  "outcome": "merged",
+  "type": "audience-focus",
+  "reason": "The same qualitative dot field recedes as the one named target comes forward."
+ },
+ {
+  "id": "step-deck/frame-still-ink-captions-window",
+  "outcome": "unfit",
+  "reason": "The window composition needs a photo with background lighting to place its captions."
+ },
+ {
+  "id": "step-deck/scene-hook-bar-callback",
+  "outcome": "unfit",
+  "reason": "The callback depends on replaying the hook's city still."
+ },
+ {
+  "id": "step-deck/scene-path-drawing-empty-spots",
+  "outcome": "variant",
+  "type": "milestone-draw",
+  "reason": "Dashed stops guide a stroke from the first spoken milestone to the final target."
+ },
+ {
+  "id": "step-deck/idea-1",
+  "outcome": "unfit",
+  "reason": "Shortening the hook stack is a recording and edit pacing rule."
+ },
+ {
+  "id": "step-deck/idea-2",
+  "outcome": "variant",
+  "type": "center-out-title",
+  "reason": "A compact center-out gold title band reveals the next spoken topic in place."
+ },
+ {
+  "id": "step-deck/idea-3",
+  "outcome": "unfit",
+  "reason": "The recap requires replay footage and numbered hook labels."
+ },
+ {
+  "id": "step-deck/idea-4",
+  "outcome": "unfit",
+  "reason": "The flip deck requires the speaker's real assets on each face."
+ },
+ {
+  "id": "step-deck/idea-5",
+  "outcome": "unfit",
+  "reason": "The credibility map relies on the speaker's name and role titles."
+ },
+ {
+  "id": "step-deck/idea-6",
+  "outcome": "variant",
+  "type": "count-ring-pair",
+  "reason": "Two exact whole measures reveal in a vertical pair with a ring drawn around each beat."
+ },
+ {
+  "id": "step-deck/idea-7",
+  "outcome": "merged",
+  "type": "quote-aperture",
+  "reason": "The proposed box and spoken quote use the same center-out reading layout."
+ },
+ {
+  "id": "step-deck/idea-8",
+  "outcome": "unfit",
+  "reason": "The hook diagram calls for people's names and camera treatment on a full-screen scene."
+ },
+ {
+  "id": "step-deck/idea-9",
+  "outcome": "unfit",
+  "reason": "The color ramp is a caption treatment over B-roll footage."
+ },
+ {
+  "id": "step-deck/idea-10",
+  "outcome": "unfit",
+  "reason": "The blur and drift are caption entrance and exit treatments."
+ },
+ {
+  "id": "step-deck/idea-11",
+  "outcome": "unfit",
+  "reason": "The glow and tracked captions require footage."
+ },
+ {
+  "id": "step-deck/idea-12",
+  "outcome": "unfit",
+  "reason": "Grain and vignette are scene grading treatments."
+ },
+ {
+  "id": "step-deck/idea-13",
+  "outcome": "unfit",
+  "reason": "Beat snapping is a sound and cutting rule."
+ },
+ {
+  "id": "step-deck/idea-14",
+  "outcome": "unfit",
+  "reason": "The prop action must be captured in the speaker's footage."
+ },
+ {
+  "id": "step-deck/idea-15",
+  "outcome": "unfit",
+  "reason": "The tagger proposal is a caption sizing rule."
+ },
+ {
+  "id": "step-deck/idea-16",
+  "outcome": "unfit",
+  "reason": "The proposed additions are music and sound effects."
+ }
+]

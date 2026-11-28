@@ -1,0 +1,332 @@
+[
+ {
+  "id": "swiss-grid/signal-slab-overprint",
+  "outcome": "variant",
+  "type": "topic-slab-rise",
+  "reason": "A vertical slab wipe gives a spoken topic its own overprinted title treatment."
+ },
+ {
+  "id": "swiss-grid/book-artifact-label",
+  "outcome": "unfit",
+  "reason": "Needs the real book cover and its author credit."
+ },
+ {
+  "id": "swiss-grid/knife-list-badges",
+  "outcome": "cut",
+  "type": "habits-to-cut",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: A repeated strike and collapse can show a list of habits Greg explicitly tells reps to cut.)"
+ },
+ {
+  "id": "swiss-grid/modules-programme",
+  "outcome": "variant",
+  "type": "module-outline",
+  "reason": "Draws a tiled chapter preview one module at a time using the existing topic ranges."
+ },
+ {
+  "id": "swiss-grid/ruled-rows",
+  "outcome": "duplicate",
+  "type": "chapter-index",
+  "reason": "After dropping the automatic counter, each spoken title shares its row with a growing rule."
+ },
+ {
+  "id": "swiss-grid/bleeding-bar",
+  "outcome": "variant",
+  "type": "off-track-reset",
+  "reason": "The better delivery pulls a bar back into alignment with its guide on the replacement phrase."
+ },
+ {
+  "id": "swiss-grid/minute-grid",
+  "outcome": "cut",
+  "type": "capacity-reclaim",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: A grid can show a spoken time budget, the task taking up part of it and the spoken amount reclaimed for a new use.)"
+ },
+ {
+  "id": "swiss-grid/idea-1",
+  "outcome": "unfit",
+  "reason": "The idea is a ninety-degree rotation transition and needs that rotation to make its point."
+ },
+ {
+  "id": "swiss-grid/idea-2",
+  "outcome": "duplicate",
+  "type": "topic-tiles",
+  "reason": "The compact wall is already a grid of framework components once the camera pullback is removed."
+ },
+ {
+  "id": "swiss-grid/idea-3",
+  "outcome": "variant",
+  "type": "scrolling-read-list",
+  "reason": "A single ruled reading column advances upward as each spoken action arrives."
+ },
+ {
+  "id": "swiss-grid/idea-4",
+  "outcome": "unfit",
+  "reason": "Needs a speaker matte or separately framed footage inside the layout."
+ },
+ {
+  "id": "swiss-grid/idea-5",
+  "outcome": "unfit",
+  "reason": "Needs a speaker matte and a figure placed behind the head on the footage."
+ },
+ {
+  "id": "swiss-grid/idea-6",
+  "outcome": "unfit",
+  "reason": "It is a caption-row clock that shows frame counts Greg does not say."
+ },
+ {
+  "id": "caption-news/sting-bottom-band",
+  "outcome": "merged",
+  "type": "topic-slab-rise",
+  "reason": "The title band with a wiped entrance fits the rising topic slab once the show bug is removed."
+ },
+ {
+  "id": "caption-news/doc-book-cover",
+  "outcome": "unfit",
+  "reason": "Needs a real cover on a photographed desk and a bibliographic credit."
+ },
+ {
+  "id": "caption-news/lit-grid-apps",
+  "outcome": "variant",
+  "type": "channel-signal-rows",
+  "reason": "Stacks and lights spoken peers with a generic signal icon and without copying the apps."
+ },
+ {
+  "id": "caption-news/ruled-list-basics",
+  "outcome": "duplicate",
+  "type": "agenda-bands",
+  "reason": "Once the automatic row numbers are dropped, the active band sweeps in and recedes exactly as on the agenda."
+ },
+ {
+  "id": "caption-news/idea-1",
+  "outcome": "duplicate",
+  "type": "line-chart",
+  "reason": "The existing two-point chart already draws a trend from comparable amounts Greg says."
+ },
+ {
+  "id": "caption-news/idea-2",
+  "outcome": "duplicate",
+  "type": "percent-tank",
+  "reason": "The existing tank shows the share as the filled area of a drawn card."
+ },
+ {
+  "id": "caption-news/idea-3",
+  "outcome": "variant",
+  "type": "score-rollover",
+  "reason": "Two independent scoreboard windows roll each exact spoken score into view."
+ },
+ {
+  "id": "caption-news/idea-4",
+  "outcome": "unfit",
+  "reason": "The masked map transition depends on geography with no use in Greg's sales lessons."
+ },
+ {
+  "id": "caption-news/idea-5",
+  "outcome": "duplicate",
+  "type": "odometer",
+  "reason": "The existing reels roll the spoken count into place without displaying invented intermediate values."
+ },
+ {
+  "id": "news-package/doc-cover-fly-stamp",
+  "outcome": "unfit",
+  "reason": "The on-word stamp is attached to a real book cover and a sourced title."
+ },
+ {
+  "id": "news-package/flap-board-on-off",
+  "outcome": "variant",
+  "type": "flap-state-change",
+  "reason": "A split-flap seam switches between two exact spoken ways to deliver a line."
+ },
+ {
+  "id": "news-package/check-rows-off",
+  "outcome": "variant",
+  "type": "fold-checklist",
+  "reason": "Each action unfolds from a seam and its outlined tick draws on the spoken word."
+ },
+ {
+  "id": "news-package/accent-cards-bracket",
+  "outcome": "new",
+  "type": "actions-to-principle",
+  "reason": "Three concrete examples land first, then a bracket ties them to the single principle Greg actually states."
+ },
+ {
+  "id": "news-package/threshold-schematic",
+  "outcome": "cut",
+  "type": "target-crossing",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: A stepped path holds below a spoken target until Greg confirms that the milestones led him across it.)"
+ },
+ {
+  "id": "news-package/proportion-bar-cells",
+  "outcome": "variant",
+  "type": "contracting-share",
+  "reason": "A segmented share contracts from a spoken before rate to a smaller spoken after rate on the same scale."
+ },
+ {
+  "id": "news-package/idea-1",
+  "outcome": "unfit",
+  "reason": "The outside quotation treatment needs a person's attribution, the occasion and a date."
+ },
+ {
+  "id": "news-package/idea-2",
+  "outcome": "unfit",
+  "reason": "A panning map with geographic distances and document destinations has no use in Greg's sales lessons."
+ },
+ {
+  "id": "news-package/idea-3",
+  "outcome": "unfit",
+  "reason": "The profile strap depends on a person's name or title."
+ },
+ {
+  "id": "news-package/idea-4",
+  "outcome": "unfit",
+  "reason": "This is reel-ending packaging and a plate transition."
+ },
+ {
+  "id": "news-package/idea-5",
+  "outcome": "unfit",
+  "reason": "This is a cold-open edit rule that reorders the hook and sting."
+ },
+ {
+  "id": "telestrator/freeze-ghost-phone-in-hand",
+  "outcome": "unfit",
+  "reason": "Needs a timed freeze of Greg's hand and marks tracked to the footage."
+ },
+ {
+  "id": "telestrator/board-book-cover-tactics",
+  "outcome": "unfit",
+  "reason": "Needs the real book cover and its creator credit."
+ },
+ {
+  "id": "telestrator/stamp-simple-advice",
+  "outcome": "variant",
+  "type": "advice-imprint",
+  "reason": "The rule itself lands as ink inside the stamp rather than sitting next to a separate verdict."
+ },
+ {
+  "id": "telestrator/board-phone-notifications",
+  "outcome": "cut",
+  "type": "habits-to-cut",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was merged: The spoken distractions arrive and are struck out in the same two-well design after removing the phone scene.)"
+ },
+ {
+  "id": "telestrator/freeze-app-icon-future-path",
+  "outcome": "unfit",
+  "reason": "Needs the frozen hand position and an app icon anchored to it on the footage."
+ },
+ {
+  "id": "telestrator/board-numbered-rows-icons",
+  "outcome": "variant",
+  "type": "underlined-actions",
+  "reason": "Draws an underline and a marker beside each spoken action without adding ordinals or activity-specific icons."
+ },
+ {
+  "id": "telestrator/split-dual-angle-freeze",
+  "outcome": "unfit",
+  "reason": "Needs two matched camera views and a freeze on both plates."
+ },
+ {
+  "id": "telestrator/freeze-space-zone-behind",
+  "outcome": "unfit",
+  "reason": "Needs a speaker cutout and space behind a particular freeze frame."
+ },
+ {
+  "id": "telestrator/idea-1",
+  "outcome": "unfit",
+  "reason": "Rewind is a footage effect that needs a reversed plate and its matte."
+ },
+ {
+  "id": "telestrator/idea-2",
+  "outcome": "unfit",
+  "reason": "Slow motion is a footage effect and its stopwatch would add unspoken frame counts."
+ },
+ {
+  "id": "telestrator/idea-3",
+  "outcome": "unfit",
+  "reason": "The ring must follow a moving hand tracked in the footage."
+ },
+ {
+  "id": "telestrator/idea-4",
+  "outcome": "unfit",
+  "reason": "The perspective transition warps a specific freeze frame into a board."
+ },
+ {
+  "id": "telestrator/idea-5",
+  "outcome": "duplicate",
+  "type": "measured-stamp",
+  "reason": "The existing marked reading highlights the exact spoken result and says what was measured."
+ },
+ {
+  "id": "telestrator/idea-6",
+  "outcome": "unfit",
+  "reason": "The frame-zero show sting is opening packaging rather than a teaching card."
+ },
+ {
+  "id": "halftone-dossier/scene-mugshot-phone-eyes",
+  "outcome": "unfit",
+  "reason": "The phone-as-suspect gag has no use in Greg's lessons and relies on an unspoken measurement scale."
+ },
+ {
+  "id": "halftone-dossier/frame-pinned-print-label",
+  "outcome": "unfit",
+  "reason": "Needs a real cover image and a title or author label identifying it."
+ },
+ {
+  "id": "halftone-dossier/prop-halftone-numeral",
+  "outcome": "variant",
+  "type": "rising-stat",
+  "reason": "The standalone spoken figure rises out of a ruled well in flat gold Anton."
+ },
+ {
+  "id": "halftone-dossier/scene-night-notifications",
+  "outcome": "duplicate",
+  "type": "lock-screen",
+  "reason": "The existing design already stacks incoming spoken notifications in order in an unbranded panel."
+ },
+ {
+  "id": "halftone-dossier/scene-evidence-board",
+  "outcome": "variant",
+  "type": "pinned-actions",
+  "reason": "Pinned action strips land in alternating positions and a string draws between their pins."
+ },
+ {
+  "id": "halftone-dossier/scene-mountain-verdict",
+  "outcome": "new",
+  "type": "obstacle-reassurance",
+  "reason": "An abstract climb carries a named obstacle and the flag lands with Greg's explicit reassurance."
+ },
+ {
+  "id": "halftone-dossier/scene-day-cells-bloom",
+  "outcome": "cut",
+  "type": "capacity-reclaim",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was merged: The grid repurposes occupied cells into released capacity when Greg actually quantifies the time he frees.)"
+ },
+ {
+  "id": "halftone-dossier/idea-1",
+  "outcome": "variant",
+  "type": "pull-quote-unmask",
+  "reason": "Mask bars lift in quick succession to uncover the exact quote on its cue."
+ },
+ {
+  "id": "halftone-dossier/idea-2",
+  "outcome": "unfit",
+  "reason": "Filing the folder is an ending transition with no spoken teaching content."
+ },
+ {
+  "id": "halftone-dossier/idea-3",
+  "outcome": "unfit",
+  "reason": "A snap zoom into halftone dots is a texture and camera transition."
+ },
+ {
+  "id": "halftone-dossier/idea-4",
+  "outcome": "unfit",
+  "reason": "This is a camera pan across an existing scene, with no independent card content."
+ },
+ {
+  "id": "halftone-dossier/idea-5",
+  "outcome": "unfit",
+  "reason": "Hand-font interjections are a caption treatment and would depend on a non-house font."
+ },
+ {
+  "id": "halftone-dossier/idea-6",
+  "outcome": "unfit",
+  "reason": "The conversion needs an object photo and produces a halftone image."
+ }
+]

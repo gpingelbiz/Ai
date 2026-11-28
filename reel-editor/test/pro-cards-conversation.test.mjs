@@ -67,7 +67,9 @@ for (const [type, def] of Object.entries(CARDS)) {
       assert.ok(slot.width > 0 && slot.size > 0 && slot.maxChars > 0 && slot.maxLines > 0);
     }
     const o = placed(type), result = renderProOverlay(o);
-    assert.deepEqual(groundProOverlay({ type, slots: picks[type] }, words), groundCard(picks[type], type, words));
+    // Named design: since the 2026-11-28 ghost-editor import some of these types have more designs, and the planner's pick may land on one.
+    const { group, ...designed } = groundProOverlay({ type, design: type, slots: picks[type] }, words) || {};
+    assert.deepEqual(designed, groundCard(picks[type], type, words));
     assert.deepEqual(proSize(o), def.size);
     assert.ok(PRO_RECTS.some((rect) => def.size.w <= rect.w && def.size.h <= rect.h));
     assert.equal(o.fullscreen, undefined);

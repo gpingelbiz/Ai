@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CARDS } from "../src/pro-cards/index.mjs";
+import { CARDS, rootOf } from "../src/pro-cards/index.mjs";
 import { groundCard, proSize, budgetProOverlays } from "../src/pro.mjs";
 import { renderProOverlay, proCSS } from "../src/pro-render.mjs";
 
@@ -8,7 +8,9 @@ const words = "If they say I don't have time for this you say totally fair when 
 
 test("every registry card is complete and renders from grounded word ranges", () => {
   for (const [type, def] of Object.entries(CARDS)) {
-    assert.ok(def.hint && def.slots && def.size && typeof def.render === "function", `${type} is incomplete`);
+    assert.ok(def.slots && def.size && typeof def.render === "function", `${type} is incomplete`);
+    // A design (variantOf) is never prompted on its own (see proPrompt), so only its root needs a hint.
+    assert.ok(def.hint || (def.variantOf && CARDS[rootOf(type)].hint), `${type} is incomplete`);
     assert.ok(Object.values(def.slots).some((s) => s.kind === "spoken"), `${type} needs a spoken slot`);
   }
   const o = groundCard({ type: "objection", theySay: { from: 3, to: 8 }, youSay: { from: 11, to: 18 } }, "objection", words);

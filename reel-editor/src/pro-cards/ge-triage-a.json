@@ -1,0 +1,349 @@
+[
+ {
+  "id": "clean-os/date-picker-wheel",
+  "outcome": "unfit",
+  "reason": "The return-to-today wheel needs a current date and shows intervening years Greg did not say."
+ },
+ {
+  "id": "clean-os/lockscreen-notifications",
+  "outcome": "duplicate",
+  "type": "lock-screen",
+  "reason": "After dropping the wallpaper and clock, the exact incoming notification lines already land separately in lock-screen."
+ },
+ {
+  "id": "clean-os/search-stalled-bar",
+  "outcome": "merged",
+  "type": "query-caret",
+  "reason": "The exact query types in and the caret stops with no result. An unspoken stall percentage would invent a reading."
+ },
+ {
+  "id": "clean-os/mail-inbox-call-banner",
+  "outcome": "duplicate",
+  "type": "incoming-call",
+  "reason": "The arriving call is already a card. The unrelated inbox counter needs an unspoken unread count."
+ },
+ {
+  "id": "clean-os/tasks-five-to-one",
+  "outcome": "new",
+  "type": "focus-shortlist",
+  "reason": "Several spoken tasks give way to the single action Greg explicitly chooses, a decision across more than two alternatives."
+ },
+ {
+  "id": "clean-os/screen-time-report",
+  "outcome": "cut",
+  "type": "time-allocation",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: An explicitly spoken total and the two durations that sum to it show how a sales block was actually spent.)"
+ },
+ {
+  "id": "clean-os/live-dictation",
+  "outcome": "variant",
+  "type": "dictated-message",
+  "reason": "The composed line writes in alongside a microphone and a waveform drawn on the same beat."
+ },
+ {
+  "id": "clean-os/files-drafts",
+  "outcome": "cut",
+  "type": "unfinished-work",
+  "reason": "cut at merge: too narrow for Greg's reels, not worth a planner line (was new: A list of specifically named sales work left incomplete gets open marks that never imply a progress percentage.)"
+ },
+ {
+  "id": "clean-os/camera-viewfinder-shutter",
+  "outcome": "unfit",
+  "reason": "The shutter payoff and resulting thumbnail need a photo or footage."
+ },
+ {
+  "id": "clean-os/app-switcher-flick",
+  "outcome": "merged",
+  "type": "focus-shortlist",
+  "reason": "The other options slide aside as the chosen one activates, the same elimination beat without app surfaces."
+ },
+ {
+  "id": "clean-os/home-badges-jiggle",
+  "outcome": "unfit",
+  "reason": "The effect depends on a branded home screen, app icons, unread counts and shake."
+ },
+ {
+  "id": "clean-os/callback-open-app",
+  "outcome": "unfit",
+  "reason": "The callback is a return to an earlier app scene and a transition rather than a standalone spoken card."
+ },
+ {
+  "id": "clean-os/figma-selection-box",
+  "outcome": "variant",
+  "type": "phrase-selection",
+  "reason": "Paired editorial brackets draw around the spoken lesson to capture the selection without the design-tool interface."
+ },
+ {
+  "id": "clean-os/ios-text-selection",
+  "outcome": "merged",
+  "type": "phrase-selection",
+  "reason": "The same spoken-phrase selection survives in the brackets after stripping system handles and the context menu."
+ },
+ {
+  "id": "clean-os/perspective-text-ring",
+  "outcome": "unfit",
+  "reason": "The horizon perspective needs footage tied to the effect, and the draining ring has no spoken scale."
+ },
+ {
+  "id": "clean-os/battery-low-alert",
+  "outcome": "variant",
+  "type": "battery-readout",
+  "reason": "An unbranded battery drains to the only displayed percentage, the one Greg says for remaining capacity."
+ },
+ {
+  "id": "clean-os/great-vibes-wipe",
+  "outcome": "merged",
+  "type": "pen-write-word",
+  "reason": "Its signature-word wipe is the same beat carried by the moving nib and Anton word."
+ },
+ {
+  "id": "clean-os/markup-pen-marck",
+  "outcome": "variant",
+  "type": "pen-write-word",
+  "reason": "A drawn nib rides the Anton write-in without a markup toolbar or a handwriting font."
+ },
+ {
+  "id": "clean-os/quicktype-tap-up",
+  "outcome": "variant",
+  "type": "reply-promote",
+  "reason": "The endorsed spoken reply rises into its highlighted state under the exact incoming line."
+ },
+ {
+  "id": "clean-os/fullscreen-type-stop",
+  "outcome": "unfit",
+  "reason": "A one-word full-screen hook stop is a transition, not a reading card or list."
+ },
+ {
+  "id": "clean-os/broll-callback-cold",
+  "outcome": "unfit",
+  "reason": "This is a grade and B-roll callback that requires earlier footage."
+ },
+ {
+  "id": "clean-os/calendar-day-fills",
+  "outcome": "variant",
+  "type": "booking-stamp",
+  "reason": "A generic date tile fills and ticks as the spoken booking lands, with an optional spoken date."
+ },
+ {
+  "id": "clean-os/maps-pin-drop",
+  "outcome": "duplicate",
+  "type": "place-pin",
+  "reason": "The existing design already drops a pin beside the spoken place without showing a Maps scene."
+ },
+ {
+  "id": "clean-os/ai-chat-summary-and-typing",
+  "outcome": "unfit",
+  "reason": "The scene depends on an app generating and displaying a separate summary, which would add copy unless Greg recites the generated result."
+ },
+ {
+  "id": "clean-os/mini-site-builds-itself",
+  "outcome": "unfit",
+  "reason": "A site assembling itself depends on site content or a URL and has no clear use in Greg's sales instruction."
+ },
+ {
+  "id": "clean-os/contract-signature-x2",
+  "outcome": "cut",
+  "type": "mutual-signoff",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: Two spoken commitments get separate drawn sign-off marks without handwriting, signatures or personal names.)"
+ },
+ {
+  "id": "clean-os/bottom-sheet",
+  "outcome": "unfit",
+  "reason": "This is an iOS-style scene frame and entrance transition with no standalone spoken information."
+ },
+ {
+  "id": "clean-os/markup-highlighter-scribble",
+  "outcome": "duplicate",
+  "type": "marker-highlight",
+  "reason": "The existing card already draws an irregular marker stroke behind the exact lesson."
+ },
+ {
+  "id": "clean-os/countdown-pill",
+  "outcome": "variant",
+  "type": "countdown-window",
+  "reason": "One fixed window replaces each count with the next on its spoken beat."
+ },
+ {
+  "id": "clean-os/signature-pad-bad-script",
+  "outcome": "unfit",
+  "reason": "The effect needs a personal signature rendered as handwriting to make the handwriting itself the joke."
+ },
+ {
+  "id": "clean-os/screen-time-pill-counting",
+  "outcome": "duplicate",
+  "type": "digital-duration",
+  "reason": "A compact exact duration is already available and the intermediate counter values would be unspoken."
+ },
+ {
+  "id": "clean-os/book-card-apple-books",
+  "outcome": "unfit",
+  "reason": "The widget depends on an actual cover, a brand imitation and a reading percentage that is not earned by Greg's words."
+ },
+ {
+  "id": "clean-os/settings-notifications-toggles-off",
+  "outcome": "unfit",
+  "reason": "The scene needs a copied Settings screen and notification counts unless reduced to an unrelated generic switch."
+ },
+ {
+  "id": "clean-os/app-icon-badges-silenced",
+  "outcome": "unfit",
+  "reason": "The effect requires branded app icons and unread counts that Greg does not say."
+ },
+ {
+  "id": "clean-os/activity-rings-over-broll",
+  "outcome": "duplicate",
+  "type": "benchmark-rings",
+  "reason": "The existing three concentric animated rings already carry individually spoken percentages and labels."
+ },
+ {
+  "id": "clean-os/marck-script-signature-word",
+  "outcome": "merged",
+  "type": "pen-write-word",
+  "reason": "The signature-word reveal uses the same moving-nib design and house lettering."
+ },
+ {
+  "id": "clean-os/two-button-alert-tapped",
+  "outcome": "variant",
+  "type": "decision-confirm",
+  "reason": "Two stacked choices end on a drawn check and a highlighted second choice instead of a branded alert or shake."
+ },
+ {
+  "id": "clean-os/storage-bar-free-space-grows",
+  "outcome": "variant",
+  "type": "share-shift",
+  "reason": "An abstract allocation boundary moves between the two percentages Greg gives for the same metric."
+ },
+ {
+  "id": "clean-os/phone-mockup-lockscreen",
+  "outcome": "unfit",
+  "reason": "The lock-screen device frame needs a wallpaper image, a branded interface and a clock reading."
+ },
+ {
+  "id": "clean-os/maps-look-around-card",
+  "outcome": "unfit",
+  "reason": "The Look Around framing depends on a location photo and a branded Maps sheet."
+ },
+ {
+  "id": "clean-os/maps-place-card-photo",
+  "outcome": "unfit",
+  "reason": "The location photo is the card's subject and the remaining spoken pin already has a separate source entry."
+ },
+ {
+  "id": "clean-os/figma-reject-strike",
+  "outcome": "variant",
+  "type": "strike-selection",
+  "reason": "A straight strike writes across each spoken line, then the rejected phrase fades to grey."
+ },
+ {
+  "id": "clean-os/figma-delete-backspace",
+  "outcome": "merged",
+  "type": "retype-word",
+  "reason": "Right-to-left character deletion and the following caret already carry the label replacement."
+ },
+ {
+  "id": "clean-os/hero-number-card",
+  "outcome": "variant",
+  "type": "stat-shutter",
+  "reason": "The exact number rises into a display above an italic qualifier, preserving the staged entry without unspoken counts."
+ },
+ {
+  "id": "clean-os/highlighter-sweep",
+  "outcome": "duplicate",
+  "type": "marker-highlight",
+  "reason": "The existing design already sweeps gold across the spoken phrase."
+ },
+ {
+  "id": "clean-os/scene-caption-line",
+  "outcome": "unfit",
+  "reason": "This is a caption rule for reading across full-screen footage, not a teaching card."
+ },
+ {
+  "id": "clean-os/italic-hero-word-card",
+  "outcome": "duplicate",
+  "type": "big-word",
+  "reason": "It isolates one important word with the existing hero composition and changes only the font treatment."
+ },
+ {
+  "id": "clean-os/quoted-speech-italic-cards",
+  "outcome": "unfit",
+  "reason": "It is a caption styling rule for reported speech, with no distinct card arrangement or motion."
+ },
+ {
+  "id": "clean-os/label-rename-retype",
+  "outcome": "variant",
+  "type": "retype-word",
+  "reason": "The original word backspaces as its exact spoken replacement writes into the edit well."
+ },
+ {
+  "id": "clean-os/ios-notification-banner",
+  "outcome": "variant",
+  "type": "layered-alerts",
+  "reason": "Each alert title and message write into the front card while prior banners slide back into the stack."
+ },
+ {
+  "id": "clean-os/messages-chat-thread",
+  "outcome": "variant",
+  "type": "thread-handoff",
+  "reason": "Typing dots hand off to each spoken reply in alternating cards without branded message UI."
+ },
+ {
+  "id": "clean-os/likes-notification-pile",
+  "outcome": "unfit",
+  "reason": "A specific social platform's activity and a running engagement count are essential to the source effect."
+ },
+ {
+  "id": "clean-os/files-zip-unpack",
+  "outcome": "unfit",
+  "reason": "A Files archive opening into folders has no sales-teaching use and depends on a copied file browser."
+ },
+ {
+  "id": "clean-os/apple-pay-faceid-sheet",
+  "outcome": "cut",
+  "type": "paid-confirmation",
+  "reason": "cut at merge: another new or existing type already carries this meaning (was new: An actual transaction amount and Greg's spoken confirmation get a drawn success mark without payment-provider UI.)"
+ },
+ {
+  "id": "clean-os/search-bar-typing",
+  "outcome": "variant",
+  "type": "query-caret",
+  "reason": "The spoken search query appears character by character in a ruled field with a trailing caret."
+ },
+ {
+  "id": "clean-os/contact-card-tags",
+  "outcome": "new",
+  "type": "lead-tagging",
+  "reason": "A spoken prospect segment gains explicitly spoken qualification tags without a name, title or avatar."
+ },
+ {
+  "id": "clean-os/voice-memo-waveform",
+  "outcome": "variant",
+  "type": "voicemail-playhead",
+  "reason": "A playhead crosses a decorative waveform as the exact voicemail line writes in without an inferred timer."
+ },
+ {
+  "id": "clean-os/translate-typing",
+  "outcome": "unfit",
+  "reason": "The translated output would add words Greg did not say and the literal translation scene has no sales-teaching use."
+ },
+ {
+  "id": "clean-os/maps-route-hazards",
+  "outcome": "unfit",
+  "reason": "The warning pins describe physical terrain and road hazards that have no use in Greg's sales reels."
+ },
+ {
+  "id": "clean-os/maps-directions-options",
+  "outcome": "variant",
+  "type": "route-choice",
+  "reason": "An abstract fork traces the two spoken actions and dims the first path as Greg selects the second."
+ },
+ {
+  "id": "clean-os/maps-region-routes",
+  "outcome": "unfit",
+  "reason": "The routes depend on real geography and travel narration with no clear use in Greg's sales teaching."
+ },
+ {
+  "id": "clean-os/maps-zoom-village-to-world",
+  "outcome": "unfit",
+  "reason": "This map-to-map zoom is a scene transition and needs real geographic context."
+ }
+]

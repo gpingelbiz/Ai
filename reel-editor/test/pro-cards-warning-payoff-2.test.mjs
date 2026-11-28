@@ -52,7 +52,9 @@ test("the ten requested types register with compact sizes and specific planner h
     assert.equal(def.slots[cases[type].slot].kind, "spoken");
     assert.ok(def.hint.length > 50 && !def.hint.includes("\n"));
     assert.ok(proPrompt(words).includes(`[${def.family}]: ${def.hint}`));
-    assert.deepEqual(groundProOverlay(pick, words), grounded);
+    // Named design: since the 2026-11-28 ghost-editor import some of these types have more designs, and the planner's pick may land on one.
+    const { group, ...designed } = groundProOverlay({ ...pick, design: type }, words) || {};
+    assert.deepEqual(designed, grounded);
     assert.deepEqual(proSize(overlay), { w: type === "caution-tape" ? 1080 : 720, h: cases[type].height });
     assert.equal(Boolean(overlay.fullscreen), type === "caution-tape");
     const place = placeProOverlay(overlay, { measured: true, W: 1080, H: 1920, head: { x: 400, y: 600, w: 200, h: 200 } });
