@@ -187,7 +187,7 @@ The lines are spoken in Greg's cloned voice through VoiceStudio (`src/voicestudi
 
 ## Publishing
 
-`scripts/publish.mjs <work dir> --media-url <public link> [--trial] [--date <iso>] [--reviewer you@x.com]` writes `post.json` (caption and 5 hashtags from `caption.json`, the scored cover-frame time, `isAiGenerated` when the reel has AI stills, as Instagram requires) and sends the reel to Metricool for your approval through headless Claude with only the Metricool review tool allowed. Metricool needs the video as a public link (Dropbox or Google Drive links are uploaded by it), so upload the MP4 first. It never auto-posts: a reviewer approves in Metricool.
+`scripts/publish.mjs <work dir> --media-url <public link> [--trial] [--date <iso>] [--reviewer you@x.com]` writes `post.json` (caption and 5 hashtags from `caption.json`, the scored cover-frame time, `isAiGenerated` when the reel has AI B-roll or an AI voice, as Instagram requires; stock and your own clips don't count, `src/ai-label.mjs`) and sends the reel to Metricool for your approval through headless Claude with only the Metricool review tool allowed. Metricool needs the video as a public link (Dropbox or Google Drive links are uploaded by it), so upload the MP4 first. It never auto-posts: a reviewer approves in Metricool.
 
 ## Punch-ins, caption lines and the cover
 
@@ -285,7 +285,7 @@ The gate: a reel whose preflight failed (the hidden `.reel.json`; an older folde
 - a reel already marked as a trial (`#trial` in its name, a `Publish/Trial/` subfolder, or `trial: true`);
 - `#public` or `#notrial` in its name, or `trial: false`.
 
-Only regular reels count toward one reel a day. Don't share a trial copy to followers from Instagram's 72-hour results notice: they already got the regular reel. TikTok's AI label follows the b-roll flag. `#igonly`, or a caption over TikTok's 2,200 characters, keeps a reel off TikTok, and `REEL_PUBLISH_CROSSPOST=""` turns TikTok off. The task passes `--networks`, `--trial-copy` and `--trial-planner` (or `--trial-copy-failed`) to `done`, so the receipt says what went out.
+Only regular reels count toward one reel a day. Don't share a trial copy to followers from Instagram's 72-hour results notice: they already got the regular reel. TikTok's AI label follows the same flag as Instagram's. `#igonly`, or a caption over TikTok's 2,200 characters, keeps a reel off TikTok, and `REEL_PUBLISH_CROSSPOST=""` turns TikTok off. The task passes `--networks`, `--trial-copy` and `--trial-planner` (or `--trial-copy-failed`) to `done`, so the receipt says what went out.
 
 By hand: `node scripts/publish-folder.mjs scan` shows what is next; `serve`, `stop`, `done`, `fail` and `slot` are the steps the task runs. `scripts/publish.mjs` (the older review hand-off) needs a public link of your own.
 

@@ -7,13 +7,14 @@
  *
  * writes <work dir>/post.json (caption, hashtags, flags) and, with --media-url, runs Claude Code headless with ONLY the
  * Metricool "create post for review" tool allowed to schedule it for review. Without a URL it stops after post.json
- * and prints the hand-off. Reels with AI stills carry isAiGenerated=true, as Instagram requires.
+ * and prints the hand-off. Reels with AI B-roll or an AI voice carry isAiGenerated=true, as Instagram requires.
  * Needs the Claude Code CLI signed in and the Metricool connector on claude.ai.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { isMain } from "../src/util.mjs";
+import { aiLabel } from "../src/ai-label.mjs";
 
 const TOOL = "mcp__claude_ai_metricool__createScheduledPostForReview";
 const SETTINGS = "mcp__claude_ai_metricool__getBrandSettings";
@@ -24,7 +25,7 @@ export function buildPost(workDir, { mediaUrl = "", date = "", trial = false } =
   let caption = null;
   try { caption = JSON.parse(fs.readFileSync(path.join(workDir, "caption.json"), "utf8")); } catch {}
   const text = caption ? [caption.caption, "", (caption.hashtags || []).slice(0, 5).join(" ")].join("\n").trim() : (plan.hook?.text || plan.name);
-  const ai = !!(plan.broll && plan.broll.length);
+  const ai = aiLabel(plan);
   return {
     text,
     hook: plan.hook?.text || "",
@@ -32,7 +33,7 @@ export function buildPost(workDir, { mediaUrl = "", date = "", trial = false } =
     date,
     instagramType: trial ? "TRIAL_REEL" : "REEL",
     isAiGenerated: ai,
-    aiNote: ai ? "This reel has AI-generated b-roll stills, so the post is flagged as AI-altered (Instagram's disclosure rule)." : "",
+    aiNote: ai ? "This reel has AI-generated b-roll or an AI voice, so the post is flagged as AI-altered (Instagram's disclosure rule)." : "",
     coverMs: Math.round(plan.cover?.frameTimeMs ?? ((plan.hook?.start ?? 0) + 0.5) * 1000),
   };
 }

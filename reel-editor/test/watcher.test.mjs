@@ -106,7 +106,7 @@ test("each reel gets a brand-new '<date> Reel <n>' folder without listing the pa
 
 // Full drops with stand-ins for reel, codex and osascript: one clip in each drop folder, through the real
 // watch-folder.sh and watch-reel.sh.
-function fakeDrops({ brollShots = 2, brollNote = null, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null, master = {}, env = {} } = {}) {
+function fakeDrops({ brollShots = 2, brollSource = null, brollNote = null, brollEngine, carouselFails = false, music = [], clips = { reel: ["clip.mov"], broll: ["clip.mov"], carousel: ["clip.mov"] }, evidence = {}, longClips = 2, caption = null, master = {}, env = {} } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reel-home-"));
   const bin = path.join(home, ".local", "bin");
   fs.mkdirSync(bin, { recursive: true });
@@ -137,7 +137,7 @@ case "$*" in *--music-dir*) all="$*"; d="\${all#*--music-dir }"; d="\${d%% *}"; 
 files=""
 case "$*" in *--broll*)
   ${brollNote ? `printf '%s\\n' '${brollNote}' > "$work/No b-roll this time.txt"` : ""}
-  i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"},"; i=$((i + 1)); done;;
+  i=1; while [ $i -le ${brollShots} ]; do echo img$i > "$work/broll/broll-$i.png"; files="$files{\\"file\\":\\"$work/broll/broll-$i.png\\"${brollSource ? `,\\"source\\":\\"${brollSource}\\"` : ""}},"; i=$((i + 1)); done;;
 esac
 echo "{\\"hook\\":{\\"text\\":\\"Own it first\\"},\\"style\\":{\\"name\\":\\"pingel-brand\\"},\\"captions\\":[{\\"text\\":\\"Own it first. Nobody is coming.\\"}],\\"cover\\":{\\"frameTimeMs\\":1733},\\"broll\\":[\${files%,}]}" > "$work/plan.json"
 echo '{"performance":{}}' > "$work/analytics-features.json"
@@ -167,6 +167,11 @@ esac`);
   return { home, day, done, dirs, list, read, top: fs.readdirSync(done).filter((f) => !f.startsWith(".")).sort(), calls: fs.readFileSync(path.join(home, "reel-calls"), "utf8"), seen: fs.readdirSync(path.join(home, "Reels", "videos", ".seen")).filter((f) => !f.startsWith(".")).sort() };
 }
 
+test("stock-only B-roll reaches publishing without the AI label", () => {
+  const r = fakeDrops({ brollShots: 2, brollSource: "pixabay" });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(r.done, `${r.day} Reel 2 with B-roll`, ".reel.json"), "utf8")).isAiGenerated, false);
+});
+
 test("each drop folder makes its own thing: reel, reel with b-roll, carousel", () => {
   const r = fakeDrops({ brollShots: 2 });
   assert.deepEqual(r.top, [`${r.day} Carousel 1`, `${r.day} Reel 1`, `${r.day} Reel 2 with B-roll`]);
@@ -178,6 +183,9 @@ test("each drop folder makes its own thing: reel, reel with b-roll, carousel", (
   assert.deepEqual(r.list(`${r.day} Carousel 1`), ["Slide 1.png"]);
   assert.ok(fs.existsSync(path.join(r.done, `${r.day} Reel 1`, ".reel-features.json")));
   assert.equal(JSON.parse(fs.readFileSync(path.join(r.done, `${r.day} Reel 1`, ".reel.json"), "utf8")).coverMs, 1733, "the scored frame time reaches publishing metadata");
+  const label = (name) => JSON.parse(fs.readFileSync(path.join(r.done, name, ".reel.json"), "utf8")).isAiGenerated;
+  assert.equal(label(`${r.day} Reel 1`), false, "no B-roll: no AI label");
+  assert.equal(label(`${r.day} Reel 2 with B-roll`), true, "B-roll stills with no source on record keep the AI label");
   // The plain reel never asks for b-roll; the carousel never renders a reel.
   const lines = r.calls.trim().split("\n");
   assert.match(lines.find((l) => l.includes("raw-broll/clip.mov")), /--broll-engine codex/, "Greg's B-roll folder draws with Codex");

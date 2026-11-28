@@ -45,6 +45,16 @@ test("publish post takes the scored cover time from plan.json", () => {
   assert.equal(coverMilliseconds({ coverMs: 1733.4 }), 1733);
 });
 
+test("publish post: the AI label follows the B-roll's source and the AI voice", () => {
+  const work = tmp(), post = (plan) => { fs.writeFileSync(path.join(work, "plan.json"), JSON.stringify({ name: "t", hook: { text: "Own it" }, broll: [], ...plan })); return buildPost(work); };
+  assert.equal(post({ broll: [{ source: "pixabay", licence: { provider: "pixabay" } }] }).isAiGenerated, false, "stock B-roll is real footage");
+  assert.equal(post({ broll: [{ source: "own" }] }).isAiGenerated, false, "the owner's own clips are real footage");
+  assert.equal(post({ broll: [{ stillSource: "codex" }] }).isAiGenerated, true);
+  const voice = post({ aiVoice: true });
+  assert.equal(voice.isAiGenerated, true, "an AI voice earns the label");
+  assert.match(voice.aiNote, /AI voice/);
+});
+
 test("items: a reel folder, a loose video with its caption, the check-note gate, and a file still copying", () => {
   const root = tmp();
   const a = path.join(root, "2026-10-22 Reel 8 with Runway");
