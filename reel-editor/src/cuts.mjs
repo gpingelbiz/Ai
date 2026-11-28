@@ -92,7 +92,18 @@ export function findBadTakes(words, { minPhrase = 3, maxPhrase = 8, maxTail = 5,
   }
   for (let m = 0; m + 1 < toks.length; m++) {
     // A cut-off word ("W-", "o-") is always a false start; the next word can come after a breath (1.02 s at 0:20 of the jungle reel).
-    if (/[-–—]$/.test(String(words[m].text).trim()) && words[m + 1].start - words[m].end <= 1.5) drop[m] = "stutter";
+    if (/[-–—]$/.test(String(words[m].text).trim()) && words[m + 1].start - words[m].end <= 1.5) {
+      drop[m] = "stutter";
+      // The restart often repeats the words just before the cut-off one ("What this-- What I mean", IMG_4766 clip 4
+      // kept "What What"): those 1-3 words are part of the abandoned take too, unless a clause ends between them.
+      for (let k = Math.min(3, m); k >= 1; k--) {
+        const before = toks.slice(m - k, m), after = toks.slice(m + 1, m + 1 + k);
+        if (after.length < k || before.some((t, n) => t !== after[n])) continue;
+        if (words.slice(m - k, m).some((w) => endsClause(w.text))) continue;
+        for (let n = m - k; n < m; n++) drop[n] = "bad-take";
+        break;
+      }
+    }
   }
   let i = 0;
   while (i < toks.length) {
