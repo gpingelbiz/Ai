@@ -266,3 +266,15 @@ test("words nobody can hear are dropped, quiet real speech stays", async () => {
   // No envelope, nothing changes.
   assert.equal(dropInaudibleWords(words, null).dropped.length, 0);
 });
+
+test("a cut-off word takes the words before it with it when the restart repeats them (no 'What What')", () => {
+  const ws = "Build a minimum effective day. What this-- What I mean by this is just the smallest version".split(" ").map((text, i) => ({ text, start: i * 0.3, end: i * 0.3 + 0.2 }));
+  const drop = findBadTakes(ws);
+  const kept = ws.filter((w, i) => !drop[i]).map((w) => w.text).join(" ");
+  assert.equal(kept, "Build a minimum effective day. What I mean by this is just the smallest version");
+  const two = "I was gon- I was going to call".split(" ").map((text, i) => ({ text, start: i * 0.3, end: i * 0.3 + 0.2 }));
+  assert.equal(two.filter((w, i) => !findBadTakes(two)[i]).map((w) => w.text).join(" "), "I was going to call");
+  // A finished clause before the cut-off word stays: "Stop. St- Stop now" keeps the first sentence.
+  const clause = "Stop. St- Stop now".split(" ").map((text, i) => ({ text, start: i * 0.3, end: i * 0.3 + 0.2 }));
+  assert.equal(clause.filter((w, i) => !findBadTakes(clause)[i]).map((w) => w.text).join(" "), "Stop. Stop now");
+});

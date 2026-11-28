@@ -6,11 +6,17 @@ const metricHint = "Greg first names a measurable sales metric and then gives a 
 const numeric = proof["kpi-tile"].slots.value.validate;
 const compactValue = (text) => numeric(text) || /^\$?\d+(?:\.\d+)?[KMB][.!?]?$/i.test(text);
 
+// Anton advances in em (the same table herk-klabel checks figures against), including its wide percent glyph.
+const antonWidth = (text, size) => size * [...text].reduce((total, glyph) => total +
+  (glyph === "%" ? 1.07 : /[mwMW–—]/.test(glyph) ? 0.81 : /[ilI., ]/.test(glyph) ? 0.27 : /[fjt!]/.test(glyph) ? 0.33 :
+    /[+×-]/.test(glyph) ? 0.37 : /[rsyz]/.test(glyph) ? 0.49 : 0.53), 0);
+
 // The planner sees the group's longest budget. Only use designs that can fit the value at 96 px.
-function metricValue(width, validate) {
+// `limit` keeps a design's character cap (wider counts switch designs); the Anton check proves the value fits.
+function metricValue(width, validate, limit = Math.floor(width / (96 * 0.95))) {
   const size = 96;
-  const limit = Math.floor(width / (size * 0.95));
-  return { kind: "spoken", maxChars: 7, width, size, maxLines: 1, validate: (text) => text.length <= limit && validate(text) };
+  return { kind: "spoken", maxChars: 7, width, size, maxLines: 1,
+    validate: (text) => text.length <= limit && antonWidth(text, size) <= width && validate(text) };
 }
 
 function enter(h, selector, from, to, at) {
@@ -85,7 +91,7 @@ export const CARDS = {
     tags: ["number"],
     hint: metricHint,
     source: "herk:kallaway.t2.lower-third.statline",
-    slots: { metric: spoken(26, 192, 2), value: metricValue(456, compactValue) },
+    slots: { metric: spoken(26, 260, 2), value: metricValue(388, compactValue, 5) }, // metric room for "Objections"; values keep the old 5-character cap (Nov 27)
     size: { w: 720, h: 176 },
     surface: "obsidian",
     render(o, h) {
@@ -100,7 +106,7 @@ export const CARDS = {
       return { inner, timeline };
     },
     css: `
-      .pro-metric-stat-chip { display:grid;grid-template-columns:192px 2px 468px;gap:10px;align-items:center;padding:20px 19px;background:#0B0B0D; }
+      .pro-metric-stat-chip { display:grid;grid-template-columns:260px 2px 400px;gap:10px;align-items:center;padding:20px 19px;background:#0B0B0D; }
       .pro-metric-stat-chip .kl-metric { color:#F5F1E8;font:700 52px/56px "Inter",sans-serif;opacity:0; }
       .pro-metric-stat-chip .kl-divider { height:80px;background:#C8A24B;transform:scaleY(0);transform-origin:center top; }
       .pro-metric-stat-chip .kl-chip { padding:4px 6px;border-radius:52px;background:#C8A24B;color:#0B0B0D;text-align:center;opacity:0; }
@@ -177,7 +183,7 @@ export const CARDS = {
     tags: ["title", "quote"],
     hint: "Greg names a short sales topic and immediately makes a self-contained headline-worthy claim about it; use the spoken topic and claim in that order",
     source: "herk:kallaway.t2.lower-third.ticker",
-    slots: { topic: spoken(18, 180, 2), headline: spoken(52, 468, 3) },
+    slots: { topic: spoken(18, 260, 2), headline: spoken(52, 388, 3) }, // topic room for a word like "Objections" (Nov 27)
     size: { w: 720, h: 216 },
     surface: "obsidian",
     render(o, h) {
@@ -190,10 +196,10 @@ export const CARDS = {
       return { inner, timeline };
     },
     css: `
-      .pro-headline-ticker { display:grid;grid-template-columns:204px 1fr;padding:0;background:#0B0B0D; }
+      .pro-headline-ticker { display:grid;grid-template-columns:284px 1fr;padding:0;background:#0B0B0D; }
       .pro-headline-ticker .kl-flag { display:grid;place-items:center;padding:12px;background:#C8A24B;color:#0B0B0D; }
       .pro-headline-ticker .kl-topic { text-align:center;font:800 52px/58px "Inter",sans-serif;opacity:0; }
       .pro-headline-ticker .kl-track { display:flex;align-items:center;padding:12px 24px;overflow:hidden; }
-      .pro-headline-ticker .kl-headline { width:468px;font:400 52px/60px "Anton",sans-serif;opacity:0; }`,
+      .pro-headline-ticker .kl-headline { width:388px;font:400 52px/60px "Anton",sans-serif;opacity:0; }`,
   },
 };
