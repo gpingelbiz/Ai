@@ -36,7 +36,7 @@ export function shotModels(pick, settings = {}) {
 /** Selection and field meanings shared by both first-frame engines. */
 export const PICKS_RULES = `Choose only moments where a picture makes these exact words clearer,
 demonstrates something useful or completes the joke.
-Preserve Greg's reactions, conviction, personal admissions and final
+Preserve the speaker's reactions, conviction, personal admissions and final
 instruction. Respect the supplied hook boundaries.
 
 Every scene comes from this reel's words or its own established setting.
@@ -49,7 +49,7 @@ endsAt: {line, wordIndex, text} identifies the LAST payoff word of the spoken id
 Use zero-based wordIndex within that caption line; text is that exact word.
 endsBefore: {line, wordIndex, text} identifies the first unrelated word, exclusive.
 Both boundaries must come from the supplied timed words. Include the whole payoff,
-for example coconut just hits me in the head, then return to Greg.
+for example coconut just hits me in the head, then return to the speaker.
 sequenceGroup: Optional shared name ONLY for a rapid list of at least three named images,
 such as a snake, an ape, a lion. Use 0.8–1.2 second shots and gap 0 inside that list.
 Otherwise omit sequenceGroup and use the ordinary duration and spacing.
@@ -136,7 +136,7 @@ self-harm and death associations.
 Judge the picture together with overlapping and neighbouring words.
 For dangerous spoken actions, choose harmless behaviour by the SAME
 named subject only when the combined reading stays safe.
-Otherwise leave Greg visible. Never substitute an unrelated object.
+Otherwise leave the speaker visible. Never substitute an unrelated object.
 
 Use one physical event, one location and one camera instruction.
 Keep the assembled Runway prompts under 1,000 JavaScript string units.`;
@@ -144,7 +144,7 @@ Keep the assembled Runway prompts under 1,000 JavaScript string units.`;
 export const PICKS_REPLY = '{"picks":[{"endsAt":{"line":N,"wordIndex":I,"text":"..."},"endsBefore":{"line":N,"wordIndex":I,"text":"..."},"need":"...","line":N,"shows":"...","duration":S,"kind":"action","scene":"...","endScene":"...","action":"...","motion":"...","soundRole":"impact","sound":"..."}]}';
 
 export function runwayPicksPrompt({ candidates, transcript, hook, count, spacing = 8, style = "", recent = [], duration = 2.4, world = "", instructions = "Reply with JSON only. Use no tools.", reply = PICKS_REPLY }) {
-  return `You are choosing short moving cutaways for Greg's talking-head reel.
+  return `You are choosing short moving cutaways for a talking-head reel.
 ${instructions}
 
 Read the whole passage first. Understand its story, setting, analogy,

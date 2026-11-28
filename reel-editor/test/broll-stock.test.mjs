@@ -423,7 +423,7 @@ test("both moving-footage prompts preserve recent named subjects and vary only t
     assert.match(text, /same subject from a different angle, setting or action/);
     assert.match(text, /10-reel exclusion applies per clip, never per subject/);
     for (const scene of recent) assert.ok(text.includes(scene));
-    assert.doesNotMatch(text, /choose a different relevant event or leave Greg visible|pick something clearly different/);
+    assert.doesNotMatch(text, /choose a different relevant event or leave (Greg|the speaker) visible|pick something clearly different/);
   }
 });
 
