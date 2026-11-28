@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { probe } from "./probe.mjs";
 import { transcribe, importTranscript, applyCorrections } from "./transcribe.mjs";
-import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking, dropInaudibleWords } from "./cuts.mjs";
+import { planCuts, applyCuts, remapWords, audioEnvelope, guardSilenceCuts, snapSegments, findRoomTone, remapEnvelope, mostlyNotTalking, dropInaudibleWords, removeRanges } from "./cuts.mjs";
 import { resolveEndingOverride, endingMetadata, endAfterPhrase } from "./ending.mjs";
 import { studioVoice, describeStudio, STUDIO_CHAIN } from "./studio.mjs";
 import { fixWords, describeFix } from "./correct.mjs";
@@ -19,7 +19,8 @@ import { resolveEngine, secondEngine, compareTranscripts, writeReview } from "./
 import { planPlacements, reframeDetection, placeCard } from "./frame-place.mjs";
 import { detectFaces, headExtent, headSpanX, placeHook, placeCaptions, zoomDuring, captionsRepeatingHook, faceBox, baseFraming, hookBlockHeight, fitBlockHook, placeProgressRail, placeCredentialLowerThird, cardHeadTop, headBoxFor } from "./placement.mjs";
 import { groupWords, markKeywords, hookWords } from "./captions.mjs";
-import { pickHook, pickCta, autoCta, hookSeconds, plaqueLayout, sidePlaqueLayout, planProHook, proCaptionsUnderHook } from "./hook.mjs";
+import { pickHook, pickCta, autoCta, hookSeconds, plaqueLayout, sidePlaqueLayout, planProHook, proCaptionsUnderHook, autoHookText } from "./hook.mjs";
+import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { makePremise, premiseDuckSchedule, premiseGeometry } from "./premise.mjs";
 import { makeTimeLabels, timeLabelGeometry } from "./time-labels.mjs";
 import { planZooms, planCadence } from "./zooms.mjs";
@@ -267,6 +268,11 @@ export async function runEdit(input, opts = {}, deps = {}) {
     if (guarded.restored) log(`audio check: kept sound in ${guarded.restored} cut${guarded.restored === 1 ? "" : "s"} the transcript timing would have clipped`);
     if (guarded.noisy) warn("audio check: the room is noisy (fan, AC, traffic?), so most silence cuts were kept; the reel will run longer. A quieter room or --silence off avoids this");
   }
+  // The master gate found dead air (a no-word stretch over 2 s): this edit cuts it (runEdit's gate retry below).
+  if (cutsOn && opts.cutGaps?.length) {
+    cuts = removeRanges(cuts, opts.cutGaps, "dead-air");
+    log(`cuts: ${opts.cutGaps.length} no-word stretch${opts.cutGaps.length === 1 ? "" : "es"} the master gate found taken out`);
+  }
   if (sourceScenes && endingOverride != null) cuts = endSceneCuts(cuts, sourceScenes, endingOverride, meta.duration);
   if (cutsOn) {
     // Frame-aligned edges keep video and audio cutting at the same instants (no lip-sync drift over many cuts).
@@ -333,9 +339,18 @@ export async function runEdit(input, opts = {}, deps = {}) {
     : markKeywords(groupWords(cleanWords, duration, { ...preset.captions, protectedPhrases }), dict, { maxPerLine: preset.captions.maxKeywordsPerLine, auto: !!preset.captions.autoKeywords });
   if (preset.captions.pro) for (const group of groups.filter((g) => g.flags?.includes("short-cue"))) warn(`pro captions: cue under 500 ms at ${group.start}s: ${group.text}`);
   const showCaptions = !!preset.captions.enabled;
+  // No hook given (a clip that was already cut, a raw drop): the opening line when it is a complete thought, else a
+  // hook written the way `reel clips` writes them. Cutting the first words at a count made "...is, who" (Nov 27).
+  let hookText = opts.hook;
+  if (preset.hook.enabled && !hookText && !opts.noAutoHook) {
+    const auto = await autoHookText(cleanWords, { maxWords: preset.hook.pro ? 12 : preset.hook.maxWords || 8, cache: path.join(workDir, "hook-written.json"), fsx: fs, voice: readVoice({ style: preset }),
+      // Tests never reach Claude: they inject deps.askHook, and node --test sets NODE_TEST_CONTEXT.
+      ask: deps.askHook || (!process.env.NODE_TEST_CONTEXT && hasClaude() ? async (prompt) => firstJSON(await claudeText(prompt, { timeoutMs: 120000 })) : null) });
+    if (auto) { hookText = auto.text; log(`hook: ${auto.source}: "${auto.text.replace(/\*/g, "")}"`); }
+  }
   let hook = preset.hook.enabled ? (preset.hook.pro
-    ? planProHook(cleanWords, { text: opts.hook, duration: preset.hook.duration, reelDuration: duration, measure: loadProMeasure(fontFile(preset, "Anton-Regular.ttf"), { size: 108, weight: 400, tracking: 0 }) })
-    : pickHook(cleanWords, { text: opts.hook, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) })) : null;
+    ? planProHook(cleanWords, { text: hookText, duration: preset.hook.duration, reelDuration: duration, measure: loadProMeasure(fontFile(preset, "Anton-Regular.ttf"), { size: 108, weight: 400, tracking: 0 }) })
+    : pickHook(cleanWords, { text: hookText, maxWords: preset.hook.maxWords, duration: hookSeconds(preset.hook.duration, duration) })) : null;
   if (hook && !preset.hook.pro) Object.assign(hook, hookWords(hook.text, dict));
   if (hook && cleanScenes) hook.duration = Math.min(hook.duration, cleanScenes[0].end - hook.start);
   let zooms = []; // planned after the cards and cutaways are known, so punch-ins never land under them
@@ -1123,6 +1138,11 @@ export async function runEdit(input, opts = {}, deps = {}) {
       log(`master gate: the ending cut the spoken ask; editing again to end after "${gateNow.retry.endAfter}"`);
       return runEdit(input, { ...opts, endAfter: gateNow.retry.endAfter, gateRetry: true }, deps);
     }
+  }
+  // Dead air the gate found (Greg reading the chat between lines): edit once more with those stretches cut.
+  if (gateNow?.retry?.cutGaps?.length && !opts.noCuts && !opts.gateRetryGaps) {
+    log(`master gate: ${gateNow.retry.cutGaps.length} stretch${gateNow.retry.cutGaps.length === 1 ? "" : "es"} with no words over 2 s; editing again with ${gateNow.retry.cutGaps.length === 1 ? "it" : "them"} cut`);
+    return runEdit(input, { ...opts, cutGaps: [...(opts.cutGaps || []), ...gateNow.retry.cutGaps], gateRetryGaps: true }, deps);
   }
   let cover = null;
   if (preset.cover?.enabled !== false && hook) {

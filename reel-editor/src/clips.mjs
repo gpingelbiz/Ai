@@ -11,7 +11,7 @@ import { log, warn, readJSON, writeJSON, ensureDir, run, r3, slug } from "./util
 import { reframeClip, describeLayout } from "./speakers.mjs";
 import { audioEnvelope } from "./cuts.mjs";
 import { snapClipWindows } from "./reel-edges.mjs";
-import { sentenceLines, lineEnergy, cutPoints, momentsPrompt, region, askEdges, resolveClips, describeEdges } from "./moments.mjs";
+import { sentenceLines, lineEnergy, cutPoints, momentsPrompt, region, askEdges, resolveClips, describeEdges, shapeRegion, askShapes, resolveShapes, SHAPE_RULES } from "./moments.mjs";
 
 /**
  * One long video (a live, a training, a podcast) into several reels. The whole thing is transcribed once, headless
@@ -75,6 +75,28 @@ export function sliceWords(words, start, end) {
   return words.filter((w) => w.start >= start && w.end <= end).map((w) => ({ ...w, start: r3(w.start - start), end: r3(w.end - start) }));
 }
 
+/** The words of a clip made of kept ranges, in clip time (each range follows the one before it). */
+export function keepWords(words, keeps) {
+  let offset = 0;
+  const out = [];
+  for (const k of keeps) {
+    out.push(...sliceWords(words, k.start, k.end).map((w) => ({ ...w, start: r3(w.start + offset), end: r3(w.end + offset) })));
+    offset += k.end - k.start;
+  }
+  return out;
+}
+
+/** ffmpeg arguments that cut kept ranges out of the source and join them, with 30/40 ms audio fades at every join. */
+export function keepsArgs(input, keeps, out, { encoder = process.platform === "darwin" ? ["-c:v", "h264_videotoolbox", "-q:v", "75"] : ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18"] } = {}) {
+  const ins = keeps.flatMap((k) => ["-ss", String(k.start), "-t", String(r3(k.end - k.start)), "-i", input]);
+  const parts = keeps.map((k, i) => {
+    const d = r3(k.end - k.start);
+    return `[${i}:v]setpts=PTS-STARTPTS[v${i}];[${i}:a]asetpts=PTS-STARTPTS,afade=t=in:d=0.03,afade=t=out:st=${r3(Math.max(0, d - 0.04))}:d=0.04[a${i}]`;
+  });
+  const join = `${keeps.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${keeps.length}:v=1:a=1[v][a]`;
+  return ["-y", "-loglevel", "error", ...ins, "-filter_complex", `${parts.join(";")};${join}`, "-map", "[v]", "-map", "[a]", ...encoder, "-c:a", "aac", "-b:a", "192k", out];
+}
+
 export async function makeClips(input, opts = {}) {
   input = path.resolve(input);
   if (!fs.existsSync(input)) throw new Error(`no such file: ${input}`);
@@ -115,9 +137,12 @@ export async function makeClips(input, opts = {}) {
     if (opts.picker === "legacy") {
       const reply = await claudeText(clipsPrompt({ words, duration: meta.duration, count, voice }), { timeoutMs: 300000 });
       clips = tidyWindows(firstJSON(reply).clips, words, meta.duration);
-    } else clips = await pickCleanEdges({ input, words, duration: meta.duration, count, voice, workDir });
+    } else if (opts.picker === "edges") clips = await pickCleanEdges({ input, words, duration: meta.duration, count, voice, workDir });
+    else clips = await pickShapes({ input, words, duration: meta.duration, count, voice, workDir });
   }
-  clips = snapClipWindows(clips, words, meta.duration);
+  // A shaped clip's ranges already sit on word boundaries; a one-window clip is snapped to whole sentences.
+  const shaped = clips.filter((c) => c.keeps?.length);
+  clips = [...shaped, ...snapClipWindows(clips.filter((c) => !c.keeps?.length), words, meta.duration)];
   if (!clips.length) throw new Error("no usable windows with complete sentence edges were found");
   writeJSON(clipsPath, { source: input, clips });
   log(`clips: ${clips.length} window${clips.length === 1 ? "" : "s"}${clips.map((c) => `\n  ${c.score}  ${fmt(c.start)}-${fmt(c.end)}  "${c.hook}"  ${c.why}${c.problems ? `\n       ${describeEdges(c)}` : ""}`).join("")}`);
@@ -131,18 +156,20 @@ export async function makeClips(input, opts = {}) {
     const src = path.join(dir, "source.mp4");
     const cutPath = path.join(dir, "source-window.json");
     const sourceStat = fs.statSync(input);
-    const cut = { input, size: sourceStat.size, mtime: sourceStat.mtimeMs, start: c.start, end: c.end };
+    const multi = c.keeps?.length > 1;
+    const cut = { input, size: sourceStat.size, mtime: sourceStat.mtimeMs, start: c.start, end: c.end, ...(c.keeps?.length ? { keeps: c.keeps } : {}) };
     let previous;
     try { previous = readJSON(cutPath); } catch {}
     const recut = !fs.existsSync(src) || opts.force || JSON.stringify(cut) !== JSON.stringify(previous);
     if (recut) {
       fs.rmSync(cutPath, { force: true });
       fs.rmSync(path.join(dir, "source-portrait.mp4"), { force: true });
-      log(`clip ${i + 1}: cutting ${fmt(c.start)}-${fmt(c.end)}…`);
-      await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(c.start), "-to", String(c.end), "-i", input, "-c:v", process.platform === "darwin" ? "h264_videotoolbox" : "libx264", ...(process.platform === "darwin" ? ["-q:v", "75"] : ["-preset", "veryfast", "-crf", "16"]), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", src], { quiet: true });
+      log(multi ? `clip ${i + 1}: cutting ${c.keeps.length} kept ranges (${c.keeps.map((k) => `${fmt(k.start)}-${fmt(k.end)}`).join(", ")})${c.lifted ? ", the claim line first" : ""}…` : `clip ${i + 1}: cutting ${fmt(c.start)}-${fmt(c.end)}…`);
+      if (multi) await run("ffmpeg", keepsArgs(input, c.keeps, src));
+      else await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(c.start), "-to", String(c.end), "-i", input, "-c:v", process.platform === "darwin" ? "h264_videotoolbox" : "libx264", ...(process.platform === "darwin" ? ["-q:v", "75"] : ["-preset", "veryfast", "-crf", "16"]), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", src], { quiet: true });
       writeJSON(cutPath, cut);
     }
-    const clipWords = sliceWords(words, c.start, c.end);
+    const clipWords = multi ? keepWords(words, c.keeps) : sliceWords(words, c.start, c.end);
     // Wide footage (a podcast, an interview, a screen recording) becomes a portrait source that follows whoever is
     // talking, cuts on the turn and splits the screen when two people trade lines; a portrait clip is used as is.
     let editSrc = src;
@@ -163,7 +190,7 @@ export async function makeClips(input, opts = {}) {
     const tPath = path.join(dir, "transcript.json");
     writeJSON(tPath, { source: editSrc, words: clipWords });
     try {
-      const r = await runEdit(editSrc, { ...opts, out: path.join(dir, "edit"), title: `${name}-${i + 1}`, transcript: tPath, clipSource: { input, start: c.start, end: c.end, snapped: !!c.snapped }, hook: opts.autoHook ? undefined : c.hook || undefined, force: false, count: undefined, planOnly: undefined });
+      const r = await runEdit(editSrc, { ...opts, out: path.join(dir, "edit"), title: `${name}-${i + 1}`, transcript: tPath, clipSource: { input, start: c.start, end: c.end, snapped: !!c.snapped, ...(multi ? { keeps: c.keeps } : {}) }, hook: opts.autoHook ? undefined : c.hook || undefined, force: false, count: undefined, planOnly: undefined });
       results.push({ ...c, output: r.output, workDir: r.workDir });
     } catch (e) {
       warn(`clip ${i + 1} failed: ${String(e.message).split("\n")[0]}`);
@@ -201,6 +228,34 @@ async function pickCleanEdges({ input, words, duration, count, voice, workDir })
   log(`clips: ${clips.length} clip${clips.length === 1 ? "" : "s"} (${clips.filter((c) => !c.problems.length).length} with clean edges)${dropped.length ? `; dropped ${dropped.length}: ${dropped.map((d) => `"${d.hook}" (${d.why})`).join(", ")}` : ""}`);
   // The raw picks, for tracing a bad clip back to its moment and edges.
   writeJSON(path.join(workDir, "clips-picker.json"), { moments, edges, dropped, lines: lines.length });
+  return clips;
+}
+
+/**
+ * The shaped picker (src/moments.mjs, Herk's long-to-short rules): Claude finds the moments, then shapes each one
+ * (lead, body, lines to leave out, payoff) by line label; code builds up to three kept ranges, enforces the hard rules
+ * (no opener that refers back or reads the chat, the payoff inside, 35-60 s) and drops what fails. Two Claude calls.
+ */
+async function pickShapes({ input, words, duration, count, voice, workDir }) {
+  const lines = sentenceLines(words);
+  let energy = [];
+  try { energy = lineEnergy(lines, await audioEnvelope(input)); } catch {}
+  log(`clips: ${lines.length} lines, ${energy.filter((e) => e.tag).length} with raised energy; Claude is finding the moments…`);
+  const r1 = firstJSON(await claudeText(momentsPrompt({ lines, energy, count, duration, voice, minLen: SHAPE_RULES.min, maxLen: SHAPE_RULES.max }), { timeoutMs: 600000 }));
+  const moments = (r1.moments || []).filter((m) => lines.some((l) => l.id === m.anchor)).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, count * 3);
+  if (!moments.length) throw new Error("Claude found no moments with a valid line label");
+  const regions = moments.map((m) => shapeRegion(lines, m.anchor));
+  const usable = regions.filter(Boolean);
+  log(`clips: ${moments.length} moments; Claude is shaping each one (claim first, the body in order, the payoff inside)…`);
+  const r2 = await askShapes(usable, async (prompt) => firstJSON(await claudeText(prompt, { timeoutMs: 600000 })), {
+    onFail: (e, from, to) => warn(`clips: Claude gave no shapes for moments ${from}-${to} (${e.message}); those are dropped`),
+  });
+  const order = regions.map((r, k) => (r ? k : -1)).filter((k) => k >= 0);
+  const shapes = r2.map((e) => ({ ...e, region: order[Number(e.region) - 1] + 1 }));
+  const dropped = [];
+  const clips = resolveShapes({ moments, regions, shapes, lines, words, count, dropped });
+  log(`clips: ${clips.length} shaped clip${clips.length === 1 ? "" : "s"} (${clips.filter((c) => c.lifted).length} with the claim moved first, ${clips.filter((c) => c.keeps.length > 1).length} from more than one range)${dropped.length ? `; dropped ${dropped.length}: ${dropped.map((d) => `"${d.hook}" (${d.why})`).join(", ")}` : ""}`);
+  writeJSON(path.join(workDir, "clips-picker.json"), { picker: "shaped", moments, shapes, dropped, lines: lines.length });
   return clips;
 }
 

@@ -162,3 +162,69 @@ export function pickCta(duration, { text, last = 3, start = null, duration: dur 
   const clean = cleanHook(text);
   return { text: uppercase ? clean.toUpperCase() : clean, start: Math.round(s * 1000) / 1000, duration: Math.round(Math.min(d, duration - s) * 1000) / 1000, style, position };
 }
+
+// Words a title may never end on: they leave the thought hanging ("...is, who", "...to prospect, follow up").
+const DANGLING = /^(a|an|the|to|of|in|on|at|for|with|from|by|and|or|but|so|that|which|who|what|when|is|are|was|were|be|your|my|our|their|his|her|its|not|if|because|than|isn'?t|aren'?t|wasn'?t|weren'?t|don'?t|doesn'?t|didn'?t|won'?t|can'?t|cannot)$/i;
+const sentenceStop = (t) => /[.!?]["'”’)]*$/.test(String(t).trim());
+
+/**
+ * The opening line as the hook, only when it is a complete thought: the first sentence, 3 to `maxWords` words.
+ * Null when the first sentence runs longer (cutting it at a word count is what made "...is, who" hooks on clips
+ * that were already cut, Nov 27) or does not finish inside the first 8 s.
+ */
+export function openingHook(words = [], { maxWords = 12, within = 8 } = {}) {
+  const picked = [];
+  for (const w of words) {
+    if (w.drop) continue;
+    if (Number(w.start) > within) return null;
+    picked.push(String(w.text).trim());
+    if (sentenceStop(w.text)) break;
+    if (picked.length > maxWords) return null;
+  }
+  if (picked.length < 3 || picked.length > maxWords || !sentenceStop(picked.at(-1))) return null;
+  return cleanHook(picked.join(" "));
+}
+
+/** A written hook passes when it is a complete thought: 3 to 10 words, no trailing comma or dangling word. */
+export function goodHook(text) {
+  const t = String(text || "").replace(/\*/g, "").trim();
+  const ws = t.split(/\s+/).filter(Boolean);
+  if (ws.length < 3 || ws.length > 10 || /[,;:\-–—]$/.test(t)) return false;
+  return !DANGLING.test(ws.at(-1).replace(/[’‘]/g, "'").replace(/[^\p{L}']/gu, ""));
+}
+
+/** The prompt the clip picker's hooks follow (src/clips.mjs), for one reel's opening. */
+export function hookPrompt(words = [], { voice = "" } = {}) {
+  const opening = words.filter((w) => !w.drop && Number(w.start) < 25).map((w) => w.text).join(" ");
+  return [
+    "Write the on-screen hook for an Instagram reel from what the speaker says at the start. Reply with JSON only; use no tools.",
+    "Rules: 4-8 words; true to what is said (his claim, in his words where you can); a complete thought that never ends on a comma or a dangling word; the key phrase in *asterisks*; no emoji, no dashes, no quotes.",
+    voice ? `Voice:\n${voice.trim()}` : "",
+    `Opening: ${opening}`,
+    'Reply: {"hook":"..."}',
+  ].filter(Boolean).join("\n");
+}
+
+/**
+ * The hook text for a reel given none: the opening line when it is a complete thought, else a hook written the way
+ * `reel clips` writes them (ask = Claude). Cached per opening in `cache` (a file path), so a rebuild never asks again.
+ * Returns null when neither works (the caller keeps its old behaviour).
+ */
+export async function autoHookText(words = [], { maxWords = 12, ask = null, cache = null, voice = "", fsx = null } = {}) {
+  const spoken = openingHook(words, { maxWords });
+  if (spoken) return { text: spoken, source: "opening line" };
+  if (!ask) return null;
+  const key = words.filter((w) => !w.drop).slice(0, 60).map((w) => w.text).join(" ");
+  if (cache && fsx?.existsSync(cache)) {
+    try { const saved = JSON.parse(fsx.readFileSync(cache, "utf8")); if (saved.key === key && goodHook(saved.hook)) return { text: saved.hook, source: "written (cached)" }; } catch {}
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let hook = null;
+    try { hook = (await ask(hookPrompt(words, { voice })))?.hook; } catch { return null; }
+    if (goodHook(hook)) {
+      if (cache && fsx) try { fsx.writeFileSync(cache, JSON.stringify({ key, hook }, null, 1)); } catch {}
+      return { text: String(hook).trim(), source: "written" };
+    }
+  }
+  return null;
+}

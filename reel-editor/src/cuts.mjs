@@ -716,7 +716,7 @@ export async function audioEnvelope(input, { step = 0.02 } = {}) {
  * checked too, so a clipped opening word is not trimmed away.
  * Returns { cuts, restored } with segments, removed and keptDuration rebuilt.
  */
-export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 0.04, minLoud = 0.08 } = {}) {
+export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 0.04, minLoud = 0.08, reach = 1.0 } = {}) {
   const { step, db } = env;
   if (!db.length) return { cuts, restored: 0 };
   // Room noise is measured inside the planned gaps, not across the speech: that is where the floor matters.
@@ -747,14 +747,16 @@ export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 
   const segs = cuts.segments.map((s) => ({ ...s }));
   let restored = 0;
 
+  // Only sound within `reach` s of a word is a word the transcript timed short. Sound further from any word is the
+  // room, a fan or Greg reading the chat (6 s of it came back into an IMG_4766 clip, Nov 27), not speech to keep.
   // Leading and trailing silence: pull the first/last segment out to cover any sound.
   if (segs.length && segs[0].start > 0 && !touchesIntentional(0, segs[0].start)) {
-    const hits = loud(0, segs[0].start);
+    const hits = loud(Math.max(0, segs[0].start - reach), segs[0].start);
     if (hits.length) { segs[0].start = r3(Math.max(0, hits[0] * step - margin)); restored++; }
   }
   const last = segs[segs.length - 1];
   if (last && last.end < duration && !touchesIntentional(last.end, duration)) {
-    const hits = loud(last.end, duration);
+    const hits = loud(last.end, Math.min(duration, last.end + reach));
     if (hits.length) { last.end = r3(Math.min(duration, (hits[hits.length - 1] + 1) * step + margin)); restored++; }
   }
 
@@ -764,14 +766,15 @@ export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 
     const prev = out[out.length - 1];
     const cur = segs[k];
     const g0 = prev.end, g1 = cur.start;
-    const hits = g1 > g0 && !touchesIntentional(g0, g1) ? loud(g0, g1) : [];
+    const near = (i) => i * step <= g0 + reach || i * step >= g1 - reach;
+    const hits = g1 > g0 && !touchesIntentional(g0, g1) ? loud(g0, g1).filter(near) : [];
     if (!hits.length) { out.push(cur); continue; }
     restored++;
     // Longest quiet run inside the gap.
     let best = null, runStart = null;
     const i0 = Math.floor(g0 / step), i1 = Math.ceil(g1 / step);
     for (let i = i0; i <= i1; i++) {
-      const quiet = i < i1 && !(db[i] > loudDb);
+      const quiet = i < i1 && !(db[i] > loudDb && near(i));
       if (quiet && runStart == null) runStart = i;
       if (!quiet && runStart != null) {
         if (!best || i - runStart > best[1] - best[0]) best = [runStart, i];
@@ -801,4 +804,30 @@ export function guardSilenceCuts(cuts, env, duration, { minLen = 0.12, margin = 
     restored,
     noisy: planned >= 4 && restored / planned > 0.5,
   };
+}
+
+
+/**
+ * Take ranges out of a cut plan (source seconds), for the master gate's dead-air retry: every kept segment that
+ * overlaps a range is split around it. Returns a new cuts object with segments, removed and keptDuration rebuilt.
+ */
+export function removeRanges(cuts, ranges = [], reason = "dead-air") {
+  const cutsOut = { ...cuts, removed: [...(cuts.removed || [])] };
+  let segs = cuts.segments.map((x) => ({ ...x }));
+  for (const r of ranges) {
+    const a = Number(r.start), b = Number(r.end);
+    if (!(b > a)) continue;
+    segs = segs.flatMap((sg) => {
+      if (b <= sg.start || a >= sg.end) return [sg];
+      const parts = [];
+      if (a > sg.start + 0.05) parts.push({ ...sg, end: r3(a) });
+      if (b < sg.end - 0.05) parts.push({ ...sg, start: r3(b) });
+      return parts;
+    });
+    cutsOut.removed.push({ start: r3(a), end: r3(b), reason });
+  }
+  cutsOut.segments = segs;
+  cutsOut.removed.sort((x, y) => x.start - y.start);
+  cutsOut.keptDuration = r3(segs.reduce((acc, sg) => acc + (sg.end - sg.start), 0));
+  return cutsOut;
 }

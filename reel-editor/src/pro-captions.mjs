@@ -72,6 +72,27 @@ export function proLineBreaks(words, { measure, maxWidth = PRO_CAPTION_LINE, pro
   return best?.lines ?? null;
 }
 
+/**
+ * A single word wider than the caption line ("disproportionately", IMG_4766 Nov 27): it gets a cue of its own at a
+ * smaller size (down to 55%), or, longer still, splits across two lines with a hyphen at the size that fits. Returns
+ * { words, lines, fontScale } or null when it already fits.
+ */
+export function longWordCue(word, { measure, maxWidth = PRO_CAPTION_LINE, minScale = 0.55 } = {}) {
+  const width = measure(word.text);
+  if (!(width > maxWidth)) return null;
+  const scale = Math.floor((maxWidth / width) * 100) / 100;
+  if (scale >= minScale) return { words: [word], lines: [1], fontScale: scale };
+  const t = String(word.text), mid = Math.floor(t.length / 2);
+  let best = null;
+  for (let d = 0; d < mid - 1; d++) for (const k of [mid - d, mid + d]) {
+    if (best || k < 3 || t.length - k < 3) continue;
+    const a = `${t.slice(0, k)}-`, b = t.slice(k);
+    const fit = Math.min(1, Math.floor((maxWidth / Math.max(measure(a), measure(b))) * 100) / 100);
+    best = { words: [{ ...word, text: a }, { ...word, text: b }], lines: [1, 1], ...(fit < 1 ? { fontScale: fit } : {}) };
+  }
+  return best || { words: [word], lines: [1], fontScale: scale };
+}
+
 /** All retained words, ordered by meaning and timing. Word times remain the source of truth. */
 export function splitProPhrases(words, duration, { measure, protectedPhrases = [] } = {}) {
   const runs = [];
@@ -93,8 +114,13 @@ export function splitProPhrases(words, duration, { measure, protectedPhrases = [
       let best = null;
       for (let j = i + 1; j <= Math.min(ws.length, i + 6); j++) {
         if (!states.has(j) || blocked.has(j)) continue;
-        const slice = ws.slice(i, j);
-        const lines = proLineBreaks(slice, { measure, protectedPhrases });
+        let slice = ws.slice(i, j);
+        let lines = proLineBreaks(slice, { measure, protectedPhrases });
+        let fontScale = null;
+        if (!lines && slice.length === 1) {
+          const long = longWordCue(slice[0], { measure });
+          if (long) { slice = long.words; lines = long.lines.map((n, k) => long.words.slice(k, k + n)); fontScale = long.fontScale ?? null; }
+        }
         if (!lines) continue;
         const start = r3(slice[0].start);
         const next = j < ws.length ? ws[j].start : runs[thought + 1]?.[0].start ?? duration;
@@ -104,13 +130,22 @@ export function splitProPhrases(words, duration, { measure, protectedPhrases = [
         const timing = d < 0.8 ? (0.8 - d) * 8 : d > 1.3 ? (d - 1.3) * 5 : Math.abs(d - 1.05);
         const boundary = /[,;:]$/.test(slice.at(-1).rawText) ? -0.8 : 0;
         const score = states.get(j).score + timing + (d < 0.5 ? 8 : 0) + (slice.length === 1 ? 5 : slice.length === 6 ? 1.5 : 0) + (GLUE.has(norm(slice.at(-1).text)) ? 3 : 0) + boundary + 0.15;
-        const cue = { words: slice.map((w) => ({ ...w })), text: slice.map((w) => w.text).join(" "), start, end, thought, lines: lines.map((line) => line.length), ...(d < 0.5 ? { flags: ["short-cue"] } : {}) };
+        const cue = { words: slice.map((w) => ({ ...w })), text: slice.map((w) => w.text).join(" "), start, end, thought, lines: lines.map((line) => line.length), ...(fontScale ? { fontScale } : {}), ...(d < 0.5 ? { flags: ["short-cue"] } : {}) };
         if (!best || score < best.score) best = { score, cues: [cue, ...states.get(j).cues] };
       }
       if (best) states.set(i, best);
     }
-    // An unbreakable token/phrase cannot fit at the house size: report it instead of silently clipping speech.
-    if (!states.has(0)) throw new Error(`pro captions cannot fit thought ${thought + 1} at 80 px; check the transcript or protected phrases`);
+    // Nothing in the house layout fits (a protected phrase wider than the line, say): one word per cue, each at the
+    // size that fits. The reel is never failed for its captions.
+    if (!states.has(0)) {
+      ws.forEach((w, k) => {
+        const long = longWordCue(w, { measure });
+        const end = r3(Math.min(duration, ws[k + 1]?.start ?? Math.max(w.end, w.start + 0.5)));
+        const cueWords = long ? long.words : [w];
+        groups.push({ words: cueWords.map((x) => ({ ...x })), text: cueWords.map((x) => x.text).join(" "), start: r3(w.start), end, thought, lines: long ? long.lines : [1], ...(long?.fontScale ? { fontScale: long.fontScale } : {}), flags: ["fallback"] });
+      });
+      return;
+    }
     groups.push(...states.get(0).cues);
   });
   return groups;
