@@ -1189,7 +1189,7 @@ export async function prepareAudio({ workDir, projectDir, preset, opts, duration
     if (!tracks.length) log(`music: no tracks in ${preset.audio.musicDir}`);
     else {
       const want = preset.audio.musicWant || "";
-      let choice = want && !preset.audio.pro ? { moods: [] } : await chooseMoods({ transcript, hook: hook?.text, moods: moodsOf(tracks), voice: readVoice({ style: preset }) });
+      let choice = want && !preset.audio.pro ? { moods: [] } : await chooseMoods({ transcript, hook: hook?.text, moods: moodsOf(tracks), voice: readVoice({ style: preset }), workDir, force: !!opts.force });
       if (preset.audio.pro && !choice.none && !choice.moods.length) choice = proMoodChoice(transcript, moodsOf(tracks));
       if (choice.none && (preset.audio.pro || !want)) log(`music: none for this one${choice.why ? ` (${choice.why})` : ""}`);
       else {

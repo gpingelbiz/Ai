@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { claudeText, firstJSON, hasClaude } from "./claude.mjs";
 import { log, warn, r3 } from "./util.mjs";
 
@@ -74,16 +75,30 @@ export function moodPrompt({ transcript, hook, moods, voice = "" }) {
   ].join("\n");
 }
 
-/** Ask Claude for the moods; falls back to [] (random pick) when it cannot run. */
-export async function chooseMoods({ transcript, hook, moods, voice }) {
+/**
+ * Ask Claude for the moods; falls back to [] (random pick) when it cannot run. With a `workDir`, Claude's answer is
+ * saved in music-mood.json and reused while the words, hook, voice and the library's moods stay the same, so a
+ * re-run of a reel keeps its song and does not ask again. `force` asks again. A failed ask is never saved.
+ */
+export async function chooseMoods({ transcript, hook, moods, voice, workDir = null, force = false }) {
   if (!moods.length || !transcript) return { moods: [], none: false };
+  const file = workDir ? path.join(workDir, "music-mood.json") : null;
+  const key = createHash("sha256").update(JSON.stringify({ transcript, hook: hook || "", moods, voice: voice || "" })).digest("hex");
+  if (file && !force) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (saved.key === key && Array.isArray(saved.moods)) { log("music: reusing the saved mood pick"); return { moods: saved.moods, none: !!saved.none, why: saved.why }; }
+    } catch {}
+  }
   if (!hasClaude()) return { moods: [], none: false };
   try {
     const reply = await claudeText(moodPrompt({ transcript, hook, moods, voice }), { timeoutMs: 90000 });
     const j = firstJSON(reply);
     const lc = moods.map((m) => m.toLowerCase());
     const picked = (Array.isArray(j.moods) ? j.moods : []).map(String).filter((m) => lc.includes(m.toLowerCase())).slice(0, 3);
-    return { moods: picked, none: !!j.none, why: j.why };
+    const choice = { moods: picked, none: !!j.none, why: j.why };
+    if (file) { try { fs.writeFileSync(file, JSON.stringify({ key, ...choice }, null, 2) + "\n"); } catch (e) { warn(`music: could not save the mood pick (${e.message})`); } }
+    return choice;
   } catch (e) {
     warn(`music: mood pick failed (${String(e.message).split("\n")[0]}); picking at random`);
     return { moods: [], none: false };
