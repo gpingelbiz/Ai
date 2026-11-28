@@ -179,7 +179,7 @@ export function groundCard(pick, type, words) {
       slots[name].push(item);
     }
   }
-  if (!spoken.length) return null;
+  if (!spoken.length || def.validate?.(slots, (text) => Boolean(phraseSpan(text, words))) === false) return null;
   const start = spoken[0].at;
   const reveals = spoken.map((p) => p.at);
   const complete = Math.max(spoken.at(-1).end, reveals.at(-1) + PRO_MOTION.enter);
@@ -334,8 +334,12 @@ export function placeProOverlay(overlay, frame, { minScale = PRO_MIN_SCALE, igno
   const k = frame.W / 1080;
   if (Math.abs(frame.H / 1920 - k) > 0.01) return null;
   if (overlay.type === "wordMark") return { slot: "caption", ...size };
-  if (overlay.fullscreen) return { slot: "full", x: 0, y: 0, w: frame.W, h: frame.H, scale: k };
   const head = frame.head;
+  if (CARDS[overlay.type]?.split) {
+    if (!head || !(head.y + head.h <= (960 - 32) * k)) return null;
+    return { slot: "split", spot: "split", x: 0, y: 0, w: frame.W, h: frame.H, scale: k };
+  }
+  if (overlay.fullscreen) return { slot: "full", x: 0, y: 0, w: frame.W, h: frame.H, scale: k };
   // Existing face detection has no microphone class. Protect Greg's lower-left mic conservatively when unmeasured.
   const mic = ignoreMic ? null : frame.mic || { x: 0, y: 880 * k, w: 280 * k, h: 480 * k };
   const capBox = frame.caption || { x: 0, y: 1080 * k, w: frame.W, h: 220 * k };
@@ -476,6 +480,16 @@ export function proCaptionBox(g, { W = 1080, H = 1920 } = {}) {
   const y = Number.isFinite(g.y) ? g.y : 1248 * k;
   return { x: (W - PRO_CAPTION_PLATE * k) / 2, y, w: PRO_CAPTION_PLATE * k, h: lines * 92 * k + 24 * k };
 }
+
+/** Centre the pro caption plate on the seam for every cue that shares time with a placed split card. */
+export function seamCaptions(cards, groups, { H = 1920 } = {}) {
+  const splits = cards.filter((c) => c.place?.slot === "split");
+  if (!splits.length) return groups;
+  return groups.map((g) => splits.some((c) => g.start < c.end && g.end > c.start)
+    ? { ...g, y: (H - proCaptionBox(g, { H }).h) / 2 }
+    : g);
+}
+
 export function proCaptionBand(groups, { H = 1920, W = 1080 } = {}) {
   const boxes = groups.map((g) => proCaptionBox(g, { W, H }));
   if (!boxes.length) return { captionTop: 1248 / 1920, captionBottom: 1364 / 1920 };

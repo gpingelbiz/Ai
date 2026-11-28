@@ -9,10 +9,24 @@ export function planProHook(words, { text, duration = 2.4, reelDuration, measure
   if (!source) return null;
   const all = source.text.replace(/\*/g, "").split(/\s+/).map((text) => ({ text }));
   const weak = /^(a|an|the|to|of|in|on|at|for|with|from|by|and|or|but|your|my|our|their|his|her|its|not|never|no|without|\d+)$/i;
-  // Keep the whole title: step the size down (100, 88, 80 px on 1080x1920; measure is at 108) before dropping words.
-  for (const px of [100, 88, 80]) {
-    const lines = proLineBreaks(all, { measure, maxWidth: PRO_HOOK_LINE * 108 / px });
-    if (lines && !weak.test(all.at(-1).text)) return { text: all.map((w) => w.text).join(" "), words: all, lines: lines.map((line) => line.length), fontSize: px, start: 0, duration: Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4))) };
+  // Keep the whole title: step the size down (100, 88, 80, 72, 64 px on 1080x1920; measure is at 108), then try a
+  // third line, before dropping a word. Since the 150 px side strips (Nov 26) the plate is narrower, and stopping at
+  // 80 px cut written hooks mid-phrase ("...when you don't ease", IMG_4766 Nov 27).
+  const seconds = Math.min(reelDuration, Math.max(2, Math.min(2.7, Number(duration) || 2.4)));
+  const title = (lines, px) => ({ text: all.map((w) => w.text).join(" "), words: all, lines: lines.map((line) => line.length), fontSize: px, start: 0, duration: seconds });
+  if (!weak.test(all.at(-1).text)) {
+    for (const px of [100, 88, 80, 72, 64]) {
+      const lines = proLineBreaks(all, { measure, maxWidth: PRO_HOOK_LINE * 108 / px });
+      if (lines) return title(lines, px);
+    }
+    for (const px of [72, 64]) {
+      const max = PRO_HOOK_LINE * 108 / px, lines = [];
+      for (const w of all) {
+        const line = lines.at(-1);
+        if (line && measure([...line, w].map((x) => x.text).join(" ")) <= max) line.push(w); else lines.push([w]);
+      }
+      if (lines.length <= 3 && lines.every((line) => measure(line.map((x) => x.text).join(" ")) <= max)) return title(lines, px);
+    }
   }
   const tokens = [...all];
   while (tokens.length) {
@@ -161,4 +175,70 @@ export function pickCta(duration, { text, last = 3, start = null, duration: dur 
   const s = start != null ? Math.max(0, Math.min(start, duration - 0.3)) : Math.max(0, duration - d);
   const clean = cleanHook(text);
   return { text: uppercase ? clean.toUpperCase() : clean, start: Math.round(s * 1000) / 1000, duration: Math.round(Math.min(d, duration - s) * 1000) / 1000, style, position };
+}
+
+// Words a title may never end on: they leave the thought hanging ("...is, who", "...to prospect, follow up").
+const DANGLING = /^(a|an|the|to|of|in|on|at|for|with|from|by|and|or|but|so|that|which|who|what|when|is|are|was|were|be|your|my|our|their|his|her|its|not|if|because|than|isn'?t|aren'?t|wasn'?t|weren'?t|don'?t|doesn'?t|didn'?t|won'?t|can'?t|cannot)$/i;
+const sentenceStop = (t) => /[.!?]["'”’)]*$/.test(String(t).trim());
+
+/**
+ * The opening line as the hook, only when it is a complete thought: the first sentence, 3 to `maxWords` words.
+ * Null when the first sentence runs longer (cutting it at a word count is what made "...is, who" hooks on clips
+ * that were already cut, Nov 27) or does not finish inside the first 8 s.
+ */
+export function openingHook(words = [], { maxWords = 12, within = 8 } = {}) {
+  const picked = [];
+  for (const w of words) {
+    if (w.drop) continue;
+    if (Number(w.start) > within) return null;
+    picked.push(String(w.text).trim());
+    if (sentenceStop(w.text)) break;
+    if (picked.length > maxWords) return null;
+  }
+  if (picked.length < 3 || picked.length > maxWords || !sentenceStop(picked.at(-1))) return null;
+  return cleanHook(picked.join(" "));
+}
+
+/** A written hook passes when it is a complete thought: 3 to 10 words, no trailing comma or dangling word. */
+export function goodHook(text) {
+  const t = String(text || "").replace(/\*/g, "").trim();
+  const ws = t.split(/\s+/).filter(Boolean);
+  if (ws.length < 3 || ws.length > 10 || /[,;:\-–—]$/.test(t)) return false;
+  return !DANGLING.test(ws.at(-1).replace(/[’‘]/g, "'").replace(/[^\p{L}']/gu, ""));
+}
+
+/** The prompt the clip picker's hooks follow (src/clips.mjs), for one reel's opening. */
+export function hookPrompt(words = [], { voice = "" } = {}) {
+  const opening = words.filter((w) => !w.drop && Number(w.start) < 25).map((w) => w.text).join(" ");
+  return [
+    "Write the on-screen hook for an Instagram reel from what the speaker says at the start. Reply with JSON only; use no tools.",
+    "Rules: 4-8 words; true to what is said (his claim, in his words where you can); a complete thought that never ends on a comma or a dangling word; the key phrase in *asterisks*; no emoji, no dashes, no quotes.",
+    voice ? `Voice:\n${voice.trim()}` : "",
+    `Opening: ${opening}`,
+    'Reply: {"hook":"..."}',
+  ].filter(Boolean).join("\n");
+}
+
+/**
+ * The hook text for a reel given none: the opening line when it is a complete thought, else a hook written the way
+ * `reel clips` writes them (ask = Claude). Cached per opening in `cache` (a file path), so a rebuild never asks again.
+ * Returns null when neither works (the caller keeps its old behaviour).
+ */
+export async function autoHookText(words = [], { maxWords = 12, ask = null, cache = null, voice = "", fsx = null } = {}) {
+  const spoken = openingHook(words, { maxWords });
+  if (spoken) return { text: spoken, source: "opening line" };
+  if (!ask) return null;
+  const key = words.filter((w) => !w.drop).slice(0, 60).map((w) => w.text).join(" ");
+  if (cache && fsx?.existsSync(cache)) {
+    try { const saved = JSON.parse(fsx.readFileSync(cache, "utf8")); if (saved.key === key && goodHook(saved.hook)) return { text: saved.hook, source: "written (cached)" }; } catch {}
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let hook = null;
+    try { hook = (await ask(hookPrompt(words, { voice })))?.hook; } catch { return null; }
+    if (goodHook(hook)) {
+      if (cache && fsx) try { fsx.writeFileSync(cache, JSON.stringify({ key, hook }, null, 1)); } catch {}
+      return { text: String(hook).trim(), source: "written" };
+    }
+  }
+  return null;
 }

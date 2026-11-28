@@ -70,12 +70,12 @@ export function cutPoints(lines, words) {
 }
 
 /** Pass 1 prompt: find moments by their quotable line. The transcript carries line labels, no times. */
-export function momentsPrompt({ lines, energy = [], count, duration, voice = "" }) {
+export function momentsPrompt({ lines, energy = [], count, duration, voice = "", minLen = 30, maxLen = 90 }) {
   const tag = new Map(energy.map((e) => [e.id, e.tag]));
   const mark = (l) => `${l.id}${tag.get(l.id) ? " " + tag.get(l.id) : ""}| ${l.text}`;
   return [
     "You are a short-form editor mining one long talking-head recording for Instagram reels. Reply with JSON only; use no tools.",
-    `The recording is ${Math.round(duration / 60)} minutes. Find up to ${count * 3} moments that would hold a cold viewer as a 30-90 second reel: a stake early, one idea, a turn or payoff, specifics (numbers, names, real moments), and a line worth quoting. Prefer the speaker being direct; skip warm-ups, housekeeping and thanks. For a question-and-answer, the answer is the moment.`,
+    `The recording is ${Math.round(duration / 60)} minutes. Find up to ${count * 3} moments that would hold a cold viewer as a ${minLen}-${maxLen} second reel: a claim or value said plainly, one idea, its proof, and a payoff where the lesson lands, with specifics (numbers, names, real moments) and a line worth quoting. Prefer the speaker being direct; skip warm-ups, housekeeping, thanks, the talk's own recap, reading the chat or answering viewers, and anything that only makes sense after an earlier part of the talk. For a question-and-answer, the answer is the moment.`,
     "Each moment is named by its ANCHOR: the one line a viewer would quote. Point at lines by their label (L012); never write times.",
     "Lines marked [energy] were said louder or faster than usual: a hint, not a rule.",
     "Score 0-100 for how well it would hold a cold viewer, and write a hook: 4-8 words, true to what is said, the key phrase in *asterisks*.",
@@ -231,4 +231,182 @@ export function resolveClips({ moments, regions, edges, lines, words, duration, 
 /** One line per clip for the log and clips.txt. */
 export function describeEdges(c) {
   return c.problems?.length ? `edges: ${c.problems.map((p) => p.message).join("; ")}` : "edges: clean start and finish";
+}
+
+/*
+ * The shaped picker (Herk Edit Kit rules, MIT: EDITING-PLAYBOOK.md:123, short-form-edit SKILL.md:57/:80/:104 and
+ * curiosity-and-entertainment.md:29/:49). A clip is up to three KEPT RANGES, not one window: the claim line first
+ * (lifted from later when that is where it is said), then the body in source order, with chat reading, asides and
+ * abandoned takes left out, ending on its payoff. Against our one-window clips on IMG_4766 (Nov 27) his rules opened
+ * 4.9 vs 3.4 and kept one idea 4.75 vs 2.4. Claude points at line labels; code builds the ranges and enforces the
+ * hard rules: no opener that refers back or reads the chat, the payoff inside the clip, 35 to 60 s in all.
+ */
+export const SHAPE_RULES = Object.freeze({ min: 35, max: 60, maxKeeps: 3, before: 60, after: 75, padIn: 0.08, padOut: 0.12 });
+
+// An opener that leans on the talk around it: a cold viewer never saw "this whole segment" or "those lies".
+const REFERS_BACK = /\b(this whole (segment|section|talk|thing|training|call|video)|(that|what) i just (went through|said|showed|covered|mentioned|talked about)|as i (said|mentioned)|like i said|earlier|before the break|those (lies|three|four|five|things|steps|points)|the three lies|we (just )?(talked|went) (about|over|through)|remember (when|what) i|going back to|last (week|time) (i|we))\b/i;
+// The live room: reading the chat, answering viewers, asking for hands. Never a cold open, and left out of a body.
+const READS_CHAT = /\b(the chat|in the chat|chat says|comments?|drop (it|a|your|that)|type (it|a|your|that)|raise your hand|hands? up|let me (see|read)|i see (you|some|a lot)|someone (said|says|asked|wrote)|shout ?out|you guys are (saying|writing)|who'?s (here|on|with us)|good (morning|afternoon|evening),? (everyone|everybody|guys)|can you (hear|see) me)\b/i;
+
+/** Problems with a line as the clip's first words ([] = it can open a reel). `next` is the line after it. */
+export function openerProblems(line, next = null) {
+  const out = [];
+  const text = String(line?.text || "").trim();
+  if (!text) return [{ code: "empty", message: "no opening line" }];
+  if (LEANS.has(firstWord(text))) out.push({ code: "leans-back", message: `opens on "${text.split(/\s+/)[0]}", which leans on what came before` });
+  if (REFERS_BACK.test(text)) out.push({ code: "refers-back", message: `opens by referring back ("${text.match(REFERS_BACK)[0]}")` });
+  if (READS_CHAT.test(text)) out.push({ code: "reads-chat", message: `opens on the live room ("${text.match(READS_CHAT)[0]}")` });
+  // The middle of a list ("Third, you start with your body...") leans on the items before it.
+  const ordinal = text.match(/^(first|second|third|fourth|fifth|sixth|next|lastly|finally|number (one|two|three|four|five)|step (one|two|three|four|five))\b/i);
+  if (ordinal) out.push({ code: "refers-back", message: `opens on "${ordinal[0]}", the middle of a list` });
+  // A question to the room answered by a list of shouted answers ("Working out, gratitude texts, right? Cardio.").
+  if (/\?["')]*$/.test(text) && next && /,/.test(next.text) && String(next.text).split(/\s+/).length <= 10) out.push({ code: "reads-chat", message: "opens on a question to the room that the next line answers from the chat" });
+  return out;
+}
+
+/** The region shown to Claude for shaping: every line within `before` s before and `after` s after the anchor. */
+export function shapeRegion(lines, anchorId, { before = SHAPE_RULES.before, after = SHAPE_RULES.after } = {}) {
+  const ai = lines.findIndex((l) => l.id === anchorId);
+  if (ai < 0) return null;
+  const a = lines[ai];
+  const inside = lines.filter((l) => l.end >= a.start - before && l.start <= a.end + after);
+  const text = inside.map((l) => `${l.id === anchorId ? ">> " : ""}${l.id} (${r3(l.end - l.start)}s)| ${l.text}`).join("\n");
+  return { anchor: anchorId, ids: inside.map((l) => l.id), text };
+}
+
+/** Pass 2, shaped: the lead, the body, what to leave out and where the payoff lands, by line label. */
+export function shapesPrompt(regions, { min = SHAPE_RULES.min, max = SHAPE_RULES.max } = {}) {
+  return [
+    "You are cutting Instagram reels for a cold viewer out of a long talking-head recording. Reply with JSON only; use no tools.",
+    "For each region below, the line marked >> is the moment's anchor. Lines are labelled L###, with their length in seconds. Shape one reel:",
+    "- lead: the line the reel OPENS on. The claim or the value, a complete sentence a cold viewer understands in the first 3 seconds. It may be said later in the region: it is moved to the front and taken out of the body. Never a line that refers back to the talk (\"this whole segment\", \"earlier\", \"those lies\", \"like I said\"), never the live room (reading the chat, answering viewers, \"raise your hand\"), never a question to the audience.",
+    "- from and to: the body, in the recording's order: the lines that set up, prove and land that one idea. Stop when the idea has landed; never run on into the next topic or the talk's recap.",
+    "- drop: lines inside the body to leave out: reading the chat or answering viewers, asides, false starts and abandoned takes, a line said twice.",
+    "- payoff: the line where the promised lesson lands. It must be kept (inside the body, not dropped). If the lesson never lands in the region, set ok to false.",
+    `- The kept lines run ${min} to ${max} seconds in all.`,
+    "",
+    ...regions.map((r, i) => `=== Region ${i + 1} (anchor ${r.anchor})\n${r.text}`),
+    "",
+    'Reply: {"shapes":[{"region":1,"lead":"L042","from":"L036","to":"L051","drop":["L040"],"payoff":"L050","ok":true,"note":"one line"}]}',
+  ].join("\n");
+}
+
+/** Pass 2 in batches, asked at the same time (same contract as askEdges). */
+export async function askShapes(regions, ask, { size = 5, onFail = () => {} } = {}) {
+  const batches = [];
+  for (let i = 0; i < regions.length; i += size) batches.push(i);
+  const replies = await Promise.allSettled(batches.map((i) => ask(shapesPrompt(regions.slice(i, i + size)))));
+  const shapes = [];
+  replies.forEach((r, b) => {
+    const from = batches[b], to = Math.min(regions.length, from + size);
+    if (r.status === "rejected") return onFail(r.reason, from + 1, to);
+    for (const e of r.value?.shapes || []) {
+      const n = Number(e.region);
+      if (n >= 1 && n <= to - from) shapes.push({ ...e, region: from + n });
+    }
+  });
+  if (batches.length && replies.every((r) => r.status === "rejected")) throw replies[0].reason;
+  return shapes;
+}
+
+/**
+ * One shape into a clip: kept ranges in source seconds (the lead first, then the body), the payoff's place in clip
+ * time, or { problem } when a hard rule fails. Cold-open guard: a lifted lead line is taken out of the body, so the
+ * retake cutter never sees it twice and deletes the opening (H1/H2, Nov 27).
+ */
+export function buildShape(shape, lines, words, { min = SHAPE_RULES.min, max = SHAPE_RULES.max, maxKeeps = SHAPE_RULES.maxKeeps, padIn = SHAPE_RULES.padIn, padOut = SHAPE_RULES.padOut } = {}) {
+  const at = (id) => lines.findIndex((l) => l.id === id);
+  const fi = at(shape.from), ti = at(shape.to), li = at(shape.lead), pi = at(shape.payoff);
+  if (fi < 0 || ti < fi) return { problem: `unknown body ${shape.from}-${shape.to}` };
+  const dropIds = new Set((shape.drop || []).filter((id) => at(id) >= fi && at(id) <= ti));
+  // Code drops the live room from the body even when Claude kept it.
+  for (let k = fi; k <= ti; k++) if (READS_CHAT.test(lines[k].text)) dropIds.add(lines[k].id);
+  // The lead: Claude's line when it can open a reel, else the first kept body line that can (the body then starts
+  // there: lines before it that refer back or read the room are not a cold open).
+  let lead = li >= 0 ? lines[li] : null;
+  let start = fi;
+  if (!lead || openerProblems(lead, lines[li + 1]).length) {
+    const why = lead ? openerProblems(lead, lines[li + 1]).map((p) => p.message).join("; ") : "no lead";
+    // Only the body's own first kept line may stand in: skipping further in opened IMG_4766 C7 on a fragment
+    // ("Something physical, a walk, a workout...") after "Third, ..." was rejected. Otherwise the moment is dropped.
+    let k = fi;
+    while (k <= Math.min(ti, pi) && dropIds.has(lines[k].id)) k++;
+    if (k > Math.min(ti, pi) || openerProblems(lines[k], lines[k + 1]).length) return { problem: `no line can open it (${why})` };
+    lead = lines[k];
+    start = k;
+  }
+  const lifted = at(lead.id) < start || at(lead.id) > ti || at(lead.id) !== lines.slice(start, ti + 1).findIndex((l) => !dropIds.has(l.id)) + start;
+  if (pi < 0) return { problem: "no payoff line" };
+  if (dropIds.has(lines[pi].id) || pi < fi || pi > ti) return { problem: `the payoff ${shape.payoff} is not inside the kept lines` };
+  // The body ends on the payoff: the complete takeaway is the last thing said (two lines past it ran into the next
+  // example on IMG_4766: "...what to practice. 'I feel like I'm not doing enough.' Feeling.").
+  const end = pi;
+  const body = [];
+  for (let k = start; k <= end; k++) if (!dropIds.has(lines[k].id) && !(lifted && lines[k].id === lead.id)) body.push(k);
+  // Runs of consecutive kept lines become ranges; the lead is its own range when lifted.
+  const runs = [];
+  if (lifted) runs.push([at(lead.id)]);
+  for (const k of body) {
+    const last = runs.at(-1);
+    if (last && k === last.at(-1) + 1 && !(lifted && last === runs[0])) last.push(k); else runs.push([k]);
+  }
+  // At most maxKeeps ranges: the smallest gap in the body closes first (the lines between come back), never across
+  // the lifted lead (a range is one stretch of the recording, and the lead must not play twice); when no gap can
+  // close, the shortest body range without the payoff goes.
+  const leadAt = at(lead.id);
+  while (runs.length > maxKeeps) {
+    let best = -1, gap = Infinity;
+    for (let r = lifted ? 2 : 1; r < runs.length; r++) {
+      if (lifted && runs[r - 1].at(-1) < leadAt && runs[r][0] > leadAt) continue;
+      // Never bring the live room back to save a range.
+      if (lines.slice(runs[r - 1].at(-1) + 1, runs[r][0]).some((l) => READS_CHAT.test(l.text))) continue;
+      const g = lines[runs[r][0]].start - lines[runs[r - 1].at(-1)].end;
+      if (g < gap) { gap = g; best = r; }
+    }
+    if (best >= 0) {
+      const a = runs[best - 1], b = runs[best];
+      runs.splice(best - 1, 2, Array.from({ length: b.at(-1) - a[0] + 1 }, (_, n) => a[0] + n));
+      continue;
+    }
+    const spare = runs.map((run, r) => ({ r, len: lines[run.at(-1)].end - lines[run[0]].start })).filter(({ r }) => !(lifted && r === 0) && !runs[r].includes(pi)).sort((x, y) => x.len - y.len)[0];
+    if (!spare) break;
+    runs.splice(spare.r, 1);
+  }
+  const keeps = runs.map((run) => {
+    const i0 = lines[run[0]].i0, i1 = lines[run.at(-1)].i1;
+    const before = words[i0 - 1], after = words[i1 + 1];
+    return { start: r3(Math.max(before ? before.end : 0, words[i0].start - padIn)), end: r3(Math.min(after ? after.start : Infinity, words[i1].end + padOut)), lines: run.map((k) => lines[k].id) };
+  });
+  const length = keeps.reduce((n, k) => n + (k.end - k.start), 0);
+  if (length < min) return { problem: `${r3(length)} s kept, under ${min} s` };
+  if (length > max + 2) return { problem: `${r3(length)} s kept, over ${max} s` };
+  // Where the payoff lands in clip time.
+  let t = 0, payoffTime = null;
+  for (const k of keeps) {
+    const pk = k.lines.indexOf(lines[pi].id);
+    if (pk >= 0) { payoffTime = r3(t + (lines[pi].end - k.start)); break; }
+    t += k.end - k.start;
+  }
+  if (payoffTime == null) return { problem: "the payoff line was not kept" };
+  return { keeps: keeps.map(({ start, end }) => ({ start, end })), lifted, lead: lead.text, payoff: { line: lines[pi].text, time: payoffTime }, length: r3(length), dropped: [...dropIds] };
+}
+
+/** Shapes into clips, best first, without overlapping kept ranges. */
+export function resolveShapes({ moments, regions, shapes, lines, words, count, dropped = [], rules = {} }) {
+  const out = [];
+  regions.forEach((r, k) => {
+    const m = moments[k];
+    const drop = (why) => dropped.push({ anchor: m?.anchor, hook: m?.hook, why });
+    if (!r) return drop("no lines around the anchor");
+    const s = (shapes || []).find((x) => Number(x.region) === k + 1);
+    if (!s) return drop("no shape came back");
+    if (s.ok === false) return drop(`Claude: ${s.note || "the lesson never lands"}`);
+    const built = buildShape(s, lines, words, rules);
+    if (built.problem) return drop(built.problem);
+    const overlaps = out.some((o) => o.keeps.some((a) => built.keeps.some((b) => a.start < b.end && b.start < a.end)));
+    if (overlaps) return drop("overlaps a better clip");
+    out.push({ start: r3(Math.min(...built.keeps.map((x) => x.start))), end: r3(Math.max(...built.keeps.map((x) => x.end))), keeps: built.keeps, lifted: built.lifted, payoff: built.payoff, length: built.length,
+      hook: String(m.hook || "").trim(), why: String(m.why || "").trim(), score: Math.max(0, Math.min(100, Math.round(Number(m.score) || 0))), anchor: r.anchor, shape: { lead: s.lead, from: s.from, to: s.to, drop: built.dropped, payoff: s.payoff, note: s.note || "" }, problems: [] });
+  });
+  return out.sort((a, b) => b.score - a.score).slice(0, count);
 }

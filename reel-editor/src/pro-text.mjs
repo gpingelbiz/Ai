@@ -13,7 +13,9 @@ function rows(words, lengths, render) {
 export function proCaptionHTML(group, index, { height = 1920, mark = () => "" } = {}) {
   const size = 80 * height / 1920;
   const spans = rows(group.words, group.lines, (w, j) => `<span class="w${w.key ? " k" : ""}" id="cap-${index}-w${j}">${esc(w.text)}${mark(index, j)}</span>`);
-  return `      <div class="cap cap-pro" id="cap-${index}" style="font-size:${size}px;top:${group.y ?? 1248 * height / 1920}px"><div class="cap-line">${spans}</div></div>`;
+  // A cue holding one very long word is set smaller so it fits the plate (pro-captions.mjs longWordCue).
+  const shrink = group.fontScale ? ` style="font-size:${Math.round(80 * group.fontScale * height / 1920)}px;line-height:${Math.round(92 * group.fontScale * height / 1920)}px"` : "";
+  return `      <div class="cap cap-pro" id="cap-${index}" style="font-size:${size}px;top:${group.y ?? 1248 * height / 1920}px"><div class="cap-line"${shrink}>${spans}</div></div>`;
 }
 
 export function proHookHTML(hook) {

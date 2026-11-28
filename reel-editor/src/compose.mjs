@@ -158,7 +158,15 @@ export function composeProject(plan, projectDir) {
     else if (!b.video) plan.coldOpen.src = b.src;
     else plan.coldOpen.src = null;
   }
-  fs.writeFileSync(path.join(projectDir, "index.html"), projectHTML(plan, footage));
+  let pagePlan = plan;
+  if (plan.opener) {
+    const src = `assets/proof-opener${path.extname(plan.opener.src).toLowerCase()}`;
+    const source = path.resolve(projectDir, plan.opener.src);
+    const target = path.resolve(projectDir, src);
+    if (source !== target) fs.copyFileSync(source, target);
+    pagePlan = { ...plan, opener: { ...plan.opener, src } };
+  }
+  fs.writeFileSync(path.join(projectDir, "index.html"), projectHTML(pagePlan, footage));
   return projectDir;
 }
 
@@ -184,13 +192,39 @@ export function deliveryFxAttr(plan) {
 }
 
 /**
+ * The proof-first opener: an obsidian ground over the footage and the proof image or clip fitted WHOLE (object-fit
+ * contain) in `box`, the room between the hook and the captions, so a booking or CRM record is never cropped and no
+ * caption sits on it (a 4:5 testimonial card lost its sides under cover, Nov 27).
+ */
+function proofOpenerHTML(opener, box = null) {
+  if (!opener) return "";
+  const timing = `data-start="0" data-duration="${esc(opener.duration)}" data-track-index="1"`;
+  const place = box ? `left:0;top:${Math.round(box.top)}px;width:100%;height:${Math.round(box.height)}px` : "inset:0;width:100%;height:100%";
+  const attrs = `id="proof-opener" class="clip" src="${esc(opener.src)}" ${timing} style="position:absolute;${place};object-fit:contain;pointer-events:none"`;
+  const ground = `      <div id="proof-opener-ground" class="clip" ${timing} style="position:absolute;inset:0;background:#0B0B0D;pointer-events:none"></div>`;
+  return `${ground}
+${opener.kind === "video" ? `      <video ${attrs} muted playsinline></video>` : `      <img ${attrs} alt="" />`}`;
+}
+
+/** The room the opener may fill: under the hook title and above the first captions shown while it is up. */
+export function openerBox(plan, H = 1920) {
+  if (!plan?.opener) return null;
+  const k = H / 1920;
+  const hook = plan.hook;
+  const top = hook?.lines?.length ? (176 + hook.lines.length * (hook.fontSize || 100) * 1.06 + 32 + 24) * k : 0.25 * H;
+  const caps = (plan.captions || []).filter((g) => Number(g.start) < plan.opener.duration && Number.isFinite(Number(g.y)));
+  const bottom = caps.length ? Math.min(...caps.map((g) => Number(g.y))) - 24 * k : 1600 * k;
+  return bottom - top >= 240 * k ? { top, height: bottom - top } : { top: 0.25 * H, height: 0.4 * H };
+}
+
+/**
  * The page for a plan: the reel proof receipts look when the plan carries proof data (reel proof, #proof), the
  * normal reel otherwise.
  */
 export function projectHTML(plan, footage) {
   if (plan.proofReel && plan.proofData?.items?.length) {
     const videoAudio = plan.audio?.replaceAudio || !plan.video.hasAudio ? " muted" : ' data-has-audio="true"';
-    return receiptsHTML({
+    const html = receiptsHTML({
       data: plan.proofData,
       heard: plan.words || [],
       duration: plan.video.duration,
@@ -199,6 +233,7 @@ export function projectHTML(plan, footage) {
       fxChain: deliveryFxAttr(plan),
       fps: plan.style?.render?.fps || 30,
     });
+    return plan.opener ? html.replace('      <div id="hook"', (hook) => `${proofOpenerHTML(plan.opener)}\n${hook}`) : html;
   }
   return renderHTML(plan, footage);
 }
@@ -776,7 +811,7 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
 ${whipFiltersHTML}${videoLayerHTML}
 ${runtimePlan.zoomStyle === "camera" && (runtimePlan.zooms.length || (plan.stitchScenes && (plan.zooms || []).some((z) => !z.stitch))) ? `      <div id="defocus"></div>` : ""}
 ${openHTML}
-${brollHTML}${signatureLayerHTML ? `
+${brollHTML}${plan.opener ? `\n${proofOpenerHTML(plan.opener, openerBox(plan, H))}` : ""}${signatureLayerHTML ? `
       ${signatureLayerHTML}` : ""}
 ${popoutBgHTML}
 ${lowerHTML}

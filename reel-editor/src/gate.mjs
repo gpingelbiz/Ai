@@ -251,7 +251,10 @@ const indexOf = (layer) => Number(String(layer.id || "").match(/-(\d+)$/)?.[1]);
  * Layout verdict from measured masks: frames = [{ t, layers: { [index]: mask } }]. Only layers that hold words are
  * compared; full-screen layers (a photo, a full card) are skipped because text over them is the design.
  */
-export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, safe = GATE_SAFE) {
+export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, safe = GATE_SAFE, { fullIds = [] } = {}) {
+  // A full-screen pro card (the full list, the split list) is a full layer by design even where it measures under
+  // 40%: its obsidian panel over Greg's dark shirt barely differs from the footage (the split list, Nov 27).
+  const full = new Set(fullIds);
   const byIndex = new Map(layers.map((layer) => [layer.index, layer]));
   const seen = new Map();
   const add = (problem) => {
@@ -263,7 +266,7 @@ export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, saf
   };
   for (const frame of frames) {
     const active = Object.entries(frame.layers || {}).map(([index, mask]) => ({ layer: byIndex.get(Number(index)), mask }))
-      .filter((item) => item.layer && item.mask?.count && item.mask.coverage < rules.full);
+      .filter((item) => item.layer && item.mask?.count && item.mask.coverage < rules.full && !full.has(item.layer.id));
     for (let i = 0; i < active.length; i++) {
       for (let j = i + 1; j < active.length; j++) {
         const a = active[i], b = active[j];
@@ -281,6 +284,40 @@ export function layoutProblems(frames = [], layers = [], rules = GATE_RULES, saf
 }
 
 const OK_DOUBLES = new Set(["very", "really", "no", "yes", "yeah", "bye", "ha", "go", "so", "now", "more", "again", "over", "down", "up", "round", "knock", "tick", "chop", "blah", "hey", "na", "la"]);
+
+/**
+ * Dead air: a stretch of the reel with no words over `max` s (Greg reading the chat, the room between takes: 6.2 s
+ * of it passed the gate in an IMG_4766 clip, Nov 27). Talking-head vertical reels only: a proof reel's texts and a
+ * speaker reel's music hold on purpose. Each problem carries the gap in source seconds (cutSource, from cuts.json)
+ * so the edit can be run again with it cut, leaving 0.25 s after the last word and 0.15 s before the next.
+ */
+export function deadAirProblems(plan = {}, cuts = null, { max = 2.0 } = {}) {
+  if (!(n(plan.canvas?.height, 0) > n(plan.canvas?.width, 0))) return [];
+  if (plan.style?.look === "receipts" || plan.receipts || plan.speaker || plan.style?.speaker?.enabled) return [];
+  const words = (plan.words || []).filter((w) => !w.drop && Number.isFinite(Number(w.start)) && Number.isFinite(Number(w.end))).sort((a, b) => a.start - b.start);
+  if (words.length < 2) return [];
+  const segs = (cuts?.segments || []).map((x) => ({ start: Number(x.start), end: Number(x.end) }));
+  // Reel time to source time through the kept segments, in order.
+  const toSource = (t) => {
+    let acc = 0;
+    for (const sg of segs) {
+      const len = sg.end - sg.start;
+      if (t <= acc + len + 1e-6) return sg.start + (t - acc);
+      acc += len;
+    }
+    return null;
+  };
+  const out = [];
+  const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  for (let k = 1; k < words.length; k++) {
+    const a = Number(words[k - 1].end), b = Number(words[k].start);
+    if (b - a <= max) continue;
+    const s0 = toSource(a + 0.25), s1 = toSource(b - 0.15);
+    const cutSource = segs.length && s0 != null && s1 != null && s1 - s0 > 0.3 ? { start: r3(s0), end: r3(s1) } : null;
+    out.push({ code: "dead-air", level: "hold", at: r3(a), gap: r3(b - a), ...(cutSource ? { cutSource } : {}), message: `${r3(b - a)} s with no words at ${clock(a)} (after "${String(words[k - 1].text).trim()}")` });
+  }
+  return out;
+}
 
 /** Caption text that cannot be right: the same word twice in a row, or a word followed by its own tail ("Bootcamp Camp"). */
 export function captionProblems(plan = {}) {
@@ -810,12 +847,14 @@ export async function runGate(workDir, { round = 0, fixes = [], rules = GATE_RUL
   try {
     const quiet = !!plan.style?.captions?.quiet && !plan.style?.captions?.plate;
     measured = await measure(path.join(workDir, "project"), { duration: n(plan.video?.duration, 0), rules, contrast: quiet });
-    problems.push(...layoutProblems(measured.frames, measured.layers, rules));
+    problems.push(...layoutProblems(measured.frames, measured.layers, rules, GATE_SAFE, { fullIds: (plan.proGraphics || []).filter((o) => o.fullscreen).map((o) => o.id) }));
     if (quiet) problems.push(...contrastProblems(measured.frames));
   } catch (error) {
     problems.push({ code: "gate-unavailable", level: "hold", message: `the layout could not be measured: ${String(error.message).split("\n")[0]}` });
   }
   problems.push(...captionProblems(plan));
+  const air = deadAirProblems(plan, read("cuts.json"));
+  problems.push(...air);
   const cta = ctaProblems(read("cuts.json"));
   problems.push(...cta);
   problems.push(...ctaNotes(plan));
@@ -848,7 +887,9 @@ export async function runGate(workDir, { round = 0, fixes = [], rules = GATE_RUL
     if (fixed.applied.length) result = { verdict: "fix", round, problems, fixes: [...fixes, ...fixed.applied], plan: fixed.plan };
   }
   if (!result) {
-    const retry = cta.find((p) => p.endAfter) ? { endAfter: cta.find((p) => p.endAfter).endAfter } : null;
+    const gaps = air.filter((p) => p.cutSource).map((p) => p.cutSource);
+    const ask = cta.find((p) => p.endAfter);
+    const retry = ask || gaps.length ? { ...(ask ? { endAfter: ask.endAfter } : {}), ...(gaps.length ? { cutGaps: gaps } : {}) } : null;
     result = { verdict: holds.length ? "hold" : "ok", round, problems, fixes, ...(retry ? { retry } : {}) };
   }
   const saved = { verdict: result.verdict, round, fixes: result.fixes, retry: result.retry || null, problems: problems.map(brief), notes: problems.map((p) => `gate-${p.code}: ${p.message}`), times: measured.times };

@@ -54,7 +54,10 @@ test("pro splitter flags unavoidable fast cues and reports unrenderable words wi
   const groups = splitProPhrases(words("stop now. keep going.", { step: 0.1 }), 0.4, { measure });
   assert.equal(groups.length, 2);
   assert.ok(groups.every((g) => g.flags.includes("short-cue")));
-  assert.throws(() => splitProPhrases(words("WWWWWWWWWWWWWWWWWWWW"), 2, { measure }), /cannot fit thought/);
+  // A word wider than the line is shown smaller or hyphenated, never a failed reel (IMG_4766, Nov 27).
+  const wide = splitProPhrases(words("WWWWWWWWWWWWWWWWWWWW"), 2, { measure });
+  assert.equal(wide.flatMap((g) => g.words.map((w) => w.text)).join("").replace(/-/g, ""), "WWWWWWWWWWWWWWWWWWWW");
+  assert.ok(wide.every((g) => g.fontScale > 0 && g.fontScale <= 1));
   const clipped = splitProPhrases([{ text: "last", start: 0.9, end: 1.3 }, { text: "removed", start: 1.2, end: 1.4 }], 1, { measure });
   assert.equal(clipped[0].end, 1);
   assert.equal(clipped[0].text, "last");
