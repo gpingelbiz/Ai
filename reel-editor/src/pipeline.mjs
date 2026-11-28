@@ -36,7 +36,7 @@ import { makeStructure } from "./chapters.mjs";
 import { composeProject, canvasFor } from "./compose.mjs";
 import { restyleGlow, loadIconLibrary, glowIconDir, glowEnabled } from "./glow.mjs";
 import { boldEnabled, restyleBold } from "./bold.mjs";
-import { proEnabled, makeProGraphics, attachProWordMarks, placeProGraphics, proSoundCues, proCaptionBand, resolveProCollisions, applyCaptionSwaps, PRO_MIN_CARDS } from "./pro.mjs";
+import { proEnabled, makeProGraphics, attachProWordMarks, placeProGraphics, proSoundCues, proCaptionBand, resolveProCollisions, applyCaptionSwaps, seamCaptions, PRO_MIN_CARDS } from "./pro.mjs";
 import { peopleFrom, groupFraming, speakerTimeline, aimZooms } from "./group.mjs";
 import { THEMES, applyTheme } from "./looks.mjs";
 import { parseCredits, brandCredit, scheduleCredits, credentialDimensions } from "./credentials.mjs";
@@ -1016,8 +1016,8 @@ export async function runEdit(input, opts = {}, deps = {}) {
     });
     const noRoom = proGraphics.missed || [];
     const swapCaps = showCaptions && preset.captions.pro;
-    const capsBeforeSwap = shownGroups;
-    if (swapCaps) shownGroups = applyCaptionSwaps(proGraphics, shownGroups).groups;
+    const capsBeforeSwap = swapCaps ? seamCaptions(proGraphics, shownGroups, { H: canvas0.height }) : shownGroups;
+    if (swapCaps) shownGroups = applyCaptionSwaps(proGraphics, capsBeforeSwap).groups;
     if (noRoom.length) warn(`pro graphics: ${noRoom.length} planned card${noRoom.length === 1 ? "" : "s"} had no free space beside the face, captions and mic (${noRoom.map((o) => o.type).join(", ")})`);
     // Nothing may cover anything else: cards vs captions, the hook and each other, frame by frame in time.
     const clash = resolveProCollisions(proGraphics, { captions: showCaptions && preset.captions.pro ? shownGroups : [], hook: hook?.pro || preset.hook?.pro ? hook : null, W: canvas0.width, H: canvas0.height });

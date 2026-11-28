@@ -15,6 +15,7 @@ import { writeJSON, log } from "./util.mjs";
 import { resolveBrandTokens, tokensCSS, validateBrand } from "./brandtokens.mjs";
 import { runProof } from "./proof.mjs";
 import { speak } from "./voice.mjs";
+import { makeProofFirst } from "./opener-variant.mjs";
 
 const USAGE = `reel: self-hosted reel editor (HyperFrames + Whisper + ElevenLabs)
 
@@ -33,6 +34,10 @@ Usage
   reel stitch <folder|clips...> [--order file] [--preset ...] [edit options]
                                     ordered clips into one reel, with an order sheet and scene joins
   reel edit <video> [options]       transcribe -> cut silence/bad takes -> captions, hook, zooms -> render
+  reel edit <video> --proof-first <file> [--opener-seconds 2] [options]
+                                    render the edit and a matched proof-first variant, then print both paths
+  reel variant <workdir> --proof-first <file> [--opener-seconds 2]
+                                    make the variant from a finished job and print both render paths
   reel proof [cards...] [--from <cards folder>] [--count 3] [--photo <file>|--photos <folder>] [--voice el:<id>|vs:Greg]
              [--script <script.json>] [--name <stem>] [--drop <raw folder>] [--no-drop] [--dry-run]
              [--specs <lib-specs.json>] [--no-specs] [--list <coach-cards.json>] [--no-voice-check]
@@ -218,6 +223,7 @@ const PROOF_OPTIONS = {
   help: { type: "boolean", short: "h" },
 };
 const SAY_OPTIONS = { voice: { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" } };
+const OPENER_OPTIONS = { "proof-first": { type: "string" }, "opener-seconds": { type: "string" } };
 
 const EDIT_OPTIONS = {
   out: { type: "string" },
@@ -368,7 +374,7 @@ function preflightFiles(spec, dir) {
   });
 }
 
-export async function main(argv) {
+export async function main(argv, deps = {}) {
   const [cmd, ...rest] = argv;
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return console.log(USAGE);
   switch (cmd) {
@@ -430,11 +436,27 @@ export async function main(argv) {
       console.log(await speak({ text: positionals.join(" "), voice: opts.voice || process.env.REEL_PROOF_VOICE || "vs:Greg", out: path.resolve(opts.output) }));
       return;
     }
+    case "variant":
     case "edit": {
-      const { opts, positionals } = parse(rest);
+      const { opts, positionals } = parse(rest, { ...(cmd === "edit" ? EDIT_OPTIONS : { help: EDIT_OPTIONS.help }), ...OPENER_OPTIONS });
       if (opts.help || !positionals[0]) return console.log(USAGE);
-      const r = await runEdit(positionals[0], opts);
-      if (r.output) console.log(r.output);
+      const { proofFirst, openerSeconds, ...editOpts } = opts;
+      if (!proofFirst && (cmd === "variant" || openerSeconds !== undefined)) throw new Error("Supply a proof opener with --proof-first <file>.");
+      const duration = openerSeconds === undefined ? undefined : Number(openerSeconds);
+      if (duration !== undefined && (!Number.isFinite(duration) || duration <= 0)) throw new Error("Opener seconds must be a positive number.");
+      let workDir = path.resolve(positionals[0]);
+      if (cmd === "edit") {
+        if (proofFirst && editOpts.noRender) throw new Error("--proof-first requires a render. Remove --no-render.");
+        const r = await (deps.runEdit || runEdit)(positionals[0], editOpts);
+        if (r.output) console.log(r.output);
+        if (!proofFirst) return;
+        workDir = r.workDir;
+      } else {
+        const plan = readJSON(path.join(workDir, "plan.json"));
+        console.log(plan.masterOutput || path.join(workDir, "renders", `${plan.name}.mp4`));
+      }
+      const variant = await makeProofFirst(workDir, proofFirst, { duration, deps });
+      if (variant.output) console.log(variant.output);
       return;
     }
     case "ending": {

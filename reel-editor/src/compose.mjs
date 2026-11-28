@@ -158,7 +158,15 @@ export function composeProject(plan, projectDir) {
     else if (!b.video) plan.coldOpen.src = b.src;
     else plan.coldOpen.src = null;
   }
-  fs.writeFileSync(path.join(projectDir, "index.html"), projectHTML(plan, footage));
+  let pagePlan = plan;
+  if (plan.opener) {
+    const src = `assets/proof-opener${path.extname(plan.opener.src).toLowerCase()}`;
+    const source = path.resolve(projectDir, plan.opener.src);
+    const target = path.resolve(projectDir, src);
+    if (source !== target) fs.copyFileSync(source, target);
+    pagePlan = { ...plan, opener: { ...plan.opener, src } };
+  }
+  fs.writeFileSync(path.join(projectDir, "index.html"), projectHTML(pagePlan, footage));
   return projectDir;
 }
 
@@ -183,6 +191,12 @@ export function deliveryFxAttr(plan) {
   return plan.video.hasAudio || (plan.audio?.tracks || []).length ? ` data-fx-chain="${esc(JSON.stringify({ version: 1, nodes: [{ type: "truepeak", id: "ceiling", label: "Delivery ceiling", params: { ceiling: -1.5, lookahead: 3, release: 80 } }] }))}"` : "";
 }
 
+function proofOpenerHTML(opener) {
+  if (!opener) return "";
+  const attrs = `id="proof-opener" class="clip" src="${esc(opener.src)}" data-start="0" data-duration="${esc(opener.duration)}" data-track-index="1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#0B0B0D;pointer-events:none"`;
+  return opener.kind === "video" ? `      <video ${attrs} muted playsinline></video>` : `      <img ${attrs} alt="" />`;
+}
+
 /**
  * The page for a plan: the reel proof receipts look when the plan carries proof data (reel proof, #proof), the
  * normal reel otherwise.
@@ -190,7 +204,7 @@ export function deliveryFxAttr(plan) {
 export function projectHTML(plan, footage) {
   if (plan.proofReel && plan.proofData?.items?.length) {
     const videoAudio = plan.audio?.replaceAudio || !plan.video.hasAudio ? " muted" : ' data-has-audio="true"';
-    return receiptsHTML({
+    const html = receiptsHTML({
       data: plan.proofData,
       heard: plan.words || [],
       duration: plan.video.duration,
@@ -199,6 +213,7 @@ export function projectHTML(plan, footage) {
       fxChain: deliveryFxAttr(plan),
       fps: plan.style?.render?.fps || 30,
     });
+    return plan.opener ? html.replace('      <div id="hook"', (hook) => `${proofOpenerHTML(plan.opener)}\n${hook}`) : html;
   }
   return renderHTML(plan, footage);
 }
@@ -776,7 +791,7 @@ ${glowLightCSS()}` : ""}${iconList.some((icon) => icon.image) ? `
 ${whipFiltersHTML}${videoLayerHTML}
 ${runtimePlan.zoomStyle === "camera" && (runtimePlan.zooms.length || (plan.stitchScenes && (plan.zooms || []).some((z) => !z.stitch))) ? `      <div id="defocus"></div>` : ""}
 ${openHTML}
-${brollHTML}${signatureLayerHTML ? `
+${brollHTML}${plan.opener ? `\n${proofOpenerHTML(plan.opener)}` : ""}${signatureLayerHTML ? `
       ${signatureLayerHTML}` : ""}
 ${popoutBgHTML}
 ${lowerHTML}

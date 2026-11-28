@@ -19,6 +19,7 @@ import { CARDS as procedure2 } from "./procedure-2.mjs";
 import { CARDS as proof2 } from "./proof-2.mjs";
 import { CARDS as conversation2 } from "./conversation-2.mjs";
 import { CARDS as warningPayoff2 } from "./warning-payoff-2.mjs";
+import { CARDS as splitList } from "./split-list.mjs";
 // The Herk Edit Kit import (2026-11-27), restyled to the pro look: see HERK-LICENSE.md and herk-triage-*.json.
 import { CARDS as herkKstat } from "./herk-kstat.mjs";
 import { CARDS as herkKoverview } from "./herk-koverview.mjs";
@@ -41,6 +42,7 @@ export const CARDS = Object.freeze({
   ...proof2,
   ...conversation2,
   ...warningPayoff2,
+  ...splitList,
   ...herkKstat,
   ...herkKoverview,
   ...herkKsection,
